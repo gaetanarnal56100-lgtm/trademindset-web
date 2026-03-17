@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-bg-primary text-text-primary font-sans;
+    min-height: 100dvh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-text-tertiary;
+  }
+}
+
+@layer components {
+  /* ── Cards ── */
+  .card {
+    @apply bg-bg-card border border-border rounded-xl p-4;
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-border hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer;
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    @apply bg-brand-cyan text-bg-primary font-semibold px-4 py-2 rounded-lg text-sm
+           hover:bg-opacity-90 transition-all duration-150 active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply bg-bg-tertiary text-text-primary border border-border px-4 py-2 rounded-lg text-sm
+           hover:bg-bg-secondary transition-all duration-150 active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply text-text-secondary px-3 py-1.5 rounded-lg text-sm
+           hover:bg-bg-tertiary hover:text-text-primary transition-all duration-150;
+  }
+
+  .btn-danger {
+    @apply bg-loss bg-opacity-15 text-loss border border-loss border-opacity-30 px-4 py-2 rounded-lg text-sm
+           hover:bg-opacity-25 transition-all duration-150;
+  }
+
+  /* ── Inputs ── */
+  .input {
+    @apply bg-bg-tertiary border border-border rounded-lg px-3 py-2 text-sm text-text-primary
+           placeholder:text-text-tertiary
+           focus:outline-none focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan focus:ring-opacity-30
+           transition-colors duration-150 w-full;
+  }
+
+  .input-label {
+    @apply text-xs font-medium text-text-secondary mb-1.5 block;
+  }
+
+  /* ── Badges ── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+  }
+
+  .badge-profit {
+    @apply badge bg-profit bg-opacity-15 text-profit;
+  }
+
+  .badge-loss {
+    @apply badge bg-loss bg-opacity-15 text-loss;
+  }
+
+  .badge-neutral {
+    @apply badge bg-bg-tertiary text-text-secondary;
+  }
+
+  .badge-cyan {
+    @apply badge bg-brand-cyan bg-opacity-15 text-brand-cyan;
+  }
+
+  /* ── Nav items ── */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-text-secondary
+           hover:bg-bg-tertiary hover:text-text-primary transition-all duration-150 cursor-pointer;
+  }
+
+  .nav-item-active {
+    @apply nav-item bg-bg-tertiary text-text-primary;
+  }
+
+  /* ── Stat card ── */
+  .stat-card {
+    @apply card flex flex-col gap-1;
+  }
+
+  .stat-label {
+    @apply text-xs text-text-secondary font-medium uppercase tracking-wider;
+  }
+
+  .stat-value {
+    @apply text-2xl font-semibold text-text-primary font-display;
+  }
+
+  .stat-sub {
+    @apply text-xs text-text-secondary;
+  }
+
+  /* ── Section header ── */
+  .section-title {
+    @apply text-lg font-semibold text-text-primary font-display;
+  }
+
+  .section-sub {
+    @apply text-sm text-text-secondary;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    @apply border-t border-border;
+  }
+
+  /* ── Page container ── */
+  .page {
+    @apply p-6 max-w-7xl mx-auto animate-fade-in;
+  }
+
+  .page-header {
+    @apply mb-6;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold text-text-primary font-display;
+  }
+}
+
+@layer utilities {
+  /* Profit/Loss text colors */
+  .text-profit { color: theme('colors.profit'); }
+  .text-loss    { color: theme('colors.loss'); }
+
+  /* Monospace numbers */
+  .num { @apply font-mono; }
+
+  /* Subtle glow on hover */
+  .glow-on-hover:hover {
+    box-shadow: 0 0 20px rgba(0, 229, 255, 0.12);
+  }
+
+  /* Grid pattern overlay */
+  .grid-pattern {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}

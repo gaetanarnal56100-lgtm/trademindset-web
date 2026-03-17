@@ -1,0 +1,110 @@
+// src/pages/auth/LoginPage.tsx
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
+import { signInWithEmail, signInWithGoogle } from '@/services/firebase/auth'
+import { IconEye, IconEyeOff, IconGoogle } from '@/components/ui/Icons'
+
+export default function LoginPage() {
+  const navigate = useNavigate()
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [showPwd,  setShowPwd]  = useState(false)
+  const [loading,  setLoading]  = useState(false)
+
+  async function handleEmail(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      await signInWithEmail(email, password)
+      navigate('/')
+    } catch (err: unknown) {
+      toast.error((err as Error).message ?? 'Erreur de connexion')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleGoogle() {
+    setLoading(true)
+    try {
+      await signInWithGoogle()
+      navigate('/')
+    } catch (err: unknown) {
+      toast.error((err as Error).message ?? 'Erreur Google')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card animate-slide-up space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-text-primary font-display">Connexion</h1>
+        <p className="text-sm text-text-secondary mt-1">Bienvenue sur TradeMindset</p>
+      </div>
+
+      {/* Google */}
+      <button
+        onClick={handleGoogle} disabled={loading}
+        className="w-full flex items-center justify-center gap-3 bg-bg-tertiary border border-border text-text-primary text-sm font-medium py-2.5 rounded-lg hover:bg-bg-secondary transition-colors disabled:opacity-50"
+      >
+        <IconGoogle size={18} />
+        Continuer avec Google
+      </button>
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px bg-border" />
+        <span className="text-xs text-text-tertiary">ou</span>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+
+      {/* Email form */}
+      <form onSubmit={handleEmail} className="space-y-4">
+        <div>
+          <label className="input-label">Email</label>
+          <input
+            type="email" value={email} onChange={e => setEmail(e.target.value)}
+            className="input" placeholder="trader@email.com" required
+          />
+        </div>
+        <div>
+          <label className="input-label">Mot de passe</label>
+          <div className="relative">
+            <input
+              type={showPwd ? 'text' : 'password'}
+              value={password} onChange={e => setPassword(e.target.value)}
+              className="input pr-10" placeholder="••••••••" required
+            />
+            <button
+              type="button" onClick={() => setShowPwd(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary"
+            >
+              {showPwd ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit" disabled={loading}
+          className="btn-primary w-full py-2.5 justify-center flex items-center gap-2"
+        >
+          {loading && (
+            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+          )}
+          {loading ? 'Connexion...' : 'Se connecter'}
+        </button>
+      </form>
+
+      <p className="text-center text-sm text-text-secondary">
+        Pas encore de compte ?{' '}
+        <Link to="/signup" className="text-brand-cyan hover:underline font-medium">
+          S'inscrire
+        </Link>
+      </p>
+    </div>
+  )
+}

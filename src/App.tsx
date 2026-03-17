@@ -1,0 +1,52 @@
+// src/App.tsx
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { useAuthInit, useIsAuthenticated } from '@/hooks/useAuth'
+import AppLayout      from '@/components/layout/AppLayout'
+import AuthLayout     from '@/components/layout/AuthLayout'
+import LoginPage      from '@/pages/auth/LoginPage'
+import SignUpPage     from '@/pages/auth/SignUpPage'
+import DashboardPage  from '@/pages/dashboard/DashboardPage'
+import TradesPage     from '@/pages/trades/TradesPage'
+import AnalysePage    from '@/pages/analyse/AnalysePage'
+import JournalPage    from '@/pages/journal/JournalPage'
+import AlertesPage    from '@/pages/alertes/AlertesPage'
+import SystemesPage   from '@/pages/systemes/SystemesPage'
+import ProfilPage     from '@/pages/profil/ProfilPage'
+import SettingsPage   from '@/pages/settings/SettingsPage'
+import LoadingScreen  from '@/components/ui/LoadingScreen'
+
+export default function App() {
+  useAuthInit()
+  const { isAuthenticated, isAuthLoading } = useIsAuthenticated()
+
+  if (isAuthLoading) return <LoadingScreen />
+
+  return (
+    <Routes>
+      {/* ── Auth (non connecté) ── */}
+      <Route element={<AuthLayout />}>
+        <Route path="/login"   element={!isAuthenticated ? <LoginPage />  : <Navigate to="/" replace />} />
+        <Route path="/signup"  element={!isAuthenticated ? <SignUpPage /> : <Navigate to="/" replace />} />
+      </Route>
+
+      {/* ── App (connecté) ── */}
+      <Route element={
+        isAuthenticated
+          ? <AppLayout />
+          : <Navigate to="/login" replace />
+      }>
+        <Route index                   element={<DashboardPage />} />
+        <Route path="trades"           element={<TradesPage />} />
+        <Route path="analyse"          element={<AnalysePage />} />
+        <Route path="journal"          element={<JournalPage />} />
+        <Route path="alertes"          element={<AlertesPage />} />
+        <Route path="systemes"         element={<SystemesPage />} />
+        <Route path="profil"           element={<ProfilPage />} />
+        <Route path="settings"         element={<SettingsPage />} />
+      </Route>
+
+      {/* ── Fallback ── */}
+      <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
+    </Routes>
+  )
+}
