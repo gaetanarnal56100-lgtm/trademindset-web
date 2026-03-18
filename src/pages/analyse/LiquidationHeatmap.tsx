@@ -53,10 +53,6 @@ async function fetchKlines(sym: string, interval: string, limit: number): Promis
 }
 
 // ── Algorithme cumulatif (comme Coinglass) ─────────────────────────────────
-// L'accumulateur running persiste d'une colonne à l'autre.
-// Chaque bougie ajoute ses niveaux de liquidation.
-// Le prix sweep (efface) les niveaux qu'il traverse.
-// Résultat : bandes horizontales longues qui s'accumulent = look Coinglass
 
 function buildHeatmap(candles: Kline[]): HeatmapData {
   const rawMin = Math.min(...candles.map(c=>c.low))
@@ -70,40 +66,38 @@ function buildHeatmap(candles: Kline[]): HeatmapData {
   const levW      = [0.10,0.18,0.35,0.70,0.90,1.10,1.40,1.25,1.70,1.15,1.45,0.95]
 
   const matrix: Float32Array[] = Array.from({length:N}, ()=>new Float32Array(BUCKETS))
-  const running = new Float32Array(BUCKETS)  // accumulateur persistant
+  const running = new Float32Array(BUCKETS)
 
   for(let ci=0; ci<N; ci++){
     const c = candles[ci]
     const vol = c.volume * c.close
 
-    // 1. Ajouter les nouveaux niveaux de liq de cette bougie
+    // 1. Ajouter les niveaux de liq — sigma=0 (pic pur, 1 seul bucket)
+    // → bandes nettes et précises, pas de flou
     for(let li=0; li<leverages.length; li++){
       const lev=leverages[li], w=levW[li]
       const ll=c.close*(1-1/lev)
       const sl=c.close*(1+1/lev)
       for(const liqP of [ll, sl]){
         const b=Math.round((liqP-pMin)/step)
-        // Gaussian très étroit (sigma=0.7) → bandes fines et précises
-        const sigma=0.7
-        for(let o=-3;o<=3;o++){
-          const idx=b+o
-          if(idx<0||idx>=BUCKETS)continue
-          running[idx]+=vol*w*Math.exp(-0.5*(o/sigma)**2)
-        }
+        if(b<0||b>=BUCKETS)continue
+        // Un seul pixel de large — bandes parfaitement nettes
+        running[b]+=vol*w
+        // Demi-pixel de chaque côté pour l'antialiasing naturel
+        if(b>0)         running[b-1]+=vol*w*0.3
+        if(b<BUCKETS-1) running[b+1]+=vol*w*0.3
       }
     }
 
-    // 2. Sweep : le prix traverse ces buckets → ils s'effacent (liquidations exécutées)
+    // 2. Sweep exact — efface uniquement ce que le prix traverse
     const lowB  = Math.max(0, Math.floor((c.low  - pMin)/step))
     const highB = Math.min(BUCKETS-1, Math.ceil((c.high - pMin)/step))
-    for(let b=lowB; b<=highB; b++){
-      running[b] *= 0.08  // Quasi-effacement (garde 8% de trace visuelle)
-    }
+    for(let b=lowB; b<=highB; b++) running[b] *= 0.05
 
-    // 3. Très légère décroissance globale (positions qui ferment naturellement)
-    for(let b=0; b<BUCKETS; b++) running[b] *= 0.9985
+    // 3. Décroissance très faible
+    for(let b=0; b<BUCKETS; b++) running[b] *= 0.9988
 
-    // 4. Snapshot pour cette colonne
+    // 4. Snapshot
     matrix[ci].set(running)
   }
 
@@ -130,20 +124,23 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, t
 
   ctx.fillStyle='#050210'; ctx.fillRect(0,0,W,H)
 
-  // Heatmap — chaque cellule
+  // Heatmap — rendu pixel-perfect, bandes nettes
   for(let ci=0;ci<data.N;ci++){
-    const x0=ci*colW
+    const x0=Math.floor(ci*colW)
+    const x1=Math.floor((ci+1)*colW)
+    const w=Math.max(x1-x0,1)
     const col=data.cols[ci]
     for(let b=0;b<data.buckets;b++){
       const v=col[b]
-      // Threshold : masque les cellules sous le seuil, boost les cellules au dessus
+      if(threshold > 0 && v < threshold) continue
       if(v<0.003)continue
-      if(threshold > 0 && v < threshold) continue  // filtre par seuil
-      // Boost visuel pour les cellules au dessus du seuil
       const vBoosted = threshold > 0 ? Math.min(v / Math.max(threshold, 0.01), 1) : v
       const[r,g,bb]=cgRGB(vBoosted)
       ctx.fillStyle=`rgb(${r},${g},${bb})`
-      ctx.fillRect(x0+0.5, H-(b+1)*rowH+0.5, colW-0.5, rowH+0.5)
+      // Hauteur exacte d'1 bucket — pas d'overlap pour éviter le flou
+      const y0=Math.floor(H-(b+1)*rowH)
+      const y1=Math.floor(H-b*rowH)
+      ctx.fillRect(x0, y0, w, Math.max(y1-y0,1))
     }
   }
 
