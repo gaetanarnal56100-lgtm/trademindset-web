@@ -227,49 +227,56 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
   const [aiText,    setAiText]    = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [expanded,  setExpanded]  = useState(true)
-  const prevSymbol  = useRef('')
-  const priceRef    = useRef(0)  // dernier prix stable — pas réactif
+  const symbolRef   = useRef('')   // symbole actuellement résolu
+  const priceRef    = useRef(0)    // prix stable (anti-tick)
 
-  // Fetch prix courant si pas fourni ou 0 (non-crypto)
+  // Fetch prix — RESET IMMÉDIAT quand le symbole change, puis fetch le vrai prix
   useEffect(() => {
-    if (priceProp > 0) {
-      // Ne mettre à jour que si changement significatif (>0.1%) pour éviter les re-renders continus
-      const change = Math.abs(priceProp - priceRef.current) / Math.max(priceRef.current, 1)
-      if (change > 0.001 || priceRef.current === 0) {
-        priceRef.current = priceProp
-        setPrice(priceProp)
-      }
+    const sym = symbol.toUpperCase()
+
+    // Si symbole a changé → reset complet immédiat
+    if (symbolRef.current !== sym) {
+      symbolRef.current = sym
+      priceRef.current = 0
+      setPrice(0)
+      setPlan(null)
+      setAiText('')
+    }
+
+    const isCrypto = /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(sym)
+
+    if (isCrypto && priceProp > 0) {
+      // Prix du WebSocket CVD — seulement si c'est le bon symbole
+      priceRef.current = priceProp
+      setPrice(priceProp)
       return
     }
-    // Pour non-crypto : fetch une seule fois quand le symbole change
-    if (prevSymbol.current === symbol && priceRef.current > 0) return
-    const sym = symbol.toUpperCase()
-    const isCrypto = /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(sym)
+
+    // Fetch prix depuis l'API appropriée
     if (isCrypto) {
       fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`)
-        .then(r => r.json()).then(d => {
+        .then(r => r.json())
+        .then(d => {
+          if (symbolRef.current !== sym) return  // symbole changé → ignore
           if (d.price) { priceRef.current = parseFloat(d.price); setPrice(parseFloat(d.price)) }
         }).catch(() => {})
     } else {
       fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`)
         .then(r => r.json())
         .then(d => {
+          if (symbolRef.current !== sym) return  // symbole changé → ignore
           const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice
           if (p) { priceRef.current = p; setPrice(p) }
         }).catch(() => {})
     }
   }, [symbol, priceProp])
 
-  // Génération locale — seulement quand le SYMBOLE change (pas à chaque tick de prix)
+  // Génération — uniquement quand prix > 0 ET correspond au bon symbole
   useEffect(() => {
-    const symbolChanged = prevSymbol.current !== symbol
-    prevSymbol.current = symbol
-    const currentPrice = priceRef.current || price
-    if (currentPrice <= 0) return
-    const p = generateScenarios(currentPrice, mtfScore, wtStatus, vmcStatus)
+    if (price <= 0) return
+    const p = generateScenarios(price, mtfScore, wtStatus, vmcStatus)
     setPlan(p)
-    if (symbolChanged) setAiText('')  // Reset IA seulement si symbole change
-  }, [symbol, mtfScore, wtStatus, vmcStatus])  // ← price ABSENT intentionnellement
+  }, [symbol, price, mtfScore, wtStatus, vmcStatus])
 
   const loadAI = useCallback(async () => {
     if (!plan || aiLoading || price <= 0) return
