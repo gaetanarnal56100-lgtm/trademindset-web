@@ -5,7 +5,7 @@ import { getFunctions } from 'firebase/functions'
 import { getStorage }   from 'firebase/storage'
 
 const firebaseConfig = {
-  apiKey:            "AIzaSyDalLsp9hP8EmoAp9YexORCYEhog09-sEg",
+  apiKey:            "AIzaSyDaLspO9hP8EmoAp9YexORCYEhogQ9-sEg",
   authDomain:        "trademindset-27aaf.firebaseapp.com",
   projectId:         "trademindset-27aaf",
   storageBucket:     "trademindset-27aaf.firebasestorage.app",
