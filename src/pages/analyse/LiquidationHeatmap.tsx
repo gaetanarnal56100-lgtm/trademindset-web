@@ -120,7 +120,7 @@ function buildHeatmap(candles: Kline[]): HeatmapData {
 
 // ── Draw ───────────────────────────────────────────────────────────────────
 
-function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number) {
+function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, threshold = 0) {
   const ctx=canvas.getContext('2d')!
   const W=canvas.width, H=canvas.height
   const chartW=W-AXIS_W
@@ -136,10 +136,13 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number) {
     const col=data.cols[ci]
     for(let b=0;b<data.buckets;b++){
       const v=col[b]
+      // Threshold : masque les cellules sous le seuil, boost les cellules au dessus
       if(v<0.003)continue
-      const[r,g,bb]=cgRGB(v)
+      if(threshold > 0 && v < threshold) continue  // filtre par seuil
+      // Boost visuel pour les cellules au dessus du seuil
+      const vBoosted = threshold > 0 ? Math.min(v / Math.max(threshold, 0.01), 1) : v
+      const[r,g,bb]=cgRGB(vBoosted)
       ctx.fillStyle=`rgb(${r},${g},${bb})`
-      // Légère marge entre colonnes pour voir la progression temporelle
       ctx.fillRect(x0+0.5, H-(b+1)*rowH+0.5, colW-0.5, rowH+0.5)
     }
   }
@@ -256,6 +259,7 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string|null>(null)
   const [tip,     setTip]     = useState<Tip|null>(null)
+  const [threshold, setThreshold] = useState(0)  // 0 = pas de filtre
 
   const baseRef    = useRef<HTMLCanvasElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
@@ -275,7 +279,7 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
   },[])
 
   useEffect(()=>{load(symbol,period)},[symbol,period,load])
-  useEffect(()=>{if(baseRef.current&&data)drawBase(baseRef.current,data,price)},[data,price])
+  useEffect(()=>{if(baseRef.current&&data)drawBase(baseRef.current,data,price,threshold)},[data,price,threshold])
   useEffect(()=>{if(overlayRef.current&&data)drawOverlay(overlayRef.current,tip,data)},[tip,data])
 
   const handlePointer=useCallback((e:React.MouseEvent|React.TouchEvent)=>{
@@ -326,7 +330,7 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
       </div>
 
       {/* Period selector — toutes les périodes */}
-      <div style={{display:'flex',gap:3,padding:'0 14px 8px',overflowX:'auto',scrollbarWidth:'none'}}>
+      <div style={{display:'flex',gap:3,padding:'0 14px 6px',overflowX:'auto',scrollbarWidth:'none'}}>
         {PERIODS.map(p=>(
           <button key={p.v} onClick={()=>setPeriod(p)} style={{
             padding:'3px 9px',borderRadius:5,fontSize:10,cursor:'pointer',border:'none',flexShrink:0,
@@ -336,6 +340,24 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
             transition:'all 0.15s',
           }}>{p.label}</button>
         ))}
+      </div>
+
+      {/* Threshold slider — Seuil de liquidité comme Coinglass */}
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}>
+        <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',whiteSpace:'nowrap'}}>
+          Seuil de liquidité = <span style={{color:'#00E5FF',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
+        </span>
+        <input
+          type="range" min={0} max={0.8} step={0.01}
+          value={threshold}
+          onChange={e => setThreshold(parseFloat(e.target.value))}
+          style={{flex:1,accentColor:'#00E5FF',cursor:'pointer',height:4}}
+        />
+        {threshold > 0 && (
+          <button onClick={()=>setThreshold(0)} style={{fontSize:9,color:'#555C70',background:'none',border:'1px solid #2A2F3E',borderRadius:4,padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>
+            Reset
+          </button>
+        )}
       </div>
 
       {/* Canvas */}
