@@ -3,7 +3,7 @@
 // Génération locale basée sur MTF score + WT + VMC (sans API call pour la base)
 // Enrichissement IA via openaiChat Cloud Function
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
@@ -221,29 +221,61 @@ function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function TradePlanCard({ symbol, price, mtfScore = 0, mtfSignal = 'NEUTRAL', wtStatus = 'Neutral', vmcStatus = 'NEUTRAL' }: Props) {
+export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, mtfSignal = 'NEUTRAL', wtStatus = 'Neutral', vmcStatus = 'NEUTRAL' }: Props) {
   const [plan,      setPlan]      = useState<TradePlanData|null>(null)
+  const [price,     setPrice]     = useState(0)
   const [aiText,    setAiText]    = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [expanded,  setExpanded]  = useState(true)
+  const prevSymbol  = useRef('')
 
-  // Génération locale dès que les props changent
+  // Fetch prix courant si pas fourni ou 0 (non-crypto)
+  useEffect(() => {
+    if (priceProp > 0) { setPrice(priceProp); return }
+    // Pour non-crypto : fetch via Binance spot ou Yahoo proxy
+    const sym = symbol.toUpperCase()
+    const isCrypto = /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(sym)
+    if (isCrypto) {
+      fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`)
+        .then(r => r.json()).then(d => { if (d.price) setPrice(parseFloat(d.price)) }).catch(() => {})
+    } else {
+      // Essaie Finnhub quote via Cloud Function
+      const fn = httpsCallable<Record<string,unknown>, {c?:number}>(fbFn, 'openaiChat')
+      // Fallback: utilise le prix de la dernière bougie des oscillateurs via fapi ou api
+      fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`)
+        .then(r => r.json())
+        .then(d => {
+          const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice
+          if (p) setPrice(p)
+        }).catch(() => {})
+    }
+  }, [symbol, priceProp])
+
+  // Génération locale — reset plan ET aiText seulement si le SYMBOLE change (pas le prix)
   useEffect(() => {
     if (price <= 0) return
+    const symbolChanged = prevSymbol.current !== symbol
+    prevSymbol.current = symbol
     const p = generateScenarios(price, mtfScore, wtStatus, vmcStatus)
     setPlan(p)
-    setAiText('')
+    if (symbolChanged) setAiText('')  // Reset IA seulement si symbole change
   }, [symbol, price, mtfScore, wtStatus, vmcStatus])
 
   const loadAI = useCallback(async () => {
-    if (!plan || aiLoading) return
+    if (!plan || aiLoading || price <= 0) return
     setAiLoading(true)
     const text = await enrichWithAI(symbol, price, plan, mtfSignal)
-    setAiText(text)
+    if (text) setAiText(text)  // Ne pas reset si vide (erreur réseau)
     setAiLoading(false)
   }, [plan, symbol, price, mtfSignal, aiLoading])
 
-  if (!plan || price <= 0) return null
+  if (price <= 0) return (
+    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
+      <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'#0A85FF', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 }} />
+      <span style={{ fontSize:12, color:'#555C70' }}>Récupération du prix de {symbol}...</span>
+    </div>
+  )
+  if (!plan) return null
 
   const scoreColor = plan.globalScore < -40 ? '#22C759' : plan.globalScore < -10 ? '#FFD60A' : plan.globalScore > 40 ? '#FF3B30' : plan.globalScore > 10 ? '#FF9500' : '#8F94A3'
   const riskColor  = { low:'#22C759', medium:'#FF9500', high:'#FF3B30' }[plan.riskLevel]

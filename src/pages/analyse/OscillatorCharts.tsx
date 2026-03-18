@@ -69,19 +69,50 @@ async function fetchCandles(symbol: string, interval: string, limit: number): Pr
   }
 
   // 3. Non-crypto — Cloud Function fetchTimeSeries (TwelveData)
+  // TwelveData accepte "AAPL", "MSFT:NASDAQ", etc.
   const tdInterval = TF_TO_TWELVEDATA[interval] || '1h'
-  try {
-    const fn = httpsCallable<Record<string,unknown>, {values?: {datetime:string;open:string;high:string;low:string;close:string}[]}>(fbFn, 'fetchTimeSeries')
-    const res = await fn({ symbol: sym, interval: tdInterval, outputSize: limit })
-    const values = res.data.values || []
-    if (values.length === 0) throw new Error('Pas de données TwelveData')
-    return values.map((v, i) => ({
-      t: i, o: parseFloat(v.open), h: parseFloat(v.high),
-      l: parseFloat(v.low),  c: parseFloat(v.close), v: 0,
-    }))
-  } catch(e) {
-    throw new Error(`Actif ${sym} non supporté: ${(e as Error).message}`)
+  
+  // Essaie le symbole brut d'abord, puis avec suffixe :NYSE / :NASDAQ
+  const symVariants = [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]
+  
+  for (const variant of symVariants) {
+    try {
+      const fn = httpsCallable<Record<string,unknown>, {values?: {datetime:string;open:string;high:string;low:string;close:string}[];status?:string;message?:string}>(fbFn, 'fetchTimeSeries')
+      const res = await fn({ symbol: variant, interval: tdInterval, outputSize: limit })
+      const values = res.data.values || []
+      if (values.length > 5) {
+        return values.map((v, i) => ({
+          t: i, o: parseFloat(v.open), h: parseFloat(v.high),
+          l: parseFloat(v.low), c: parseFloat(v.close), v: 0,
+        }))
+      }
+    } catch {/*try next variant*/}
   }
+  
+  // Fallback: essaie fetchStockCandles (Finnhub)
+  try {
+    const now = Math.floor(Date.now() / 1000)
+    const periodSeconds: Record<string,number> = {
+      '5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,
+      '4h':14400,'12h':43200,'1day':86400,'1week':604800
+    }
+    const secs = periodSeconds[tdInterval] || 3600
+    const from = now - secs * limit
+    const resMap: Record<string,string> = {
+      '5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','12h':'D','1day':'D','1week':'W'
+    }
+    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];s?:string}>(fbFn, 'fetchStockCandles')
+    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval]||'60', from, to: now })
+    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5) {
+      return res2.data.c.map((_,i) => ({
+        t: i,
+        o: res2.data.o![i], h: res2.data.h![i],
+        l: res2.data.l![i], c: res2.data.c![i], v: 0,
+      }))
+    }
+  } catch {/**/}
+  
+  throw new Error(`Symbole ${sym} non trouvé sur TwelveData ou Finnhub`)
 }
 
 // ── Math helpers ───────────────────────────────────────────────────────────

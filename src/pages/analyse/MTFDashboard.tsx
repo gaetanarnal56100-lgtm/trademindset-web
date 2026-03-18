@@ -41,13 +41,32 @@ async function fetchTF(symbol: string, interval: string, limit: number) {
     throw new Error(`${sym} introuvable`)
   }
 
-  // Non-crypto → Cloud Function fetchTimeSeries (TwelveData)
+  // Non-crypto → TwelveData (essaie plusieurs variantes) puis Finnhub fallback
   const tdInterval = TF_TO_TWELVEDATA[interval] || '1h'
-  const fn = httpsCallable<Record<string,unknown>, {values?:{open:string;high:string;low:string;close:string}[]}>(fbFn, 'fetchTimeSeries')
-  const res = await fn({ symbol: sym, interval: tdInterval, outputSize: limit })
-  const values = res.data.values || []
-  if (!values.length) throw new Error(`Pas de données pour ${sym}`)
-  return values.map(v => ({ o:parseFloat(v.open), h:parseFloat(v.high), l:parseFloat(v.low), c:parseFloat(v.close) }))
+  
+  for (const variant of [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]) {
+    try {
+      const fn = httpsCallable<Record<string,unknown>, {values?:{open:string;high:string;low:string;close:string}[]}>(fbFn, 'fetchTimeSeries')
+      const res = await fn({ symbol: variant, interval: tdInterval, outputSize: limit })
+      const values = res.data.values || []
+      if (values.length > 5)
+        return values.map(v => ({ o:parseFloat(v.open), h:parseFloat(v.high), l:parseFloat(v.low), c:parseFloat(v.close) }))
+    } catch {/*try next*/}
+  }
+  
+  // Finnhub fallback
+  try {
+    const now = Math.floor(Date.now()/1000)
+    const secsMap: Record<string,number> = {'5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,'4h':14400,'12h':43200,'1day':86400,'1week':604800}
+    const resMap: Record<string,string> = {'5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','12h':'D','1day':'D','1week':'W'}
+    const from = now - (secsMap[tdInterval]||3600)*limit
+    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];s?:string}>(fbFn, 'fetchStockCandles')
+    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval]||'60', from, to: now })
+    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5)
+      return res2.data.c.map((_,i) => ({ o:res2.data.o![i], h:res2.data.h![i], l:res2.data.l![i], c:res2.data.c![i] }))
+  } catch {/**/}
+  
+  throw new Error(`${sym} non trouvé`)
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
