@@ -228,44 +228,54 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
   const [aiLoading, setAiLoading] = useState(false)
   const [expanded,  setExpanded]  = useState(true)
   const prevSymbol  = useRef('')
+  const priceRef    = useRef(0)  // dernier prix stable — pas réactif
 
   // Fetch prix courant si pas fourni ou 0 (non-crypto)
   useEffect(() => {
-    if (priceProp > 0) { setPrice(priceProp); return }
-    // Pour non-crypto : fetch via Binance spot ou Yahoo proxy
+    if (priceProp > 0) {
+      // Ne mettre à jour que si changement significatif (>0.1%) pour éviter les re-renders continus
+      const change = Math.abs(priceProp - priceRef.current) / Math.max(priceRef.current, 1)
+      if (change > 0.001 || priceRef.current === 0) {
+        priceRef.current = priceProp
+        setPrice(priceProp)
+      }
+      return
+    }
+    // Pour non-crypto : fetch une seule fois quand le symbole change
+    if (prevSymbol.current === symbol && priceRef.current > 0) return
     const sym = symbol.toUpperCase()
     const isCrypto = /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(sym)
     if (isCrypto) {
       fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`)
-        .then(r => r.json()).then(d => { if (d.price) setPrice(parseFloat(d.price)) }).catch(() => {})
+        .then(r => r.json()).then(d => {
+          if (d.price) { priceRef.current = parseFloat(d.price); setPrice(parseFloat(d.price)) }
+        }).catch(() => {})
     } else {
-      // Essaie Finnhub quote via Cloud Function
-      const fn = httpsCallable<Record<string,unknown>, {c?:number}>(fbFn, 'openaiChat')
-      // Fallback: utilise le prix de la dernière bougie des oscillateurs via fapi ou api
       fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`)
         .then(r => r.json())
         .then(d => {
           const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice
-          if (p) setPrice(p)
+          if (p) { priceRef.current = p; setPrice(p) }
         }).catch(() => {})
     }
   }, [symbol, priceProp])
 
-  // Génération locale — reset plan ET aiText seulement si le SYMBOLE change (pas le prix)
+  // Génération locale — seulement quand le SYMBOLE change (pas à chaque tick de prix)
   useEffect(() => {
-    if (price <= 0) return
     const symbolChanged = prevSymbol.current !== symbol
     prevSymbol.current = symbol
-    const p = generateScenarios(price, mtfScore, wtStatus, vmcStatus)
+    const currentPrice = priceRef.current || price
+    if (currentPrice <= 0) return
+    const p = generateScenarios(currentPrice, mtfScore, wtStatus, vmcStatus)
     setPlan(p)
     if (symbolChanged) setAiText('')  // Reset IA seulement si symbole change
-  }, [symbol, price, mtfScore, wtStatus, vmcStatus])
+  }, [symbol, mtfScore, wtStatus, vmcStatus])  // ← price ABSENT intentionnellement
 
   const loadAI = useCallback(async () => {
     if (!plan || aiLoading || price <= 0) return
     setAiLoading(true)
     const text = await enrichWithAI(symbol, price, plan, mtfSignal)
-    if (text) setAiText(text)  // Ne pas reset si vide (erreur réseau)
+    if (text) setAiText(text)
     setAiLoading(false)
   }, [plan, symbol, price, mtfSignal, aiLoading])
 

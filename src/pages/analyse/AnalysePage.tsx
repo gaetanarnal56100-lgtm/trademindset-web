@@ -595,7 +595,7 @@ export default function AnalysePage() {
       <div style={{marginBottom:16}}>
         <TradePlanCard
           symbol={symbol}
-          price={price||0}
+          price={isCrypto ? (price||0) : 0}
           mtfScore={0}
           mtfSignal="NEUTRAL"
           wtStatus="Neutral"
