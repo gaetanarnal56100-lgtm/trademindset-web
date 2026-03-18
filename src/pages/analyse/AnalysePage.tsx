@@ -79,28 +79,39 @@ async function searchBinanceCrypto(query: string): Promise<SearchResult[]> {
 
 // Cloud Functions — uniquement pour actions et forex (évite de brûler des tokens sur les cryptos)
 async function searchNonCrypto(query: string): Promise<SearchResult[]> {
-  try {
-    const fn = httpsCallable<{query:string},{result:{symbol:string;description?:string;displaySymbol?:string;type?:string}[]}>(fbFunctions, 'searchFinnhubSymbols')
-    const res = await fn({ query })
-    return (res.data.result || [])
-      .filter(item => {
-        const t = (item.type||'').toLowerCase()
-        // Exclure les cryptos — déjà couverts par Binance
-        return !t.includes('crypto') && !t.includes('digital')
-      })
-      .slice(0, 10)
-      .map(item => {
-        const t = (item.type||'').toLowerCase()
-        const type: SearchResult['type'] = t.includes('forex')||t.includes('fx') ? 'forex' : 'stock'
-        return {
-          symbol: item.symbol,
-          name: item.description || item.symbol,
-          type,
-          exchange: item.displaySymbol,
-          icon: type==='forex'?'💱':'📈',
-        }
-      })
-  } catch { return [] }
+  // Essaie searchFinnhubSymbols d'abord, puis searchSymbols en fallback
+  for (const [fnName, dataKey] of [
+    ['searchFinnhubSymbols', 'result'] as const,
+    ['searchSymbols',        'data'  ] as const,
+  ]) {
+    try {
+      const fn = httpsCallable<{query:string}, Record<string, unknown>>(fbFunctions, fnName)
+      const res = await fn({ query })
+      const raw = res.data[dataKey] as Record<string,unknown>[]|undefined
+      if (!Array.isArray(raw) || raw.length === 0) continue
+
+      return raw
+        .filter(item => {
+          const t = ((item.type||item.instrument_type||'') as string).toLowerCase()
+          return !t.includes('crypto') && !t.includes('digital')
+        })
+        .slice(0, 10)
+        .map(item => {
+          const t = ((item.type||item.instrument_type||'') as string).toLowerCase()
+          const type: SearchResult['type'] = t.includes('forex')||t.includes('fx')||t.includes('currency') ? 'forex' : 'stock'
+          return {
+            symbol: (item.symbol||'') as string,
+            name: (item.description||item.instrument_name||item.symbol||'') as string,
+            type,
+            exchange: (item.displaySymbol||item.exchange||'') as string,
+            icon: type==='forex'?'💱':'📈',
+          }
+        })
+    } catch(e) {
+      console.warn(`[search] ${fnName} failed:`, e)
+    }
+  }
+  return []
 }
 
 function useSymbolSearch(q: string) {
