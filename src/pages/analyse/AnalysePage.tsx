@@ -6,6 +6,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
+import TradePlanCard from './TradePlanCard'
+
+// Détecte si le symbole est une crypto Binance
+function isCryptoSymbol(symbol: string) {
+  return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Mode = 'micro' | 'structure' | 'derivees'
@@ -562,6 +568,8 @@ export default function AnalysePage() {
   const biasLabel=bullConf>bearConf?'Haussier':bearConf>bullConf?'Baissier':'Neutre'
   const biasColor=bullConf>bearConf?'#22C759':bearConf>bullConf?'#FF3B30':'#8F94A3'
 
+  const isCrypto = isCryptoSymbol(symbol)
+
   const C = {
     card: {background:'#161B22',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden' as const,position:'relative' as const},
     top: {position:'absolute' as const,top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)'},
@@ -570,50 +578,67 @@ export default function AnalysePage() {
 
   return (
     <div style={{padding:'28px 28px 40px',maxWidth:1200,margin:'0 auto'}}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} .hoverable:hover{background:rgba(255,255,255,0.04)!important}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
 
       {/* Header */}
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:14}}>
         <div>
           <h1 style={{fontSize:24,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em'}}>Analyse</h1>
-          <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>Liquidation Heatmap · CVD Live · Structure · Dérivés</p>
+          <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>
+            {isCrypto ? 'Liquidation Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Plan de Trade'}
+          </p>
         </div>
         <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
       </div>
 
-      {/* MTF Dashboard RSI + VMC — au dessus de la heatmap */}
+      {/* Plan de Trade IA — tous les actifs, en premier */}
+      <div style={{marginBottom:16}}>
+        <TradePlanCard
+          symbol={symbol}
+          price={price||0}
+          mtfScore={0}
+          mtfSignal="NEUTRAL"
+          wtStatus="Neutral"
+          vmcStatus="NEUTRAL"
+        />
+      </div>
+
+      {/* MTF Dashboard — tous les actifs */}
       <div style={{marginBottom:16}}>
         <MTFDashboard symbol={symbol} />
       </div>
 
-      {/* WaveTrend + VMC Oscillator */}
+      {/* WaveTrend + VMC Oscillator — tous les actifs */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
         <WaveTrendChart symbol={symbol} />
         <VMCOscillatorChart symbol={symbol} />
       </div>
 
-      {/* Heatmap */}
-      <div style={{marginBottom:16}}><LiquidationHeatmap symbol={symbol} /></div>
+      {/* ══ CRYPTO ONLY ══ Heatmap + CVD/Structure/Dérivés */}
+      {isCrypto && <>
+        {/* Heatmap */}
+        <div style={{marginBottom:16}}><LiquidationHeatmap symbol={symbol} /></div>
 
-      {/* Mode tabs */}
-      <div style={{display:'flex',background:'#0D1117',borderRadius:12,padding:3,marginBottom:16,border:'1px solid #1E2330',width:'fit-content'}}>
-        {([
-          {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel'},
-          {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine'},
-          {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq'},
-        ] as {id:Mode;icon:string;label:string;sub:string}[]).map(m=>(
-          <button key={m.id} onClick={()=>setMode(m.id)} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 20px',borderRadius:10,border:'none',cursor:'pointer',background:mode===m.id?'#00E5FF':'transparent',transition:'all 0.15s'}}>
-            <span style={{fontSize:14}}>{m.icon}</span>
-            <div style={{textAlign:'left'}}>
-              <div style={{fontSize:12,fontWeight:600,color:mode===m.id?'#0D1117':'#8F94A3'}}>{m.label}</div>
-              <div style={{fontSize:9,color:mode===m.id?'rgba(0,0,0,0.6)':'#3D4254'}}>{m.sub}</div>
-            </div>
-          </button>
-        ))}
-      </div>
+        {/* Mode tabs */}
+        <div style={{display:'flex',background:'#0D1117',borderRadius:12,padding:3,marginBottom:16,border:'1px solid #1E2330',width:'fit-content'}}>
+          {([
+            {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel'},
+            {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine'},
+            {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq'},
+          ] as {id:Mode;icon:string;label:string;sub:string}[]).map(m=>(
+            <button key={m.id} onClick={()=>setMode(m.id)} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 20px',borderRadius:10,border:'none',cursor:'pointer',background:mode===m.id?'#00E5FF':'transparent',transition:'all 0.15s'}}>
+              <span style={{fontSize:14}}>{m.icon}</span>
+              <div style={{textAlign:'left'}}>
+                <div style={{fontSize:12,fontWeight:600,color:mode===m.id?'#0D1117':'#8F94A3'}}>{m.label}</div>
+                <div style={{fontSize:9,color:mode===m.id?'rgba(0,0,0,0.6)':'#3D4254'}}>{m.sub}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </>}
 
-      {/* ── MICRO ── */}
-      {mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {/* ── MICRO — crypto only ── */}
+      {isCrypto&&mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
         {/* Summary Banner */}
         <div style={{...C.card,padding:C.p}}>
           <div style={C.top}/>
@@ -748,7 +773,7 @@ export default function AnalysePage() {
       </div>}
 
       {/* ── STRUCTURE ── */}
-      {mode==='structure'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {isCrypto&&mode==='structure'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
         <div style={C.card}><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
@@ -778,7 +803,7 @@ export default function AnalysePage() {
       </div>}
 
       {/* ── DÉRIVÉS ── */}
-      {mode==='derivees'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {isCrypto&&mode==='derivees'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
         {/* Confluence Card en premier */}
         <DerivativesConfluenceCard symbol={symbol}/>
 
