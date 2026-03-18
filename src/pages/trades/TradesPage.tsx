@@ -1,16 +1,253 @@
-// src/pages/trades/TradesPage.tsx
-import { IconTrades } from '@/components/ui/Icons'
+// src/pages/trades/TradesPage.tsx — Connecté à Firestore users/{uid}/trades
+
+import { useState, useEffect } from 'react'
+import { subscribeTrades, subscribeSystems, tradePnL, deleteTrade, createTrade, type Trade, type TradingSystem } from '@/services/firestore'
+
+const EMOTIONAL_STATES = {
+  confident:'😎', stressed:'😰', impatient:'😤', fearful:'😨', greedy:'💰',
+  calm:'😌', excited:'🤩', frustrated:'😡', focused:'🎯', distracted:'🤔',
+}
+
+function fmtDate(d: Date) {
+  return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
+}
+function fmtPrice(p?: number) {
+  if (p == null) return '—'
+  return p >= 1000 ? `$${p.toLocaleString('fr-FR', {maximumFractionDigits:1})}` : `$${p.toFixed(4)}`
+}
+function fmtPnL(n: number) {
+  return `${n >= 0 ? '+' : ''}$${Math.abs(n).toFixed(2)}`
+}
+
 export default function TradesPage() {
+  const [trades,  setTrades]  = useState<Trade[]>([])
+  const [systems, setSystems] = useState<TradingSystem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter,  setFilter]  = useState<'all'|'open'|'closed'>('all')
+  const [search,  setSearch]  = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+
+  useEffect(() => {
+    const unsubT = subscribeTrades(t => { setTrades(t); setLoading(false) })
+    const unsubS = subscribeSystems(setSystems)
+    return () => { unsubT(); unsubS() }
+  }, [])
+
+  const filtered = trades
+    .filter(t => filter === 'all' || t.status === filter)
+    .filter(t => !search || t.symbol.toLowerCase().includes(search.toLowerCase()))
+
+  const totalPnL = filtered.filter(t => t.status === 'closed').reduce((s, t) => s + tradePnL(t), 0)
+  const wins     = filtered.filter(t => t.status === 'closed' && tradePnL(t) > 0).length
+  const losses   = filtered.filter(t => t.status === 'closed' && tradePnL(t) <= 0).length
+  const wr       = wins + losses > 0 ? (wins / (wins + losses) * 100).toFixed(0) : '—'
+
+  const systemName = (id: string) => systems.find(s => s.id === id)?.name ?? '—'
+  const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? '#00D9FF'
+
   return (
-    <div className="page">
-      <div className="page-header">
-        <h1 className="page-title flex items-center gap-3"><IconTrades size={22} /> Trades</h1>
-        <p className="text-sm text-text-secondary mt-1">Journal de tous vos trades</p>
+    <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'#F0F3FF', margin:0 }}>Trades</h1>
+          <p style={{ fontSize:13, color:'#8F94A3', margin:'3px 0 0' }}>
+            {loading ? 'Chargement...' : `${filtered.length} trade${filtered.length > 1 ? 's' : ''}`}
+          </p>
+        </div>
+        <button onClick={() => setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+          + Nouveau trade
+        </button>
       </div>
-      <div className="card flex flex-col items-center gap-3 py-12 text-text-tertiary">
-        <IconTrades size={36} />
-        <div className="text-sm">Section Trades — en cours de développement</div>
-        <div className="text-xs text-text-muted">Les trades Firebase se chargent déjà via le store</div>
+
+      {/* Stats */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
+        {[
+          { l:'P&L Total', v:fmtPnL(totalPnL), c: totalPnL >= 0 ? '#22C759' : '#FF3B30' },
+          { l:'Win Rate', v:`${wr}%`, c:'#F0F3FF' },
+          { l:'Wins', v:wins, c:'#22C759' },
+          { l:'Losses', v:losses, c:'#FF3B30' },
+        ].map(({ l, v, c }) => (
+          <div key={l} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+            <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{l}</div>
+            <div style={{ fontSize:18, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', background:'#161B22', borderRadius:8, padding:3, gap:2 }}>
+          {(['all','open','closed'] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)} style={{ padding:'5px 12px', borderRadius:6, border:'none', cursor:'pointer', fontSize:12, fontWeight:500, background: filter===f?'#00E5FF':'transparent', color: filter===f?'#0D1117':'#8F94A3' }}>
+              {f === 'all' ? 'Tous' : f === 'open' ? 'Ouverts' : 'Fermés'}
+            </button>
+          ))}
+        </div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un symbole..." style={{ flex:1, minWidth:180, padding:'6px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'#161B22', color:'#F0F3FF', fontSize:13, outline:'none' }} />
+      </div>
+
+      {/* Trades list */}
+      {loading ? (
+        <div style={{ textAlign:'center', padding:48, color:'#555C70' }}>
+          <div style={{ width:24, height:24, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
+          Chargement depuis Firestore...
+          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign:'center', padding:48, color:'#555C70', fontSize:14 }}>
+          Aucun trade{filter !== 'all' ? ` ${filter === 'open' ? 'ouvert' : 'fermé'}` : ''}
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {filtered.map(trade => {
+            const pnl = tradePnL(trade)
+            const pnlColor = pnl >= 0 ? '#22C759' : '#FF3B30'
+            const isOpen = trade.status === 'open'
+            return (
+              <div key={trade.id} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:12, padding:'12px 14px', display:'grid', gridTemplateColumns:'auto 1fr auto auto auto', alignItems:'center', gap:14 }}>
+                {/* Direction badge */}
+                <div style={{ width:36, height:36, borderRadius:8, background: trade.type==='Long'?'rgba(34,199,89,0.15)':'rgba(255,59,48,0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>
+                  {trade.type==='Long'?'📈':'📉'}
+                </div>
+                {/* Main info */}
+                <div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+                    <span style={{ fontSize:14, fontWeight:700, color:'#F0F3FF' }}>{trade.symbol}</span>
+                    <span style={{ fontSize:10, fontWeight:600, color: trade.type==='Long'?'#22C759':'#FF3B30', background: trade.type==='Long'?'rgba(34,199,89,0.1)':'rgba(255,59,48,0.1)', padding:'1px 6px', borderRadius:4 }}>{trade.type}</span>
+                    {isOpen && <span style={{ fontSize:9, fontWeight:700, color:'#00E5FF', background:'rgba(0,229,255,0.1)', padding:'1px 6px', borderRadius:4 }}>● OUVERT</span>}
+                    <span style={{ fontSize:10, fontWeight:500, color:systemColor(trade.systemId), background:`${systemColor(trade.systemId)}18`, padding:'1px 6px', borderRadius:4 }}>{systemName(trade.systemId)}</span>
+                  </div>
+                  <div style={{ fontSize:11, color:'#555C70' }}>
+                    {fmtDate(trade.date)} · {trade.leverage}x · {trade.orderRole} · {trade.session}
+                    {trade.entryPrice && ` · E: ${fmtPrice(trade.entryPrice)}`}
+                    {trade.exitPrice && ` → S: ${fmtPrice(trade.exitPrice)}`}
+                  </div>
+                </div>
+                {/* Quantity */}
+                {trade.quantity && (
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:10, color:'#555C70' }}>Qté</div>
+                    <div style={{ fontSize:12, color:'#8F94A3', fontFamily:'monospace' }}>{trade.quantity}</div>
+                  </div>
+                )}
+                {/* PnL */}
+                <div style={{ textAlign:'right', minWidth:80 }}>
+                  <div style={{ fontSize:10, color:'#555C70' }}>{isOpen ? 'Non réalisé' : 'P&L'}</div>
+                  <div style={{ fontSize:14, fontWeight:700, color:pnlColor, fontFamily:'monospace' }}>{fmtPnL(pnl)}</div>
+                </div>
+                {/* Delete */}
+                <button onClick={() => { if(confirm('Supprimer ce trade ?')) deleteTrade(trade.id) }} style={{ width:28, height:28, borderRadius:6, border:'1px solid #2A2F3E', background:'none', cursor:'pointer', color:'#555C70', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Add Trade Modal */}
+      {showAdd && <AddTradeModal systems={systems} onClose={() => setShowAdd(false)} />}
+    </div>
+  )
+}
+
+// ── Add Trade Modal ────────────────────────────────────────────────────────
+
+function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose: () => void }) {
+  const [form, setForm] = useState({
+    symbol: '', type: 'Long' as 'Long'|'Short',
+    entryPrice: '', exitPrice: '', quantity: '',
+    leverage: '1', session: 'US' as 'US'|'Asia'|'Europe',
+    orderRole: 'Taker' as 'Maker'|'Taker',
+    systemId: systems[0]?.id ?? '',
+    status: 'closed' as 'open'|'closed',
+    notes: '', flashPnLNet: '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!form.symbol || !form.systemId) return
+    setSaving(true)
+    try {
+      const trade: Trade = {
+        id: crypto.randomUUID(),
+        date: new Date(),
+        symbol: form.symbol.toUpperCase(),
+        type: form.type,
+        entryPrice: form.entryPrice ? parseFloat(form.entryPrice) : undefined,
+        exitPrice:  form.exitPrice  ? parseFloat(form.exitPrice)  : undefined,
+        quantity:   form.quantity   ? parseFloat(form.quantity)   : undefined,
+        leverage:   parseFloat(form.leverage) || 1,
+        exchangeId: crypto.randomUUID(),
+        orderRole:  form.orderRole,
+        systemId:   form.systemId,
+        session:    form.session,
+        flashPnLNet: form.flashPnLNet ? parseFloat(form.flashPnLNet) : undefined,
+        notes:      form.notes || undefined,
+        tags:       [],
+        status:     form.status,
+      }
+      await createTrade(trade)
+      onClose()
+    } catch(e) { alert((e as Error).message) }
+    finally { setSaving(false) }
+  }
+
+  const inp = (style?: object) => ({
+    background:'#1C2130', border:'1px solid #2A2F3E', borderRadius:8,
+    padding:'8px 10px', color:'#F0F3FF', fontSize:13, outline:'none', width:'100%', ...style,
+  })
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+      <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:480, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
+          <span style={{ fontSize:16, fontWeight:700, color:'#F0F3FF' }}>Nouveau Trade</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:18 }}>✕</button>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          {[
+            { label:'Symbole', key:'symbol', placeholder:'BTCUSDT' },
+            { label:'Prix entrée', key:'entryPrice', placeholder:'71000' },
+            { label:'Prix sortie', key:'exitPrice', placeholder:'72000' },
+            { label:'Quantité', key:'quantity', placeholder:'0.01' },
+            { label:'Levier', key:'leverage', placeholder:'1' },
+            { label:'P&L net (optionnel)', key:'flashPnLNet', placeholder:'150.00' },
+          ].map(({ label, key, placeholder }) => (
+            <div key={key}>
+              <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{label}</div>
+              <input value={(form as Record<string, string>)[key]} onChange={e => setForm(p => ({...p, [key]: e.target.value}))} placeholder={placeholder} style={inp()} />
+            </div>
+          ))}
+          {/* Selects */}
+          {[
+            { label:'Direction', key:'type', options:['Long','Short'] },
+            { label:'Statut', key:'status', options:['closed','open'] },
+            { label:'Session', key:'session', options:['US','Asia','Europe'] },
+            { label:'Rôle', key:'orderRole', options:['Taker','Maker'] },
+          ].map(({ label, key, options }) => (
+            <div key={key}>
+              <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{label}</div>
+              <select value={(form as Record<string, string>)[key]} onChange={e => setForm(p => ({...p, [key]: e.target.value}))} style={{...inp(), cursor:'pointer'}}>
+                {options.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          ))}
+          {systems.length > 0 && (
+            <div style={{ gridColumn:'span 2' }}>
+              <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>Système</div>
+              <select value={form.systemId} onChange={e => setForm(p => ({...p, systemId: e.target.value}))} style={{...inp(), cursor:'pointer'}}>
+                {systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div style={{ gridColumn:'span 2' }}>
+            <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>Notes</div>
+            <textarea value={form.notes} onChange={e => setForm(p => ({...p, notes: e.target.value}))} placeholder="Notes optionnelles..." rows={2} style={{...inp(), resize:'vertical'}} />
+          </div>
+        </div>
+        <button onClick={save} disabled={saving || !form.symbol} style={{ width:'100%', marginTop:16, padding:'10px', borderRadius:10, border:'none', background: form.symbol?'#00E5FF':'#1C2130', color: form.symbol?'#0D1117':'#555C70', fontSize:14, fontWeight:600, cursor: form.symbol?'pointer':'not-allowed' }}>
+          {saving ? 'Enregistrement...' : 'Créer le trade'}
+        </button>
       </div>
     </div>
   )
