@@ -1,0 +1,489 @@
+// OscillatorCharts.tsx
+// WaveTrend Oscillator + VMC Oscillator
+// Algos miroir exact de WTCalculator.swift + VMCIndicator.swift
+
+import { useState, useEffect, useRef, useCallback } from 'react'
+
+// ── Shared types ───────────────────────────────────────────────────────────
+interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
+
+const TF_OPTIONS = [
+  { label:'5m', interval:'5m', limit:200 },
+  { label:'15m',interval:'15m',limit:200 },
+  { label:'30m',interval:'30m',limit:200 },
+  { label:'1H', interval:'1h', limit:200 },
+  { label:'2H', interval:'2h', limit:200 },
+  { label:'4H', interval:'4h', limit:200 },
+  { label:'12H',interval:'12h',limit:200 },
+  { label:'1J', interval:'1d', limit:200 },
+  { label:'1S', interval:'1w', limit:200 },
+]
+
+async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
+  const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return (await r.json() as unknown[][]).map(a => ({
+    t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
+    l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
+  }))
+}
+
+// ── Shared math helpers ────────────────────────────────────────────────────
+function emaArr(vals: number[], length: number): number[] {
+  if (!vals.length || length <= 0) return vals.map(() => 0)
+  const k = 2 / (length + 1)
+  const out = [vals[0]]
+  for (let i = 1; i < vals.length; i++) out.push(vals[i] * k + out[i-1] * (1-k))
+  return out
+}
+
+function rollingSum(arr: number[], length: number): number[] {
+  const out = new Array(arr.length).fill(0)
+  let s = 0
+  for (let i = 0; i < arr.length; i++) {
+    s += arr[i]; if (i >= length) s -= arr[i - length]; out[i] = s
+  }
+  return out
+}
+
+// ── WaveTrend Algorithm (exact miroir WTCalculator.swift) ──────────────────
+// ap = hlc3, esa = EMA(ap, n1), d = EMA(|ap-esa|, n1)
+// ci = (ap-esa)/(0.015*d), wt1 = EMA(ci, n2), wt2 = SMA(wt1, 4)
+interface WTResult { wt1: number[]; wt2: number[]; signals: (null|'bull'|'bear'|'smartBull'|'smartBear')[] }
+
+function calcWaveTrend(candles: Candle[], n1 = 10, n2 = 21, obLevel = 53, osLevel = -53): WTResult {
+  if (candles.length < n1 + n2) return { wt1: [], wt2: [], signals: [] }
+  const ap = candles.map(c => (c.h + c.l + c.c) / 3)
+  const esa: number[] = [], d: number[] = [], ci: number[] = [], tci: number[] = []
+  const a1 = 2 / (n1 + 1), a2 = 2 / (n2 + 1)
+
+  for (let i = 0; i < ap.length; i++) {
+    esa.push(i === 0 ? ap[i] : a1 * ap[i] + (1 - a1) * esa[i-1])
+    const absD = Math.abs(ap[i] - esa[i])
+    d.push(i === 0 ? absD : a1 * absD + (1 - a1) * d[i-1])
+    ci.push(d[i] !== 0 ? (ap[i] - esa[i]) / (0.015 * d[i]) : 0)
+    tci.push(i === 0 ? ci[i] : a2 * ci[i] + (1 - a2) * tci[i-1])
+  }
+
+  const wt1 = [...tci]
+  const wt2 = wt1.map((_, i) => i < 3 ? wt1[i] : (wt1[i] + wt1[i-1] + wt1[i-2] + wt1[i-3]) / 4)
+
+  // Signal detection (crossovers)
+  const signals: WTResult['signals'] = new Array(wt1.length).fill(null)
+  for (let i = 1; i < wt1.length; i++) {
+    const crossUp = wt1[i-1] <= wt2[i-1] && wt1[i] > wt2[i]
+    const crossDn = wt1[i-1] >= wt2[i-1] && wt1[i] < wt2[i]
+    if (crossUp && wt1[i] <= osLevel) signals[i] = 'smartBull'
+    else if (crossUp)                  signals[i] = 'bull'
+    else if (crossDn && wt1[i] >= obLevel) signals[i] = 'smartBear'
+    else if (crossDn)                  signals[i] = 'bear'
+  }
+
+  return { wt1, wt2, signals }
+}
+
+// ── VMC Oscillator Algorithm (exact miroir VMCIndicator.swift) ─────────────
+interface VMCResult {
+  sig: number[]; sigSignal: number[]; momentum: number[]
+  bullConfirm: boolean; bearConfirm: boolean
+  ribbonBull: boolean; ribbonBear: boolean; compression: boolean
+  status: string
+}
+
+function calcVMCOscillator(candles: Candle[], preset: 'scalping'|'swing'|'position' = 'swing'): VMCResult {
+  const EMPTY: VMCResult = { sig: [], sigSignal: [], momentum: [], bullConfirm: false, bearConfirm: false, ribbonBull: false, ribbonBear: false, compression: false, status: 'NEUTRAL' }
+  if (candles.length < 60) return EMPTY
+
+  const close = candles.map(c => c.c)
+  const high  = candles.map(c => c.h)
+  const low   = candles.map(c => c.l)
+  const vol   = candles.map(c => c.v)
+  const hlc3  = candles.map(c => (c.h + c.l + c.c) / 3)
+
+  const thresholds = preset === 'scalping' ? [40,-30] : preset === 'swing' ? [35,-25] : [30,-20]
+
+  // RSI on hlc3
+  const rsiLen = 14
+  const gains = hlc3.map((v,i) => i === 0 ? 0 : Math.max(v - hlc3[i-1], 0))
+  const losses= hlc3.map((v,i) => i === 0 ? 0 : Math.max(hlc3[i-1] - v, 0))
+  const agArr = emaArr(gains, rsiLen), alArr = emaArr(losses, rsiLen)
+  const rsi = agArr.map((g,i) => alArr[i] === 0 ? 100 : 100 - 100/(1 + g/alArr[i]))
+
+  // MFI
+  const n = candles.length
+  const tp = candles.map(c => (c.h + c.l + c.c) / 3)
+  const pmf = new Array(n).fill(0), nmf = new Array(n).fill(0)
+  for (let i = 1; i < n; i++) { const raw = tp[i]*vol[i]; if(tp[i]>tp[i-1]) pmf[i]=raw; else if(tp[i]<tp[i-1]) nmf[i]=raw }
+  const sPMF = rollingSum(pmf, 7), sNMF = rollingSum(nmf, 7)
+  const mfi = sPMF.map((p,i) => { const d=p+sNMF[i]; return d===0?50:p/d*100 })
+
+  // Stoch RSI
+  const computeStoch = (src: number[], len: number) => {
+    const out = src.map((v,i) => {
+      const win = src.slice(Math.max(0,i-len+1),i+1)
+      const mn = Math.min(...win), mx = Math.max(...win)
+      return mx-mn===0 ? 50 : (v-mn)/(mx-mn)*100
+    })
+    return emaArr(out, 2)
+  }
+  const stoch = computeStoch(rsi, rsiLen)
+
+  // Core
+  const mfiW=0.40, stochW=0.40, denom=1+mfiW+stochW
+  const core = rsi.map((r,i) => (r + mfiW*mfi[i] + stochW*stoch[i]) / denom)
+
+  const emaFast = emaArr(core, 2)
+  const emaSlow = emaArr(core, Math.round(2 * 1.75))
+
+  const transform = (arr: number[]) => arr.map(v => {
+    const tmp = (v/100 - 0.5) * 2
+    return 100 * (tmp >= 0 ? 1 : -1) * Math.pow(Math.abs(tmp), 0.75)
+  })
+
+  const sig = transform(emaFast)
+  const sigSignal = transform(emaSlow)
+  const momentum = sig.map((s,i) => s - sigSignal[i])
+
+  // Ribbon (8 EMAs of close)
+  const periods = [20,25,30,35,40,45,50,55]
+  const emas = periods.map(p => emaArr(close, p))
+  const last = close.length - 1
+  const ribbonBull = periods.slice(0,-1).every((_,i) => emas[i][last] > emas[i+1][last])
+  const ribbonBear = periods.slice(0,-1).every((_,i) => emas[i][last] < emas[i+1][last])
+
+  // Signals
+  const crossUp = last >= 1 && sig[last-1] <= sigSignal[last-1] && sig[last] > sigSignal[last]
+  const crossDn = last >= 1 && sig[last-1] >= sigSignal[last-1] && sig[last] < sigSignal[last]
+  const bullConfirm = crossUp && sig[last] < thresholds[1]
+  const bearConfirm = crossDn && sig[last] > thresholds[0]
+
+  // Compression
+  const spread = Math.abs(emas[0][last] - emas[7][last]) / Math.max(close[last], 1e-9) * 100
+  const spreadPrev = last>=1 ? Math.abs(emas[0][last-1] - emas[7][last-1]) / Math.max(close[last-1], 1e-9) * 100 : spread+1
+  const compression = spread <= 0.30 && spread < spreadPrev && sig[last] <= thresholds[1]
+
+  let status = 'NEUTRAL'
+  if (bullConfirm && (ribbonBull||compression) && momentum[last] >= 0) status = 'BUY'
+  else if (bearConfirm && (ribbonBear||compression) && momentum[last] <= 0) status = 'SELL'
+  else if (sig[last] > thresholds[0]) status = 'OVERBOUGHT'
+  else if (sig[last] < thresholds[1]) status = 'OVERSOLD'
+
+  return { sig, sigSignal, momentum, bullConfirm, bearConfirm, ribbonBull, ribbonBear, compression, status }
+}
+
+// ── Canvas helpers ─────────────────────────────────────────────────────────
+function useCanvas(draw: (ctx: CanvasRenderingContext2D, W: number, H: number) => void, deps: unknown[]) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const c = ref.current; if (!c) return
+    const ctx = c.getContext('2d')!
+    ctx.clearRect(0, 0, c.width, c.height)
+    draw(ctx, c.width, c.height)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+  return ref
+}
+
+function drawOscillator(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  main: number[], signal: number[], histogram: number[],
+  obLevel: number, osLevel: number,
+  mainColor: string, signalColor: string,
+  histBullColor: string, histBearColor: string,
+  dots?: { i: number; type: string }[]
+) {
+  ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+  const tail = Math.min(main.length, 150)
+  const slice = (a: number[]) => a.slice(-tail)
+  const m = slice(main), s = slice(signal), h = slice(histogram)
+  if (m.length < 2) return
+
+  const allVals = [...m, ...s, ...h, obLevel, osLevel]
+  const minV = Math.min(...allVals) * 1.1, maxV = Math.max(...allVals) * 1.1
+  const range = maxV - minV || 1
+  const yp = (v: number) => H - ((v - minV) / range) * H
+  const xp = (i: number) => (i / (m.length - 1)) * W
+
+  // OB/OS zones
+  ctx.fillStyle = 'rgba(255,59,48,0.06)'
+  const obY = yp(obLevel), topY = yp(maxV)
+  ctx.fillRect(0, topY, W, obY - topY)
+  ctx.fillStyle = 'rgba(34,199,89,0.06)'
+  const osY = yp(osLevel), botY = yp(minV)
+  ctx.fillRect(0, osY, W, botY - osY)
+
+  // Zero + threshold lines
+  const zY = yp(0)
+  ctx.setLineDash([3,3]); ctx.strokeStyle = '#2A2F3E'; ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(0, zY); ctx.lineTo(W, zY); ctx.stroke()
+  ;[obLevel, osLevel].forEach(l => {
+    const ly = yp(l)
+    ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(W, ly); ctx.stroke()
+  })
+  ctx.setLineDash([])
+
+  // Histogram bars
+  const barW = W / m.length
+  h.forEach((v, i) => {
+    const x = xp(i), y = v >= 0 ? yp(v) : zY, bH = Math.abs(yp(v) - zY)
+    ctx.fillStyle = v >= 0 ? histBullColor : histBearColor
+    ctx.fillRect(x - barW/2 + 0.5, y, barW - 1, bH || 1)
+  })
+
+  // Signal line
+  ctx.beginPath(); ctx.strokeStyle = signalColor; ctx.lineWidth = 1.2
+  s.forEach((v, i) => i === 0 ? ctx.moveTo(xp(i), yp(v)) : ctx.lineTo(xp(i), yp(v)))
+  ctx.stroke()
+
+  // Main line
+  ctx.beginPath(); ctx.strokeStyle = mainColor; ctx.lineWidth = 2
+  m.forEach((v, i) => i === 0 ? ctx.moveTo(xp(i), yp(v)) : ctx.lineTo(xp(i), yp(v)))
+  ctx.stroke()
+
+  // Dots for signals
+  if (dots) {
+    const offset = main.length - tail
+    dots.filter(d => d.i >= offset).forEach(d => {
+      const i = d.i - offset
+      const cx = xp(i), cy = yp(m[i])
+      const color = d.type.includes('bull') || d.type === 'smartBull' ? '#00E5FF' : '#FF3B30'
+      const isSmart = d.type.includes('smart') || d.type.includes('Smart')
+      ctx.beginPath()
+      ctx.arc(cx, cy, isSmart ? 5 : 3, 0, Math.PI * 2)
+      ctx.fillStyle = color; ctx.fill()
+      if (isSmart) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke() }
+    })
+  }
+}
+
+// ── WaveTrend Chart ────────────────────────────────────────────────────────
+export function WaveTrendChart({ symbol }: { symbol: string }) {
+  const [tf, setTf] = useState(TF_OPTIONS[3]) // 1H default
+  const [result, setResult] = useState<WTResult | null>(null)
+  const [status, setStatus] = useState<'loading'|'ready'|'error'>('loading')
+  const [currentWT1, setCurrentWT1] = useState(0)
+  const [currentWT2, setCurrentWT2] = useState(0)
+  const obLevel = 53, osLevel = -53
+
+  const load = useCallback(async () => {
+    setStatus('loading')
+    try {
+      const candles = await fetchCandles(symbol, tf.interval, tf.limit)
+      const r = calcWaveTrend(candles, 10, 21, obLevel, osLevel)
+      setResult(r)
+      setCurrentWT1(r.wt1[r.wt1.length - 1] ?? 0)
+      setCurrentWT2(r.wt2[r.wt2.length - 1] ?? 0)
+      setStatus('ready')
+    } catch { setStatus('error') }
+  }, [symbol, tf])
+
+  useEffect(() => { load() }, [load])
+
+  const dots = result ? result.signals.map((s, i) => s ? { i, type: s } : null).filter(Boolean) as { i: number; type: string }[] : []
+
+  const canvasRef = useCanvas((ctx, W, H) => {
+    if (!result || result.wt1.length < 2) return
+    const momentum = result.wt1.map((v, i) => v - result.wt2[i])
+    drawOscillator(
+      ctx, W, H,
+      result.wt1, result.wt2, momentum,
+      obLevel, osLevel,
+      '#37D7FF', '#FF9500',
+      'rgba(34,199,89,0.5)', 'rgba(255,59,48,0.5)',
+      dots
+    )
+  }, [result])
+
+  const statusLabel = () => {
+    if (!result) return null
+    const last = result.wt1.length - 1
+    const sig = result.signals[last]
+    if (sig === 'smartBull') return { label: 'Smart Bullish', color: '#00E5FF' }
+    if (sig === 'bull')       return { label: 'Bullish Reversal', color: '#22C759' }
+    if (sig === 'smartBear')  return { label: 'Smart Bearish', color: '#FF3B30' }
+    if (sig === 'bear')       return { label: 'Bearish Reversal', color: '#FF3B30' }
+    if (currentWT1 > obLevel) return { label: 'Overbought', color: '#FF3B30' }
+    if (currentWT1 < osLevel) return { label: 'Oversold', color: '#22C759' }
+    return { label: 'Neutral', color: '#8F94A3' }
+  }
+  const badge = statusLabel()
+
+  return (
+    <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,149,0,0.3),transparent)', position: 'relative' as 'relative' }} />
+
+      {/* Header */}
+      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#FF9500,#FF9500aa)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>〜</div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F3FF' }}>WaveTrend Oscillator</div>
+          <div style={{ fontSize: 10, color: '#F59714', opacity: 0.8 }}>{symbol}</div>
+        </div>
+        {badge && (
+          <div style={{ fontSize: 10, fontWeight: 700, color: badge.color, background: `${badge.color}20`, padding: '2px 10px', borderRadius: 20, border: `1px solid ${badge.color}50` }}>
+            {badge.label}
+          </div>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
+          {result && (
+            <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>
+              <span style={{ color: '#37D7FF' }}>WT1: {currentWT1.toFixed(1)}</span>
+              <span style={{ color: '#FF9500' }}>WT2: {currentWT2.toFixed(1)}</span>
+            </div>
+          )}
+          <button onClick={load} style={{ background: '#1C2130', border: '1px solid #2A2F3E', borderRadius: 7, padding: '4px 9px', cursor: 'pointer', fontSize: 11, color: '#8F94A3' }}>↻</button>
+        </div>
+      </div>
+
+      {/* TF selector */}
+      <div style={{ display: 'flex', gap: 4, padding: '0 16px 10px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+        {TF_OPTIONS.map(t => (
+          <button key={t.label} onClick={() => setTf(t)} style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 500, cursor: 'pointer', border: `1px solid ${t.label === tf.label ? '#FF9500' : '#2A2F3E'}`, background: t.label === tf.label ? 'rgba(255,149,0,0.15)' : '#1C2130', color: t.label === tf.label ? '#FF9500' : '#555C70', whiteSpace: 'nowrap' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Canvas */}
+      <div style={{ padding: '0 16px 16px', position: 'relative' }}>
+        {status === 'loading' && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,12,20,0.8)', borderRadius: 8, zIndex: 2, gap: 8 }}>
+            <div style={{ width: 16, height: 16, border: '2px solid #2A2F3E', borderTopColor: '#FF9500', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+            <span style={{ fontSize: 11, color: '#555C70' }}>Calcul WaveTrend...</span>
+          </div>
+        )}
+        <canvas ref={canvasRef} width={800} height={180} style={{ width: '100%', height: 180, display: 'block', borderRadius: 8 }} />
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
+          {[
+            { color: '#37D7FF', label: 'WT1' },
+            { color: '#FF9500', label: 'WT2 (Signal)' },
+            { color: '#22C759', label: 'Momentum +' },
+            { color: '#FF3B30', label: 'Momentum −' },
+            { color: '#00E5FF', label: '● Smart Reversal' },
+          ].map(({ color, label }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+              <span style={{ fontSize: 9, color: '#555C70' }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── VMC Oscillator Chart ───────────────────────────────────────────────────
+export function VMCOscillatorChart({ symbol }: { symbol: string }) {
+  const [tf, setTf]         = useState(TF_OPTIONS[3]) // 1H default
+  const [result, setResult] = useState<VMCResult | null>(null)
+  const [status, setStatus] = useState<'loading'|'ready'|'error'>('loading')
+  const [preset, setPreset] = useState<'scalping'|'swing'|'position'>('swing')
+  const obLevel = 35, osLevel = -25
+
+  const load = useCallback(async () => {
+    setStatus('loading')
+    try {
+      const candles = await fetchCandles(symbol, tf.interval, tf.limit)
+      const r = calcVMCOscillator(candles, preset)
+      setResult(r)
+      setStatus('ready')
+    } catch { setStatus('error') }
+  }, [symbol, tf, preset])
+
+  useEffect(() => { load() }, [load])
+
+  const lastSig = result?.sig[result.sig.length - 1] ?? 0
+  const lastMom = result?.momentum[result.momentum.length - 1] ?? 0
+
+  const canvasRef = useCanvas((ctx, W, H) => {
+    if (!result || result.sig.length < 2) return
+    drawOscillator(
+      ctx, W, H,
+      result.sig, result.sigSignal, result.momentum,
+      obLevel, osLevel,
+      '#37D7FF', '#FF9500',
+      'rgba(34,199,89,0.55)', 'rgba(255,59,48,0.55)'
+    )
+  }, [result])
+
+  const statusColor = result?.status === 'BUY' ? '#22C759' : result?.status === 'SELL' ? '#FF3B30' : result?.status === 'OVERBOUGHT' ? '#FF3B30' : result?.status === 'OVERSOLD' ? '#22C759' : '#8F94A3'
+
+  return (
+    <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#FF9500,#FF9500aa)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white' }}>V</div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F3FF' }}>VMC Oscillator</div>
+          <div style={{ fontSize: 10, color: '#F59714', opacity: 0.8 }}>{symbol}</div>
+        </div>
+        {result && (
+          <div style={{ fontSize: 10, fontWeight: 700, color: statusColor, background: `${statusColor}20`, padding: '2px 10px', borderRadius: 20, border: `1px solid ${statusColor}50` }}>
+            {result.status}
+          </div>
+        )}
+        {result?.ribbonBull && <div style={{ fontSize: 9, fontWeight: 700, color: '#22C759', background: 'rgba(34,199,89,0.12)', padding: '1px 7px', borderRadius: 10, border: '1px solid rgba(34,199,89,0.3)' }}>BULL</div>}
+        {result?.ribbonBear && <div style={{ fontSize: 9, fontWeight: 700, color: '#FF3B30', background: 'rgba(255,59,48,0.12)', padding: '1px 7px', borderRadius: 10, border: '1px solid rgba(255,59,48,0.3)' }}>BEAR</div>}
+        {result?.compression && <div style={{ fontSize: 9, fontWeight: 700, color: '#FF9500', background: 'rgba(255,149,0,0.12)', padding: '1px 7px', borderRadius: 10, border: '1px solid rgba(255,149,0,0.3)' }}>⟳ COMP</div>}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
+          {result && (
+            <div style={{ display: 'flex', gap: 12, fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>
+              <span style={{ color: '#37D7FF' }}>sig: {lastSig.toFixed(1)}</span>
+              <span style={{ color: lastMom >= 0 ? '#22C759' : '#FF3B30' }}>mom: {lastMom >= 0 ? '+' : ''}{lastMom.toFixed(1)}</span>
+            </div>
+          )}
+          <button onClick={load} style={{ background: '#1C2130', border: '1px solid #2A2F3E', borderRadius: 7, padding: '4px 9px', cursor: 'pointer', fontSize: 11, color: '#8F94A3' }}>↻</button>
+        </div>
+      </div>
+
+      {/* Preset + TF selectors */}
+      <div style={{ display: 'flex', gap: 8, padding: '0 16px 8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', background: '#1C2130', borderRadius: 8, padding: 2, gap: 1 }}>
+          {(['scalping','swing','position'] as const).map(p => (
+            <button key={p} onClick={() => setPreset(p)} style={{ padding: '2px 9px', borderRadius: 6, fontSize: 9, fontWeight: 500, cursor: 'pointer', border: 'none', background: preset === p ? '#FF9500' : 'transparent', color: preset === p ? '#0D1117' : '#555C70' }}>
+              {p}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 3, overflowX: 'auto', scrollbarWidth: 'none' }}>
+          {TF_OPTIONS.map(t => (
+            <button key={t.label} onClick={() => setTf(t)} style={{ padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 500, cursor: 'pointer', border: `1px solid ${t.label === tf.label ? '#FF9500' : '#2A2F3E'}`, background: t.label === tf.label ? 'rgba(255,149,0,0.15)' : '#1C2130', color: t.label === tf.label ? '#FF9500' : '#555C70', whiteSpace: 'nowrap' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Canvas */}
+      <div style={{ padding: '0 16px 16px', position: 'relative' }}>
+        {status === 'loading' && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,12,20,0.8)', borderRadius: 8, zIndex: 2, gap: 8 }}>
+            <div style={{ width: 16, height: 16, border: '2px solid #2A2F3E', borderTopColor: '#FF9500', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+            <span style={{ fontSize: 11, color: '#555C70' }}>Calcul VMC Oscillator...</span>
+          </div>
+        )}
+        <canvas ref={canvasRef} width={800} height={180} style={{ width: '100%', height: 180, display: 'block', borderRadius: 8 }} />
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+          {[
+            { color: '#37D7FF', label: 'VMC Sig' },
+            { color: '#FF9500', label: 'Signal Line' },
+            { color: '#22C759', label: 'Momentum +' },
+            { color: '#FF3B30', label: 'Momentum −' },
+            { color: '#FF9500', label: `OB: ${obLevel}` },
+            { color: '#22C759', label: `OS: ${osLevel}` },
+          ].map(({ color, label }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+              <span style={{ fontSize: 9, color: '#555C70' }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}

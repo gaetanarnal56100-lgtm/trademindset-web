@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
+import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Mode = 'micro' | 'structure' | 'derivees'
@@ -583,6 +584,12 @@ export default function AnalysePage() {
       {/* MTF Dashboard RSI + VMC — au dessus de la heatmap */}
       <div style={{marginBottom:16}}>
         <MTFDashboard symbol={symbol} />
+      </div>
+
+      {/* WaveTrend + VMC Oscillator */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+        <WaveTrendChart symbol={symbol} />
+        <VMCOscillatorChart symbol={symbol} />
       </div>
 
       {/* Heatmap */}
