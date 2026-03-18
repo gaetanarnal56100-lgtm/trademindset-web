@@ -35,19 +35,59 @@ function fmtU(v:number){const a=Math.abs(v);if(a>=1e9)return`${(v/1e9).toFixed(1
 function fmtP(p:number){return p>=10000?`$${p.toFixed(0)}`:p>=1000?`$${p.toFixed(1)}`:`$${p.toFixed(3)}`}
 function inSeg(usd:number,seg:Seg){if(seg==='all')return usd>=100;const r={small:[100,1000],medium:[1e3,1e4],large:[1e4,1e5],institutional:[1e5,1e6],whales:[1e6,1e8]}[seg] as [number,number];return usd>=r[0]&&usd<r[1]}
 
-// ── Symbol Search (vraie API) ──────────────────────────────────────────────
-const CRYPTO_POPULAR: SearchResult[] = [
-  {symbol:'BTCUSDT', name:'Bitcoin',  type:'crypto', icon:'₿', exchange:'Binance'},
-  {symbol:'ETHUSDT', name:'Ethereum', type:'crypto', icon:'Ξ', exchange:'Binance'},
-  {symbol:'SOLUSDT', name:'Solana',   type:'crypto', icon:'◎', exchange:'Binance'},
-  {symbol:'BNBUSDT', name:'BNB',      type:'crypto', icon:'B', exchange:'Binance'},
-  {symbol:'XRPUSDT', name:'XRP',      type:'crypto', icon:'✕', exchange:'Binance'},
-  {symbol:'AVAXUSDT',name:'Avalanche',type:'crypto', icon:'A', exchange:'Binance'},
-  {symbol:'DOGEUSDT',name:'Dogecoin', type:'crypto', icon:'Ð', exchange:'Binance'},
-  {symbol:'ADAUSDT', name:'Cardano',  type:'crypto', icon:'A', exchange:'Binance'},
-  {symbol:'LTCUSDT', name:'Litecoin', type:'crypto', icon:'Ł', exchange:'Binance'},
-  {symbol:'LINKUSDT',name:'Chainlink',type:'crypto', icon:'⬡', exchange:'Binance'},
-]
+// ── Symbol Search via Cloud Functions Firebase ────────────────────────────
+// Miroir exact de CloudFunctionService.swift : searchSymbols (TwelveData) + searchFinnhubSymbols
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import app from '@/services/firebase/config'
+
+const fbFunctions = getFunctions(app, 'europe-west1')
+
+// Binance public — recherche crypto sans token
+async function searchBinanceCrypto(query: string): Promise<SearchResult[]> {
+  const q = query.toUpperCase().trim()
+  try {
+    // exchangeInfo filtre par prefix — retourne tous les symboles qui matchent
+    const r = await fetch(`https://api.binance.com/api/v3/exchangeInfo`)
+    if (!r.ok) return []
+    const d = await r.json()
+    const matches = (d.symbols as {symbol:string;baseAsset:string;quoteAsset:string;status:string}[])
+      .filter(s => s.status === 'TRADING' && s.quoteAsset === 'USDT' && (s.symbol.startsWith(q) || s.baseAsset.startsWith(q)))
+      .slice(0, 12)
+    return matches.map(s => ({
+      symbol: s.symbol,
+      name: s.baseAsset,
+      type: 'crypto' as const,
+      exchange: 'Binance',
+      icon: '🪙',
+    }))
+  } catch { return [] }
+}
+
+// Cloud Functions — uniquement pour actions et forex (évite de brûler des tokens sur les cryptos)
+async function searchNonCrypto(query: string): Promise<SearchResult[]> {
+  try {
+    const fn = httpsCallable<{query:string},{result:{symbol:string;description?:string;displaySymbol?:string;type?:string}[]}>(fbFunctions, 'searchFinnhubSymbols')
+    const res = await fn({ query })
+    return (res.data.result || [])
+      .filter(item => {
+        const t = (item.type||'').toLowerCase()
+        // Exclure les cryptos — déjà couverts par Binance
+        return !t.includes('crypto') && !t.includes('digital')
+      })
+      .slice(0, 10)
+      .map(item => {
+        const t = (item.type||'').toLowerCase()
+        const type: SearchResult['type'] = t.includes('forex')||t.includes('fx') ? 'forex' : 'stock'
+        return {
+          symbol: item.symbol,
+          name: item.description || item.symbol,
+          type,
+          exchange: item.displaySymbol,
+          icon: type==='forex'?'💱':'📈',
+        }
+      })
+  } catch { return [] }
+}
 
 function useSymbolSearch(q: string) {
   const [results, setResults] = useState<SearchResult[]>(CRYPTO_POPULAR)
@@ -59,33 +99,26 @@ function useSymbolSearch(q: string) {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       setLoading(true)
-      const query = q.toUpperCase().trim()
-      const res: SearchResult[] = []
-      // 1. Crypto Binance — filtre local + fetch exchange info
-      const local = CRYPTO_POPULAR.filter(s => s.symbol.includes(query)||s.name.toUpperCase().includes(query))
-      res.push(...local)
-      // 2. Si potentiellement un actif Binance inconnu, cherche via exchangeInfo
-      if (query.length >= 3 && !query.includes(' ')) {
-        try {
-          const r = await fetch(`https://api.binance.com/api/v3/exchangeInfo?symbol=${query}USDT`)
-          if (r.ok) {
-            const d = await r.json()
-            if (d.symbols?.length && !res.find(x => x.symbol === d.symbols[0].symbol)) {
-              res.push({symbol: d.symbols[0].symbol, name: d.symbols[0].baseAsset, type:'crypto', icon:'🪙', exchange:'Binance'})
-            }
-          }
-        } catch {/**/}
-        // 3. Essaie aussi directement QUERYUSDT
-        try {
-          const r2 = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${query}USDT`)
-          if (r2.ok && !res.find(x => x.symbol===`${query}USDT`)) {
-            res.push({symbol:`${query}USDT`, name:query, type:'crypto', icon:'🪙', exchange:'Binance'})
-          }
-        } catch {/**/}
+      const query = q.trim()
+      // Crypto via Binance (public, sans token)
+      const cryptoResults = await searchBinanceCrypto(query)
+      // Actions/Forex via Cloud Function Finnhub — seulement si pas assez de résultats crypto
+      // ou si la query ressemble à une action (pas de "USDT", lettres seulement)
+      const looksLikeStock = !query.toUpperCase().includes('USDT') && query.length <= 5
+      const nonCryptoResults = looksLikeStock && cryptoResults.length < 3
+        ? await searchNonCrypto(query)
+        : []
+      // Fusionne
+      const seen = new Set<string>()
+      const merged: SearchResult[] = []
+      for (const r of [...cryptoResults, ...nonCryptoResults]) {
+        if (!seen.has(r.symbol)) { seen.add(r.symbol); merged.push(r) }
       }
-      setResults(res.slice(0,10))
+      setResults(merged.length > 0 ? merged : CRYPTO_POPULAR.filter(s =>
+        s.symbol.includes(query.toUpperCase()) || s.name.toUpperCase().includes(query.toUpperCase())
+      ))
       setLoading(false)
-    }, 350)
+    }, 400)
   }, [q])
 
   return { results, loading }
