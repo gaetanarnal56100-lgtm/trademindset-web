@@ -4,6 +4,51 @@
 // Score combiné = RSI×40% + VMC×60%
 
 import { useState, useEffect, useCallback } from 'react'
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import app from '@/services/firebase/config'
+
+const fbFn = getFunctions(app, 'europe-west1')
+
+function isCrypto(symbol: string) { return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol) }
+
+const TF_TO_TWELVEDATA: Record<string, string> = {
+  '1m':'1min','5m':'5min','15m':'15min','30m':'30min','1h':'1h','2h':'2h',
+  '4h':'4h','12h':'12h','1d':'1day','1w':'1week','1M':'1month',
+}
+
+async function fetchTF(symbol: string, interval: string, limit: number) {
+  const sym = symbol.toUpperCase()
+
+  if (isCrypto(sym)) {
+    // Futures first
+    try {
+      const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${interval}&limit=${limit}`)
+      if (r.ok) {
+        const d = await r.json() as unknown[][]
+        if (Array.isArray(d) && d.length > 10)
+          return d.map(a => ({ o:parseFloat(a[1] as string), h:parseFloat(a[2] as string), l:parseFloat(a[3] as string), c:parseFloat(a[4] as string) }))
+      }
+    } catch {/**/}
+    // Spot fallback
+    try {
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`)
+      if (r.ok) {
+        const d = await r.json() as unknown[][]
+        if (Array.isArray(d) && d.length > 10)
+          return d.map(a => ({ o:parseFloat(a[1] as string), h:parseFloat(a[2] as string), l:parseFloat(a[3] as string), c:parseFloat(a[4] as string) }))
+      }
+    } catch {/**/}
+    throw new Error(`${sym} introuvable`)
+  }
+
+  // Non-crypto → Cloud Function fetchTimeSeries (TwelveData)
+  const tdInterval = TF_TO_TWELVEDATA[interval] || '1h'
+  const fn = httpsCallable<Record<string,unknown>, {values?:{open:string;high:string;low:string;close:string}[]}>(fbFn, 'fetchTimeSeries')
+  const res = await fn({ symbol: sym, interval: tdInterval, outputSize: limit })
+  const values = res.data.values || []
+  if (!values.length) throw new Error(`Pas de données pour ${sym}`)
+  return values.map(v => ({ o:parseFloat(v.open), h:parseFloat(v.high), l:parseFloat(v.low), c:parseFloat(v.close) }))
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -135,16 +180,6 @@ const SIGNAL_CFG: Record<Signal, { label: string; color: string; bg: string }> =
 
 // ── Fetch + Compute ────────────────────────────────────────────────────────
 
-async function fetchTF(symbol: string, interval: string, limit: number) {
-  const r = await fetch(
-    `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-  )
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  return (await r.json() as unknown[][]).map(a => ({
-    o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
-    l: parseFloat(a[3] as string), c: parseFloat(a[4] as string),
-  }))
-}
 
 async function computeMTF(symbol: string): Promise<MTFSnapshot> {
   const results = await Promise.allSettled(
