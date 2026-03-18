@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
+import MTFDashboard from './MTFDashboard'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type Mode = 'micro' | 'structure' | 'derivees'
@@ -577,6 +578,11 @@ export default function AnalysePage() {
           <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>Liquidation Heatmap · CVD Live · Structure · Dérivés</p>
         </div>
         <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+      </div>
+
+      {/* MTF Dashboard RSI + VMC — au dessus de la heatmap */}
+      <div style={{marginBottom:16}}>
+        <MTFDashboard symbol={symbol} />
       </div>
 
       {/* Heatmap */}
