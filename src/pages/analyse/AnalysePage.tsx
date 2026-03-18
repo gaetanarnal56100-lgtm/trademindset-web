@@ -42,6 +42,20 @@ import app from '@/services/firebase/config'
 
 const fbFunctions = getFunctions(app, 'europe-west1')
 
+// ── Données populaires par défaut (affichées avant toute recherche) ────────
+const CRYPTO_POPULAR: SearchResult[] = [
+  {symbol:'BTCUSDT', name:'Bitcoin',   type:'crypto', exchange:'Binance', icon:'₿'},
+  {symbol:'ETHUSDT', name:'Ethereum',  type:'crypto', exchange:'Binance', icon:'Ξ'},
+  {symbol:'SOLUSDT', name:'Solana',    type:'crypto', exchange:'Binance', icon:'◎'},
+  {symbol:'BNBUSDT', name:'BNB',       type:'crypto', exchange:'Binance', icon:'B'},
+  {symbol:'XRPUSDT', name:'XRP',       type:'crypto', exchange:'Binance', icon:'✕'},
+  {symbol:'AVAXUSDT',name:'Avalanche', type:'crypto', exchange:'Binance', icon:'A'},
+  {symbol:'DOGEUSDT',name:'Dogecoin',  type:'crypto', exchange:'Binance', icon:'Ð'},
+  {symbol:'ADAUSDT', name:'Cardano',   type:'crypto', exchange:'Binance', icon:'A'},
+  {symbol:'LTCUSDT', name:'Litecoin',  type:'crypto', exchange:'Binance', icon:'Ł'},
+  {symbol:'LINKUSDT',name:'Chainlink', type:'crypto', exchange:'Binance', icon:'⬡'},
+]
+
 // Binance public — recherche crypto sans token
 async function searchBinanceCrypto(query: string): Promise<SearchResult[]> {
   const q = query.toUpperCase().trim()
