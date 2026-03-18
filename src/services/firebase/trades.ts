@@ -1,94 +1,93 @@
 // src/services/firebase/trades.ts
-// Miroir de Services/Storage/Firestore/FirestoreTradeStore.swift
+// Compatible avec appStore (uid passé en paramètre) ET firestore/index.ts (uid depuis auth)
 
+import { db } from './config'
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc,
-  getDocs, getDoc, query, where, orderBy,
-  onSnapshot, serverTimestamp, Timestamp,
+  collection, doc, setDoc, deleteDoc,
+  query, orderBy, onSnapshot, Timestamp,
   type Unsubscribe,
 } from 'firebase/firestore'
-import { db } from './config'
-import type { Trade } from '@/types'
 
-function col(uid: string) {
-  return collection(db, 'users', uid, 'trades')
-}
-
-function toFirestore(t: Omit<Trade, 'id' | 'createdAt' | 'updatedAt'>) {
-  return {
-    ...t,
-    entryDate: Timestamp.fromDate(t.entryDate),
-    exitDate:  t.exitDate ? Timestamp.fromDate(t.exitDate) : null,
-    updatedAt: serverTimestamp(),
-  }
-}
-
-function fromFirestore(id: string, d: Record<string, unknown>): Trade {
-  return {
-    ...(d as Omit<Trade, 'id' | 'entryDate' | 'exitDate' | 'createdAt' | 'updatedAt'>),
-    id,
-    entryDate:  (d.entryDate as Timestamp)?.toDate() ?? new Date(),
-    exitDate:   (d.exitDate as Timestamp)?.toDate(),
-    createdAt:  (d.createdAt as Timestamp)?.toDate() ?? new Date(),
-    updatedAt:  (d.updatedAt as Timestamp)?.toDate() ?? new Date(),
-  }
-}
-
-// ── CRUD ───────────────────────────────────────────────────────────────────
-
-export async function createTrade(uid: string, trade: Omit<Trade, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) {
-  const ref = await addDoc(col(uid), {
-    ...toFirestore(trade),
-    userId:    uid,
-    createdAt: serverTimestamp(),
-  })
-  return ref.id
-}
-
-export async function updateTrade(uid: string, trade: Trade) {
-  await updateDoc(doc(col(uid), trade.id), toFirestore(trade))
-}
-
-export async function deleteTrade(uid: string, tradeId: string) {
-  await deleteDoc(doc(col(uid), tradeId))
-}
-
-export async function fetchTrades(uid: string): Promise<Trade[]> {
-  const snap = await getDocs(query(col(uid), orderBy('entryDate', 'desc')))
-  return snap.docs.map(d => fromFirestore(d.id, d.data()))
-}
-
-export async function fetchTrade(uid: string, tradeId: string): Promise<Trade | null> {
-  const snap = await getDoc(doc(col(uid), tradeId))
-  return snap.exists() ? fromFirestore(snap.id, snap.data()) : null
-}
-
-// ── Real-time listener ─────────────────────────────────────────────────────
-
-export function subscribeToTrades(
+// ── subscribeToTrades (utilisé par appStore) ───────────────────────────────
+export const subscribeToTrades = (
   uid: string,
-  onUpdate: (trades: Trade[]) => void,
+  callback: (trades: any[]) => void,
   onError?: (err: Error) => void
-): Unsubscribe {
-  return onSnapshot(
-    query(col(uid), orderBy('entryDate', 'desc')),
-    snap => onUpdate(snap.docs.map(d => fromFirestore(d.id, d.data()))),
-    err  => onError?.(err)
-  )
+): Unsubscribe | undefined => {
+  if (!uid) return undefined
+
+  const ref = collection(db, 'users', uid, 'trades')
+  const q   = query(ref, orderBy('date', 'desc'))
+
+  return onSnapshot(q, (snapshot) => {
+    const trades = snapshot.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id:         doc.id,
+        date:       (data.date as Timestamp)?.toDate() ?? new Date(),
+        closedAt:   (data.closedAt as Timestamp)?.toDate(),
+        symbol:     data.symbol,
+        type:       data.type,
+        entryPrice: data.entryPrice,
+        exitPrice:  data.exitPrice,
+        quantity:   data.quantity,
+        leverage:   data.leverage ?? 1,
+        exchangeId: data.exchangeId,
+        orderRole:  data.orderRole,
+        systemId:   data.systemId,
+        session:    data.session,
+        status:     data.status ?? 'closed',
+        flashPnLNet:data.flashPnLNet,
+        notes:      data.notes,
+        tags:       data.tags ?? [],
+        pnl: data.flashPnLNet ??
+          (data.exitPrice && data.entryPrice && data.quantity
+            ? (data.type === 'Long' ? 1 : -1) * (data.exitPrice - data.entryPrice) * data.quantity * (data.leverage ?? 1)
+            : 0),
+      }
+    })
+    console.log('🔥 Trades Firestore:', trades.length)
+    callback(trades)
+  }, (err) => {
+    console.error('🔥 subscribeToTrades error:', err)
+    onError?.(err)
+  })
 }
 
-// ── Queries ────────────────────────────────────────────────────────────────
+// ── CRUD avec uid (utilisé par appStore) ───────────────────────────────────
 
-export async function fetchTradesBySymbol(uid: string, symbol: string): Promise<Trade[]> {
-  const snap = await getDocs(
-    query(col(uid), where('symbol', '==', symbol), orderBy('entryDate', 'desc'))
-  )
-  return snap.docs.map(d => fromFirestore(d.id, d.data()))
+function encodeTrade(trade: any): Record<string, unknown> {
+  const d: Record<string, unknown> = {
+    id:         trade.id,
+    date:       trade.date instanceof Date ? Timestamp.fromDate(trade.date) : trade.date,
+    symbol:     trade.symbol,
+    type:       trade.type,
+    leverage:   trade.leverage ?? 1,
+    exchangeId: trade.exchangeId ?? '',
+    orderRole:  trade.orderRole ?? 'Taker',
+    systemId:   trade.systemId ?? '',
+    session:    trade.session ?? 'US',
+    status:     trade.status ?? 'closed',
+    tags:       trade.tags ?? [],
+  }
+  if (trade.entryPrice  != null) d.entryPrice   = trade.entryPrice
+  if (trade.exitPrice   != null) d.exitPrice    = trade.exitPrice
+  if (trade.quantity    != null) d.quantity     = trade.quantity
+  if (trade.flashPnLNet != null) d.flashPnLNet  = trade.flashPnLNet
+  if (trade.notes       != null) d.notes        = trade.notes
+  if (trade.closedAt    != null) d.closedAt     = trade.closedAt instanceof Date ? Timestamp.fromDate(trade.closedAt) : trade.closedAt
+  return d
 }
 
-export async function fetchTradesBySystem(uid: string, systemId: string): Promise<Trade[]> {
-  const snap = await getDocs(
-    query(col(uid), where('systemId', '==', systemId), orderBy('entryDate', 'desc'))
-  )
-  return snap.docs.map(d => fromFirestore(d.id, d.data()))
+export const createTrade = async (uid: string, trade: any): Promise<void> => {
+  const id = trade.id || crypto.randomUUID()
+  await setDoc(doc(db, 'users', uid, 'trades', id), encodeTrade({ ...trade, id }))
+}
+
+export const updateTrade = async (uid: string, trade: any): Promise<void> => {
+  await setDoc(doc(db, 'users', uid, 'trades', trade.id), encodeTrade(trade), { merge: true })
+}
+
+export const deleteTrade = async (uid: string, tradeId: string): Promise<void> => {
+  await deleteDoc(doc(db, 'users', uid, 'trades', tradeId))
 }
