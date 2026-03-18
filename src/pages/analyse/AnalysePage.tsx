@@ -438,7 +438,7 @@ function PressureBar({score}:{score:number}){
 
 // ── Main Component ─────────────────────────────────────────────────────────
 export default function AnalysePage() {
-  const [symbol, setSymbol] = useState('BTCUSDT')
+  const [symbol, setSymbol] = useState('')  // Vide par défaut — l'utilisateur choisit
   const [mode,   setMode]   = useState<Mode>('micro')
 
   // CVD state
@@ -470,9 +470,11 @@ export default function AnalysePage() {
   const sealT     = useRef<ReturnType<typeof setInterval>|null>(null)
   const tpsT      = useRef<ReturnType<typeof setInterval>|null>(null)
 
-  // ── WebSocket ──
+  // ── WebSocket — crypto only ──
   useEffect(()=>{
     if(mode!=='micro')return
+    if(!symbol)return
+    if(!/USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol))return  // Non-crypto → pas de WebSocket
     let ws: WebSocket; let idx=0
     const urls=[`wss://fstream.binance.com/ws/${symbol.toLowerCase()}@aggTrade`,`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@aggTrade`]
     function connect(){
@@ -585,34 +587,43 @@ export default function AnalysePage() {
         <div>
           <h1 style={{fontSize:24,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em'}}>Analyse</h1>
           <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>
-            {isCrypto ? 'Liquidation Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Plan de Trade'}
+            {!symbol ? 'Recherchez un actif pour commencer' : isCrypto ? 'Liquidation Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Plan de Trade'}
           </p>
         </div>
         <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
       </div>
 
+      {/* État vide — aucun symbole sélectionné */}
+      {!symbol && (
+        <div style={{textAlign:'center',padding:'60px 20px',color:'#3D4254'}}>
+          <div style={{fontSize:48,marginBottom:16,opacity:0.3}}>🔍</div>
+          <div style={{fontSize:16,fontWeight:600,color:'#555C70',marginBottom:8}}>Recherchez un actif</div>
+          <div style={{fontSize:13,color:'#3D4254'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche</div>
+        </div>
+      )}
+
       {/* Plan de Trade IA — tous les actifs, en premier */}
-      <div style={{marginBottom:16}}>
+      {symbol && <div style={{marginBottom:16}}>
         <TradePlanCard
           symbol={symbol}
-          price={isCrypto ? (price||0) : 0}
+          price={0}
           mtfScore={0}
           mtfSignal="NEUTRAL"
           wtStatus="Neutral"
           vmcStatus="NEUTRAL"
         />
-      </div>
+      </div>}
 
       {/* MTF Dashboard — tous les actifs */}
-      <div style={{marginBottom:16}}>
+      {symbol && <div style={{marginBottom:16}}>
         <MTFDashboard symbol={symbol} />
-      </div>
+      </div>}
 
       {/* WaveTrend + VMC Oscillator — tous les actifs */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
         <WaveTrendChart symbol={symbol} />
         <VMCOscillatorChart symbol={symbol} />
-      </div>
+      </div>}
 
       {/* ══ CRYPTO ONLY ══ Heatmap + CVD/Structure/Dérivés */}
       {isCrypto && <>
