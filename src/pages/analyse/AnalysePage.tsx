@@ -570,7 +570,7 @@ export default function AnalysePage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F0F3FF', margin: 0 }}>Analyse</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#FF3B30', margin: 0 }}>Analyse 🔴 TEST v2</h1>
           <p style={{ fontSize: 13, color: '#8F94A3', margin: '3px 0 0' }}>Heatmap · CVD · Photo Analysis · IA</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
