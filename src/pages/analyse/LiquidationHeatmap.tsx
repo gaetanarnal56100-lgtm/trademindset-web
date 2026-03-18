@@ -5,6 +5,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 // ── Types ──────────────────────────────────────────────────────────────────
+//test
+
 
 interface Kline {
   openTime: Date; open: number; high: number
@@ -462,3 +464,4 @@ export default function LiquidationHeatmap({ symbol = 'BTCUSDT' }: { symbol?: st
     </div>
   )
 }
+
