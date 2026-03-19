@@ -513,7 +513,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   // ── Render indicator overlays ─────────────────────────────────────────
   const renderIndicators=useCallback(()=>{
     const canvas=indLayerEl.current;const chart=chartApi.current
-    if(!canvas||!chart)return
+    if(!canvas||!chart||!series.current)return
     try { chart.timeScale() } catch { return } // chart disposed guard
     const dpr = window.devicePixelRatio || 1
     canvas.width = canvas.offsetWidth * dpr
@@ -524,7 +524,10 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight)
     let tScale: any, pScale: any
-    try{tScale=chart.timeScale();pScale=chart.priceScale('right')}catch{return}
+    try{
+      tScale=chart.timeScale()
+      pScale=series.current  // use series for price<->coord in v4
+    }catch{return}
     if(!tScale||!pScale)return
     const candles=candlesRef.current;if(!candles.length)return
 
@@ -536,7 +539,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       return x
     }
     function yForPrice(p:number):number|null{
-      try{return pScale?.priceToCoordinate?.(p)??null}catch{return null}
+      try{return (pScale as any)?.priceToCoordinate?.(p)??null}catch{return null}
     }
 
     // ── SMC ───────────────────────────────────────────────────────────
@@ -675,7 +678,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const renderDrawings=useCallback(()=>{
     const canvas=overlayEl.current;const chart=chartApi.current
     if(!canvas||!chart)return
-    let _ps: any; try{chart.timeScale();_ps=chart.priceScale('right')}catch{return}
+    let _ps: any; try{chart.timeScale();_ps=series.current}catch{return}
     if(!_ps)return
     try { chart.timeScale() } catch { return } // chart disposed guard
     canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
@@ -737,7 +740,9 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     return()=>{ try{u?.()}catch{} }
   },[drawings,renderDrawings])
 
-  function yToPrice(y:number):number|null{return chartApi.current?.priceScale('right').coordinateToPrice(y)??null}
+  function yToPrice(y:number):number|null{
+    try{return series.current?.coordinateToPrice(y)??null}catch{return null}
+  }
 
   const handleClick=useCallback((e:React.MouseEvent<HTMLCanvasElement>)=>{
     if(tool==='cursor')return
