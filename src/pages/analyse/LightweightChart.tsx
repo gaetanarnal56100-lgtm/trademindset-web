@@ -401,7 +401,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
 
   function onWS(e:MessageEvent){
     try{
-      const k=JSON.parse(e.data).k;if(!k||!series.current)return
+      const k=JSON.parse(e.data).k;if(!k||!series.current||!chartApi.current)return
       series.current.update({time:Math.floor(k.t/1000) as Time,open:+k.o,high:+k.h,low:+k.l,close:+k.c})
       setLiveP(+k.c)
     }catch{}
@@ -414,6 +414,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const renderIndicators=useCallback(()=>{
     const canvas=indLayerEl.current;const chart=chartApi.current
     if(!canvas||!chart)return
+    try { chart.timeScale() } catch { return } // chart disposed guard
     canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
     const ctx=canvas.getContext('2d')!
     ctx.clearRect(0,0,canvas.width,canvas.height)
@@ -553,14 +554,16 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   useEffect(()=>{
     renderIndicators()
     const c=chartApi.current;if(!c)return
-    const u=c.timeScale().subscribeVisibleLogicalRangeChange(()=>renderIndicators())
-    return()=>u()
+    let u: (()=>void)|null = null
+    try { u=c.timeScale().subscribeVisibleLogicalRangeChange(()=>renderIndicators()) } catch{}
+    return()=>{ try{u?.()}catch{} }
   },[renderIndicators])
 
   // ── Render drawings ───────────────────────────────────────────────────
   const renderDrawings=useCallback(()=>{
     const canvas=overlayEl.current;const chart=chartApi.current
     if(!canvas||!chart)return
+    try { chart.timeScale() } catch { return } // chart disposed guard
     canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
     const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,canvas.width,canvas.height)
     drawings.forEach(d=>{
@@ -615,8 +618,9 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
 
   useEffect(()=>{
     const c=chartApi.current;if(!c)return
-    const u=c.timeScale().subscribeVisibleLogicalRangeChange(()=>renderDrawings())
-    return()=>u()
+    let u: (()=>void)|null = null
+    try { u=c.timeScale().subscribeVisibleLogicalRangeChange(()=>renderDrawings()) } catch{}
+    return()=>{ try{u?.()}catch{} }
   },[drawings,renderDrawings])
 
   function yToPrice(y:number):number|null{return chartApi.current?.priceScale('right').coordinateToPrice(y)??null}

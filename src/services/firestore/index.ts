@@ -61,12 +61,21 @@ export function tradePnL(t: Trade): number {
 
 // ── Decode helpers ─────────────────────────────────────────────────────────
 
+function toDate(val: unknown): Date {
+  if (!val) return new Date()
+  if (val instanceof Date) return val
+  if (typeof (val as any).toDate === 'function') return (val as any).toDate()
+  if (typeof (val as any).seconds === 'number') return new Date((val as any).seconds * 1000)
+  if (typeof val === 'number') return new Date(val)
+  if (typeof val === 'string') { const d = new Date(val); return isNaN(d.getTime()) ? new Date() : d }
+  return new Date()
+}
+
 function decodeTrade(data: Record<string, unknown>, id: string): Trade | null {
   try {
-    const ts = data.date as Timestamp
     return {
       id,
-      date:            ts?.toDate() ?? new Date(),
+      date:            toDate(data.date ?? data.entryDate ?? data.closedAt),
       symbol:          (data.symbol as string) ?? '',
       type:            ((data.type as TradeType) ?? 'Long'),
       entryPrice:      data.entryPrice  as number | undefined,
