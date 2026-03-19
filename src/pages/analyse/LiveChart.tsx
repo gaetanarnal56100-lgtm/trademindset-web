@@ -217,12 +217,20 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
               Connecte-toi à ton compte TradingView pour <span style={{ color:'#BF5AF2', fontWeight:600 }}>sauvegarder tes analyses, dessins et layouts</span> sur leurs serveurs.
             </span>
           </div>
-          <a href="https://www.tradingview.com/sign-in/" target="_blank" rel="noopener noreferrer"
-            style={{ flexShrink:0, padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:700,
-              background:'rgba(191,90,242,0.15)', border:'1px solid rgba(191,90,242,0.4)',
-              color:'#BF5AF2', textDecoration:'none', whiteSpace:'nowrap' }}>
-            Créer un compte gratuit →
-          </a>
+          <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+            <a href="https://www.tradingview.com/accounts/signin/" target="_blank" rel="noopener noreferrer"
+              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:700,
+                background:'rgba(191,90,242,0.15)', border:'1px solid rgba(191,90,242,0.4)',
+                color:'#BF5AF2', textDecoration:'none', whiteSpace:'nowrap' }}>
+              Se connecter →
+            </a>
+            <a href="https://www.tradingview.com/accounts/signup/" target="_blank" rel="noopener noreferrer"
+              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:600,
+                background:'transparent', border:'1px solid #2A2F3E',
+                color:'#555C70', textDecoration:'none', whiteSpace:'nowrap' }}>
+              S'inscrire
+            </a>
+          </div>
         </div>
       </div>
 
