@@ -5,6 +5,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
+import { signalService } from '@/services/notifications/SignalNotificationService'
+
+// ── Live refresh interval per timeframe (ms) ──────────────────────────────
+const TF_REFRESH_MS: Record<string, number> = {
+  '5m':300000,'15m':900000,'30m':1800000,'1h':3600000,
+  '2h':7200000,'4h':14400000,'12h':43200000,'1d':86400000,'1w':604800000,
+}
 
 const fbFn = getFunctions(app, 'europe-west1')
 
@@ -251,8 +258,9 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
   const [tf, setTf]               = useState(TF_OPTIONS[3])
   const [candles, setCandles]     = useState<Candle[]>([])
   const [result, setResult]       = useState<WTResult|null>(null)
-  const [status, setStatus]       = useState<'idle'|'loading'|'error'>('idle')
+  const [status,   setStatus]     = useState<'idle'|'loading'|'error'>('idle')
   const [errorMsg, setErrorMsg]   = useState('')
+  const [nextRefresh, setNextRefresh] = useState(0)
   const obLevel=53, osLevel=-53
 
   // Fetch candles — réagit à symbol ET tf
@@ -267,11 +275,29 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
 
   useEffect(() => { loadCandles() }, [loadCandles])
 
-  // Compute — réagit aux candles uniquement (pas de preset ici)
+  // Countdown to next refresh
+  useEffect(() => {
+    const ms = TF_REFRESH_MS[tf.interval] || 3600000
+    setNextRefresh(ms / 1000)
+    const t = setInterval(() => setNextRefresh(x => x <= 1 ? ms / 1000 : x - 1), 1000)
+    return () => clearInterval(t)
+  }, [tf])
+
+  // Live refresh — interval = durée d'une bougie
+  useEffect(() => {
+    const ms = TF_REFRESH_MS[tf.interval] || 3600000
+    const t = setInterval(() => loadCandles(), ms)
+    return () => clearInterval(t)
+  }, [tf, loadCandles])
+
+  // Compute + signal detection
   useEffect(() => {
     if (candles.length < 20) return
-    setResult(calcWaveTrend(candles, 10, 21, obLevel, osLevel))
-  }, [candles])
+    const r = calcWaveTrend(candles, 10, 21, obLevel, osLevel)
+    setResult(r)
+    // Check signals after each refresh
+    if (r.wt1.length > 1) signalService.checkWaveTrend(symbol, tf.label, r.wt1, r.wt2, obLevel, osLevel)
+  }, [candles, symbol, tf.label])
 
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const canvasRef = useCanvas((ctx,W,H)=>{
@@ -290,6 +316,13 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
         <div>
           <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>WaveTrend Oscillator</div>
           <div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div>
+        </div>
+        {/* Live badge */}
+        <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
+          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/>
+          <span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
+          <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
+        </div
         </div>
         {badge&&<div style={{fontSize:10,fontWeight:700,color:badge.color,background:`${badge.color}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${badge.color}50`}}>{badge.label}</div>}
         <div style={{marginLeft:'auto',display:'flex',gap:10,alignItems:'center'}}>
@@ -339,11 +372,31 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
 
   useEffect(() => { loadCandles() }, [loadCandles])
 
+  // Live refresh
+  useEffect(() => {
+    const ms = TF_REFRESH_MS[tf.interval] || 3600000
+    const t = setInterval(() => loadCandles(), ms)
+    return () => clearInterval(t)
+  }, [tf, loadCandles])
+
+  // VMC countdown
+  const [nextRefreshVMC, setNextRefreshVMC] = useState(0)
+  useEffect(() => {
+    const ms = TF_REFRESH_MS[tf.interval] || 3600000
+    setNextRefreshVMC(ms/1000)
+    const t = setInterval(() => setNextRefreshVMC(x => x<=1?ms/1000:x-1), 1000)
+    return () => clearInterval(t)
+  }, [tf])
+
   // Recalcul — réagit aux candles ET au preset (sans refetch)
   useEffect(() => {
     if (candles.length < 60) return
-    setResult(calcVMCOscillator(candles, preset))
-  }, [candles, preset])  // ← preset ici = recalcul immédiat sans API call
+    const r = calcVMCOscillator(candles, preset)
+    setResult(r)
+    const sig = r.sig[r.sig.length-1]??0
+    const mom = r.momentum[r.momentum.length-1]??0
+    signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
+  }, [candles, preset, symbol, tf.label])  // ← preset ici = recalcul immédiat sans API call
 
   const lastSig=result?.sig[result.sig.length-1]??0
   const lastMom=result?.momentum[result.momentum.length-1]??0
@@ -361,6 +414,11 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
         <div>
           <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>VMC Oscillator</div>
           <div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
+          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/>
+          <span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
+          <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefreshVMC/60)}:{String(nextRefreshVMC%60).padStart(2,'0')}</span>
         </div>
         {result&&<div style={{fontSize:10,fontWeight:700,color:statusColor,background:`${statusColor}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${statusColor}50`}}>{result.status}</div>}
         {result?.ribbonBull&&<div style={{fontSize:9,fontWeight:700,color:'#22C759',background:'rgba(34,199,89,0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(34,199,89,0.3)'}}>BULL</div>}

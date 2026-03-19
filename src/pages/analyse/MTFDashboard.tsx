@@ -4,6 +4,7 @@
 // Score combiné = RSI×40% + VMC×60%
 
 import { useState, useEffect, useCallback } from 'react'
+import { signalService } from '@/services/notifications/SignalNotificationService'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
@@ -68,6 +69,9 @@ async function fetchTF(symbol: string, interval: string, limit: number) {
   
   throw new Error(`${sym} non trouvé`)
 }
+
+// ── Live refresh: toutes les 2 minutes (candles MTF lentes) ─────────────────
+const MTF_REFRESH_MS = 2 * 60 * 1000
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -357,20 +361,36 @@ function TFColumn({ r }: { r: MTFReading }) {
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function MTFDashboard({ symbol }: { symbol: string }) {
-  const [snap, setSnap]   = useState<MTFSnapshot | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [snap,        setSnap]        = useState<MTFSnapshot | null>(null)
+  const [loading,     setLoading]     = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+  const [nextRefresh, setNextRefresh] = useState(MTF_REFRESH_MS/1000)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
       const s = await computeMTF(symbol)
       setSnap(s)
+      // Signal detection
+      signalService.checkMTF(symbol, s.globalSignal, s.confluence, s.globalScore)
     } catch(e) { setError((e as Error).message) }
     setLoading(false)
   }, [symbol])
 
   useEffect(() => { load() }, [load])
+
+  // Live refresh every 2 minutes
+  useEffect(() => {
+    const t = setInterval(() => load(), MTF_REFRESH_MS)
+    return () => clearInterval(t)
+  }, [load])
+
+  // Countdown
+  useEffect(() => {
+    setNextRefresh(MTF_REFRESH_MS/1000)
+    const t = setInterval(() => setNextRefresh(x => x<=1?MTF_REFRESH_MS/1000:x-1), 1000)
+    return () => clearInterval(t)
+  }, [symbol])
 
   if (loading) return (
     <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, padding: '24px', textAlign: 'center' }}>
@@ -416,6 +436,11 @@ export default function MTFDashboard({ symbol }: { symbol: string }) {
               <div style={{ fontSize: 20, fontWeight: 700, color: confColor, fontFamily: 'JetBrains Mono, monospace' }}>{snap.confluence}%</div>
               {snap.confluence >= 70 && <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#22C75920', border: '2px solid #22C759', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#22C759' }}>✓</div>}
             </div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
+            <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/>
+            <span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
+            <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
           </div>
           <button onClick={load} style={{ background: '#1C2130', border: '1px solid #2A2F3E', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 11, color: '#8F94A3' }}>↻</button>
         </div>

@@ -1,4 +1,5 @@
 // src/components/layout/Sidebar.tsx
+import NotificationBell from '@/components/notifications/NotificationBell'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { logout } from '@/services/firebase/auth'
 import { useUser } from '@/hooks/useAuth'
@@ -97,6 +98,7 @@ export default function Sidebar() {
               {user?.email}
             </div>
           </div>
+          <NotificationBell />
           <button onClick={handleLogout} title="Déconnexion" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, color: '#555C70', display: 'flex', alignItems: 'center' }}>
             <IconLogout size={14} />
           </button>
