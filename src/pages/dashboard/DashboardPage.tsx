@@ -1,7 +1,8 @@
-// DashboardPage.tsx — Dashboard enrichi miroir iOS
+// DashboardPage.tsx — Dashboard enrichi v2 (heatmap compact + interactif + analytics tabs)
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
 
+// ── Helpers ──────────────────────────────────────────────────────────────
 function fmt(n: number, d = 2) { return Math.abs(n).toFixed(d) }
 function fmtK(n: number) {
   const abs = Math.abs(n), s = n < 0 ? '-' : '+'
@@ -20,6 +21,7 @@ function Skel({ h=20, w='100%' }: { h?: number; w?: string|number }) {
   return <div style={{height:h,width:w,background:'rgba(255,255,255,0.04)',borderRadius:6}}/>
 }
 
+// ── Statistics ────────────────────────────────────────────────────────────
 function calcStats(trades: Trade[]) {
   const closed = trades.filter(t=>t.status==='closed').sort((a,b)=>a.date.getTime()-b.date.getTime())
   const pnls = closed.map(tradePnL)
@@ -44,12 +46,14 @@ function calcStats(trades: Trade[]) {
   const lp=longs.map(tradePnL),sp=shorts.map(tradePnL)
   const longWR =longs.length ?longs.filter((_,i)=>lp[i]>0).length/longs.length*100:0
   const shortWR=shorts.length?shorts.filter((_,i)=>sp[i]>0).length/shorts.length*100:0
-  return{totalPnL,winRate,avgWin,avgLoss,payoffRatio,expectancy,fees,maxDD,sharpe,bestStreak,
-    worstStreak:Math.abs(worstStreak),currentStreak,wins:wins.length,losses:losses.length,
-    total:closed.length,longs:longs.length,shorts:shorts.length,longWR,shortWR,
+  return{totalPnL,winRate,avgWin,avgLoss,payoffRatio,expectancy,fees,maxDD,sharpe,
+    bestStreak,worstStreak:Math.abs(worstStreak),currentStreak,
+    wins:wins.length,losses:losses.length,total:closed.length,
+    longs:longs.length,shorts:shorts.length,longWR,shortWR,
     longPnL:lp.reduce((a,b)=>a+b,0),shortPnL:sp.reduce((a,b)=>a+b,0)}
 }
 
+// ── Emotion helpers ───────────────────────────────────────────────────────
 function emotionScore(state: string): number {
   const m: Record<string,number>={'Confiant':4,'Serein':4,'Focused':4,'Disciplined':4,'Neutre':3,'Neutral':3,'Stressé':2,'Anxieux':2,'Fatigué':2,'Stressed':2,'FOMO':1,'Impulsif':1,'Frustré':1}
   return m[state]??3
@@ -57,19 +61,16 @@ function emotionScore(state: string): number {
 function calcEmotions(moods: MoodEntry[], trades: Trade[]) {
   if(!moods.length)return null
   const avg=moods.reduce((a,m)=>a+emotionScore(m.state),0)/moods.length
-  const dm: Record<string,number>={}
-  for(const m of moods)dm[m.state]=(dm[m.state]||0)+1
-  const dominant=Object.entries(dm).sort((a,b)=>b[1]-a[1])[0]?.[0]??'Neutre'
   const avgState=avg>=3.5?'Confiant':avg>=2.5?'Neutre':avg>=1.5?'Stressé':'Impulsif'
   const sorted=[...trades].filter(t=>t.status==='closed').sort((a,b)=>b.date.getTime()-a.date.getTime())
-  let consec=0
-  for(const t of sorted){if(tradePnL(t)<0)consec++;else break}
+  let consec=0;for(const t of sorted){if(tradePnL(t)<0)consec++;else break}
   const risk=consec>=3?'Élevé':consec>=2?'Prudence':'Faible'
   const impact=avg>=3.5?'Positif':avg>=2.5?'Neutre':'Négatif'
   const advice=consec>=3?'Pause recommandée':avg>=3.5?'Continuer':'Réduire la taille'
-  return{dominant,avgState,risk,impact,advice,consec,entries:moods.length}
+  return{avgState,risk,impact,advice,consec,entries:moods.length}
 }
 
+// ── P&L Curve ─────────────────────────────────────────────────────────────
 function PnLCurve({trades}:{trades:Trade[]}) {
   const ref=useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
@@ -94,54 +95,24 @@ function PnLCurve({trades}:{trades:Trade[]}) {
   return <canvas ref={ref} width={600} height={100} style={{width:'100%',height:100,display:'block'}}/>
 }
 
-function MonthlyChart({trades}:{trades:Trade[]}) {
-  const months=useMemo(()=>{
-    const map: Record<string,number>={}
-    for(const t of trades.filter(t=>t.status==='closed')){
-      const k=t.date.toLocaleDateString('fr-FR',{month:'short'});map[k]=(map[k]||0)+tradePnL(t)
-    }
-    const order=['jan.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']
-    return order.filter(m=>map[m]!=null).map(m=>({label:m[0].toUpperCase(),value:map[m]!}))
-  },[trades])
-  if(!months.length)return <div style={{textAlign:'center',color:'#3D4254',fontSize:12,padding:'20px 0'}}>Pas de données</div>
-  const maxAbs=Math.max(...months.map(m=>Math.abs(m.value)),1)
-  const best=months.reduce((a,b)=>b.value>a.value?b:a,months[0])
-  const worst=months.reduce((a,b)=>b.value<a.value?b:a,months[0])
-  const avg=months.reduce((a,b)=>a+b.value,0)/months.length
-  return(
-    <div>
-      <div style={{display:'flex',alignItems:'flex-end',gap:4,height:80,marginBottom:8}}>
-        {months.map((m,i)=>{
-          const h=Math.max((Math.abs(m.value)/maxAbs)*72,3),c=m.value>=0?'#22C759':'#FF3B30'
-          return(<div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-            <div style={{width:'100%',height:h,background:c,borderRadius:'3px 3px 0 0',opacity:0.85}}/>
-            <div style={{fontSize:8,color:'#3D4254'}}>{m.label}</div>
-          </div>)
-        })}
-      </div>
-      <div style={{display:'flex',gap:8,marginTop:4}}>
-        {[{l:'Meilleur',v:fmtK(best.value),c:'#22C759'},{l:'Pire',v:fmtK(worst.value),c:'#FF3B30'},{l:'Moyenne',v:fmtK(avg),c:'#8F94A3'}].map(({l,v,c})=>(
-          <div key={l} style={{flex:1,background:'rgba(255,255,255,0.02)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
-            <div style={{fontSize:9,color:'#555C70',marginBottom:2}}>{l}</div>
-            <div style={{fontSize:11,fontWeight:700,color:c,fontFamily:'JetBrains Mono, monospace'}}>{v}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
+// ── Compact Calendar Heatmap with tooltip ─────────────────────────────────
 function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
+  const [tooltip,setTooltip]=useState<{key:string,pnl:number,date:Date,x:number,y:number,count:number,symbols:string[]}|null>(null)
   const days=period==='7j'?7:period==='1M'?30:period==='3M'?90:period==='6M'?180:365
   const since=new Date(Date.now()-days*86400000)
+  
   const byDay=useMemo(()=>{
-    const map: Record<string,number>={}
+    const map: Record<string,{pnl:number,count:number,symbols:string[]}>={}
     for(const t of trades.filter(t=>t.status==='closed'&&t.date>=since)){
-      const k=t.date.toISOString().slice(0,10);map[k]=(map[k]||0)+tradePnL(t)
+      const k=t.date.toISOString().slice(0,10)
+      if(!map[k])map[k]={pnl:0,count:0,symbols:[]}
+      map[k].pnl+=tradePnL(t);map[k].count++;
+      if(!map[k].symbols.includes(t.symbol))map[k].symbols.push(t.symbol)
     }
     return map
   },[trades,days])
-  const maxAbs=Math.max(...Object.values(byDay).map(Math.abs),1)
+
+  const maxAbs=Math.max(...Object.values(byDay).map(d=>Math.abs(d.pnl)),1)
   const today=new Date();today.setHours(0,0,0,0)
   const startDay=new Date(today);startDay.setDate(today.getDate()-days+1)
   const gridStart=new Date(startDay);gridStart.setDate(gridStart.getDate()-gridStart.getDay())
@@ -152,26 +123,331 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
     cells.push({date:new Date(d),key,inRange:d>=startDay&&d<=today})
     d.setDate(d.getDate()+1)
   }
+
+  // Best/Worst day
+  const allValues=Object.entries(byDay)
+  const bestKey=allValues.length?allValues.reduce((a,b)=>b[1].pnl>a[1].pnl?b:a)[0]:null
+  const worstKey=allValues.length?allValues.reduce((a,b)=>b[1].pnl<a[1].pnl?b:a)[0]:null
+
   return(
-    <div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,marginBottom:4}}>
-        {['D','L','M','M','J','V','S'].map((l,i)=><div key={i} style={{fontSize:10,color:'#3D4254',textAlign:'center',fontWeight:600}}>{l}</div>)}
+    <div style={{position:'relative'}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:3}}>
+        {['D','L','M','M','J','V','S'].map((l,i)=><div key={i} style={{fontSize:9,color:'#3D4254',textAlign:'center',fontWeight:600}}>{l}</div>)}
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
         {cells.map(({date,key,inRange})=>{
-          const pnl=byDay[key];const intensity=pnl!=null?Math.min(Math.abs(pnl)/maxAbs,1):0
+          const data=byDay[key];const pnl=data?.pnl
+          const intensity=pnl!=null?Math.min(Math.abs(pnl)/maxAbs,1):0
           const isToday=date.toDateString()===today.toDateString()
+          const isBest=key===bestKey;const isWorst=key===worstKey
           let bg='#1C2130'
-          if(inRange&&pnl!=null)bg=pnl>0?`rgba(34,199,89,${0.1+intensity*0.7})`:`rgba(255,59,48,${0.1+intensity*0.7})`
+          if(inRange&&pnl!=null)bg=pnl>0?`rgba(34,199,89,${0.12+intensity*0.68})`:`rgba(255,59,48,${0.12+intensity*0.68})`
           else if(!inRange)bg='transparent'
-          return(<div key={key} title={inRange&&pnl!=null?`${key}: ${fmtK(pnl)}`:key}
-            style={{aspectRatio:'1',borderRadius:5,background:bg,border:isToday?'1px solid rgba(255,255,255,0.2)':'1px solid transparent'}}/>)
+          return(
+            <div key={key}
+              onClick={e=>{
+                if(!inRange||!data)return
+                const rect=(e.target as HTMLElement).getBoundingClientRect()
+                const parent=(e.currentTarget as HTMLElement).closest('[data-heatmap]')?.getBoundingClientRect()
+                setTooltip(t=>t?.key===key?null:{key,pnl:data.pnl,date,x:rect.left-(parent?.left??0),y:rect.top-(parent?.top??0),count:data.count,symbols:data.symbols})
+              }}
+              style={{
+                aspectRatio:'1',borderRadius:4,background:bg,cursor:inRange&&data?'pointer':'default',
+                border:isToday?'1px solid rgba(255,255,255,0.25)':isBest?'1px solid rgba(34,199,89,0.6)':isWorst?'1px solid rgba(255,59,48,0.6)':'1px solid transparent',
+                position:'relative',transition:'transform 0.1s',
+              }}
+            />
+          )
         })}
       </div>
+      {/* Tooltip */}
+      {tooltip&&(
+        <div
+          data-heatmap
+          onClick={()=>setTooltip(null)}
+          style={{position:'fixed',inset:0,zIndex:50}}
+        >
+          <div
+            onClick={e=>e.stopPropagation()}
+            style={{
+              position:'absolute',left:tooltip.x,top:tooltip.y-110,
+              background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:12,padding:'12px 16px',
+              minWidth:180,zIndex:51,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#8F94A3'}}>
+                {tooltip.date.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})}
+              </div>
+              {tooltip.key===bestKey&&<div style={{fontSize:9,fontWeight:700,color:'#22C759',background:'rgba(34,199,89,0.15)',padding:'2px 7px',borderRadius:10}}>Best</div>}
+              {tooltip.key===worstKey&&<div style={{fontSize:9,fontWeight:700,color:'#FF3B30',background:'rgba(255,59,48,0.15)',padding:'2px 7px',borderRadius:10}}>Worst</div>}
+            </div>
+            <div style={{fontSize:22,fontWeight:800,color:tooltip.pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace',marginBottom:6}}>{fmtK(tooltip.pnl)}</div>
+            <div style={{fontSize:11,color:'#555C70'}}>{tooltip.count} trade{tooltip.count!==1?'s':''} · {tooltip.symbols.slice(0,3).join(', ')}{tooltip.symbols.length>3?'…':''}</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
+// ── Time Range type ───────────────────────────────────────────────────────
+interface TimeRange { id: string; name: string; startHour: number; endHour: number }
+
+// ── Advanced Analytics Panel ──────────────────────────────────────────────
+function AdvancedAnalytics({trades}:{trades:Trade[]}) {
+  const [tab,setTab]=useState<'analytics'|'metrics'|'calendar'>('analytics')
+  const [metricsTab,setMetricsTab]=useState<'month'|'session'|'hour'|'day'>('month')
+  const [sessionRanges,setSessionRanges]=useState<TimeRange[]>([
+    {id:'a',name:'Asie',     startHour:0,  endHour:8},
+    {id:'l',name:'Londres',  startHour:8,  endHour:16},
+    {id:'n',name:'New York', startHour:13, endHour:21},
+  ])
+  const [hourRanges,setHourRanges]=useState<TimeRange[]>([
+    {id:'h1',name:'Matin',      startHour:6,  endHour:9},
+    {id:'h2',name:'Milieu',     startHour:9,  endHour:12},
+    {id:'h3',name:'Après-midi', startHour:12, endHour:15},
+    {id:'h4',name:'Fin journée',startHour:15, endHour:18},
+  ])
+  const [editing,setEditing]=useState<'session'|'hour'|null>(null)
+  const [editDraft,setEditDraft]=useState<TimeRange[]>([])
+
+  const closed=useMemo(()=>trades.filter(t=>t.status==='closed'),[trades])
+
+  // Monthly
+  const months=useMemo(()=>{
+    const map: Record<string,number>={}
+    for(const t of closed){const k=t.date.toLocaleDateString('fr-FR',{month:'short'});map[k]=(map[k]||0)+tradePnL(t)}
+    const order=['jan.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']
+    return order.filter(m=>map[m]!=null).map(m=>({label:m[0].toUpperCase(),full:m,value:map[m]!}))
+  },[closed])
+  const maxAbsM=Math.max(...months.map(m=>Math.abs(m.value)),1)
+  const bestM=months.length?months.reduce((a,b)=>b.value>a.value?b:a,months[0]).value:0
+  const worstM=months.length?months.reduce((a,b)=>b.value<a.value?b:a,months[0]).value:0
+  const avgM=months.length?months.reduce((a,b)=>a+b.value,0)/months.length:0
+
+  // By range (session/hour)
+  function calcRange(ranges: TimeRange[]) {
+    return ranges.map(r=>{
+      const rt=closed.filter(t=>{const h=t.date.getHours();return h>=r.startHour&&h<r.endHour})
+      return{...r,pnl:rt.reduce((a,t)=>a+tradePnL(t),0),count:rt.length}
+    })
+  }
+  const sessionData=useMemo(()=>calcRange(sessionRanges),[closed,sessionRanges])
+  const hourData=useMemo(()=>calcRange(hourRanges),[closed,hourRanges])
+
+  // By day of week
+  const dayData=useMemo(()=>{
+    const days=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim']
+    return days.map((name,i)=>{
+      const dt=closed.filter(t=>{const d=t.date.getDay();return (d===0?6:d-1)===i})
+      return{name,pnl:dt.reduce((a,t)=>a+tradePnL(t),0),count:dt.length}
+    })
+  },[closed])
+
+  function TabBtn({id,label}:{id:typeof tab,label:string}) {
+    const active=tab===id
+    return<button onClick={()=>setTab(id)} style={{padding:'8px 16px',borderRadius:20,fontSize:12,fontWeight:600,cursor:'pointer',
+      border:`1px solid ${active?'transparent':'#2A2F3E'}`,
+      background:active?'linear-gradient(135deg,#6B3FE7,#BF5AF2)':'transparent',
+      color:active?'#fff':'#555C70'}}>{label}</button>
+  }
+
+  function MetricsTabBtn({id,label}:{id:typeof metricsTab,label:string}) {
+    const active=metricsTab===id
+    return<button onClick={()=>setMetricsTab(id)} style={{padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',
+      border:`1px solid ${active?'#0A85FF':'#2A2F3E'}`,
+      background:active?'rgba(10,133,255,0.15)':'transparent',
+      color:active?'#0A85FF':'#555C70'}}>{label}</button>
+  }
+
+  function RangeCard({r}:{r:{name:string,pnl:number,count:number,startHour?:number,endHour?:number}}) {
+    return(
+      <div style={{background:'rgba(255,255,255,0.02)',border:`1px solid ${r.pnl>=0?'rgba(34,199,89,0.2)':'rgba(255,59,48,0.1)'}`,borderRadius:12,padding:'12px 14px'}}>
+        <div style={{fontSize:11,color:'#8F94A3',marginBottom:4,fontWeight:600}}>{r.name}</div>
+        {r.startHour!=null&&<div style={{fontSize:9,color:'#3D4254',marginBottom:8}}>{String(r.startHour).padStart(2,'0')}h–{String(r.endHour).padStart(2,'0')}h</div>}
+        <div style={{fontSize:18,fontWeight:800,color:r.pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(r.pnl)}</div>
+        {r.count>0&&<div style={{fontSize:10,color:'#555C70',marginTop:4}}>{r.count} trade{r.count!==1?'s':''}</div>}
+      </div>
+    )
+  }
+
+  function EditModal({type}:{type:'session'|'hour'}) {
+    return(
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setEditing(null)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:'#161B22',border:'1px solid #2A2F3E',borderRadius:16,padding:'20px',minWidth:320,maxWidth:400}}>
+          <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF',marginBottom:16}}>Modifier les plages</div>
+          <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
+            {editDraft.map((r,i)=>(
+              <div key={r.id} style={{display:'flex',gap:8,alignItems:'center'}}>
+                <input value={r.name} onChange={e=>{const d=[...editDraft];d[i]={...d[i],name:e.target.value};setEditDraft(d)}}
+                  style={{flex:1,background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 10px',color:'#F0F3FF',fontSize:12}}/>
+                <input type="number" min="0" max="23" value={r.startHour} onChange={e=>{const d=[...editDraft];d[i]={...d[i],startHour:+e.target.value};setEditDraft(d)}}
+                  style={{width:50,background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 8px',color:'#F0F3FF',fontSize:12,textAlign:'center'}}/>
+                <span style={{color:'#555C70',fontSize:11}}>→</span>
+                <input type="number" min="0" max="24" value={r.endHour} onChange={e=>{const d=[...editDraft];d[i]={...d[i],endHour:+e.target.value};setEditDraft(d)}}
+                  style={{width:50,background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 8px',color:'#F0F3FF',fontSize:12,textAlign:'center'}}/>
+                <button onClick={()=>setEditDraft(editDraft.filter((_,j)=>j!==i))}
+                  style={{background:'rgba(255,59,48,0.1)',border:'none',borderRadius:6,color:'#FF3B30',cursor:'pointer',padding:'4px 8px',fontSize:12}}>✕</button>
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>setEditDraft([...editDraft,{id:Date.now().toString(),name:'',startHour:0,endHour:4}])}
+            style={{width:'100%',padding:'8px',background:'rgba(10,133,255,0.1)',border:'1px dashed #2A2F3E',borderRadius:8,color:'#0A85FF',cursor:'pointer',fontSize:12,marginBottom:12}}>+ Ajouter</button>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setEditing(null)} style={{flex:1,padding:'8px',background:'transparent',border:'1px solid #2A2F3E',borderRadius:8,color:'#555C70',cursor:'pointer',fontSize:12}}>Annuler</button>
+            <button onClick={()=>{
+              if(type==='session')setSessionRanges(editDraft)
+              else setHourRanges(editDraft)
+              setEditing(null)
+            }} style={{flex:1,padding:'8px',background:'rgba(10,133,255,0.15)',border:'1px solid #0A85FF',borderRadius:8,color:'#0A85FF',cursor:'pointer',fontSize:12,fontWeight:600}}>Sauvegarder</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return(
+    <div style={card()}>
+      <div style={hl()}/>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF'}}>Advanced Analytics</div>
+          <div style={{fontSize:11,color:'#555C70'}}>Analyse de performance en détail</div>
+        </div>
+      </div>
+      {/* Main tabs */}
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
+        <TabBtn id="analytics" label="📊 Analytics"/>
+        <TabBtn id="metrics"   label="🕐 Metrics"/>
+        <TabBtn id="calendar"  label="📅 Calendar"/>
+      </div>
+
+      {tab==='analytics'&&(
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF',marginBottom:12}}>Performance par Mois</div>
+          {months.length===0?<div style={{textAlign:'center',color:'#3D4254',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
+            <>
+              <div style={{display:'flex',alignItems:'flex-end',gap:3,height:80,marginBottom:8}}>
+                {months.map((m,i)=>{
+                  const h=Math.max((Math.abs(m.value)/maxAbsM)*72,3),c=m.value>=0?'#22C759':'#FF3B30'
+                  return(<div key={i} title={`${m.full}: ${fmtK(m.value)}`} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer'}}>
+                    <div style={{width:'100%',height:h,background:c,borderRadius:'3px 3px 0 0',opacity:0.85,transition:'opacity 0.15s'}}/>
+                    <div style={{fontSize:8,color:'#3D4254'}}>{m.label}</div>
+                  </div>)
+                })}
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                {[{l:'Meilleur',v:fmtK(bestM),c:'#22C759'},{l:'Pire',v:fmtK(worstM),c:'#FF3B30'},{l:'Moyenne',v:fmtK(avgM),c:'#8F94A3'}].map(({l,v,c})=>(
+                  <div key={l} style={{flex:1,background:'rgba(255,255,255,0.02)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,color:'#555C70',marginBottom:2}}>{l}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:c,fontFamily:'JetBrains Mono, monospace'}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {tab==='metrics'&&(
+        <div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
+            <MetricsTabBtn id="month"   label="Par mois"/>
+            <MetricsTabBtn id="session" label="Par session"/>
+            <MetricsTabBtn id="hour"    label="Par heure"/>
+            <MetricsTabBtn id="day"     label="Par jour"/>
+          </div>
+
+          {metricsTab==='month'&&(
+            <div>
+              {months.length===0?<div style={{textAlign:'center',color:'#3D4254',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {months.map((m,i)=>{
+                    const pct=Math.abs(m.value)/maxAbsM*100
+                    return(<div key={i} style={{display:'flex',alignItems:'center',gap:10}}>
+                      <div style={{width:28,fontSize:11,color:'#8F94A3',textAlign:'right'}}>{m.full.slice(0,3)}</div>
+                      <div style={{flex:1,height:8,background:'#1C2130',borderRadius:4,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:`${pct}%`,background:m.value>=0?'#22C759':'#FF3B30',borderRadius:4}}/>
+                      </div>
+                      <div style={{width:80,fontSize:11,fontWeight:700,color:m.value>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace',textAlign:'right'}}>{fmtK(m.value)}</div>
+                    </div>)
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {metricsTab==='session'&&(
+            <div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>Performance par Session</div>
+                  <div style={{fontSize:10,color:'#555C70'}}>Asie / Londres / New York • Personnalisable</div>
+                </div>
+                <button onClick={()=>{setEditDraft([...sessionRanges]);setEditing('session')}}
+                  style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:8,background:'rgba(10,133,255,0.1)',border:'1px solid rgba(10,133,255,0.3)',color:'#0A85FF',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                  ⚙ Modifier
+                </button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10}}>
+                {sessionData.map(r=><RangeCard key={r.id} r={r}/>)}
+                <div onClick={()=>{setEditDraft([...sessionRanges,{id:Date.now().toString(),name:'',startHour:0,endHour:4}]);setEditing('session')}}
+                  style={{background:'transparent',border:'1px dashed #2A2F3E',borderRadius:12,padding:'12px 14px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,minHeight:80}}>
+                  <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(10,133,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',color:'#0A85FF',fontSize:16}}>+</div>
+                  <div style={{fontSize:11,color:'#555C70',fontWeight:600}}>Add Session</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {metricsTab==='hour'&&(
+            <div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>Performance by Hour</div>
+                  <div style={{fontSize:10,color:'#555C70'}}>Customizable ranges • Add your time slots</div>
+                </div>
+                <button onClick={()=>{setEditDraft([...hourRanges]);setEditing('hour')}}
+                  style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:8,background:'rgba(10,133,255,0.1)',border:'1px solid rgba(10,133,255,0.3)',color:'#0A85FF',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                  ⚙ Modify
+                </button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10}}>
+                {hourData.map(r=><RangeCard key={r.id} r={r}/>)}
+                <div onClick={()=>{setEditDraft([...hourRanges,{id:Date.now().toString(),name:'',startHour:0,endHour:4}]);setEditing('hour')}}
+                  style={{background:'transparent',border:'1px dashed #2A2F3E',borderRadius:12,padding:'12px 14px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,minHeight:80}}>
+                  <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(10,133,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',color:'#0A85FF',fontSize:16}}>+</div>
+                  <div style={{fontSize:11,color:'#555C70',fontWeight:600}}>Add Hour range</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {metricsTab==='day'&&(
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF',marginBottom:4}}>Performance by Day</div>
+              <div style={{fontSize:10,color:'#555C70',marginBottom:12}}>Lundi → Dimanche</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+                {dayData.map(r=><RangeCard key={r.name} r={r}/>)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab==='calendar'&&(
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF',marginBottom:12}}>Calendrier de Performance</div>
+          <CalendarHeatmap trades={trades} period="1M"/>
+        </div>
+      )}
+      {editing&&<EditModal type={editing}/>}
+    </div>
+  )
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [systems, setSystems] = useState<TradingSystem[]>([])
@@ -301,36 +577,35 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Heatmap Calendrier */}
+      {/* Heatmap compact */}
       <div style={{...card(),marginBottom:16}}>
         <div style={hl()}/>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
           <div>
             <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF'}}>Heatmap</div>
-            <div style={{fontSize:11,color:'#555C70'}}>Résultat (P&L)</div>
+            <div style={{fontSize:11,color:'#555C70'}}>Résultat (P&L) · Cliquez sur un jour</div>
           </div>
-          <div style={{display:'flex',gap:6}}>
+          <div style={{display:'flex',gap:5}}>
             {['7j','1M','3M','6M','1A'].map(p=>(
-              <button key={p} onClick={()=>setPeriod(p)} style={{padding:'4px 12px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',
+              <button key={p} onClick={()=>setPeriod(p)} style={{padding:'4px 10px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',
                 border:`1px solid ${period===p?'#0A85FF':'#2A2F3E'}`,
                 background:period===p?'rgba(10,133,255,0.15)':'transparent',
                 color:period===p?'#0A85FF':'#555C70'}}>{p}</button>
             ))}
           </div>
         </div>
-        {loading?<Skel h={120}/>:<CalendarHeatmap trades={trades} period={period}/>}
-        {!loading&&<div style={{display:'flex',gap:8,marginTop:12,alignItems:'center',justifyContent:'flex-end'}}>
+        <div data-heatmap style={{position:'relative'}}>
+          {loading?<Skel h={80}/>:<CalendarHeatmap trades={trades} period={period}/>}
+        </div>
+        {!loading&&<div style={{display:'flex',gap:8,marginTop:10,alignItems:'center',justifyContent:'flex-end'}}>
           <div style={{width:8,height:8,borderRadius:2,background:'#22C759'}}/><span style={{fontSize:10,color:'#555C70'}}>Gains</span>
           <div style={{width:8,height:8,borderRadius:2,background:'#FF3B30',marginLeft:8}}/><span style={{fontSize:10,color:'#555C70'}}>Pertes</span>
         </div>}
       </div>
 
-      {/* Advanced Analytics */}
-      <div style={{...card(),marginBottom:16}}>
-        <div style={hl()}/>
-        <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF',marginBottom:4}}>Advanced Analytics</div>
-        <div style={{fontSize:11,color:'#555C70',marginBottom:16}}>Performance par mois</div>
-        {loading?<Skel h={100}/>:<MonthlyChart trades={trades}/>}
+      {/* Advanced Analytics avec onglets */}
+      <div style={{marginBottom:16}}>
+        <AdvancedAnalytics trades={trades}/>
       </div>
 
       {/* Emotions */}
