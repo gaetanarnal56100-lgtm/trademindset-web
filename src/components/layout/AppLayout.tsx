@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import MobileNav from './MobileNav'
 import NewsTickerBanner from '@/components/dashboard/NewsTickerBanner'
+import { ToastContainer } from '@/components/notifications/NotificationBell'
 
 export default function AppLayout() {
   return (
@@ -16,6 +17,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <ToastContainer />
       <div className="lg:hidden">
         <MobileNav />
       </div>
