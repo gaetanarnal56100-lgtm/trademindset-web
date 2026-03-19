@@ -23,8 +23,9 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
   const [chartType,setChartType]= useState<1|2|3>(1) // 1=bougies, 2=ligne, 3=aire
   const [expanded, setExpanded] = useState(false)
   const [loading,  setLoading]  = useState(true)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const widgetRef    = useRef<any>(null)
+  const containerRef  = useRef<HTMLDivElement>(null)
+  const widgetRef     = useRef<any>(null)
+  const buildWidgetRef = useRef<()=>void>(()=>{})
   const tvSymbol = toTVSymbol(symbol, isCrypto)
 
   // Charge le script TradingView une seule fois globalement
@@ -217,19 +218,43 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
               Connecte-toi à ton compte TradingView pour <span style={{ color:'#BF5AF2', fontWeight:600 }}>sauvegarder tes analyses, dessins et layouts</span> sur leurs serveurs.
             </span>
           </div>
-          <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-            <a href="https://www.tradingview.com/accounts/signin/" target="_blank" rel="noopener noreferrer"
-              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:700,
+          <div style={{ display:'flex', gap:6, flexShrink:0, alignItems:'center' }}>
+            <span style={{ fontSize:9, color:'#3D4254' }}>Popup :</span>
+            <button onClick={() => {
+              const w = window.open(
+                'https://www.tradingview.com/accounts/signin/',
+                'tv_login',
+                'width=520,height=640,left=' + (window.screenX + window.outerWidth/2 - 260) +
+                ',top=' + (window.screenY + window.outerHeight/2 - 320) +
+                ',toolbar=no,menubar=no,scrollbars=yes,resizable=yes'
+              )
+              // Poll jusqu'à ce que la fenêtre soit fermée, puis recharge le widget
+              const poll = setInterval(() => {
+                if (w && w.closed) {
+                  clearInterval(poll)
+                  buildWidgetRef.current()
+                }
+              }, 500)
+            }}
+              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:700, cursor:'pointer',
                 background:'rgba(191,90,242,0.15)', border:'1px solid rgba(191,90,242,0.4)',
-                color:'#BF5AF2', textDecoration:'none', whiteSpace:'nowrap' }}>
-              Se connecter →
-            </a>
-            <a href="https://www.tradingview.com/accounts/signup/" target="_blank" rel="noopener noreferrer"
-              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:600,
+                color:'#BF5AF2', whiteSpace:'nowrap' }}>
+              Se connecter
+            </button>
+            <button onClick={() => {
+              window.open(
+                'https://www.tradingview.com/accounts/signup/',
+                'tv_signup',
+                'width=520,height=640,left=' + (window.screenX + window.outerWidth/2 - 260) +
+                ',top=' + (window.screenY + window.outerHeight/2 - 320) +
+                ',toolbar=no,menubar=no,scrollbars=yes,resizable=yes'
+              )
+            }}
+              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:600, cursor:'pointer',
                 background:'transparent', border:'1px solid #2A2F3E',
-                color:'#555C70', textDecoration:'none', whiteSpace:'nowrap' }}>
+                color:'#555C70', whiteSpace:'nowrap' }}>
               S'inscrire
-            </a>
+            </button>
           </div>
         </div>
       </div>
