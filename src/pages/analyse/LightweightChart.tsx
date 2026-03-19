@@ -314,9 +314,13 @@ function VMCPanel({vmcResult, candles}: {vmcResult: VMCResult; candles: Candle[]
     const canvas = canvasRef.current
     if (!canvas || !vmcResult || !candles.length) return
     const draw = () => {
-      canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight
+      const dpr = window.devicePixelRatio || 1
+      const cssW2 = canvas.offsetWidth, cssH2 = canvas.offsetHeight
+      canvas.width = cssW2 * dpr; canvas.height = cssH2 * dpr
+      canvas.style.width = cssW2 + 'px'; canvas.style.height = cssH2 + 'px'
       const ctx = canvas.getContext('2d')!
-      const w = canvas.width, h = canvas.height
+      ctx.scale(dpr, dpr)
+      const w = cssW2, h = cssH2
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = '#0D1117'; ctx.fillRect(0, 0, w, h)
       const n = vmcResult.sig.length
@@ -510,16 +514,21 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const renderIndicators=useCallback(()=>{
     const canvas=indLayerEl.current;const chart=chartApi.current
     if(!canvas||!chart)return
-    try { chart.timeScale() } catch { return }
     try { chart.timeScale() } catch { return } // chart disposed guard
-    canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
-    const ctx=canvas.getContext('2d')!
-    ctx.clearRect(0,0,canvas.width,canvas.height)
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = canvas.offsetWidth * dpr
+    canvas.height = canvas.offsetHeight * dpr
+    canvas.style.width = canvas.offsetWidth + 'px'
+    canvas.style.height = canvas.offsetHeight + 'px'
+    const ctx = canvas.getContext('2d')!
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight)
     let tScale: any, pScale: any
     try{tScale=chart.timeScale();pScale=chart.priceScale('right')}catch{return}
     if(!tScale||!pScale)return
     const candles=candlesRef.current;if(!candles.length)return
 
+    const cssW = canvas.offsetWidth, cssH = canvas.offsetHeight
     function xForIdx(idx:number):number|null{
       const t=candles[idx]?.time;if(!t)return null
       return tScale.timeToCoordinate(t as Time)
@@ -535,8 +544,8 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         const x=xForIdx(ob.idx);const y1=yForPrice(ob.top);const y2=yForPrice(ob.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(10,133,255,0.12)';ctx.strokeStyle='rgba(10,133,255,0.6)';ctx.lineWidth=1
-          ctx.fillRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
-          ctx.strokeRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
+          ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
+          ctx.strokeRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
           ctx.font='9px JetBrains Mono, monospace';ctx.fillStyle='#0A85FF'
           ctx.fillText('OB Bull',x+4,Math.min(y1,y2)+11)
         }
@@ -546,8 +555,8 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         const x=xForIdx(ob.idx);const y1=yForPrice(ob.top);const y2=yForPrice(ob.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(255,59,48,0.12)';ctx.strokeStyle='rgba(255,59,48,0.6)';ctx.lineWidth=1
-          ctx.fillRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
-          ctx.strokeRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
+          ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
+          ctx.strokeRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
           ctx.font='9px JetBrains Mono, monospace';ctx.fillStyle='#FF3B30'
           ctx.fillText('OB Bear',x+4,Math.min(y1,y2)+11)
         }
@@ -557,8 +566,8 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         const x=xForIdx(fvg.idx);const y1=yForPrice(fvg.top);const y2=yForPrice(fvg.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(34,199,89,0.08)';ctx.strokeStyle='rgba(34,199,89,0.5)';ctx.lineWidth=1;ctx.setLineDash([4,3])
-          ctx.fillRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
-          ctx.strokeRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
+          ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
+          ctx.strokeRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
           ctx.setLineDash([]);ctx.font='9px JetBrains Mono, monospace';ctx.fillStyle='#22C759'
           ctx.fillText('FVG ↑',x+4,Math.min(y1,y2)+11)
         }
@@ -568,8 +577,8 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         const x=xForIdx(fvg.idx);const y1=yForPrice(fvg.top);const y2=yForPrice(fvg.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(255,149,0,0.08)';ctx.strokeStyle='rgba(255,149,0,0.5)';ctx.lineWidth=1;ctx.setLineDash([4,3])
-          ctx.fillRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
-          ctx.strokeRect(x,Math.min(y1,y2),canvas.width-x,Math.abs(y2-y1))
+          ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
+          ctx.strokeRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
           ctx.setLineDash([]);ctx.font='9px JetBrains Mono, monospace';ctx.fillStyle='#FF9500'
           ctx.fillText('FVG ↓',x+4,Math.min(y1,y2)+11)
         }
@@ -631,9 +640,9 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       const lastBull=vmcResult.isBull[vmcResult.isBull.length-1]
       const lastBear=vmcResult.isBear[vmcResult.isBear.length-1]
       ctx.fillStyle=lastBull?'rgba(34,199,89,0.15)':lastBear?'rgba(255,59,48,0.15)':'rgba(255,255,255,0.04)'
-      ctx.fillRect(0,canvas.height-8,canvas.width,8)
+      ctx.fillRect(0,cssH-8,cssW,8)
       ctx.font='9px sans-serif';ctx.fillStyle=lastBull?'#22C759':lastBear?'#FF3B30':'#555C70'
-      ctx.fillText(lastBull?'▲ BULL RIBBON':lastBear?'▼ BEAR RIBBON':'— NEUTRAL',6,canvas.height-1)
+      ctx.fillText(lastBull?'▲ BULL RIBBON':lastBear?'▼ BEAR RIBBON':'— NEUTRAL',6,cssH-1)
     }
 
     // ── Market Profile ────────────────────────────────────────────────
@@ -643,11 +652,11 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         const y=yForPrice(price);if(y==null)continue
         ctx.strokeStyle=color;ctx.lineWidth=price===poc?2:1
         ctx.setLineDash(price===poc?[]:[5,4])
-        ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()
+        ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cssW,y);ctx.stroke()
         ctx.setLineDash([])
         ctx.font='bold 10px JetBrains Mono, monospace';ctx.fillStyle=color
-        ctx.fillStyle=color+'33';ctx.fillRect(canvas.width-60,y-10,58,14)
-        ctx.fillStyle=color;ctx.fillText(`${label} ${fmtP(price)}`,canvas.width-58,y)
+        ctx.fillStyle=color+'33';ctx.fillRect(cssW-60,y-10,58,14)
+        ctx.fillStyle=color;ctx.fillText(`${label} ${fmtP(price)}`,cssW-58,y)
       }
     }
   },[smcResult,msdResult,vmcResult,mpResult,indicators])
