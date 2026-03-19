@@ -64,6 +64,9 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
       allow_symbol_change: false,
       save_image:          true,
       enable_publishing:   false,
+      show_popup_button:   true,
+      popup_width:         '1000',
+      popup_height:        '650',
 
       // Activer TOUS les outils et fonctionnalités disponibles
       enabled_features: [
@@ -192,21 +195,35 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         </button>
       </div>
 
-      {/* Hint outils TradingView */}
-      <div style={{ padding:'5px 14px', background:'rgba(10,133,255,0.03)', borderBottom:'1px solid #1E2330',
-        display:'flex', alignItems:'center', gap:6, overflowX:'auto', flexWrap:'nowrap' }}>
-        <span style={{ fontSize:9, color:'#3D4254', flexShrink:0 }}>Outils :</span>
-        {[
-          '↗ Tendance','◎ Fibo','▭ Rectangle','⟨⟩ Pitchfork',
-          '∥ Canal','📐 Mesure R/R','✏ Texte','📊 Indicateurs',
-          '↩ Undo','↪ Redo',
-        ].map(tool => (
-          <span key={tool} style={{ fontSize:9, color:'#555C70', background:'rgba(255,255,255,0.03)',
-            padding:'2px 6px', borderRadius:4, whiteSpace:'nowrap', flexShrink:0 }}>
-            {tool}
-          </span>
-        ))}
-        <span style={{ fontSize:9, color:'#3D4254', marginLeft:4, flexShrink:0 }}>← barre gauche du graphique</span>
+      {/* Deux bandeaux : outils + connexion TV */}
+      <div style={{ borderBottom:'1px solid #1E2330' }}>
+        {/* Outils */}
+        <div style={{ padding:'5px 14px', background:'rgba(10,133,255,0.03)',
+          display:'flex', alignItems:'center', gap:6, overflowX:'auto', flexWrap:'nowrap',
+          borderBottom:'1px solid #1E233060' }}>
+          <span style={{ fontSize:9, color:'#3D4254', flexShrink:0 }}>Outils :</span>
+          {['↗ Tendance','◎ Fibo','▭ Rectangle','⟨⟩ Pitchfork','∥ Canal','📐 Mesure R/R','✏ Texte','📊 Indicateurs','↩ Undo','↪ Redo'].map(tool => (
+            <span key={tool} style={{ fontSize:9, color:'#555C70', background:'rgba(255,255,255,0.03)',
+              padding:'2px 6px', borderRadius:4, whiteSpace:'nowrap', flexShrink:0 }}>{tool}</span>
+          ))}
+          <span style={{ fontSize:9, color:'#3D4254', marginLeft:4, flexShrink:0 }}>← barre gauche</span>
+        </div>
+        {/* Connexion TradingView */}
+        <div style={{ padding:'6px 14px', background:'rgba(191,90,242,0.04)',
+          display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <span style={{ fontSize:11 }}>💾</span>
+            <span style={{ fontSize:10, color:'#8F94A3' }}>
+              Connecte-toi à ton compte TradingView pour <span style={{ color:'#BF5AF2', fontWeight:600 }}>sauvegarder tes analyses, dessins et layouts</span> sur leurs serveurs.
+            </span>
+          </div>
+          <a href="https://www.tradingview.com/sign-in/" target="_blank" rel="noopener noreferrer"
+            style={{ flexShrink:0, padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:700,
+              background:'rgba(191,90,242,0.15)', border:'1px solid rgba(191,90,242,0.4)',
+              color:'#BF5AF2', textDecoration:'none', whiteSpace:'nowrap' }}>
+            Créer un compte gratuit →
+          </a>
+        </div>
       </div>
 
       {/* Chart */}
