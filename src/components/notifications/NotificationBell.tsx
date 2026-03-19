@@ -1,5 +1,6 @@
 // NotificationBell.tsx — Système de notifications complet avec réglages granulaires
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { signalService, TradingSignal } from '@/services/notifications/SignalNotificationService'
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -278,13 +279,13 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Modal overlay */}
-      {open && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:999,
-          display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }}
+      {/* Modal overlay — portal into body so it's always on top */}
+      {open && createPortal(
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:99999,
+          display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={()=>setOpen(false)}>
-        <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:20, width:380, maxHeight:'80vh',
-          boxShadow:'0 24px 64px rgba(0,0,0,0.7)', zIndex:1000, display:'flex', flexDirection:'column', overflow:'hidden' }}
+        <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:20, width:400, maxHeight:'85vh',
+          boxShadow:'0 32px 80px rgba(0,0,0,0.8)', zIndex:100000, display:'flex', flexDirection:'column', overflow:'hidden' }}
           onClick={e=>e.stopPropagation()}>
 
           {/* Header */}
@@ -453,7 +454,8 @@ export default function NotificationBell() {
             )}
           </div>
         </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
