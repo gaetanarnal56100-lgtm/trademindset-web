@@ -112,7 +112,7 @@ export default function NewsTickerBanner(){
 
   const fetchNews=useCallback(async(force=false)=>{
     if(loading)return
-    if(!force&&lastRefresh&&(Date.now()-lastRefresh.getTime())<600000)return
+    if(!force&&lastRefresh&&(lastRefresh instanceof Date ? Date.now()-lastRefresh.getTime() : Infinity)<600000)return
     setLoading(true)
     try{
       const allRaw:{title:string;source:string;url?:string}[]=[]

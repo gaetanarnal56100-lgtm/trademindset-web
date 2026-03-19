@@ -3,6 +3,13 @@
 
 import type { Trade, TradeStats } from '@/types'
 
+function safeT(d: any): number {
+  if (!d) return 0
+  if (typeof d?.getTime === 'function') { const t = d.getTime(); return isNaN(t) ? 0 : t }
+  if (typeof d?.seconds === 'number') return d.seconds * 1000
+  return 0
+}
+
 export function computeStats(trades: Trade[]): TradeStats {
   const closed = trades.filter(t => t.status === 'closed' && t.pnl !== undefined)
 
@@ -25,7 +32,7 @@ export function computeStats(trades: Trade[]): TradeStats {
 
   // Max drawdown
   let peak = 0, maxDD = 0, running = 0
-  for (const t of [...closed].sort((a, b) => a.entryDate.getTime() - b.entryDate.getTime())) {
+  for (const t of [...closed].sort((a, b) => safeT(a.entryDate) - safeT(b.entryDate))) {
     running += t.pnl ?? 0
     if (running > peak) peak = running
     const dd = peak - running
@@ -46,13 +53,13 @@ export function computeStats(trades: Trade[]): TradeStats {
   // Hold time
   const holdTimes = closed
     .filter(t => t.exitDate)
-    .map(t => (t.exitDate!.getTime() - t.entryDate.getTime()) / 3_600_000)
+    .map(t => (safeT(t.exitDate) - safeT(t.entryDate)) / 3_600_000)
   const avgHoldTime = holdTimes.length > 0
     ? holdTimes.reduce((s, h) => s + h, 0) / holdTimes.length
     : 0
 
   // Streaks
-  const sorted = [...closed].sort((a, b) => a.entryDate.getTime() - b.entryDate.getTime())
+  const sorted = [...closed].sort((a, b) => safeT(a.entryDate) - safeT(b.entryDate))
   let curStreak = 0, maxWin = 0, maxLoss = 0
   let streak = 0
   let lastWin: boolean | null = null

@@ -82,7 +82,7 @@ const SIGNAL_GROUPS = [
 const URGENCY_COLOR: Record<string,string> = { premium:'#FFD700', high:'#FF3B30', medium:'#FF9500', low:'#8F94A3' }
 
 function timeAgo(d: Date) {
-  const s = Math.floor((Date.now() - d.getTime()) / 1000)
+  const s = Math.floor((Date.now() - (d instanceof Date && !isNaN(d.getTime()) ? d.getTime() : Date.now())) / 1000)
   if (s < 60) return `${s}s`; if (s < 3600) return `${Math.floor(s/60)}m`; return `${Math.floor(s/3600)}h`
 }
 
@@ -235,7 +235,7 @@ export default function NotificationBell() {
     if (r === 'granted') updatePref('browserEnabled', true)
   }, [])
 
-  const recent = signals.filter(s => (Date.now()-s.timestamp.getTime()) < 30*60*1000).length
+  const recent = signals.filter(s => (s.timestamp instanceof Date ? Date.now()-s.timestamp.getTime() : Infinity) < 30*60*1000).length
 
   function updatePref<K extends keyof NotifPrefs>(key: K, value: NotifPrefs[K]) {
     setPrefs(p => ({ ...p, [key]: value }))
@@ -315,7 +315,7 @@ export default function NotificationBell() {
                 ) : signals.slice(0, 20).map(sig => {
                   const urgency = sig.type.includes('SMART') ? 'premium' : sig.type.includes('BUY') || sig.type.includes('SELL') ? 'high' : 'medium'
                   const c = URGENCY_COLOR[urgency]
-                  const sigAge = (Date.now() - sig.timestamp.getTime()) < 30*60*1000
+                  const sigAge = (sig.timestamp instanceof Date ? Date.now()-sig.timestamp.getTime() : Infinity) < 30*60*1000
                   return (
                     <div key={sig.id} style={{ padding:'10px 16px', display:'flex', gap:10, alignItems:'flex-start',
                       background: sigAge ? 'rgba(255,255,255,0.02)' : 'transparent',

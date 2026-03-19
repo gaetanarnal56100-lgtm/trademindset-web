@@ -529,9 +529,11 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     const candles=candlesRef.current;if(!candles.length)return
 
     const cssW = canvas.offsetWidth, cssH = canvas.offsetHeight
-    function xForIdx(idx:number):number|null{
+    function xForIdx(idx:number, clampLeft=false):number|null{
       const t=candles[idx]?.time;if(!t)return null
-      return tScale.timeToCoordinate(t as Time)
+      const x=tScale.timeToCoordinate(t as Time)
+      if(x===null) return clampLeft ? 0 : null
+      return x
     }
     function yForPrice(p:number):number|null{
       try{return pScale?.priceToCoordinate?.(p)??null}catch{return null}
@@ -541,7 +543,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     if(isEnabled('smc')&&smcResult){
       // Bullish OBs
       for(const ob of smcResult.bullOBs){
-        const x=xForIdx(ob.idx);const y1=yForPrice(ob.top);const y2=yForPrice(ob.btm)
+        const x=xForIdx(ob.idx,true);const y1=yForPrice(ob.top);const y2=yForPrice(ob.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(10,133,255,0.12)';ctx.strokeStyle='rgba(10,133,255,0.6)';ctx.lineWidth=1
           ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
@@ -552,7 +554,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       }
       // Bearish OBs
       for(const ob of smcResult.bearOBs){
-        const x=xForIdx(ob.idx);const y1=yForPrice(ob.top);const y2=yForPrice(ob.btm)
+        const x=xForIdx(ob.idx,true);const y1=yForPrice(ob.top);const y2=yForPrice(ob.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(255,59,48,0.12)';ctx.strokeStyle='rgba(255,59,48,0.6)';ctx.lineWidth=1
           ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
@@ -563,7 +565,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       }
       // Bullish FVGs
       for(const fvg of smcResult.bullFVGs){
-        const x=xForIdx(fvg.idx);const y1=yForPrice(fvg.top);const y2=yForPrice(fvg.btm)
+        const x=xForIdx(fvg.idx,true);const y1=yForPrice(fvg.top);const y2=yForPrice(fvg.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(34,199,89,0.08)';ctx.strokeStyle='rgba(34,199,89,0.5)';ctx.lineWidth=1;ctx.setLineDash([4,3])
           ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
@@ -574,7 +576,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       }
       // Bearish FVGs
       for(const fvg of smcResult.bearFVGs){
-        const x=xForIdx(fvg.idx);const y1=yForPrice(fvg.top);const y2=yForPrice(fvg.btm)
+        const x=xForIdx(fvg.idx,true);const y1=yForPrice(fvg.top);const y2=yForPrice(fvg.btm)
         if(x!=null&&y1!=null&&y2!=null){
           ctx.fillStyle='rgba(255,149,0,0.08)';ctx.strokeStyle='rgba(255,149,0,0.5)';ctx.lineWidth=1;ctx.setLineDash([4,3])
           ctx.fillRect(x,Math.min(y1,y2),cssW-x,Math.abs(y2-y1))
@@ -589,7 +591,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     if(isEnabled('msd')&&msdResult){
       // Swing labels
       for(const sh of msdResult.swingHighs){
-        const x=xForIdx(sh.idx);const y=yForPrice(sh.price)
+        const x=xForIdx(sh.idx,false);const y=yForPrice(sh.price)
         if(x!=null&&y!=null){
           ctx.font='bold 10px JetBrains Mono, monospace';ctx.fillStyle=sh.type==='HH'?'#FF3B30':'#FF9500'
           ctx.fillText(sh.type,x-10,y-6)
