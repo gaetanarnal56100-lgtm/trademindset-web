@@ -7,6 +7,7 @@ import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
 import TradePlanCard from './TradePlanCard'
+import LiveChart from './LiveChart'
 
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
@@ -601,6 +602,9 @@ export default function AnalysePage() {
           <div style={{fontSize:13,color:'#3D4254'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche</div>
         </div>
       )}
+
+      {/* Graphique Live TradingView */}
+      {symbol && <LiveChart symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
 
       {/* Plan de Trade IA — tous les actifs, en premier */}
       {symbol && <div style={{marginBottom:16}}>
