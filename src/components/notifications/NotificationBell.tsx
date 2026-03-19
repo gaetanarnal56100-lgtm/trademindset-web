@@ -199,13 +199,7 @@ export default function NotificationBell() {
   // Save prefs
   useEffect(() => { try { localStorage.setItem('notif_prefs', JSON.stringify(prefs)) } catch {} }, [prefs])
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return
-    const fn = (e: MouseEvent) => { if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', fn)
-    return () => document.removeEventListener('mousedown', fn)
-  }, [open])
+  // Close handled by overlay click only (portal-based modal)
 
   // Signal subscription
   useEffect(() => {
@@ -283,10 +277,10 @@ export default function NotificationBell() {
       {open && createPortal(
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:99999,
           display:'flex', alignItems:'center', justifyContent:'center' }}
-          onClick={()=>setOpen(false)}>
+          onMouseDown={()=>setOpen(false)}>
         <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:20, width:400, maxHeight:'85vh',
           boxShadow:'0 32px 80px rgba(0,0,0,0.8)', zIndex:100000, display:'flex', flexDirection:'column', overflow:'hidden' }}
-          onClick={e=>e.stopPropagation()}>
+          onMouseDown={e=>e.stopPropagation()}>
 
           {/* Header */}
           <div style={{ padding:'14px 16px 0', borderBottom:'1px solid #1E2330' }}>
