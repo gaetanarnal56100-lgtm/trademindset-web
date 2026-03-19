@@ -95,12 +95,31 @@ function PnLCurve({trades}:{trades:Trade[]}) {
   return <canvas ref={ref} width={600} height={100} style={{width:'100%',height:100,display:'block'}}/>
 }
 
-// ── Compact Calendar Heatmap with tooltip ─────────────────────────────────
+// ── Adaptive Calendar Heatmap with tooltip ────────────────────────────────
 function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
-  const [tooltip,setTooltip]=useState<{key:string,pnl:number,date:Date,x:number,y:number,count:number,symbols:string[]}|null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [cellSize, setCellSize] = useState(16)
+  const [tooltip,setTooltip]=useState<{key:string,pnl:number,date:Date,count:number,symbols:string[],left:number,top:number}|null>(null)
+
   const days=period==='7j'?7:period==='1M'?30:period==='3M'?90:period==='6M'?180:365
   const since=new Date(Date.now()-days*86400000)
-  
+
+  // Compute cell size from container width
+  useEffect(()=>{
+    const el=containerRef.current;if(!el)return
+    const gap=3
+    const obs=new ResizeObserver(entries=>{
+      const w=entries[0].contentRect.width
+      const sz=Math.floor((w-(6*gap))/7)
+      setCellSize(Math.max(10,Math.min(sz,28)))
+    })
+    obs.observe(el)
+    const w=el.getBoundingClientRect().width
+    const sz=Math.floor((w-18)/7)
+    setCellSize(Math.max(10,Math.min(sz,28)))
+    return()=>obs.disconnect()
+  },[])
+
   const byDay=useMemo(()=>{
     const map: Record<string,{pnl:number,count:number,symbols:string[]}>={}
     for(const t of trades.filter(t=>t.status==='closed'&&t.date>=since)){
@@ -124,69 +143,75 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
     d.setDate(d.getDate()+1)
   }
 
-  // Best/Worst day
   const allValues=Object.entries(byDay)
   const bestKey=allValues.length?allValues.reduce((a,b)=>b[1].pnl>a[1].pnl?b:a)[0]:null
   const worstKey=allValues.length?allValues.reduce((a,b)=>b[1].pnl<a[1].pnl?b:a)[0]:null
+  const gap=3
+  const fs=Math.max(8,Math.min(cellSize-4,11))
 
-  const csz=14,cgap=2,cgw=csz*7+cgap*6
   return(
-    <div style={{position:'relative'}}>
-      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${csz}px)`,gap:cgap,marginBottom:3,width:cgw}}>
-        {['D','L','M','M','J','V','S'].map((l,i)=><div key={i} style={{fontSize:9,color:'#3D4254',textAlign:'center',fontWeight:600,width:csz}}>{l}</div>)}
+    <div ref={containerRef} style={{position:'relative',width:'100%'}}>
+      {/* Day labels */}
+      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap,marginBottom:4}}>
+        {['D','L','M','M','J','V','S'].map((l,i)=>(
+          <div key={i} style={{fontSize:fs-1,color:'#555C70',textAlign:'center',fontWeight:600,lineHeight:`${cellSize}px`}}>{l}</div>
+        ))}
       </div>
-      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${csz}px)`,gap:cgap,width:cgw}}>
+      {/* Grid */}
+      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap}}>
         {cells.map(({date,key,inRange})=>{
           const data=byDay[key];const pnl=data?.pnl
           const intensity=pnl!=null?Math.min(Math.abs(pnl)/maxAbs,1):0
           const isToday=date.toDateString()===today.toDateString()
-          const isBest=key===bestKey;const isWorst=key===worstKey
-          let bg='#1C2130'
+          const isBest=key===bestKey,isWorst=key===worstKey
+          let bg='rgba(255,255,255,0.03)'
           if(inRange&&pnl!=null)bg=pnl>0?`rgba(34,199,89,${0.12+intensity*0.68})`:`rgba(255,59,48,${0.12+intensity*0.68})`
           else if(!inRange)bg='transparent'
           return(
-            <div key={key}
+            <div
+              key={key}
               onClick={e=>{
                 if(!inRange||!data)return
-                const rect=(e.target as HTMLElement).getBoundingClientRect()
-                const parent=(e.currentTarget as HTMLElement).closest('[data-heatmap]')?.getBoundingClientRect()
-                setTooltip(t=>t?.key===key?null:{key,pnl:data.pnl,date,x:rect.left-(parent?.left??0),y:rect.top-(parent?.top??0),count:data.count,symbols:data.symbols})
+                const rect=(e.currentTarget as HTMLElement).getBoundingClientRect()
+                setTooltip(t=>t?.key===key?null:{
+                  key,pnl:data.pnl,date,count:data.count,symbols:data.symbols,
+                  left:rect.left+rect.width/2,top:rect.top
+                })
               }}
               style={{
-                width:14,height:14,borderRadius:3,background:bg,cursor:inRange&&data?'pointer':'default',
-                border:isToday?'1px solid rgba(255,255,255,0.25)':isBest?'1px solid rgba(34,199,89,0.6)':isWorst?'1px solid rgba(255,59,48,0.6)':'1px solid transparent',
-                position:'relative',transition:'transform 0.1s',
+                width:cellSize,height:cellSize,borderRadius:Math.max(2,cellSize/5),
+                background:bg,cursor:inRange&&data?'pointer':'default',
+                border:isToday?'1.5px solid rgba(255,255,255,0.3)':isBest?'1.5px solid rgba(34,199,89,0.7)':isWorst?'1.5px solid rgba(255,59,48,0.5)':'1px solid transparent',
+                transition:'transform 0.1s',boxSizing:'border-box' as const,
               }}
+              title={inRange&&data?`${key}: ${fmtK(pnl!)}`:undefined}
             />
           )
         })}
       </div>
-      {/* Tooltip */}
+      {/* Tooltip — portal-like fixed position */}
       {tooltip&&(
-        <div
-          data-heatmap
-          onClick={()=>setTooltip(null)}
-          style={{position:'fixed',inset:0,zIndex:50}}
-        >
-          <div
-            onClick={e=>e.stopPropagation()}
-            style={{
-              position:'absolute',left:tooltip.x,top:tooltip.y-110,
-              background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:12,padding:'12px 16px',
-              minWidth:180,zIndex:51,boxShadow:'0 8px 32px rgba(0,0,0,0.5)',
-            }}
-          >
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#8F94A3'}}>
+        <>
+          <div style={{position:'fixed',inset:0,zIndex:49}} onClick={()=>setTooltip(null)}/>
+          <div style={{
+            position:'fixed',
+            left:Math.min(tooltip.left-90,window.innerWidth-200),
+            top:tooltip.top-120,
+            background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:12,padding:'12px 16px',
+            minWidth:180,zIndex:50,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',
+            pointerEvents:'none',
+          }}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+              <div style={{fontSize:11,color:'#8F94A3',fontWeight:600}}>
                 {tooltip.date.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})}
               </div>
               {tooltip.key===bestKey&&<div style={{fontSize:9,fontWeight:700,color:'#22C759',background:'rgba(34,199,89,0.15)',padding:'2px 7px',borderRadius:10}}>Best</div>}
               {tooltip.key===worstKey&&<div style={{fontSize:9,fontWeight:700,color:'#FF3B30',background:'rgba(255,59,48,0.15)',padding:'2px 7px',borderRadius:10}}>Worst</div>}
             </div>
-            <div style={{fontSize:22,fontWeight:800,color:tooltip.pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace',marginBottom:6}}>{fmtK(tooltip.pnl)}</div>
-            <div style={{fontSize:11,color:'#555C70'}}>{tooltip.count} trade{tooltip.count!==1?'s':''} · {tooltip.symbols.slice(0,3).join(', ')}{tooltip.symbols.length>3?'…':''}</div>
+            <div style={{fontSize:22,fontWeight:800,color:tooltip.pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace',marginBottom:4}}>{fmtK(tooltip.pnl)}</div>
+            <div style={{fontSize:11,color:'#555C70'}}>{tooltip.count} trade{tooltip.count!==1?'s':''}{tooltip.symbols.length>0?' · '+tooltip.symbols.slice(0,3).join(', '):''}</div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
