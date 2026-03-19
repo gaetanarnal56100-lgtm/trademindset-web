@@ -129,12 +129,13 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
   const bestKey=allValues.length?allValues.reduce((a,b)=>b[1].pnl>a[1].pnl?b:a)[0]:null
   const worstKey=allValues.length?allValues.reduce((a,b)=>b[1].pnl<a[1].pnl?b:a)[0]:null
 
+  const csz=14,cgap=2,cgw=csz*7+cgap*6
   return(
     <div style={{position:'relative'}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:3}}>
-        {['D','L','M','M','J','V','S'].map((l,i)=><div key={i} style={{fontSize:9,color:'#3D4254',textAlign:'center',fontWeight:600}}>{l}</div>)}
+      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${csz}px)`,gap:cgap,marginBottom:3,width:cgw}}>
+        {['D','L','M','M','J','V','S'].map((l,i)=><div key={i} style={{fontSize:9,color:'#3D4254',textAlign:'center',fontWeight:600,width:csz}}>{l}</div>)}
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${csz}px)`,gap:cgap,width:cgw}}>
         {cells.map(({date,key,inRange})=>{
           const data=byDay[key];const pnl=data?.pnl
           const intensity=pnl!=null?Math.min(Math.abs(pnl)/maxAbs,1):0
@@ -152,7 +153,7 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
                 setTooltip(t=>t?.key===key?null:{key,pnl:data.pnl,date,x:rect.left-(parent?.left??0),y:rect.top-(parent?.top??0),count:data.count,symbols:data.symbols})
               }}
               style={{
-                aspectRatio:'1',borderRadius:4,background:bg,cursor:inRange&&data?'pointer':'default',
+                width:14,height:14,borderRadius:3,background:bg,cursor:inRange&&data?'pointer':'default',
                 border:isToday?'1px solid rgba(255,255,255,0.25)':isBest?'1px solid rgba(34,199,89,0.6)':isWorst?'1px solid rgba(255,59,48,0.6)':'1px solid transparent',
                 position:'relative',transition:'transform 0.1s',
               }}
