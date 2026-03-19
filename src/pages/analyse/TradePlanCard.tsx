@@ -300,7 +300,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
 
   return (
     <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden' }}>
-      <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)', position:'relative' as 'relative' }} />
+      <div style={{ position:'relative', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)' }} />
 
       {/* Header */}
       <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }} onClick={() => setExpanded(x=>!x)}>
@@ -354,7 +354,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
               <button
                 onClick={loadAI}
                 disabled={aiLoading}
-                style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:8, border:'none', background: aiLoading ? '#1C2130' : 'rgba(191,90,242,0.15)', color: aiLoading ? '#555C70' : '#BF5AF2', cursor: aiLoading ? 'not-allowed' : 'pointer', fontSize:11, fontWeight:600, border:'1px solid rgba(191,90,242,0.3)' as string }}
+                style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:8, background: aiLoading ? '#1C2130' : 'rgba(191,90,242,0.15)', color: aiLoading ? '#555C70' : '#BF5AF2', cursor: aiLoading ? 'not-allowed' : 'pointer', fontSize:11, fontWeight:600, border:'1px solid rgba(191,90,242,0.3)' as string }}
               >
                 {aiLoading ? (
                   <><div style={{ width:12, height:12, border:'2px solid #2A2F3E', borderTopColor:'#BF5AF2', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> Analyse...</>
