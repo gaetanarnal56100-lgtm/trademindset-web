@@ -62,20 +62,23 @@ export function tradePnL(t: Trade): number {
 // ── Decode helpers ─────────────────────────────────────────────────────────
 
 function toDate(val: unknown): Date {
-  if (!val) return new Date()
-  if (val instanceof Date) return val
-  if (typeof (val as any).toDate === 'function') return (val as any).toDate()
+  if (!val) return new Date(0)
+  if (val instanceof Date) return isNaN(val.getTime()) ? new Date(0) : val
+  if (typeof (val as any).toDate === 'function') {
+    try { const d = (val as any).toDate(); return isNaN(d.getTime()) ? new Date(0) : d } catch { return new Date(0) }
+  }
   if (typeof (val as any).seconds === 'number') return new Date((val as any).seconds * 1000)
+  if (typeof (val as any)._seconds === 'number') return new Date((val as any)._seconds * 1000)
   if (typeof val === 'number') return new Date(val)
-  if (typeof val === 'string') { const d = new Date(val); return isNaN(d.getTime()) ? new Date() : d }
-  return new Date()
+  if (typeof val === 'string') { const d = new Date(val); return isNaN(d.getTime()) ? new Date(0) : d }
+  return new Date(0)
 }
 
 function decodeTrade(data: Record<string, unknown>, id: string): Trade | null {
   try {
     return {
       id,
-      date:            toDate(data.date ?? data.entryDate ?? data.closedAt),
+      date:            toDate(data.date ?? data.entryDate ?? data.closedAt ?? data.timestamp ?? data.createdAt),
       symbol:          (data.symbol as string) ?? '',
       type:            ((data.type as TradeType) ?? 'Long'),
       entryPrice:      data.entryPrice  as number | undefined,
@@ -121,11 +124,18 @@ function encodeTrade(t: Trade): Record<string, unknown> {
 export function subscribeTrades(cb: (trades: Trade[]) => void): Unsubscribe {
   const uid = getUid()
   const col = collection(db, 'users', uid, 'trades')
-  return onSnapshot(query(col, orderBy('date', 'desc')), snap => {
-    cb(snap.docs.flatMap(d => {
+  return onSnapshot(query(col), snap => {
+    const trades = snap.docs.flatMap(d => {
       const t = decodeTrade(d.data() as Record<string, unknown>, d.id)
       return t ? [t] : []
-    }))
+    })
+    // Sort safely in JS — avoids Firestore SDK crashing on invalid Date objects
+    trades.sort((a, b) => {
+      const at = a.date instanceof Date && !isNaN(a.date.getTime()) ? a.date.getTime() : 0
+      const bt = b.date instanceof Date && !isNaN(b.date.getTime()) ? b.date.getTime() : 0
+      return bt - at
+    })
+    cb(trades)
   }, err => console.error('🔥 subscribeTrades error:', err))
 }
 
@@ -189,12 +199,11 @@ function encodeMood(m: MoodEntry): Record<string, unknown> {
 
 function decodeMood(data: Record<string, unknown>, id: string): MoodEntry | null {
   try {
-    const ts = data.timestamp as Timestamp
     return {
       id,
       emotionalState: (data.emotionalState as EmotionalState) ?? 'calm',
       intensity:      (data.intensity      as number) ?? 5,
-      timestamp:      ts?.toDate() ?? new Date(),
+      timestamp:      toDate(data.timestamp ?? data.date ?? data.createdAt),
       context:        (data.context        as MoodContext) ?? 'general',
       tags:           (data.tags           as string[]) ?? [],
       isExceptional:  (data.isExceptional  as boolean) ?? false,
@@ -208,11 +217,17 @@ function decodeMood(data: Record<string, unknown>, id: string): MoodEntry | null
 export function subscribeMoods(cb: (m: MoodEntry[]) => void): Unsubscribe {
   const uid = getUid()
   const col = collection(db, 'users', uid, 'moods')
-  return onSnapshot(query(col, orderBy('timestamp', 'desc')), snap => {
-    cb(snap.docs.flatMap(d => {
+  return onSnapshot(query(col), snap => {
+    const moods = snap.docs.flatMap(d => {
       const m = decodeMood(d.data() as Record<string, unknown>, d.id)
       return m ? [m] : []
-    }))
+    })
+    moods.sort((a, b) => {
+      const at = a.timestamp instanceof Date && !isNaN(a.timestamp.getTime()) ? a.timestamp.getTime() : 0
+      const bt = b.timestamp instanceof Date && !isNaN(b.timestamp.getTime()) ? b.timestamp.getTime() : 0
+      return bt - at
+    })
+    cb(moods)
   }, err => console.error('🔥 subscribeMoods error:', err))
 }
 

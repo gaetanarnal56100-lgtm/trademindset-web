@@ -124,7 +124,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
 
       // Callback quand le widget est prêt
       onready: () => setLoading(false),
-    })
+    }) } catch(e) { console.warn('TradingView widget error:', e); setLoading(false) }
 
     // Fallback si onready ne se déclenche pas
     setTimeout(() => setLoading(false), 3000)
