@@ -38,7 +38,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
     document.head.appendChild(s)
   }, [])
 
-  const buildWidget = useCallback(() => {
+  const buildWidget = useCallback(() => { try {
     const el = containerRef.current
     if (!el || !(window as any).TradingView) return
     setLoading(true)
@@ -124,10 +124,11 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
 
       // Callback quand le widget est prêt
       onready: () => setLoading(false),
-    }) } catch(e) { console.warn('TradingView widget error:', e); setLoading(false) }
+    })
 
     // Fallback si onready ne se déclenche pas
     setTimeout(() => setLoading(false), 3000)
+  } catch(e) { console.warn('TradingView widget error:', e); setLoading(false) }
   }, [tvSymbol, tf, chartType, expanded])
 
   useEffect(() => {
