@@ -72,6 +72,13 @@ function toDate(val: unknown): Date {
   if (typeof val === 'number') return new Date(val)
   if (typeof val === 'string') { const d = new Date(val); return isNaN(d.getTime()) ? new Date(0) : d }
   return new Date(0)
+} catch { return new Date(0) }
+  }
+  if (typeof (val as any).seconds === 'number') return new Date((val as any).seconds * 1000)
+  if (typeof (val as any)._seconds === 'number') return new Date((val as any)._seconds * 1000)
+  if (typeof val === 'number') return new Date(val)
+  if (typeof val === 'string') { const d = new Date(val); return isNaN(d.getTime()) ? new Date(0) : d }
+  return new Date(0)
 }
 
 function decodeTrade(data: Record<string, unknown>, id: string): Trade | null {

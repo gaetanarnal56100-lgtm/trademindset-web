@@ -9,7 +9,6 @@ import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
 import TradePlanCard from './TradePlanCard'
 import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
-import LightweightChart from './LightweightChart'
 
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
@@ -612,7 +611,6 @@ export default function AnalysePage() {
       {symbol && <LightweightChart symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
 
       {/* Lightweight Charts — sauvegarde Firestore */}
-      {symbol && <LightweightChart symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
 
       {/* Plan de Trade IA — tous les actifs, en premier */}
       {symbol && <div style={{marginBottom:16}}>

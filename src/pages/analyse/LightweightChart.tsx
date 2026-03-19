@@ -306,6 +306,102 @@ function calcMarketProfile(candles:Candle[], bins=30):MPResult|null {
 // ══════════════════════════════════════════════════════════════════════════
 // ── COMPOSANT PRINCIPAL ───────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════
+// ── VMC Panel dédié ───────────────────────────────────────────────────────
+function VMCPanel({vmcResult, candles}: {vmcResult: VMCResult; candles: Candle[]}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !vmcResult || !candles.length) return
+    const draw = () => {
+      canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight
+      const ctx = canvas.getContext('2d')!
+      const w = canvas.width, h = canvas.height
+      ctx.clearRect(0, 0, w, h)
+      ctx.fillStyle = '#0D1117'; ctx.fillRect(0, 0, w, h)
+      const n = vmcResult.sig.length
+      const vis = Math.min(n, Math.floor(w / 2.5))
+      const sig = vmcResult.sig.slice(-vis)
+      const ss = vmcResult.sigSignal.slice(-vis)
+      const mom = vmcResult.mom.slice(-vis)
+      const len = sig.length; if (!len) return
+      const allV = [...sig, ...ss]
+      const minV = Math.min(...allV, -60), maxV = Math.max(...allV, 60)
+      const range = maxV - minV || 1
+      const toY = (v: number) => h * 0.9 - ((v - minV) / range) * (h * 0.8)
+      const toX = (i: number) => (i / (len - 1)) * w
+      // Zero line
+      ctx.strokeStyle = '#2A2F3E'; ctx.lineWidth = 1; ctx.setLineDash([4,4])
+      ctx.beginPath(); ctx.moveTo(0, toY(0)); ctx.lineTo(w, toY(0)); ctx.stroke()
+      ctx.setLineDash([])
+      // Thresholds
+      for (const t of [40, -40]) {
+        ctx.strokeStyle = t > 0 ? 'rgba(255,59,48,0.25)' : 'rgba(34,199,89,0.25)'
+        ctx.lineWidth = 1; ctx.setLineDash([3,5])
+        ctx.beginPath(); ctx.moveTo(0, toY(t)); ctx.lineTo(w, toY(t)); ctx.stroke()
+        ctx.setLineDash([])
+        ctx.font = '8px monospace'; ctx.fillStyle = t > 0 ? '#FF3B3060' : '#22C75960'
+        ctx.fillText(t > 0 ? '+40' : '-40', 2, toY(t) - 2)
+      }
+      // Momentum bars
+      const bw = Math.max(1, w / len - 0.5)
+      for (let i = 0; i < len; i++) {
+        const m = mom[i], x = toX(i) - bw/2, y0 = toY(0), ym = toY(m)
+        ctx.fillStyle = m >= 0 ? 'rgba(34,199,89,0.4)' : 'rgba(255,59,48,0.4)'
+        ctx.fillRect(x, Math.min(ym, y0), bw, Math.abs(ym - y0))
+      }
+      // Cloud
+      ctx.beginPath()
+      for (let i = 0; i < len; i++) i === 0 ? ctx.moveTo(toX(i), toY(sig[i])) : ctx.lineTo(toX(i), toY(sig[i]))
+      for (let i = len-1; i >= 0; i--) ctx.lineTo(toX(i), toY(ss[i]))
+      ctx.closePath()
+      const bull = vmcResult.isBull[vmcResult.isBull.length - 1]
+      ctx.fillStyle = bull ? 'rgba(34,199,89,0.1)' : 'rgba(255,59,48,0.1)'; ctx.fill()
+      // VMC line
+      ctx.strokeStyle = '#00E5FF'; ctx.lineWidth = 2; ctx.beginPath()
+      for (let i = 0; i < len; i++) i === 0 ? ctx.moveTo(toX(i), toY(sig[i])) : ctx.lineTo(toX(i), toY(sig[i]))
+      ctx.stroke()
+      // Signal line
+      ctx.strokeStyle = '#FF9500'; ctx.lineWidth = 1.5; ctx.beginPath()
+      for (let i = 0; i < len; i++) i === 0 ? ctx.moveTo(toX(i), toY(ss[i])) : ctx.lineTo(toX(i), toY(ss[i]))
+      ctx.stroke()
+      // BUY/SELL signals
+      const off = n - len
+      for (const idx of vmcResult.buySignals) {
+        const ri = idx - off; if (ri < 0 || ri >= len) continue
+        const x = toX(ri)
+        ctx.fillStyle = '#22C759'; ctx.beginPath()
+        ctx.moveTo(x, h-2); ctx.lineTo(x-5, h-10); ctx.lineTo(x+5, h-10); ctx.closePath(); ctx.fill()
+      }
+      for (const idx of vmcResult.sellSignals) {
+        const ri = idx - off; if (ri < 0 || ri >= len) continue
+        const x = toX(ri)
+        ctx.fillStyle = '#FF3B30'; ctx.beginPath()
+        ctx.moveTo(x, 2); ctx.lineTo(x-5, 10); ctx.lineTo(x+5, 10); ctx.closePath(); ctx.fill()
+      }
+      // Label
+      const last = sig[len-1]
+      ctx.font = 'bold 9px JetBrains Mono, monospace'
+      ctx.fillStyle = '#00E5FF'; ctx.fillText(`VMC ${last>=0?'+':''}${last.toFixed(1)}`, 6, 12)
+      ctx.fillStyle = bull ? '#22C759' : '#FF3B30'; ctx.fillText(bull ? '▲ BULL' : '▼ BEAR', 60, 12)
+    }
+    draw()
+    const ro = new ResizeObserver(draw); ro.observe(canvas)
+    return () => ro.disconnect()
+  }, [vmcResult, candles])
+
+  return (
+    <div style={{borderTop:'1px solid #1E2330'}}>
+      <div style={{padding:'3px 14px',background:'rgba(191,90,242,0.06)',display:'flex',alignItems:'center',gap:8}}>
+        <span style={{fontSize:9,fontWeight:700,color:'#BF5AF2'}}>〜 VMC</span>
+        <span style={{fontSize:8,color:'#555C70'}}>cyan=VMC · orange=Signal · barres=momentum · ▲▼=signaux</span>
+      </div>
+      <canvas ref={canvasRef} style={{width:'100%',height:90,display:'block'}}/>
+    </div>
+  )
+}
+
+
 export default function LightweightChart({symbol,isCrypto}:Props) {
   const chartEl   = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
@@ -414,18 +510,23 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const renderIndicators=useCallback(()=>{
     const canvas=indLayerEl.current;const chart=chartApi.current
     if(!canvas||!chart)return
+    try { chart.timeScale() } catch { return }
     try { chart.timeScale() } catch { return } // chart disposed guard
     canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
     const ctx=canvas.getContext('2d')!
     ctx.clearRect(0,0,canvas.width,canvas.height)
-    const tScale=chart.timeScale();const pScale=chart.priceScale('right')
+    let tScale: any, pScale: any
+    try{tScale=chart.timeScale();pScale=chart.priceScale('right')}catch{return}
+    if(!tScale||!pScale)return
     const candles=candlesRef.current;if(!candles.length)return
 
     function xForIdx(idx:number):number|null{
       const t=candles[idx]?.time;if(!t)return null
       return tScale.timeToCoordinate(t as Time)
     }
-    function yForPrice(p:number):number|null{return pScale.priceToCoordinate(p)}
+    function yForPrice(p:number):number|null{
+      try{return pScale?.priceToCoordinate?.(p)??null}catch{return null}
+    }
 
     // ── SMC ───────────────────────────────────────────────────────────
     if(isEnabled('smc')&&smcResult){
@@ -563,13 +664,15 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const renderDrawings=useCallback(()=>{
     const canvas=overlayEl.current;const chart=chartApi.current
     if(!canvas||!chart)return
+    let _ps: any; try{chart.timeScale();_ps=chart.priceScale('right')}catch{return}
+    if(!_ps)return
     try { chart.timeScale() } catch { return } // chart disposed guard
     canvas.width=canvas.offsetWidth;canvas.height=canvas.offsetHeight
     const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,canvas.width,canvas.height)
     drawings.forEach(d=>{
       ctx.strokeStyle=d.color;ctx.fillStyle=d.color;ctx.lineWidth=1.5;ctx.font='11px JetBrains Mono, monospace'
       if(d.type==='hline'&&d.data?.price!=null){
-        const y=chart.priceScale('right').priceToCoordinate(d.data.price);if(y==null)return
+        const y=_ps?.priceToCoordinate?.(d.data.price);if(y==null)return
         ctx.setLineDash([6,4]);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();ctx.setLineDash([])
         const tag=`${d.label?d.label+' ':''}${fmtP(d.data.price)}`;const tw=ctx.measureText(tag).width+12
         ctx.fillStyle=d.color+'33';ctx.beginPath();ctx.roundRect?.(6,y-14,tw,17,3);ctx.fill()
@@ -578,28 +681,28 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       if(d.type==='fibo'&&d.data?.p1&&d.data?.p2){
         const high=Math.max(d.data.p1.price,d.data.p2.price),low=Math.min(d.data.p1.price,d.data.p2.price),range=high-low
         FIBO_LEVELS.forEach(lvl=>{
-          const p=high-range*lvl;const y=chart.priceScale('right').priceToCoordinate(p);if(y==null)return
+          const p=high-range*lvl;const y=_ps?.priceToCoordinate?.(p);if(y==null)return
           ctx.globalAlpha=lvl===0||lvl===1?0.9:0.5;ctx.setLineDash(lvl===0||lvl===1?[]:[4,4])
           ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();ctx.setLineDash([])
           ctx.globalAlpha=0.85;ctx.fillText(`${(lvl*100).toFixed(1)}%  ${fmtP(p)}`,8,y-3)
         });ctx.globalAlpha=1
       }
       if(d.type==='trend'&&d.data?.p1&&d.data?.p2){
-        const y1=chart.priceScale('right').priceToCoordinate(d.data.p1.price)
-        const y2=chart.priceScale('right').priceToCoordinate(d.data.p2.price)
+        const y1=_ps?.priceToCoordinate?.(d.data.p1.price)
+        const y2=_ps?.priceToCoordinate?.(d.data.p2.price)
         if(y1==null||y2==null)return
         const slope=(y2-y1)/(canvas.width*0.7)
         ctx.beginPath();ctx.moveTo(0,y1-slope*canvas.width*0.15);ctx.lineTo(canvas.width,y1+slope*canvas.width*0.85);ctx.stroke()
       }
       if(d.type==='rect'&&d.data?.p1&&d.data?.p2){
-        const y1=chart.priceScale('right').priceToCoordinate(d.data.p1.price)
-        const y2=chart.priceScale('right').priceToCoordinate(d.data.p2.price)
+        const y1=_ps?.priceToCoordinate?.(d.data.p1.price)
+        const y2=_ps?.priceToCoordinate?.(d.data.p2.price)
         if(y1==null||y2==null)return
         ctx.fillStyle=d.color+'18';ctx.fillRect(canvas.width*0.05,Math.min(y1,y2),canvas.width*0.9,Math.abs(y2-y1))
         ctx.strokeRect(canvas.width*0.05,Math.min(y1,y2),canvas.width*0.9,Math.abs(y2-y1))
       }
       if(d.type==='note'&&d.data?.price!=null){
-        const y=chart.priceScale('right').priceToCoordinate(d.data.price);if(y==null)return
+        const y=_ps?.priceToCoordinate?.(d.data.price);if(y==null)return
         const tag=d.label||'Note';const tw=ctx.measureText(tag).width+20
         ctx.fillStyle=d.color+'22';ctx.strokeStyle=d.color
         ctx.beginPath();ctx.roundRect?.(8,y-16,tw,20,5);ctx.fill();ctx.stroke()
@@ -741,6 +844,9 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
           style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:3,
             cursor:tool==='cursor'?'default':'crosshair',background:'transparent'}}/>
       </div>
+
+      {/* VMC Panel */}
+      {isEnabled('vmc')&&vmcResult&&<VMCPanel vmcResult={vmcResult} candles={candlesRef.current}/>}
 
       {/* Confirm panel */}
       {confirmPanel&&(

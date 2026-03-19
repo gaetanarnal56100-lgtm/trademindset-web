@@ -3,6 +3,14 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+function safeTime(d: any): number {
+  if (!d) return 0
+  if (typeof d?.getTime === 'function') { const t = d.getTime(); return isNaN(t) ? 0 : t }
+  if (typeof d?.seconds === 'number') return d.seconds * 1000
+  if (typeof d === 'number') return d
+  return 0
+}
+
 function fmt(n: number, d = 2) { return Math.abs(n).toFixed(d) }
 function fmtK(n: number) {
   const abs = Math.abs(n), s = n < 0 ? '-' : '+'
@@ -23,7 +31,7 @@ function Skel({ h=20, w='100%' }: { h?: number; w?: string|number }) {
 
 // ── Statistics ────────────────────────────────────────────────────────────
 function calcStats(trades: Trade[]) {
-  const closed = trades.filter(t=>t.status==='closed').sort((a,b)=>a.date.getTime()-b.date.getTime())
+  const closed = trades.filter(t=>t.status==='closed').sort((a,b)=>safeTime(a.date)-safeTime(b.date))
   const pnls = closed.map(tradePnL)
   const wins = pnls.filter(p=>p>0), losses = pnls.filter(p=>p<=0)
   const totalPnL = pnls.reduce((a,b)=>a+b,0)
@@ -62,7 +70,7 @@ function calcEmotions(moods: MoodEntry[], trades: Trade[]) {
   if(!moods.length)return null
   const avg=moods.reduce((a,m)=>a+emotionScore(m.state),0)/moods.length
   const avgState=avg>=3.5?'Confiant':avg>=2.5?'Neutre':avg>=1.5?'Stressé':'Impulsif'
-  const sorted=[...trades].filter(t=>t.status==='closed').sort((a,b)=>b.date.getTime()-a.date.getTime())
+  const sorted=[...trades].filter(t=>t.status==='closed').sort((a,b)=>safeTime(b.date)-safeTime(a.date))
   let consec=0;for(const t of sorted){if(tradePnL(t)<0)consec++;else break}
   const risk=consec>=3?'Élevé':consec>=2?'Prudence':'Faible'
   const impact=avg>=3.5?'Positif':avg>=2.5?'Neutre':'Négatif'
@@ -77,7 +85,7 @@ function PnLCurve({trades}:{trades:Trade[]}) {
     const canvas=ref.current;if(!canvas)return
     const ctx=canvas.getContext('2d')!,W=canvas.width,H=canvas.height
     ctx.clearRect(0,0,W,H)
-    const cl=[...trades].filter(t=>t.status==='closed').sort((a,b)=>a.date.getTime()-b.date.getTime())
+    const cl=[...trades].filter(t=>t.status==='closed').sort((a,b)=>safeTime(a.date)-safeTime(b.date))
     if(cl.length<2){ctx.font='12px DM Sans';ctx.fillStyle='#3D4254';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('Pas assez de données',W/2,H/2);return}
     let cum=0;const pts=cl.map(t=>{cum+=tradePnL(t);return cum})
     const minV=Math.min(...pts,0),maxV=Math.max(...pts,0),range=maxV-minV||1,zY=H-((-minV)/range)*H
@@ -492,7 +500,7 @@ export default function DashboardPage() {
   const emo = useMemo(()=>calcEmotions(moods,trades),[moods,trades])
   const closed=trades.filter(t=>t.status==='closed')
   const open  =trades.filter(t=>t.status==='open')
-  const recent=[...trades].sort((a,b)=>b.date.getTime()-a.date.getTime()).slice(0,6)
+  const recent=[...trades].sort((a,b)=>safeTime(b.date)-safeTime(a.date)).slice(0,6)
   const systemName =(id:string)=>systems.find(s=>s.id===id)?.name??'—'
   const systemColor=(id:string)=>systems.find(s=>s.id===id)?.color??'#00E5FF'
 
