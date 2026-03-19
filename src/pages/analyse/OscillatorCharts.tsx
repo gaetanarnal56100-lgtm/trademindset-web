@@ -323,7 +323,6 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
           <span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
         </div>
-        </div>
         {badge&&<div style={{fontSize:10,fontWeight:700,color:badge.color,background:`${badge.color}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${badge.color}50`}}>{badge.label}</div>}
         <div style={{marginLeft:'auto',display:'flex',gap:10,alignItems:'center'}}>
           {result&&<div style={{display:'flex',gap:10,fontSize:11,fontFamily:'monospace'}}><span style={{color:'#37D7FF'}}>WT1: {wt1Last.toFixed(1)}</span><span style={{color:'#FF9500'}}>WT2: {wt2Last.toFixed(1)}</span></div>}
