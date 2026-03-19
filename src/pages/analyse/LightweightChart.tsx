@@ -1081,8 +1081,38 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   useEffect(()=>{
     renderOverlay()
     const c=chartApi.current;if(!c)return
-    let u:any;try{u=c.timeScale().subscribeVisibleLogicalRangeChange(()=>renderOverlay())}catch{}
-    return()=>{try{u?.()}catch{}}
+    // Subscribe to ALL viewport changes: scroll, zoom, resize
+    let u1:any,u2:any
+    try{u1=c.timeScale().subscribeVisibleLogicalRangeChange(()=>renderOverlay())}catch{}
+    try{u2=c.timeScale().subscribeVisibleTimeRangeChange(()=>renderOverlay())}catch{}
+    // Also subscribe to crosshair moves — fires on every mouse move over chart
+    // which catches zoom via wheel since the mouse is over the chart
+    let u3:any
+    try{u3=c.subscribeCrosshairMove(()=>renderOverlay())}catch{}
+    return()=>{try{u1?.();u2?.();u3?.()}catch{}}
+  },[renderOverlay])
+
+  // RAF loop — catches price-scale zoom (vertical) which has no event in v4
+  useEffect(()=>{
+    let raf:number
+    let lastKey = ''
+    let lastY = 0
+    const loop=()=>{
+      const c=chartApi.current; const s=seriesR.current
+      if(c&&s){
+        try{
+          const range=c.timeScale().getVisibleLogicalRange()
+          // Also track price scale by sampling a reference price coordinate
+          const yRef = s.priceToCoordinate(lastY||50000) ?? 0
+          const key=JSON.stringify(range)+'|'+Math.round(yRef)
+          if(key!==lastKey){lastKey=key;renderOverlay()}
+          if(!lastY)lastY = candlesRef.current[candlesRef.current.length-1]?.close||50000
+        }catch{}
+      }
+      raf=requestAnimationFrame(loop)
+    }
+    raf=requestAnimationFrame(loop)
+    return()=>cancelAnimationFrame(raf)
   },[renderOverlay])
 
   useEffect(()=>{
