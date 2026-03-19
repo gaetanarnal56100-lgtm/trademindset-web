@@ -278,11 +278,14 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Panel */}
+      {/* Modal overlay */}
       {open && (
-        <div style={{ position:'absolute', bottom:'calc(100% + 12px)', left:'50%', transform:'translateX(-50%)',
-          background:'#161B22', border:'1px solid #1E2330', borderRadius:16, width:340, maxHeight:560,
-          boxShadow:'0 16px 48px rgba(0,0,0,0.6)', zIndex:1000, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:999,
+          display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }}
+          onClick={()=>setOpen(false)}>
+        <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:20, width:380, maxHeight:'80vh',
+          boxShadow:'0 24px 64px rgba(0,0,0,0.7)', zIndex:1000, display:'flex', flexDirection:'column', overflow:'hidden' }}
+          onClick={e=>e.stopPropagation()}>
 
           {/* Header */}
           <div style={{ padding:'14px 16px 0', borderBottom:'1px solid #1E2330' }}>
@@ -449,6 +452,7 @@ export default function NotificationBell() {
               </div>
             )}
           </div>
+        </div>
         </div>
       )}
     </div>
