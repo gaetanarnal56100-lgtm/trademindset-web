@@ -353,7 +353,7 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
           <span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
             {isCryptoSymbol(symbol)
-              ? 'Ce symbole n'est pas disponible sur Binance Futures ni Spot.'
+              ? "Ce symbole n'est pas disponible sur Binance Futures ni Spot."
               : 'Les données actions/forex nécessitent les Cloud Functions Firebase (TwelveData/Finnhub). Vérifiez le déploiement.'}
           </span>
         </div>}
@@ -470,7 +470,7 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
           <span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
             {isCryptoSymbol(symbol)
-              ? 'Ce symbole n'est pas disponible sur Binance Futures ni Spot.'
+              ? "Ce symbole n'est pas disponible sur Binance Futures ni Spot."
               : 'Les données actions/forex nécessitent les Cloud Functions Firebase (TwelveData/Finnhub). Vérifiez le déploiement.'}
           </span>
         </div>}
