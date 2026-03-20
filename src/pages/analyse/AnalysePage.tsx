@@ -137,16 +137,19 @@ function useSymbolSearch(q: string) {
       const query = q.trim()
       // Crypto via Binance (public, sans token)
       const cryptoResults = await searchBinanceCrypto(query)
-      // Actions/Forex via Cloud Function Finnhub — seulement si pas assez de résultats crypto
-      // ou si la query ressemble à une action (pas de "USDT", lettres seulement)
-      const looksLikeStock = !query.toUpperCase().includes('USDT') && query.length <= 5
-      const nonCryptoResults = looksLikeStock && cryptoResults.length < 3
+      // Actions/Forex via Cloud Function — toujours chercher en parallèle si la query
+      // ne finit pas par USDT (pour couvrir AAPL, TSLA, etc.)
+      const looksLikeCrypto = query.toUpperCase().endsWith('USDT')
+      const nonCryptoResults = !looksLikeCrypto
         ? await searchNonCrypto(query)
         : []
-      // Fusionne
+      // Fusionne — actions en premier si peu de résultats crypto
       const seen = new Set<string>()
       const merged: SearchResult[] = []
-      for (const r of [...cryptoResults, ...nonCryptoResults]) {
+      const ordered = cryptoResults.length >= 3
+        ? [...cryptoResults, ...nonCryptoResults]
+        : [...nonCryptoResults, ...cryptoResults]
+      for (const r of ordered) {
         if (!seen.has(r.symbol)) { seen.add(r.symbol); merged.push(r) }
       }
       setResults(merged.length > 0 ? merged : CRYPTO_POPULAR.filter(s =>
@@ -832,12 +835,56 @@ export default function AnalysePage() {
         <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
       </div>
 
-      {/* État vide — aucun symbole sélectionné */}
+      {/* État vide — page d'accueil analyse améliorée */}
       {!symbol && (
-        <div style={{textAlign:'center',padding:'60px 20px',color:'#3D4254'}}>
-          <div style={{fontSize:48,marginBottom:16,opacity:0.3}}>🔍</div>
-          <div style={{fontSize:16,fontWeight:600,color:'#555C70',marginBottom:8}}>Recherchez un actif</div>
-          <div style={{fontSize:13,color:'#3D4254'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche</div>
+        <div style={{maxWidth:800,margin:'0 auto'}}>
+          {/* Hero */}
+          <div style={{textAlign:'center',padding:'40px 20px 30px'}}>
+            <div style={{width:64,height:64,borderRadius:20,background:'linear-gradient(135deg,rgba(0,229,255,0.15),rgba(191,90,242,0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,margin:'0 auto 16px',border:'1px solid rgba(0,229,255,0.2)'}}>📊</div>
+            <div style={{fontSize:20,fontWeight:700,color:'#F0F3FF',marginBottom:8,fontFamily:'Syne,sans-serif'}}>Recherchez un actif</div>
+            <div style={{fontSize:13,color:'#555C70',maxWidth:400,margin:'0 auto'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche ci-dessus pour lancer l'analyse</div>
+          </div>
+
+          {/* Accès rapide par catégorie */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:24}}>
+            {[
+              {title:'🪙 Crypto',items:[{s:'BTCUSDT',n:'Bitcoin'},{s:'ETHUSDT',n:'Ethereum'},{s:'SOLUSDT',n:'Solana'},{s:'BNBUSDT',n:'BNB'}]},
+              {title:'📈 Actions US',items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
+              {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD'},{s:'GC=F',n:'Or (Gold)'},{s:'^FCHI',n:'CAC 40'},{s:'MC.PA',n:'LVMH'}]},
+            ].map(cat=>(
+              <div key={cat.title} style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden'}}>
+                <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330'}}>
+                  <span style={{fontSize:12,fontWeight:700,color:'#F0F3FF'}}>{cat.title}</span>
+                </div>
+                <div style={{padding:'6px 0'}}>
+                  {cat.items.map(item=>(
+                    <button key={item.s} onClick={()=>{setSymbol(item.s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}}
+                      style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'8px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{item.s}</div>
+                        <div style={{fontSize:10,color:'#555C70'}}>{item.n}</div>
+                      </div>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3D4254" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Raccourcis clavier */}
+          <div style={{textAlign:'center',padding:'12px 0',display:'flex',justifyContent:'center',gap:20}}>
+            {[
+              {label:'Rechercher',keys:'Cliquez la barre'},
+              {label:'Crypto rapide',keys:'BTC, ETH, SOL...'},
+              {label:'Actions',keys:'AAPL, TSLA, NVDA...'},
+            ].map(h=>(
+              <div key={h.label} style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontSize:10,color:'#3D4254',background:'#1C2130',padding:'2px 8px',borderRadius:4,border:'1px solid #2A2F3E',fontFamily:'JetBrains Mono'}}>{h.keys}</span>
+                <span style={{fontSize:10,color:'#3D4254'}}>{h.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
