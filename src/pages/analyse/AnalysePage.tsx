@@ -159,9 +159,42 @@ function useSymbolSearch(q: string) {
   return { results, loading }
 }
 
+// ── Types pour l'historique ───────────────────────────────────────────────
+interface HistoryEntry {
+  symbol: string
+  name: string
+  icon: string
+  type: string
+  exchange?: string
+  price?: number
+  change24h?: number
+  visitedAt: number
+}
+
+const HISTORY_KEY = 'tm_search_history'
+const MAX_HISTORY = 12
+
+function loadHistory(): HistoryEntry[] {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') } catch { return [] }
+}
+function saveHistory(entries: HistoryEntry[]) {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_HISTORY))) } catch {}
+}
+
+// Récupère le prix actuel + variation 24h pour une crypto
+async function fetchPriceSummary(symbol: string): Promise<{price:number;change24h:number}|null> {
+  try {
+    const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`)
+    if (!r.ok) return null
+    const d = await r.json()
+    return { price: parseFloat(d.lastPrice), change24h: parseFloat(d.priceChangePercent) }
+  } catch { return null }
+}
+
 function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: string) => void }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -171,40 +204,171 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  const typeIcon = (t: string) => t==='crypto'?'₿':t==='stock'?'📈':'💱'
+  // Mise à jour des prix de l'historique en temps réel
+  useEffect(() => {
+    const h = loadHistory()
+    if (!h.length) return
+    Promise.all(
+      h.map(async entry => {
+        if (entry.type !== 'crypto') return entry
+        const s = await fetchPriceSummary(entry.symbol)
+        return s ? { ...entry, price: s.price, change24h: s.change24h } : entry
+      })
+    ).then(updated => {
+      setHistory(updated)
+      saveHistory(updated)
+    })
+  }, [open]) // refresh à chaque ouverture
+
+  const addToHistory = (r: SearchResult, price?: number, change24h?: number) => {
+    const entry: HistoryEntry = {
+      symbol: r.symbol, name: r.name, icon: r.icon,
+      type: r.type, exchange: r.exchange,
+      price, change24h, visitedAt: Date.now(),
+    }
+    const updated = [entry, ...history.filter(h => h.symbol !== r.symbol)]
+    setHistory(updated)
+    saveHistory(updated)
+  }
+
+  const removeFromHistory = (sym: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const updated = history.filter(h => h.symbol !== sym)
+    setHistory(updated)
+    saveHistory(updated)
+  }
+
+  const handleSelect = async (r: SearchResult | HistoryEntry) => {
+    onSelect(r.symbol)
+    setOpen(false)
+    setQ('')
+    // Si c'est une SearchResult (pas un HistoryEntry), on va chercher le prix
+    const summary = r.type === 'crypto' ? await fetchPriceSummary(r.symbol) : null
+    addToHistory(r as SearchResult, summary?.price, summary?.change24h)
+  }
+
   const typeColor = (t: string) => t==='crypto'?'#F59714':t==='stock'?'#22C759':'#42A5F5'
+  const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR', {maximumFractionDigits:0})}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
+
+  const showHistory = !q && history.length > 0
 
   return (
-    <div ref={ref} style={{position:'relative'}}>
-      <button onClick={() => setOpen(x => !x)} style={{display:'flex',alignItems:'center',gap:8,background:'#161B22',border:'1px solid #2A2F3E',borderRadius:12,padding:'8px 14px',cursor:'pointer',minWidth:190,transition:'border-color 0.15s'}}>
-        <div style={{width:22,height:22,borderRadius:6,background:'rgba(245,151,20,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'#F59714',flexShrink:0}}>₿</div>
-        <span style={{fontSize:13,fontWeight:700,color:'#F0F3FF',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>{symbol}</span>
+    <div ref={ref} style={{position:'relative', flex: 1}}>
+      {/* Trigger button */}
+      <button onClick={() => setOpen(x => !x)} style={{
+        display:'flex', alignItems:'center', gap:8, background:'#161B22',
+        border:`1px solid ${open?'#00E5FF':'#2A2F3E'}`, borderRadius:12,
+        padding:'8px 14px', cursor:'pointer', width:'100%', transition:'border-color 0.15s',
+      }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555C70" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span style={{fontSize:13,fontWeight:700,color:symbol?'#F0F3FF':'#555C70',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
+          {symbol || 'Rechercher un actif…'}
+        </span>
+        {symbol && history.find(h=>h.symbol===symbol)?.change24h != null && (
+          <span style={{fontSize:10,fontWeight:700,color:(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
+            {(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'+':''}{history.find(h=>h.symbol===symbol)?.change24h?.toFixed(2)}%
+          </span>
+        )}
         <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="#555C70" strokeWidth="1.5" strokeLinecap="round"/></svg>
       </button>
+
+      {/* Dropdown */}
       {open && (
-        <div style={{position:'absolute',top:'100%',right:0,background:'#161B22',border:'1px solid #2A2F3E',borderRadius:14,zIndex:100,marginTop:8,width:280,boxShadow:'0 12px 40px rgba(0,0,0,0.7)',overflow:'hidden'}}>
+        <div style={{
+          position:'absolute', top:'calc(100% + 6px)', left:0, right:0,
+          background:'#161B22', border:'1px solid #2A2F3E', borderRadius:14,
+          zIndex:200, boxShadow:'0 16px 48px rgba(0,0,0,0.8)', overflow:'hidden',
+          minWidth:300,
+        }}>
+          {/* Search input */}
           <div style={{padding:'10px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555C70" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Rechercher un actif..." style={{flex:1,background:'transparent',border:'none',color:'#F0F3FF',fontSize:13,outline:'none'}} />
+            <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+              placeholder="BTC, ETH, AAPL…"
+              style={{flex:1,background:'transparent',border:'none',color:'#F0F3FF',fontSize:13,outline:'none'}} />
             {loading && <div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'#00E5FF',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>}
+            {q && <button onClick={()=>setQ('')} style={{background:'none',border:'none',color:'#555C70',cursor:'pointer',fontSize:14,padding:'0 2px'}}>✕</button>}
           </div>
-          {!q && <div style={{padding:'6px 12px 4px',fontSize:10,color:'#555C70',textTransform:'uppercase',letterSpacing:'0.08em'}}>Populaires</div>}
-          <div style={{maxHeight:280,overflowY:'auto'}}>
-            {results.length === 0 ? (
-              <div style={{padding:'20px',textAlign:'center',color:'#555C70',fontSize:12}}>Aucun résultat</div>
-            ) : results.map(r => (
-              <button key={r.symbol} onClick={() => {onSelect(r.symbol); setOpen(false); setQ('')}} style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(0,229,255,0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10,transition:'background 0.1s'}}>
-                <div style={{width:28,height:28,borderRadius:8,background:`${typeColor(r.type)}15`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>
-                  {r.icon}
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
-                  <div style={{fontSize:10,color:'#555C70'}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
-                </div>
-                {r.symbol===symbol && <span style={{fontSize:9,color:'#00E5FF'}}>●</span>}
-              </button>
-            ))}
-          </div>
+
+          {/* Historique */}
+          {showHistory && (
+            <>
+              <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:9,fontWeight:700,color:'#3D4254',textTransform:'uppercase',letterSpacing:'0.08em'}}>🕐 Historique</span>
+                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'#3D4254',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer tout</button>
+              </div>
+              <div style={{maxHeight:320, overflowY:'auto'}}>
+                {history.map(entry => (
+                  <button key={entry.symbol} onClick={()=>handleSelect(entry as any)}
+                    style={{width:'100%',textAlign:'left',padding:'8px 14px',background:entry.symbol===symbol?'rgba(0,229,255,0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                    {/* Icon */}
+                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>
+                      {entry.icon}
+                    </div>
+                    {/* Info */}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+                        <span style={{fontSize:12,fontWeight:700,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</span>
+                        {entry.symbol===symbol && <span style={{fontSize:8,color:'#00E5FF'}}>● actif</span>}
+                      </div>
+                      <div style={{fontSize:10,color:'#555C70'}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
+                    </div>
+                    {/* Bilan prix */}
+                    {entry.price != null && (
+                      <div style={{textAlign:'right',flexShrink:0}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#F0F3FF',fontFamily:'JetBrains Mono'}}>{fmtPrice(entry.price)}</div>
+                        <div style={{fontSize:10,fontWeight:600,color:(entry.change24h??0)>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
+                          {(entry.change24h??0)>=0?'+':''}{entry.change24h?.toFixed(2)}%
+                        </div>
+                      </div>
+                    )}
+                    {/* Remove */}
+                    <div onClick={e=>removeFromHistory(entry.symbol,e)} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.04)',color:'#3D4254',fontSize:11,flexShrink:0,cursor:'pointer'}}>×</div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Résultats de recherche */}
+          {q && (
+            <>
+              {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'#3D4254',textTransform:'uppercase',letterSpacing:'0.08em'}}>Résultats</div>}
+              <div style={{maxHeight:300,overflowY:'auto'}}>
+                {results.length === 0 ? (
+                  <div style={{padding:'20px',textAlign:'center',color:'#555C70',fontSize:12}}>Aucun résultat pour "{q}"</div>
+                ) : results.map(r => (
+                  <button key={r.symbol} onClick={()=>handleSelect(r)}
+                    style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(0,229,255,0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>
+                      {r.icon}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
+                      <div style={{fontSize:10,color:'#555C70'}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
+                    </div>
+                    {r.symbol===symbol && <span style={{fontSize:9,color:'#00E5FF'}}>●</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Populaires si pas de query et pas d'historique */}
+          {!q && !history.length && (
+            <>
+              <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'#3D4254',textTransform:'uppercase',letterSpacing:'0.08em'}}>⭐ Populaires</div>
+              <div style={{maxHeight:280,overflowY:'auto'}}>
+                {results.map(r => (
+                  <button key={r.symbol} onClick={()=>handleSelect(r)}
+                    style={{width:'100%',textAlign:'left',padding:'9px 14px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
+                    <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:10,color:'#555C70'}}>{r.name}</div></div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
