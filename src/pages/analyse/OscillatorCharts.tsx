@@ -60,42 +60,25 @@ async function fetchCandles(symbol: string, interval: string, limit: number): Pr
     throw new Error(`Crypto ${sym} introuvable sur Binance`)
   }
 
-  // ── 2. Non-crypto → Cloud Functions (copie exacte de MTFDashboard.tsx) ─
-  const TF_TO_TD: Record<string,string> = {
-    '5m':'5min','15m':'15min','30m':'30min','1h':'1h','2h':'2h','4h':'4h','12h':'12h','1d':'1day','1w':'1week'
+  // ── 2. Non-crypto → fetchYahooCandles (Cloud Function, gratuit, sans limite) ─
+  const TF_TO_YH_INTERVAL: Record<string,string> = {
+    '5m':'5m','15m':'15m','30m':'30m','1h':'1h','2h':'1h','4h':'1h','12h':'1d','1d':'1d','1w':'1wk'
   }
-  const tdInterval = TF_TO_TD[interval] || '1h'
-
-  // TwelveData via Cloud Function — essaie variantes exchange
-  for (const variant of [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]) {
-    try {
-      const fn = httpsCallable<Record<string,unknown>, {values?:{open:string;high:string;low:string;close:string;volume?:string;datetime?:string}[]}>(fbFn, 'fetchTimeSeries')
-      const res = await fn({ symbol: variant, interval: tdInterval, outputSize: limit })
-      const values = res.data.values || []
-      if (values.length > 5) {
-        return values.reverse().map(v => ({
-          t: v.datetime ? new Date(v.datetime).getTime() : 0,
-          o: parseFloat(v.open) || 0, h: parseFloat(v.high) || 0,
-          l: parseFloat(v.low) || 0, c: parseFloat(v.close) || 0,
-          v: parseFloat(v.volume || '0') || 0,
-        })).filter((c: Candle) => c.o > 0 && c.c > 0)
-      }
-    } catch {/*try next*/}
+  const TF_TO_YH_RANGE: Record<string,string> = {
+    '5m':'5d','15m':'5d','30m':'1mo','1h':'1mo','2h':'3mo','4h':'3mo','12h':'1y','1d':'1y','1w':'2y'
   }
+  const yhInterval = TF_TO_YH_INTERVAL[interval] || '1d'
+  const yhRange    = TF_TO_YH_RANGE[interval]    || '1y'
 
-  // Finnhub fallback via Cloud Function
-  try {
-    const now = Math.floor(Date.now()/1000)
-    const secsMap: Record<string,number> = {'5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,'4h':14400,'12h':43200,'1day':86400,'1week':604800}
-    const resMap: Record<string,string> = {'5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','12h':'D','1day':'D','1week':'W'}
-    const from = now - (secsMap[tdInterval]||3600)*limit
-    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];s?:string}>(fbFn, 'fetchStockCandles')
-    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval]||'60', from, to: now })
-    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5)
-      return res2.data.c.map((_, i) => ({
-        t: 0, o: res2.data.o![i], h: res2.data.h![i], l: res2.data.l![i], c: res2.data.c![i], v: 0,
-      }))
-  } catch {/**/}
+  // Yahoo Finance via Cloud Function — essaie le symbole direct + variantes européennes
+  const fn = httpsCallable<Record<string,unknown>, {s:string; candles:{t:number;o:number;h:number;l:number;c:number;v:number}[]}>(fbFn, 'fetchYahooCandles')
+  const res = await fn({ symbol: sym, interval: yhInterval, range: yhRange })
+  if (res.data.s === 'ok' && res.data.candles && res.data.candles.length > 5) {
+    return res.data.candles.map(c => ({
+      t: c.t * 1000, // Yahoo renvoie des secondes, OscillatorCharts utilise des ms
+      o: c.o, h: c.h, l: c.l, c: c.c, v: c.v,
+    }))
+  }
 
   throw new Error(`${sym} introuvable. Essayez: AAPL \u00b7 TSLA \u00b7 EURUSD=X \u00b7 GC=F (Or) \u00b7 ^FCHI (CAC40) \u00b7 MC.PA`)
 }
