@@ -56,30 +56,48 @@ const MIN_TO_TD: Record<number,string> = {1:'1min',5:'5min',15:'15min',30:'30min
 
 // Fetch candles — crypto (Binance) + stocks/forex (Cloud Functions)
 async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Candle[]> {
-  // ── Crypto : Binance ────────────────────────────────────────────────
-  if(isCrypto){
-    const s=sym.replace(/USDT$/i,'')+'USDT'
+  // ── Binance first (crypto + symbols without USDT suffix like "STIM") ──
+  const binanceSyms = isCrypto
+    ? [sym.replace(/USDT$/i,'')+'USDT', sym]
+    : [`${sym}USDT`, sym]
+
+  for(const bSym of binanceSyms){
     for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
       try{
-        const r=await fetch(`${base}/klines?symbol=${s}&interval=${tfStr(min)}&limit=500`)
+        const r=await fetch(`${base}/klines?symbol=${bSym}&interval=${tfStr(min)}&limit=500`)
         if(!r.ok)continue
         const d=await r.json()
         if(!Array.isArray(d)||!d.length)continue
         return d.map((k:any[])=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}))
       }catch{}
     }
-    throw new Error(`Crypto ${sym} introuvable sur Binance`)
   }
+  if(isCrypto) throw new Error(`Crypto ${sym} introuvable sur Binance`)
 
-  // ── Non-crypto : Cloud Function TwelveData ──────────────────────────
+  // ── Non-crypto : Finnhub en premier ─────────────────────────────────
+  const resMap: Record<number,string> = {1:'1',5:'5',15:'15',30:'30',60:'60',120:'120',240:'D',1440:'D',10080:'W'}
+  try{
+    const now = Math.floor(Date.now()/1000)
+    const secs = min * 60
+    const fn = httpsCallable<any,any>(fbFn, 'fetchStockCandles')
+    const res = await fn({symbol: sym, resolution: resMap[min]||'60', from: now-secs*300, to: now})
+    if(res.data.s==='ok' && res.data.c?.length > 5){
+      return res.data.c.map((_:any,i:number)=>({
+        time: res.data.t?.[i] ?? i,
+        open: res.data.o[i], high: res.data.h[i],
+        low:  res.data.l[i], close: res.data.c[i], volume: 0,
+      }))
+    }
+  }catch{}
+
+  // ── Fallback : TwelveData ─────────────────────────────────────────
   const tdInterval = MIN_TO_TD[min] || '1h'
   const variants = [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]
-
   for(const variant of variants){
     try{
-      const fn = httpsCallable<any,any>(fbFn, 'fetchTimeSeries')
-      const res = await fn({symbol: variant, interval: tdInterval, outputSize: 300})
-      const values = res.data.values || []
+      const fn2 = httpsCallable<any,any>(fbFn, 'fetchTimeSeries')
+      const res2 = await fn2({symbol: variant, interval: tdInterval, outputSize: 300})
+      const values = res2.data.values || []
       if(values.length > 5){
         return values.reverse().map((v:any, i:number) => ({
           time: Math.floor(new Date(v.datetime).getTime() / 1000) || i,
@@ -90,23 +108,7 @@ async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Cand
     }catch{}
   }
 
-  // ── Fallback : Cloud Function Finnhub ───────────────────────────────
-  try{
-    const now = Math.floor(Date.now()/1000)
-    const secs = min * 60
-    const resMap: Record<number,string> = {1:'1',5:'5',15:'15',30:'30',60:'60',120:'120',240:'D',1440:'D',10080:'W'}
-    const fn2 = httpsCallable<any,any>(fbFn, 'fetchStockCandles')
-    const res2 = await fn2({symbol: sym, resolution: resMap[min]||'60', from: now-secs*300, to: now})
-    if(res2.data.s==='ok' && res2.data.c?.length > 5){
-      return res2.data.c.map((_:any,i:number)=>({
-        time: res2.data.t?.[i] || i,
-        open: res2.data.o[i], high: res2.data.h[i],
-        low:  res2.data.l[i], close: res2.data.c[i], volume: 0,
-      }))
-    }
-  }catch{}
-
-  throw new Error(`Symbole ${sym} non trouvé sur TwelveData ou Finnhub`)
+  throw new Error(`Symbole ${sym} non trouvé sur Finnhub ni TwelveData`)
 }
 
 // ── Math helpers ──────────────────────────────────────────────────────────

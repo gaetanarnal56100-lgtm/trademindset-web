@@ -43,60 +43,51 @@ function isCryptoSymbol(symbol: string) {
 async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
   const sym = symbol.toUpperCase()
 
+  // Essaie Binance en premier — même pour les symboles sans suffixe USDT connu
+  // On teste : sym tel quel, sym+USDT, sym sans USDT
+  const binanceSymbols = isCryptoSymbol(sym)
+    ? [sym, sym.replace(/USDT$/i,'')+'USDT']
+    : [`${sym}USDT`, sym]  // pour ex. "STIM" → essaie "STIMUSDT" d'abord
+
+  for (const bSym of binanceSymbols) {
+    // Futures
+    try {
+      const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${bSym}&interval=${interval}&limit=${limit}`)
+      if (r.ok) {
+        const data = await r.json() as unknown[][]
+        if (Array.isArray(data) && data.length > 10) {
+          return data.map(a => ({
+            t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
+            l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
+          }))
+        }
+      }
+    } catch {/**/}
+    // Spot
+    try {
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${bSym}&interval=${interval}&limit=${limit}`)
+      if (r.ok) {
+        const data = await r.json() as unknown[][]
+        if (Array.isArray(data) && data.length > 10) {
+          return data.map(a => ({
+            t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
+            l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
+          }))
+        }
+      }
+    } catch {/**/}
+  }
+
+  // Si Binance échoue ET que c'est clairement une crypto → erreur
   if (isCryptoSymbol(sym)) {
-    // 1. Binance Futures (fapi) — la plupart des cryptos USDT
-    try {
-      const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${interval}&limit=${limit}`)
-      if (r.ok) {
-        const data = await r.json() as unknown[][]
-        if (Array.isArray(data) && data.length > 10) {
-          return data.map(a => ({
-            t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
-            l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
-          }))
-        }
-      }
-    } catch {/**/}
-
-    // 2. Binance Spot (fallback pour les petites cryptos pas dans Futures)
-    try {
-      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`)
-      if (r.ok) {
-        const data = await r.json() as unknown[][]
-        if (Array.isArray(data) && data.length > 10) {
-          return data.map(a => ({
-            t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
-            l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
-          }))
-        }
-      }
-    } catch {/**/}
-
     throw new Error(`Crypto ${sym} introuvable sur Binance`)
   }
 
-  // 3. Non-crypto — Cloud Function fetchTimeSeries (TwelveData)
-  // TwelveData accepte "AAPL", "MSFT:NASDAQ", etc.
+  // 3. Non-crypto — Finnhub en premier (plus fiable + gratuit généreux)
   const tdInterval = TF_TO_TWELVEDATA[interval] || '1h'
-  
-  // Essaie le symbole brut d'abord, puis avec suffixe :NYSE / :NASDAQ
-  const symVariants = [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]
-  
-  for (const variant of symVariants) {
-    try {
-      const fn = httpsCallable<Record<string,unknown>, {values?: {datetime:string;open:string;high:string;low:string;close:string}[];status?:string;message?:string}>(fbFn, 'fetchTimeSeries')
-      const res = await fn({ symbol: variant, interval: tdInterval, outputSize: limit })
-      const values = res.data.values || []
-      if (values.length > 5) {
-        return values.map((v, i) => ({
-          t: i, o: parseFloat(v.open), h: parseFloat(v.high),
-          l: parseFloat(v.low), c: parseFloat(v.close), v: 0,
-        }))
-      }
-    } catch {/*try next variant*/}
+  const resMap: Record<string,string> = {
+    '5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','12h':'D','1day':'D','1week':'W'
   }
-  
-  // Fallback: essaie fetchStockCandles (Finnhub)
   try {
     const now = Math.floor(Date.now() / 1000)
     const periodSeconds: Record<string,number> = {
@@ -105,21 +96,35 @@ async function fetchCandles(symbol: string, interval: string, limit: number): Pr
     }
     const secs = periodSeconds[tdInterval] || 3600
     const from = now - secs * limit
-    const resMap: Record<string,string> = {
-      '5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','12h':'D','1day':'D','1week':'W'
-    }
-    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];s?:string}>(fbFn, 'fetchStockCandles')
-    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval]||'60', from, to: now })
-    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5) {
-      return res2.data.c.map((_,i) => ({
-        t: i,
-        o: res2.data.o![i], h: res2.data.h![i],
-        l: res2.data.l![i], c: res2.data.c![i], v: 0,
+    const fn = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];t?:number[];s?:string}>(fbFn, 'fetchStockCandles')
+    const res = await fn({ symbol: sym, resolution: resMap[tdInterval]||'60', from, to: now })
+    if (res.data.s === 'ok' && res.data.c && res.data.c.length > 5) {
+      return res.data.c.map((_,i) => ({
+        t: res.data.t?.[i] ? res.data.t[i] * 1000 : i,
+        o: res.data.o![i], h: res.data.h![i],
+        l: res.data.l![i], c: res.data.c![i], v: 0,
       }))
     }
   } catch {/**/}
-  
-  throw new Error(`Symbole ${sym} non trouvé sur TwelveData ou Finnhub`)
+
+  // 4. TwelveData en dernier recours
+  const symVariants = [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]
+  for (const variant of symVariants) {
+    try {
+      const fn2 = httpsCallable<Record<string,unknown>, {values?: {datetime:string;open:string;high:string;low:string;close:string}[];status?:string}>(fbFn, 'fetchTimeSeries')
+      const res2 = await fn2({ symbol: variant, interval: tdInterval, outputSize: limit })
+      const values = res2.data.values || []
+      if (values.length > 5) {
+        return values.reverse().map((v, i) => ({
+          t: new Date(v.datetime).getTime() / 1000 || i,
+          o: parseFloat(v.open), h: parseFloat(v.high),
+          l: parseFloat(v.low), c: parseFloat(v.close), v: 0,
+        }))
+      }
+    } catch {/**/}
+  }
+
+  throw new Error(`Symbole ${sym} non trouvé sur Finnhub ni TwelveData`)
 }
 
 // ── Math helpers ───────────────────────────────────────────────────────────
@@ -225,8 +230,14 @@ function useCanvas(draw:(ctx:CanvasRenderingContext2D,W:number,H:number)=>void, 
   const ref=useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
     const c=ref.current;if(!c)return
-    const ctx=c.getContext('2d')!;ctx.clearRect(0,0,c.width,c.height)
-    draw(ctx,c.width,c.height)
+    const dpr=window.devicePixelRatio||1
+    const cssW=c.offsetWidth||800,cssH=c.offsetHeight||180
+    c.width=cssW*dpr;c.height=cssH*dpr
+    c.style.width=cssW+'px';c.style.height=cssH+'px'
+    const ctx=c.getContext('2d')!
+    ctx.scale(dpr,dpr)
+    ctx.clearRect(0,0,cssW,cssH)
+    draw(ctx,cssW,cssH)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },deps)
   return ref
