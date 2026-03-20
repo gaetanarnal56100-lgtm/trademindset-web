@@ -38,60 +38,41 @@ function isCryptoSymbol(symbol: string) {
 async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
   const sym = symbol.toUpperCase()
 
-  // Essaie Binance en premier — même pour les symboles sans suffixe USDT connu
-  // On teste : sym tel quel, sym+USDT, sym sans USDT
-  const binanceSymbols = isCryptoSymbol(sym)
-    ? [sym, sym.replace(/USDT$/i,'')+'USDT']
-    : [`${sym}USDT`, sym]  // pour ex. "STIM" → essaie "STIMUSDT" d'abord
-
-  for (const bSym of binanceSymbols) {
-    // Futures
-    try {
-      const r = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${bSym}&interval=${interval}&limit=${limit}`)
-      if (r.ok) {
-        const data = await r.json() as unknown[][]
-        if (Array.isArray(data) && data.length > 10) {
-          return data.map(a => ({
-            t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
-            l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
-          }))
-        }
-      }
-    } catch {/**/}
-    // Spot
-    try {
-      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${bSym}&interval=${interval}&limit=${limit}`)
-      if (r.ok) {
-        const data = await r.json() as unknown[][]
-        if (Array.isArray(data) && data.length > 10) {
-          return data.map(a => ({
-            t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
-            l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
-          }))
-        }
-      }
-    } catch {/**/}
-  }
-
-  // Si Binance échoue ET que c'est clairement une crypto → erreur
+  // ── 1. Crypto → Binance Futures puis Spot ─────────────────────────────
   if (isCryptoSymbol(sym)) {
+    const binanceSymbols = [sym, sym.replace(/USDT$/i,'')+'USDT']
+    for (const bSym of binanceSymbols) {
+      for (const base of ['https://fapi.binance.com/fapi/v1', 'https://api.binance.com/api/v3']) {
+        try {
+          const r = await fetch(`${base}/klines?symbol=${bSym}&interval=${interval}&limit=${limit}`)
+          if (r.ok) {
+            const data = await r.json() as unknown[][]
+            if (Array.isArray(data) && data.length > 10) {
+              return data.map(a => ({
+                t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
+                l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
+              }))
+            }
+          }
+        } catch {/**/}
+      }
+    }
     throw new Error(`Crypto ${sym} introuvable sur Binance`)
   }
 
-  // 3. Cloud Functions — actions, indices, ETFs, forex
-  // Miroir exact de MTFDashboard.tsx : TwelveData d'abord, puis Finnhub en fallback
-  const tdIntervalMap: Record<string,string> = {
-    '5m':'5min','15m':'15min','30m':'30min','1h':'1h','2h':'2h','4h':'4h','12h':'1day','1d':'1day','1w':'1week'
+  // ── 2. Non-crypto → Cloud Functions (copie exacte de MTFDashboard.tsx) ─
+  const TF_TO_TD: Record<string,string> = {
+    '5m':'5min','15m':'15min','30m':'30min','1h':'1h','2h':'2h','4h':'4h','12h':'12h','1d':'1day','1w':'1week'
   }
-  const tdInterval = tdIntervalMap[interval] || '1h'
+  const tdInterval = TF_TO_TD[interval] || '1h'
 
-  // TwelveData — essaie plusieurs variantes (NYSE, NASDAQ, BATS, EU)
-  for (const variant of [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`, `${sym}.PA`, `${sym}.L`]) {
+  // TwelveData via Cloud Function — essaie variantes exchange
+  for (const variant of [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]) {
     try {
       const fn = httpsCallable<Record<string,unknown>, {values?:{open:string;high:string;low:string;close:string;volume?:string;datetime?:string}[]}>(fbFn, 'fetchTimeSeries')
       const res = await fn({ symbol: variant, interval: tdInterval, outputSize: limit })
       const values = res.data.values || []
-      if (values.length > 10) {
+      if (values.length > 5) {
         return values.reverse().map(v => ({
           t: v.datetime ? new Date(v.datetime).getTime() : 0,
           o: parseFloat(v.open) || 0, h: parseFloat(v.high) || 0,
@@ -102,21 +83,18 @@ async function fetchCandles(symbol: string, interval: string, limit: number): Pr
     } catch {/*try next*/}
   }
 
-  // Finnhub fallback — fetchStockCandles
+  // Finnhub fallback via Cloud Function
   try {
-    const nowTs = Math.floor(Date.now() / 1000)
-    const secsMap: Record<string,number> = {'5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,'4h':14400,'1day':86400,'1week':604800}
-    const resMap: Record<string,string> = {'5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','1day':'D','1week':'W'}
-    const fromTs = nowTs - (secsMap[tdInterval] || 3600) * limit
-    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];t?:number[];v?:number[];s?:string}>(fbFn, 'fetchStockCandles')
-    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval] || '60', from: fromTs, to: nowTs })
-    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 10) {
+    const now = Math.floor(Date.now()/1000)
+    const secsMap: Record<string,number> = {'5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,'4h':14400,'12h':43200,'1day':86400,'1week':604800}
+    const resMap: Record<string,string> = {'5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','12h':'D','1day':'D','1week':'W'}
+    const from = now - (secsMap[tdInterval]||3600)*limit
+    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];s?:string}>(fbFn, 'fetchStockCandles')
+    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval]||'60', from, to: now })
+    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5)
       return res2.data.c.map((_, i) => ({
-        t: (res2.data.t?.[i] ?? 0) * 1000,
-        o: res2.data.o![i], h: res2.data.h![i], l: res2.data.l![i], c: res2.data.c![i],
-        v: res2.data.v?.[i] ?? 0,
-      })).filter((c: Candle) => c.o > 0 && c.c > 0)
-    }
+        t: 0, o: res2.data.o![i], h: res2.data.h![i], l: res2.data.l![i], c: res2.data.c![i], v: 0,
+      }))
   } catch {/**/}
 
   throw new Error(`${sym} introuvable. Essayez: AAPL \u00b7 TSLA \u00b7 EURUSD=X \u00b7 GC=F (Or) \u00b7 ^FCHI (CAC40) \u00b7 MC.PA`)

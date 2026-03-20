@@ -52,33 +52,33 @@ async function dbDelete(id:string){const u=uid();if(!u)return;await deleteDoc(do
 
 // Fetch candles — crypto (Binance) → Cloud Functions pour tout le reste
 async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Candle[]> {
-  // ── 1. Binance Futures ──────────────────────────────────────────────
-  const binanceSyms = isCrypto
-    ? [sym.replace(/USDT$/i,'')+'USDT', sym]
-    : [`${sym}USDT`, sym]
+  const s = sym.toUpperCase()
 
-  for(const bSym of binanceSyms){
-    for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
-      try{
-        const r=await fetch(`${base}/klines?symbol=${bSym}&interval=${tfStr(min)}&limit=500`)
-        if(!r.ok)continue
-        const d=await r.json()
-        if(!Array.isArray(d)||d.length < 5)continue
-        return d.map((k:any[])=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}))
-      }catch{}
+  // ── 1. Crypto → Binance Futures puis Spot ─────────────────────────────
+  if (isCrypto) {
+    const binanceSyms = [s.replace(/USDT$/i,'')+'USDT', s]
+    for(const bSym of binanceSyms){
+      for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
+        try{
+          const r=await fetch(`${base}/klines?symbol=${bSym}&interval=${tfStr(min)}&limit=500`)
+          if(!r.ok)continue
+          const d=await r.json()
+          if(!Array.isArray(d)||d.length < 5)continue
+          return d.map((k:any[])=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}))
+        }catch{}
+      }
     }
+    throw new Error(`Crypto ${s} introuvable sur Binance`)
   }
-  if(isCrypto) throw new Error(`Crypto ${sym} introuvable sur Binance`)
 
-  // ── 2. Cloud Functions — actions, forex, indices, ETFs ───────────────
-  // Miroir exact de MTFDashboard.tsx : TwelveData d'abord, puis Finnhub en fallback
+  // ── 2. Non-crypto → Cloud Functions (copie exacte de MTFDashboard.tsx) ─
   const TF_TO_TD: Record<number,string> = {
     1:'1min',5:'5min',15:'15min',30:'30min',60:'1h',120:'2h',240:'4h',1440:'1day',10080:'1week'
   }
   const tdInterval = TF_TO_TD[min] || '1h'
 
-  // TwelveData — essaie plusieurs variantes (NYSE, NASDAQ, BATS, EU)
-  for (const variant of [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`, `${sym}.PA`, `${sym}.L`]) {
+  // TwelveData via fetchTimeSeries — essaie variantes exchange
+  for (const variant of [s, `${s}:NYSE`, `${s}:NASDAQ`, `${s}:BATS`]) {
     try {
       const fn = httpsCallable<Record<string,unknown>, {values?:{open:string;high:string;low:string;close:string;volume?:string;datetime?:string}[]}>(fbFn, 'fetchTimeSeries')
       const res = await fn({ symbol: variant, interval: tdInterval, outputSize: 500 })
@@ -94,24 +94,21 @@ async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Cand
     } catch {/*try next*/}
   }
 
-  // Finnhub fallback — fetchStockCandles
+  // Finnhub fallback via fetchStockCandles
   try {
-    const nowTs = Math.floor(Date.now() / 1000)
+    const now = Math.floor(Date.now()/1000)
     const secsMap: Record<string,number> = {'1min':60,'5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,'4h':14400,'1day':86400,'1week':604800}
     const resMap: Record<string,string> = {'1min':'1','5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','1day':'D','1week':'W'}
-    const fromTs = nowTs - (secsMap[tdInterval] || 3600) * 500
-    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];t?:number[];v?:number[];s?:string}>(fbFn, 'fetchStockCandles')
-    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval] || '60', from: fromTs, to: nowTs })
-    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5) {
+    const from = now - (secsMap[tdInterval]||3600)*500
+    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];s?:string}>(fbFn, 'fetchStockCandles')
+    const res2 = await fn2({ symbol: s, resolution: resMap[tdInterval]||'60', from, to: now })
+    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5)
       return res2.data.c.map((_, i) => ({
-        time: res2.data.t?.[i] ?? 0,
-        open: res2.data.o![i], high: res2.data.h![i], low: res2.data.l![i], close: res2.data.c![i],
-        volume: res2.data.v?.[i] ?? 0,
-      })).filter((c: Candle) => c.open > 0 && c.close > 0)
-    }
+        time: 0, open: res2.data.o![i], high: res2.data.h![i], low: res2.data.l![i], close: res2.data.c![i], volume: 0,
+      }))
   } catch {/**/}
 
-  throw new Error(`${sym} introuvable. Essayez: AAPL \u00b7 TSLA \u00b7 MSFT \u00b7 EURUSD=X \u00b7 GC=F \u00b7 ^FCHI \u00b7 MC.PA`)
+  throw new Error(`${s} introuvable. Essayez: AAPL \u00b7 TSLA \u00b7 MSFT \u00b7 EURUSD=X \u00b7 GC=F \u00b7 ^FCHI \u00b7 MC.PA`)
 }
 
 // ── Math helpers ──────────────────────────────────────────────────────────
