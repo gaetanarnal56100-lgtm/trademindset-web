@@ -4,7 +4,10 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createChart, IChartApi, ISeriesApi, CrosshairMode, Time, LineStyle } from 'lightweight-charts'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, Timestamp } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
+
+const fbFn = getFunctions(app, 'europe-west1')
 
 const db = getFirestore(app)
 
@@ -48,14 +51,62 @@ async function dbLoad(sym:string,tf:string):Promise<SavedDrawing[]>{
 }
 async function dbDelete(id:string){const u=uid();if(!u)return;await deleteDoc(doc(db,'users',u,'chartDrawings',id))}
 
-// Fetch candles
+// TwelveData interval mapping
+const MIN_TO_TD: Record<number,string> = {1:'1min',5:'5min',15:'15min',30:'30min',60:'1h',120:'2h',240:'4h',1440:'1day',10080:'1week'}
+
+// Fetch candles — crypto (Binance) + stocks/forex (Cloud Functions)
 async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Candle[]> {
-  if(!isCrypto)return[]
-  const s=sym.replace(/USDT$/i,'')+'USDT'
-  for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
-    try{const r=await fetch(`${base}/klines?symbol=${s}&interval=${tfStr(min)}&limit=500`);if(!r.ok)continue;const d=await r.json();if(!Array.isArray(d)||!d.length)continue;return d.map((k:any[])=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}))}catch{}
+  // ── Crypto : Binance ────────────────────────────────────────────────
+  if(isCrypto){
+    const s=sym.replace(/USDT$/i,'')+'USDT'
+    for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
+      try{
+        const r=await fetch(`${base}/klines?symbol=${s}&interval=${tfStr(min)}&limit=500`)
+        if(!r.ok)continue
+        const d=await r.json()
+        if(!Array.isArray(d)||!d.length)continue
+        return d.map((k:any[])=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}))
+      }catch{}
+    }
+    throw new Error(`Crypto ${sym} introuvable sur Binance`)
   }
-  return[]
+
+  // ── Non-crypto : Cloud Function TwelveData ──────────────────────────
+  const tdInterval = MIN_TO_TD[min] || '1h'
+  const variants = [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]
+
+  for(const variant of variants){
+    try{
+      const fn = httpsCallable<any,any>(fbFn, 'fetchTimeSeries')
+      const res = await fn({symbol: variant, interval: tdInterval, outputSize: 300})
+      const values = res.data.values || []
+      if(values.length > 5){
+        return values.reverse().map((v:any, i:number) => ({
+          time: Math.floor(new Date(v.datetime).getTime() / 1000) || i,
+          open: parseFloat(v.open), high: parseFloat(v.high),
+          low:  parseFloat(v.low),  close: parseFloat(v.close), volume: 0,
+        }))
+      }
+    }catch{}
+  }
+
+  // ── Fallback : Cloud Function Finnhub ───────────────────────────────
+  try{
+    const now = Math.floor(Date.now()/1000)
+    const secs = min * 60
+    const resMap: Record<number,string> = {1:'1',5:'5',15:'15',30:'30',60:'60',120:'120',240:'D',1440:'D',10080:'W'}
+    const fn2 = httpsCallable<any,any>(fbFn, 'fetchStockCandles')
+    const res2 = await fn2({symbol: sym, resolution: resMap[min]||'60', from: now-secs*300, to: now})
+    if(res2.data.s==='ok' && res2.data.c?.length > 5){
+      return res2.data.c.map((_:any,i:number)=>({
+        time: res2.data.t?.[i] || i,
+        open: res2.data.o[i], high: res2.data.h[i],
+        low:  res2.data.l[i], close: res2.data.c[i], volume: 0,
+      }))
+    }
+  }catch{}
+
+  throw new Error(`Symbole ${sym} non trouvé sur TwelveData ou Finnhub`)
 }
 
 // ── Math helpers ──────────────────────────────────────────────────────────
@@ -264,6 +315,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const [liveP,    setLiveP]    = useState<number|null>(null)
   const [change,   setChange]   = useState(0)
   const [loading,  setLoading]  = useState(true)
+  const [fetchError, setFetchError] = useState<string|null>(null)
   const [drawings, setDrawings] = useState<SavedDrawing[]>([])
   const [showHist, setShowHist] = useState(false)
   const [selectedId, setSelectedId] = useState<string|null>(null)
@@ -328,8 +380,15 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   // ── Load candles ─────────────────────────────────────────────────────
   const load=useCallback(async()=>{
     if(!seriesR.current)return
-    setLoading(true);wsRef.current?.close()
-    const candles=await fetchCandles(symbol,isCrypto,tf.min)
+    setLoading(true);wsRef.current?.close();setFetchError(null)
+    let candles: Candle[] = []
+    try {
+      candles = await fetchCandles(symbol, isCrypto, tf.min)
+    } catch(e: any) {
+      setFetchError(e?.message || 'Erreur de chargement')
+      setLoading(false)
+      return
+    }
     if(candles.length){
       seriesR.current.setData(candles.map(c=>({time:c.time as Time,open:c.open,high:c.high,low:c.low,close:c.close})))
       candlesRef.current=candles
@@ -340,6 +399,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       setMsdResult(calcMSD(candles,msdS.swingLen))
       setVmcResult(calcVMC(candles,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold))
       setMpResult(calcMP(candles,mpS.bins))
+      setFetchError(null)
     }
     setLoading(false)
     if(isCrypto){
@@ -737,6 +797,12 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       {/* Chart */}
       <div style={{position:'relative',background:'#0D1117'}} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} onClick={handleClick}>
         {loading&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'#0D111790',zIndex:4}}><div style={{width:24,height:24,border:'2px solid #1E2330',borderTopColor:'#22C759',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>}
+        {!loading&&fetchError&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#0D1117',zIndex:4,gap:10}}>
+          <span style={{fontSize:28}}>📊</span>
+          <span style={{fontSize:12,color:'#FF3B30',fontWeight:600,textAlign:'center',maxWidth:280,padding:'0 20px'}}>{fetchError}</span>
+          <span style={{fontSize:11,color:'#555C70',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Ce symbole n'est disponible que via les Cloud Functions (TwelveData/Finnhub). Vérifiez que les fonctions Firebase sont déployées.</span>
+          <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:'rgba(0,229,255,0.1)',border:'1px solid #00E5FF',color:'#00E5FF',cursor:'pointer',fontSize:11}}>Réessayer</button>
+        </div>}
         <div ref={chartEl} style={{width:'100%',height:430}}/>
         <canvas ref={overlayEl} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2,pointerEvents:'none'}}/>
         {/* Settings panel */}

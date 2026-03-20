@@ -337,7 +337,15 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
           <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>
           <span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
         </div>}
-        {status==='error'&&<div style={{padding:'20px',textAlign:'center',color:'#FF3B30',fontSize:12}}>{errorMsg}</div>}
+        {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
+          <span style={{fontSize:22}}>📡</span>
+          <span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
+          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
+            {isCryptoSymbol(symbol)
+              ? 'Ce symbole n'est pas disponible sur Binance Futures ni Spot.'
+              : 'Les données actions/forex nécessitent les Cloud Functions Firebase (TwelveData/Finnhub). Vérifiez le déploiement.'}
+          </span>
+        </div>}
         <canvas ref={canvasRef} width={800} height={180} style={{width:'100%',height:180,display:'block',borderRadius:8}}/>
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'WT1'},{color:'#FF9500',label:'WT2'},{color:'#22C759',label:'Momentum +'},{color:'#FF3B30',label:'Momentum −'},{color:'#00E5FF',label:'● Smart'}].map(({color,label})=>(
@@ -446,7 +454,15 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
           <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>
           <span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
         </div>}
-        {status==='error'&&<div style={{padding:'20px',textAlign:'center',color:'#FF3B30',fontSize:12}}>{errorMsg}</div>}
+        {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
+          <span style={{fontSize:22}}>📡</span>
+          <span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
+          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
+            {isCryptoSymbol(symbol)
+              ? 'Ce symbole n'est pas disponible sur Binance Futures ni Spot.'
+              : 'Les données actions/forex nécessitent les Cloud Functions Firebase (TwelveData/Finnhub). Vérifiez le déploiement.'}
+          </span>
+        </div>}
         <canvas ref={canvasRef} width={800} height={180} style={{width:'100%',height:180,display:'block',borderRadius:8}}/>
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'VMC Sig'},{color:'#FF9500',label:'Signal'},{color:'#22C759',label:'Mom +'},{color:'#FF3B30',label:'Mom −'},{color:'#FF9500',label:`OB:${obLevel}`},{color:'#22C759',label:`OS:${osLevel}`}].map(({color,label})=>(
