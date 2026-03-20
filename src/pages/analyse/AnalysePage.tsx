@@ -87,6 +87,26 @@ async function searchBinanceCrypto(query: string): Promise<SearchResult[]> {
   } catch { return [] }
 }
 
+// Symboles Yahoo Finance connus (Forex, Indices, Matières premières) — bypass recherche Finnhub
+const YAHOO_KNOWN: SearchResult[] = [
+  {symbol:'EURUSD=X', name:'EUR/USD',         type:'forex', exchange:'Forex',      icon:'💱'},
+  {symbol:'GBPUSD=X', name:'GBP/USD',         type:'forex', exchange:'Forex',      icon:'💱'},
+  {symbol:'USDJPY=X', name:'USD/JPY',         type:'forex', exchange:'Forex',      icon:'💱'},
+  {symbol:'GC=F',     name:'Or (Gold)',        type:'forex', exchange:'COMEX',      icon:'🥇'},
+  {symbol:'SI=F',     name:'Argent (Silver)',  type:'forex', exchange:'COMEX',      icon:'🥈'},
+  {symbol:'CL=F',     name:'Pétrole WTI',     type:'forex', exchange:'NYMEX',      icon:'🛢️'},
+  {symbol:'^FCHI',    name:'CAC 40',           type:'stock', exchange:'Paris',      icon:'📊'},
+  {symbol:'^GDAXI',   name:'DAX 40',           type:'stock', exchange:'Frankfurt',  icon:'📊'},
+  {symbol:'^FTSE',    name:'FTSE 100',         type:'stock', exchange:'London',     icon:'📊'},
+  {symbol:'^GSPC',    name:'S&P 500',          type:'stock', exchange:'NYSE',       icon:'📊'},
+  {symbol:'^IXIC',    name:'Nasdaq Composite', type:'stock', exchange:'NASDAQ',     icon:'📊'},
+  {symbol:'^DJI',     name:'Dow Jones',        type:'stock', exchange:'NYSE',       icon:'📊'},
+]
+function searchYahooKnown(q: string): SearchResult[] {
+  const uq = q.toUpperCase().trim()
+  return YAHOO_KNOWN.filter(s => s.symbol.toUpperCase().includes(uq) || s.name.toUpperCase().includes(uq))
+}
+
 // Cloud Functions — uniquement pour actions et forex (évite de brûler des tokens sur les cryptos)
 async function searchNonCrypto(query: string): Promise<SearchResult[]> {
   // Essaie searchFinnhubSymbols d'abord, puis searchSymbols en fallback
@@ -137,24 +157,28 @@ function useSymbolSearch(q: string) {
       const query = q.trim()
       // Crypto via Binance (public, sans token)
       const cryptoResults = await searchBinanceCrypto(query)
-      // Actions/Forex via Cloud Function — toujours chercher en parallèle si la query
-      // ne finit pas par USDT (pour couvrir AAPL, TSLA, etc.)
+      // Symboles Yahoo connus (Forex/Indices) — instantané, pas de Cloud Function
+      const yahooResults = searchYahooKnown(query)
+      // Actions via Cloud Function si la query ne ressemble pas à du crypto
       const looksLikeCrypto = query.toUpperCase().endsWith('USDT')
       const nonCryptoResults = !looksLikeCrypto
         ? await searchNonCrypto(query)
         : []
-      // Fusionne — actions en premier si peu de résultats crypto
+      // Fusionne : Yahoo en premier pour Forex/Indices, puis actions Finnhub, puis crypto
       const seen = new Set<string>()
       const merged: SearchResult[] = []
       const ordered = cryptoResults.length >= 3
-        ? [...cryptoResults, ...nonCryptoResults]
-        : [...nonCryptoResults, ...cryptoResults]
+        ? [...yahooResults, ...cryptoResults, ...nonCryptoResults]
+        : [...yahooResults, ...nonCryptoResults, ...cryptoResults]
       for (const r of ordered) {
         if (!seen.has(r.symbol)) { seen.add(r.symbol); merged.push(r) }
       }
-      setResults(merged.length > 0 ? merged : CRYPTO_POPULAR.filter(s =>
-        s.symbol.includes(query.toUpperCase()) || s.name.toUpperCase().includes(query.toUpperCase())
-      ))
+      setResults(merged.length > 0 ? merged : [
+        ...searchYahooKnown(query),
+        ...CRYPTO_POPULAR.filter(s =>
+          s.symbol.includes(query.toUpperCase()) || s.name.toUpperCase().includes(query.toUpperCase())
+        )
+      ])
       setLoading(false)
     }, 400)
   }, [q])
@@ -850,7 +874,7 @@ export default function AnalysePage() {
             {[
               {title:'🪙 Crypto',items:[{s:'BTCUSDT',n:'Bitcoin'},{s:'ETHUSDT',n:'Ethereum'},{s:'SOLUSDT',n:'Solana'},{s:'BNBUSDT',n:'BNB'}]},
               {title:'📈 Actions US',items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
-              {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD'},{s:'GC=F',n:'Or (Gold)'},{s:'^FCHI',n:'CAC 40'},{s:'MC.PA',n:'LVMH'}]},
+              {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
             ].map(cat=>(
               <div key={cat.title} style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden'}}>
                 <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330'}}>
@@ -861,7 +885,7 @@ export default function AnalysePage() {
                     <button key={item.s} onClick={()=>{setSymbol(item.s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}}
                       style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'8px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{item.s}</div>
+                        <div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{(item as any).d || item.s}</div>
                         <div style={{fontSize:10,color:'#555C70'}}>{item.n}</div>
                       </div>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3D4254" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
