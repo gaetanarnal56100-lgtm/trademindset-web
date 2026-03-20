@@ -4,9 +4,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createChart, IChartApi, ISeriesApi, CrosshairMode, Time, LineStyle } from 'lightweight-charts'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, Timestamp } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
 const db = getFirestore(app)
+const fbFn = getFunctions(app, 'europe-west1')
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface Props { symbol: string; isCrypto: boolean }
@@ -48,61 +50,7 @@ async function dbLoad(sym:string,tf:string):Promise<SavedDrawing[]>{
 }
 async function dbDelete(id:string){const u=uid();if(!u)return;await deleteDoc(doc(db,'users',u,'chartDrawings',id))}
 
-// Yahoo Finance interval mapping
-const MIN_TO_YF: Record<number,{interval:string;range:string}> = {
-  1:   {interval:'1m',  range:'1d'},
-  5:   {interval:'5m',  range:'5d'},
-  15:  {interval:'15m', range:'5d'},
-  30:  {interval:'30m', range:'1mo'},
-  60:  {interval:'60m', range:'1mo'},
-  120: {interval:'60m', range:'3mo'},
-  240: {interval:'1d',  range:'6mo'},
-  1440:{interval:'1d',  range:'1y'},
-  10080:{interval:'1wk',range:'5y'},
-}
-
-// Yahoo Finance proxy (évite les erreurs CORS)
-const YF_PROXY = 'https://query1.finance.yahoo.com/v8/finance/chart'
-
-async function fetchYahooCandles(sym:string, min:number): Promise<Candle[]> {
-  const {interval, range} = MIN_TO_YF[min] || {interval:'1d', range:'1y'}
-  // Yahoo Finance accepte AAPL, MSFT, BTC-USD, EURUSD=X, GC=F (Gold), ^FCHI (CAC40)
-  const url = `${YF_PROXY}/${encodeURIComponent(sym)}?interval=${interval}&range=${range}&includePrePost=false`
-  const r = await fetch(url, {
-    headers: { 'Accept': 'application/json' }
-  })
-  if (!r.ok) throw new Error(`Yahoo Finance: ${r.status}`)
-  const j = await r.json()
-  const result = j?.chart?.result?.[0]
-  if (!result) throw new Error('Aucune donnée Yahoo Finance')
-  const timestamps: number[] = result.timestamp || []
-  const q = result.indicators?.quote?.[0]
-  if (!q || timestamps.length < 5) throw new Error('Données insuffisantes')
-  return timestamps
-    .map((t:number, i:number) => ({
-      time: t,
-      open:  q.open[i]  ?? 0,
-      high:  q.high[i]  ?? 0,
-      low:   q.low[i]   ?? 0,
-      close: q.close[i] ?? 0,
-      volume: q.volume?.[i] ?? 0,
-    }))
-    .filter(c => c.open > 0 && c.close > 0)
-}
-
-// Normalise le symbole pour Yahoo Finance
-function toYahooSymbol(sym: string): string[] {
-  const s = sym.toUpperCase()
-  // Crypto déjà USDT → BTC-USD format pour Yahoo
-  if (/USDT$/i.test(s)) {
-    const base = s.replace(/USDT$/i, '')
-    return [`${base}-USD`]
-  }
-  // Actions classiques : essaie tel quel + variantes exchanges EU
-  return [s, `${s}.PA`, `${s}.L`, `${s}.DE`, `${s}.MC`]
-}
-
-// Fetch candles — crypto (Binance) → Yahoo Finance pour tout le reste
+// Fetch candles — crypto (Binance) → Cloud Functions pour tout le reste
 async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Candle[]> {
   // ── 1. Binance Futures ──────────────────────────────────────────────
   const binanceSyms = isCrypto
@@ -122,16 +70,48 @@ async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Cand
   }
   if(isCrypto) throw new Error(`Crypto ${sym} introuvable sur Binance`)
 
-  // ── 2. Yahoo Finance — actions, forex, indices, ETFs ───────────────
-  const yahooSymbols = toYahooSymbol(sym)
-  for (const ySym of yahooSymbols) {
+  // ── 2. Cloud Functions — actions, forex, indices, ETFs ───────────────
+  // Miroir exact de MTFDashboard.tsx : TwelveData d'abord, puis Finnhub en fallback
+  const TF_TO_TD: Record<number,string> = {
+    1:'1min',5:'5min',15:'15min',30:'30min',60:'1h',120:'2h',240:'4h',1440:'1day',10080:'1week'
+  }
+  const tdInterval = TF_TO_TD[min] || '1h'
+
+  // TwelveData — essaie plusieurs variantes (NYSE, NASDAQ, BATS, EU)
+  for (const variant of [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`, `${sym}.PA`, `${sym}.L`]) {
     try {
-      const candles = await fetchYahooCandles(ySym, min)
-      if (candles.length >= 5) return candles
-    } catch {}
+      const fn = httpsCallable<Record<string,unknown>, {values?:{open:string;high:string;low:string;close:string;volume?:string;datetime?:string}[]}>(fbFn, 'fetchTimeSeries')
+      const res = await fn({ symbol: variant, interval: tdInterval, outputSize: 500 })
+      const values = res.data.values || []
+      if (values.length > 5) {
+        return values.reverse().map(v => ({
+          time: v.datetime ? Math.floor(new Date(v.datetime).getTime() / 1000) : 0,
+          open: parseFloat(v.open) || 0, high: parseFloat(v.high) || 0,
+          low: parseFloat(v.low) || 0, close: parseFloat(v.close) || 0,
+          volume: parseFloat(v.volume || '0') || 0,
+        })).filter((c: Candle) => c.open > 0 && c.close > 0)
+      }
+    } catch {/*try next*/}
   }
 
-  throw new Error(`${sym} introuvable sur Binance ni Yahoo Finance. Essayez BTCUSDT, AAPL, TSLA, EURUSD=X`)
+  // Finnhub fallback — fetchStockCandles
+  try {
+    const nowTs = Math.floor(Date.now() / 1000)
+    const secsMap: Record<string,number> = {'1min':60,'5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,'4h':14400,'1day':86400,'1week':604800}
+    const resMap: Record<string,string> = {'1min':'1','5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','1day':'D','1week':'W'}
+    const fromTs = nowTs - (secsMap[tdInterval] || 3600) * 500
+    const fn2 = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];t?:number[];v?:number[];s?:string}>(fbFn, 'fetchStockCandles')
+    const res2 = await fn2({ symbol: sym, resolution: resMap[tdInterval] || '60', from: fromTs, to: nowTs })
+    if (res2.data.s === 'ok' && res2.data.c && res2.data.c.length > 5) {
+      return res2.data.c.map((_, i) => ({
+        time: res2.data.t?.[i] ?? 0,
+        open: res2.data.o![i], high: res2.data.h![i], low: res2.data.l![i], close: res2.data.c![i],
+        volume: res2.data.v?.[i] ?? 0,
+      })).filter((c: Candle) => c.open > 0 && c.close > 0)
+    }
+  } catch {/**/}
+
+  throw new Error(`${sym} introuvable. Essayez: AAPL \u00b7 TSLA \u00b7 MSFT \u00b7 EURUSD=X \u00b7 GC=F \u00b7 ^FCHI \u00b7 MC.PA`)
 }
 
 // ── Math helpers ──────────────────────────────────────────────────────────
