@@ -442,62 +442,72 @@ function PressureBar({score}:{score:number}){
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
 function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
-  const [mode, setMode] = useState<'tv-only'|'lw-only'|'side-by-side'|'tv-top'|'lw-top'>('tv-only')
+  type PanelType = 'tv' | 'lw'
+  type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
 
-  const LAYOUTS = [
-    { id: 'tv-only'      as const, icon: '📺',  label: 'TradingView' },
-    { id: 'lw-only'      as const, icon: '⚡',  label: 'Lightweight' },
-    { id: 'side-by-side' as const, icon: '▐▌',  label: 'Côte à côte' },
-    { id: 'tv-top'       as const, icon: '▛',   label: 'TV + LW' },
-    { id: 'lw-top'       as const, icon: '▙',   label: 'LW + TV' },
+  const [mode, setMode] = useState<LayoutMode>('tv')
+
+  const LAYOUTS: { id: LayoutMode; icon: string; label: string; desc: string }[] = [
+    { id: 'tv',    icon: '📺',   label: 'TV seul',    desc: 'TradingView uniquement' },
+    { id: 'lw',    icon: '⚡',   label: 'LW seul',    desc: 'Lightweight uniquement' },
+    { id: 'tv-lw', icon: '📺⚡', label: 'TV | LW',    desc: 'TradingView + Lightweight côte à côte' },
+    { id: 'lw-tv', icon: '⚡📺', label: 'LW | TV',    desc: 'Lightweight + TradingView côte à côte' },
+    { id: 'tv-tv', icon: '📺📺', label: 'TV | TV',    desc: 'Deux TradingView (ex: 15m + 1h)' },
+    { id: 'lw-lw', icon: '⚡⚡', label: 'LW | LW',    desc: 'Deux Lightweight (ex: BTC + ETH)' },
   ]
 
-  const showTV = mode !== 'lw-only'
-  const showLW = mode !== 'tv-only'
-  const isSide = mode === 'side-by-side'
+  const isSplit = ['tv-lw','lw-tv','tv-tv','lw-lw'].includes(mode)
+
+  const renderPanel = (type: PanelType, key: string) => (
+    <div key={key} style={{ minWidth: 0, flex: 1 }}>
+      {type === 'tv'
+        ? <LiveChart symbol={symbol} isCrypto={isCrypto} />
+        : <LightweightChart symbol={symbol} isCrypto={isCrypto} />}
+    </div>
+  )
+
+  const panels: [PanelType, PanelType] | [PanelType] =
+    mode === 'tv'    ? ['tv'] :
+    mode === 'lw'    ? ['lw'] :
+    mode === 'tv-lw' ? ['tv','lw'] :
+    mode === 'lw-tv' ? ['lw','tv'] :
+    mode === 'tv-tv' ? ['tv','tv'] :
+                       ['lw','lw']
 
   return (
     <div style={{ marginBottom: 16 }}>
       {/* Sélecteur */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px',
-        background: '#161B22', border: '1px solid #1E2330', borderRadius: 12, marginBottom: 8, flexWrap: 'wrap',
+        background: '#161B22', border: '1px solid #1E2330', borderRadius: 12,
+        marginBottom: 8, flexWrap: 'wrap',
       }}>
         <span style={{ fontSize: 9, fontWeight: 700, color: '#3D4254', marginRight: 2, flexShrink: 0 }}>DISPOSITION :</span>
         {LAYOUTS.map(l => (
-          <button key={l.id} onClick={() => setMode(l.id)} style={{
-            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px',
+          <button key={l.id} onClick={() => setMode(l.id)} title={l.desc} style={{
+            display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
             borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer',
             border: `1px solid ${mode === l.id ? '#00E5FF' : '#2A2F3E'}`,
             background: mode === l.id ? 'rgba(0,229,255,0.10)' : 'transparent',
             color: mode === l.id ? '#00E5FF' : '#555C70', transition: 'all 0.15s',
           }}>
-            {l.icon} {l.label}
+            <span style={{ fontSize: 12 }}>{l.icon}</span>
+            <span>{l.label}</span>
           </button>
         ))}
         <span style={{ marginLeft: 'auto', fontSize: 9, color: '#3D4254', flexShrink: 0 }}>
-          {mode === 'tv-only'      ? 'Outils pro TradingView, indicateurs natifs' :
-           mode === 'lw-only'      ? 'SMC · VMC · Dessins sauvegardés Firestore' :
-           mode === 'side-by-side' ? 'Les deux côte à côte (50/50)' :
-           mode === 'tv-top'       ? 'TradingView en haut · Lightweight en bas' :
-                                     'Lightweight en haut · TradingView en bas'}
+          {LAYOUTS.find(l => l.id === mode)?.desc}
         </span>
       </div>
 
       {/* Graphiques */}
-      {isSide ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div style={{ minWidth: 0 }}><LiveChart symbol={symbol} isCrypto={isCrypto} /></div>
-          <div style={{ minWidth: 0 }}><LightweightChart symbol={symbol} isCrypto={isCrypto} /></div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {(mode === 'tv-only' || mode === 'tv-top') && showTV && <LiveChart symbol={symbol} isCrypto={isCrypto} />}
-          {(mode === 'lw-only' || mode === 'lw-top') && showLW && <LightweightChart symbol={symbol} isCrypto={isCrypto} />}
-          {mode === 'tv-top' && showLW && <LightweightChart symbol={symbol} isCrypto={isCrypto} />}
-          {mode === 'lw-top' && showTV && <LiveChart symbol={symbol} isCrypto={isCrypto} />}
-        </div>
-      )}
+      <div style={{
+        display: isSplit ? 'grid' : 'block',
+        gridTemplateColumns: isSplit ? '1fr 1fr' : undefined,
+        gap: isSplit ? 8 : undefined,
+      }}>
+        {panels.map((type, i) => renderPanel(type, `${type}-${i}`))}
+      </div>
     </div>
   )
 }
