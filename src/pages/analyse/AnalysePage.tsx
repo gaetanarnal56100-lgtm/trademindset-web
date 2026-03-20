@@ -439,6 +439,69 @@ function PressureBar({score}:{score:number}){
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────
+
+// ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
+function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [mode, setMode] = useState<'tv-only'|'lw-only'|'side-by-side'|'tv-top'|'lw-top'>('tv-only')
+
+  const LAYOUTS = [
+    { id: 'tv-only'      as const, icon: '📺',  label: 'TradingView' },
+    { id: 'lw-only'      as const, icon: '⚡',  label: 'Lightweight' },
+    { id: 'side-by-side' as const, icon: '▐▌',  label: 'Côte à côte' },
+    { id: 'tv-top'       as const, icon: '▛',   label: 'TV + LW' },
+    { id: 'lw-top'       as const, icon: '▙',   label: 'LW + TV' },
+  ]
+
+  const showTV = mode !== 'lw-only'
+  const showLW = mode !== 'tv-only'
+  const isSide = mode === 'side-by-side'
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {/* Sélecteur */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px',
+        background: '#161B22', border: '1px solid #1E2330', borderRadius: 12, marginBottom: 8, flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: '#3D4254', marginRight: 2, flexShrink: 0 }}>DISPOSITION :</span>
+        {LAYOUTS.map(l => (
+          <button key={l.id} onClick={() => setMode(l.id)} style={{
+            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px',
+            borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer',
+            border: `1px solid ${mode === l.id ? '#00E5FF' : '#2A2F3E'}`,
+            background: mode === l.id ? 'rgba(0,229,255,0.10)' : 'transparent',
+            color: mode === l.id ? '#00E5FF' : '#555C70', transition: 'all 0.15s',
+          }}>
+            {l.icon} {l.label}
+          </button>
+        ))}
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: '#3D4254', flexShrink: 0 }}>
+          {mode === 'tv-only'      ? 'Outils pro TradingView, indicateurs natifs' :
+           mode === 'lw-only'      ? 'SMC · VMC · Dessins sauvegardés Firestore' :
+           mode === 'side-by-side' ? 'Les deux côte à côte (50/50)' :
+           mode === 'tv-top'       ? 'TradingView en haut · Lightweight en bas' :
+                                     'Lightweight en haut · TradingView en bas'}
+        </span>
+      </div>
+
+      {/* Graphiques */}
+      {isSide ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ minWidth: 0 }}><LiveChart symbol={symbol} isCrypto={isCrypto} /></div>
+          <div style={{ minWidth: 0 }}><LightweightChart symbol={symbol} isCrypto={isCrypto} /></div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(mode === 'tv-only' || mode === 'tv-top') && showTV && <LiveChart symbol={symbol} isCrypto={isCrypto} />}
+          {(mode === 'lw-only' || mode === 'lw-top') && showLW && <LightweightChart symbol={symbol} isCrypto={isCrypto} />}
+          {mode === 'tv-top' && showLW && <LightweightChart symbol={symbol} isCrypto={isCrypto} />}
+          {mode === 'lw-top' && showTV && <LiveChart symbol={symbol} isCrypto={isCrypto} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AnalysePage() {
   const [symbol, setSymbol] = useState('')  // Vide par défaut — l'utilisateur choisit
   const [mode,   setMode]   = useState<Mode>('micro')
@@ -604,13 +667,9 @@ export default function AnalysePage() {
         </div>
       )}
 
-      {/* Graphique Live TradingView */}
-      {symbol && <LiveChart symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
+      {/* Graphique — layout selector */}
+      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
 
-      {/* Graphique Custom — Lightweight Charts avec sauvegarde */}
-      {symbol && <LightweightChart symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
-
-      {/* Lightweight Charts — sauvegarde Firestore */}
 
       {/* Plan de Trade IA — tous les actifs, en premier */}
       {symbol && <div style={{marginBottom:16}}>
