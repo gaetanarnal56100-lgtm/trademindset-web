@@ -4,10 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createChart, IChartApi, ISeriesApi, CrosshairMode, Time, LineStyle } from 'lightweight-charts'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, Timestamp } from 'firebase/firestore'
-import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
-
-const fbFn = getFunctions(app, 'europe-west1')
 
 const db = getFirestore(app)
 
@@ -51,12 +48,63 @@ async function dbLoad(sym:string,tf:string):Promise<SavedDrawing[]>{
 }
 async function dbDelete(id:string){const u=uid();if(!u)return;await deleteDoc(doc(db,'users',u,'chartDrawings',id))}
 
-// TwelveData interval mapping
-const MIN_TO_TD: Record<number,string> = {1:'1min',5:'5min',15:'15min',30:'30min',60:'1h',120:'2h',240:'4h',1440:'1day',10080:'1week'}
+// Yahoo Finance interval mapping
+const MIN_TO_YF: Record<number,{interval:string;range:string}> = {
+  1:   {interval:'1m',  range:'1d'},
+  5:   {interval:'5m',  range:'5d'},
+  15:  {interval:'15m', range:'5d'},
+  30:  {interval:'30m', range:'1mo'},
+  60:  {interval:'60m', range:'1mo'},
+  120: {interval:'60m', range:'3mo'},
+  240: {interval:'1d',  range:'6mo'},
+  1440:{interval:'1d',  range:'1y'},
+  10080:{interval:'1wk',range:'5y'},
+}
 
-// Fetch candles — crypto (Binance) + stocks/forex (Cloud Functions)
+// Yahoo Finance proxy (évite les erreurs CORS)
+const YF_PROXY = 'https://query1.finance.yahoo.com/v8/finance/chart'
+
+async function fetchYahooCandles(sym:string, min:number): Promise<Candle[]> {
+  const {interval, range} = MIN_TO_YF[min] || {interval:'1d', range:'1y'}
+  // Yahoo Finance accepte AAPL, MSFT, BTC-USD, EURUSD=X, GC=F (Gold), ^FCHI (CAC40)
+  const url = `${YF_PROXY}/${encodeURIComponent(sym)}?interval=${interval}&range=${range}&includePrePost=false`
+  const r = await fetch(url, {
+    headers: { 'Accept': 'application/json' }
+  })
+  if (!r.ok) throw new Error(`Yahoo Finance: ${r.status}`)
+  const j = await r.json()
+  const result = j?.chart?.result?.[0]
+  if (!result) throw new Error('Aucune donnée Yahoo Finance')
+  const timestamps: number[] = result.timestamp || []
+  const q = result.indicators?.quote?.[0]
+  if (!q || timestamps.length < 5) throw new Error('Données insuffisantes')
+  return timestamps
+    .map((t:number, i:number) => ({
+      time: t,
+      open:  q.open[i]  ?? 0,
+      high:  q.high[i]  ?? 0,
+      low:   q.low[i]   ?? 0,
+      close: q.close[i] ?? 0,
+      volume: q.volume?.[i] ?? 0,
+    }))
+    .filter(c => c.open > 0 && c.close > 0)
+}
+
+// Normalise le symbole pour Yahoo Finance
+function toYahooSymbol(sym: string): string[] {
+  const s = sym.toUpperCase()
+  // Crypto déjà USDT → BTC-USD format pour Yahoo
+  if (/USDT$/i.test(s)) {
+    const base = s.replace(/USDT$/i, '')
+    return [`${base}-USD`]
+  }
+  // Actions classiques : essaie tel quel + variantes exchanges EU
+  return [s, `${s}.PA`, `${s}.L`, `${s}.DE`, `${s}.MC`]
+}
+
+// Fetch candles — crypto (Binance) → Yahoo Finance pour tout le reste
 async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Candle[]> {
-  // ── Binance first (crypto + symbols without USDT suffix like "STIM") ──
+  // ── 1. Binance Futures ──────────────────────────────────────────────
   const binanceSyms = isCrypto
     ? [sym.replace(/USDT$/i,'')+'USDT', sym]
     : [`${sym}USDT`, sym]
@@ -67,48 +115,23 @@ async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Cand
         const r=await fetch(`${base}/klines?symbol=${bSym}&interval=${tfStr(min)}&limit=500`)
         if(!r.ok)continue
         const d=await r.json()
-        if(!Array.isArray(d)||!d.length)continue
+        if(!Array.isArray(d)||d.length < 5)continue
         return d.map((k:any[])=>({time:Math.floor(k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}))
       }catch{}
     }
   }
   if(isCrypto) throw new Error(`Crypto ${sym} introuvable sur Binance`)
 
-  // ── Non-crypto : Finnhub en premier ─────────────────────────────────
-  const resMap: Record<number,string> = {1:'1',5:'5',15:'15',30:'30',60:'60',120:'120',240:'D',1440:'D',10080:'W'}
-  try{
-    const now = Math.floor(Date.now()/1000)
-    const secs = min * 60
-    const fn = httpsCallable<any,any>(fbFn, 'fetchStockCandles')
-    const res = await fn({symbol: sym, resolution: resMap[min]||'60', from: now-secs*300, to: now})
-    if(res.data.s==='ok' && res.data.c?.length > 5){
-      return res.data.c.map((_:any,i:number)=>({
-        time: res.data.t?.[i] ?? i,
-        open: res.data.o[i], high: res.data.h[i],
-        low:  res.data.l[i], close: res.data.c[i], volume: 0,
-      }))
-    }
-  }catch{}
-
-  // ── Fallback : TwelveData ─────────────────────────────────────────
-  const tdInterval = MIN_TO_TD[min] || '1h'
-  const variants = [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]
-  for(const variant of variants){
-    try{
-      const fn2 = httpsCallable<any,any>(fbFn, 'fetchTimeSeries')
-      const res2 = await fn2({symbol: variant, interval: tdInterval, outputSize: 300})
-      const values = res2.data.values || []
-      if(values.length > 5){
-        return values.reverse().map((v:any, i:number) => ({
-          time: Math.floor(new Date(v.datetime).getTime() / 1000) || i,
-          open: parseFloat(v.open), high: parseFloat(v.high),
-          low:  parseFloat(v.low),  close: parseFloat(v.close), volume: 0,
-        }))
-      }
-    }catch{}
+  // ── 2. Yahoo Finance — actions, forex, indices, ETFs ───────────────
+  const yahooSymbols = toYahooSymbol(sym)
+  for (const ySym of yahooSymbols) {
+    try {
+      const candles = await fetchYahooCandles(ySym, min)
+      if (candles.length >= 5) return candles
+    } catch {}
   }
 
-  throw new Error(`Symbole ${sym} non trouvé sur Finnhub ni TwelveData`)
+  throw new Error(`${sym} introuvable sur Binance ni Yahoo Finance. Essayez BTCUSDT, AAPL, TSLA, EURUSD=X`)
 }
 
 // ── Math helpers ──────────────────────────────────────────────────────────
@@ -802,7 +825,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         {!loading&&fetchError&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#0D1117',zIndex:4,gap:10}}>
           <span style={{fontSize:28}}>📊</span>
           <span style={{fontSize:12,color:'#FF3B30',fontWeight:600,textAlign:'center',maxWidth:280,padding:'0 20px'}}>{fetchError}</span>
-          <span style={{fontSize:11,color:'#555C70',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Ce symbole n'est disponible que via les Cloud Functions (TwelveData/Finnhub). Vérifiez que les fonctions Firebase sont déployées.</span>
+          <span style={{fontSize:11,color:'#555C70',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Essayez: AAPL · TSLA · MSFT · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40) · BTC-USD</span>
           <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:'rgba(0,229,255,0.1)',border:'1px solid #00E5FF',color:'#00E5FF',cursor:'pointer',fontSize:11}}>Réessayer</button>
         </div>}
         <div ref={chartEl} style={{width:'100%',height:430}}/>

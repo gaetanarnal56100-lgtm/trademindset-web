@@ -3,8 +3,6 @@
 // Fix: smart fetch (Futures → Spot fallback) + preset recalc sans refetch + symbol reactivity
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { getFunctions, httpsCallable } from 'firebase/functions'
-import app from '@/services/firebase/config'
 import { signalService } from '@/services/notifications/SignalNotificationService'
 
 // ── Live refresh interval per timeframe (ms) ──────────────────────────────
@@ -12,8 +10,6 @@ const TF_REFRESH_MS: Record<string, number> = {
   '5m':300000,'15m':900000,'30m':1800000,'1h':3600000,
   '2h':7200000,'4h':14400000,'12h':43200000,'1d':86400000,'1w':604800000,
 }
-
-const fbFn = getFunctions(app, 'europe-west1')
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
@@ -30,12 +26,7 @@ const TF_OPTIONS = [
   { label:'1S',  interval:'1w',  limit:200 },
 ]
 
-// TwelveData interval mapping (pour stocks/forex via Cloud Function)
-const TF_TO_TWELVEDATA: Record<string, string> = {
-  '5m':'5min','15m':'15min','30m':'30min','1h':'1h','2h':'2h','4h':'4h','12h':'12h','1d':'1day','1w':'1week'
-}
-
-// ── Smart fetch — Futures → Spot → Cloud Function ─────────────────────────
+// ── Smart fetch — Futures → Spot → Yahoo Finance ──────────────────────────
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
@@ -83,48 +74,44 @@ async function fetchCandles(symbol: string, interval: string, limit: number): Pr
     throw new Error(`Crypto ${sym} introuvable sur Binance`)
   }
 
-  // 3. Non-crypto — Finnhub en premier (plus fiable + gratuit généreux)
-  const tdInterval = TF_TO_TWELVEDATA[interval] || '1h'
-  const resMap: Record<string,string> = {
-    '5min':'5','15min':'15','30min':'30','1h':'60','2h':'120','4h':'D','12h':'D','1day':'D','1week':'W'
+  // 3. Yahoo Finance — actions, indices, ETFs, forex (aucune clé requise)
+  const yfInterval: Record<string,string> = {
+    '5m':'5m','15m':'15m','30m':'30m','1h':'60m','2h':'60m','4h':'1d','12h':'1d','1d':'1d','1w':'1wk'
   }
-  try {
-    const now = Math.floor(Date.now() / 1000)
-    const periodSeconds: Record<string,number> = {
-      '5min':300,'15min':900,'30min':1800,'1h':3600,'2h':7200,
-      '4h':14400,'12h':43200,'1day':86400,'1week':604800
-    }
-    const secs = periodSeconds[tdInterval] || 3600
-    const from = now - secs * limit
-    const fn = httpsCallable<Record<string,unknown>, {c?:number[];h?:number[];l?:number[];o?:number[];t?:number[];s?:string}>(fbFn, 'fetchStockCandles')
-    const res = await fn({ symbol: sym, resolution: resMap[tdInterval]||'60', from, to: now })
-    if (res.data.s === 'ok' && res.data.c && res.data.c.length > 5) {
-      return res.data.c.map((_,i) => ({
-        t: res.data.t?.[i] ? res.data.t[i] * 1000 : i,
-        o: res.data.o![i], h: res.data.h![i],
-        l: res.data.l![i], c: res.data.c![i], v: 0,
-      }))
-    }
-  } catch {/**/}
+  const yfRange: Record<string,string> = {
+    '5m':'5d','15m':'5d','30m':'1mo','1h':'1mo','2h':'3mo','4h':'6mo','12h':'1y','1d':'1y','1w':'5y'
+  }
+  const yfInt = yfInterval[interval] || '1d'
+  const yfRng = yfRange[interval] || '1y'
 
-  // 4. TwelveData en dernier recours
-  const symVariants = [sym, `${sym}:NYSE`, `${sym}:NASDAQ`, `${sym}:BATS`]
-  for (const variant of symVariants) {
+  // Yahoo Finance accepte: AAPL, MSFT, BTC-USD, EURUSD=X, GC=F, ^FCHI, MC.PA
+  const yahooVariants = [sym, `${sym}.PA`, `${sym}.L`, `${sym}.DE`, `${sym}-USD`]
+  for (const ySym of yahooVariants) {
     try {
-      const fn2 = httpsCallable<Record<string,unknown>, {values?: {datetime:string;open:string;high:string;low:string;close:string}[];status?:string}>(fbFn, 'fetchTimeSeries')
-      const res2 = await fn2({ symbol: variant, interval: tdInterval, outputSize: limit })
-      const values = res2.data.values || []
-      if (values.length > 5) {
-        return values.reverse().map((v, i) => ({
-          t: new Date(v.datetime).getTime() / 1000 || i,
-          o: parseFloat(v.open), h: parseFloat(v.high),
-          l: parseFloat(v.low), c: parseFloat(v.close), v: 0,
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=${yfInt}&range=${yfRng}&includePrePost=false`
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } })
+      if (!r.ok) continue
+      const j = await r.json()
+      const result = j?.chart?.result?.[0]
+      if (!result) continue
+      const timestamps: number[] = result.timestamp || []
+      const q = result.indicators?.quote?.[0]
+      if (!q || timestamps.length < 5) continue
+      const candles = timestamps
+        .map((t: number, i: number) => ({
+          t: t * 1000,
+          o: q.open[i]   ?? 0,
+          h: q.high[i]   ?? 0,
+          l: q.low[i]    ?? 0,
+          c: q.close[i]  ?? 0,
+          v: q.volume?.[i] ?? 0,
         }))
-      }
+        .filter(c => c.o > 0 && c.c > 0)
+      if (candles.length >= 5) return candles
     } catch {/**/}
   }
 
-  throw new Error(`Symbole ${sym} non trouvé sur Finnhub ni TwelveData`)
+  throw new Error(`${sym} introuvable. Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA`)
 }
 
 // ── Math helpers ───────────────────────────────────────────────────────────
@@ -354,7 +341,7 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
           <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
             {isCryptoSymbol(symbol)
               ? "Ce symbole n'est pas disponible sur Binance Futures ni Spot."
-              : 'Les données actions/forex nécessitent les Cloud Functions Firebase (TwelveData/Finnhub). Vérifiez le déploiement.'}
+              : 'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}
           </span>
         </div>}
         <canvas ref={canvasRef} width={800} height={180} style={{width:'100%',height:180,display:'block',borderRadius:8}}/>
@@ -471,7 +458,7 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
           <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
             {isCryptoSymbol(symbol)
               ? "Ce symbole n'est pas disponible sur Binance Futures ni Spot."
-              : 'Les données actions/forex nécessitent les Cloud Functions Firebase (TwelveData/Finnhub). Vérifiez le déploiement.'}
+              : 'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}
           </span>
         </div>}
         <canvas ref={canvasRef} width={800} height={180} style={{width:'100%',height:180,display:'block',borderRadius:8}}/>
