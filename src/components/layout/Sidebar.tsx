@@ -5,7 +5,7 @@ import { logout } from '@/services/firebase/auth'
 import { useUser } from '@/hooks/useAuth'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
-  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout,
+  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier,
 } from '@/components/ui/Icons'
 
 const NAV = [
@@ -14,6 +14,7 @@ const NAV = [
   { to: '/analyse',  label: 'Analyse',    Icon: IconAnalyse },
   { to: '/journal',  label: 'Journal',    Icon: IconJournal },
   { to: '/alertes',  label: 'Alertes',    Icon: IconAlertes },
+  { to: '/calendrier', label: 'Calendrier', Icon: IconCalendrier },
   { to: '/systemes', label: 'Systèmes',   Icon: IconSystemes },
 ]
 const NAV_BOTTOM = [
