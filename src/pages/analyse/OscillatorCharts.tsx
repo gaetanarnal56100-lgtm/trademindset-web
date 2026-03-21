@@ -200,57 +200,74 @@ function useCanvas(draw:(ctx:CanvasRenderingContext2D,W:number,H:number)=>void, 
   return ref
 }
 
-// Draw EMA ribbon strip in the bottom 18% of the canvas — pure pixel space, no VMC units
+// Draw EMA ribbon strip in bottom 22% of canvas — fully self-contained pixel space
 function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:number[][], _minV:number, _maxV:number) {
-  if (!emas || emas.length < 2) return
+  if (!emas || emas.length < 8) return
   const tail = 150
   const es = emas.map(e => e.slice(-tail))
   const n = es[0].length
   if (n < 2) return
-  // Reserve bottom 18% of canvas for the ribbon strip
-  const stripTop = H * 0.82   // top of strip zone (pixels)
-  const stripBot = H * 0.98   // bottom of strip zone (pixels)
-  const stripH = stripBot - stripTop
-  const xp = (i:number) => (i / (n - 1)) * W
-  // For each bar: normalize EMAs around their midpoint into the strip zone
-  const toY = (barIdx:number, emaIdx:number): number => {
-    const mid = (es[0][barIdx] + es[es.length-1][barIdx]) / 2
-    const spread = Math.abs(es[0][barIdx] - es[es.length-1][barIdx]) || Math.abs(es[0][barIdx]) * 0.002 || 1
-    const pct = Math.max(-0.5, Math.min(0.5, (es[emaIdx][barIdx] - mid) / spread))
-    // e1 (fast) at top when bull, e8 (slow) at bottom
-    return stripTop + stripH * 0.5 + pct * stripH * 0.9
+
+  // Strip zone: bottom 20% of canvas, fixed height ~40px
+  const zMid = H * 0.895  // vertical center of the strip
+  const zH   = H * 0.09   // half-height of strip (total = 18% of canvas)
+  const xp   = (i: number) => (i / (n - 1)) * W
+
+  // TradingView-style normToStrip: for each bar, normalize around midpoint of e1/e8
+  // maxSpreadPct caps the visual spread so lines stay tight when EMA spread is small
+  const maxSpreadPct = 0.015 // 1.5% of price = full strip height
+  const toY = (barIdx: number, emaIdx: number): number => {
+    const mid   = (es[0][barIdx] + es[7][barIdx]) / 2
+    const price = mid || 1
+    const spread = Math.abs(es[0][barIdx] - es[7][barIdx])
+    const spreadPct = spread / price
+    // pct of this EMA relative to the spread, capped at ±0.5
+    const raw = spreadPct > 0
+      ? Math.max(-0.5, Math.min(0.5, (es[emaIdx][barIdx] - mid) / spread))
+      : (emaIdx - 3.5) / 8  // fallback when EMAs are identical
+    // Scale: when spread is tiny, lines are compressed; when spread > maxSpreadPct, full height
+    const scale = Math.min(1, spreadPct / maxSpreadPct)
+    return zMid + raw * zH * 2 * scale
   }
-  const isBull = es[0][n-1] > es[es.length-1][n-1]
-  // Subtle separator line
-  ctx.strokeStyle = 'rgba(42,47,62,0.8)'
+
+  const isBull = es[0][n-1] > es[7][n-1]
+
+  ctx.save()
+
+  // Subtle separator
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'
   ctx.lineWidth = 1
-  ctx.setLineDash([2, 4])
-  ctx.beginPath(); ctx.moveTo(0, stripTop - 2); ctx.lineTo(W, stripTop - 2); ctx.stroke()
+  ctx.setLineDash([2, 6])
+  ctx.beginPath(); ctx.moveTo(0, zMid - zH); ctx.lineTo(W, zMid - zH); ctx.stroke()
   ctx.setLineDash([])
-  // Fill between e1 and e8
+
+  // Fill between EMA1 and EMA8
   ctx.beginPath()
   for (let i = 0; i < n; i++) {
-    const x = xp(i), y = toY(i, 0)
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    i === 0 ? ctx.moveTo(xp(i), toY(i, 0)) : ctx.lineTo(xp(i), toY(i, 0))
   }
-  for (let i = n-1; i >= 0; i--) ctx.lineTo(xp(i), toY(i, es.length-1))
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(xp(i), toY(i, 7))
   ctx.closePath()
   ctx.fillStyle = isBull ? 'rgba(34,199,89,0.10)' : 'rgba(255,59,48,0.10)'
   ctx.fill()
-  // Draw each of the 8 EMA lines
-  const bullColors = ['rgba(34,199,89,0.95)','rgba(34,199,89,0.8)','rgba(34,199,89,0.65)','rgba(34,199,89,0.5)','rgba(255,149,0,0.5)','rgba(255,59,48,0.65)','rgba(255,59,48,0.8)','rgba(255,59,48,0.95)']
-  const bearColors = ['rgba(255,59,48,0.95)','rgba(255,59,48,0.8)','rgba(255,59,48,0.65)','rgba(255,59,48,0.5)','rgba(255,149,0,0.5)','rgba(34,199,89,0.65)','rgba(34,199,89,0.8)','rgba(34,199,89,0.95)']
-  const colors = isBull ? bullColors : bearColors
-  es.forEach((_, ei) => {
+
+  // 8 EMA lines — green→red (bull) or red→green (bear), matching TradingView colors
+  const bullC = ['#22C759','#36D174','#4ADC8F','#5EE7AA','#F59714','#FF6060','#FF3B30','#FF1818']
+  const bearC = ['#FF1818','#FF3B30','#FF6060','#F59714','#5EE7AA','#4ADC8F','#36D174','#22C759']
+  const cols  = isBull ? bullC : bearC
+  for (let ei = 0; ei < 8; ei++) {
     ctx.beginPath()
-    ctx.strokeStyle = colors[ei] || 'rgba(150,150,150,0.5)'
+    ctx.strokeStyle = cols[ei]
     ctx.lineWidth = 1
+    ctx.globalAlpha = 0.9
     for (let i = 0; i < n; i++) {
-      const x = xp(i), y = toY(i, ei)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+      i === 0 ? ctx.moveTo(xp(i), toY(i, ei)) : ctx.lineTo(xp(i), toY(i, ei))
     }
     ctx.stroke()
-  })
+  }
+
+  ctx.globalAlpha = 1
+  ctx.restore()
 }
 
 function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[], emas?:number[][]) {
