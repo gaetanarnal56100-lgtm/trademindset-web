@@ -12,7 +12,7 @@ interface CalendarEvent {
   actual?: string; consensus?: string; previous?: string
 }
 type ImpactFilter = 'ALL'|'HIGH'|'MEDIUM'|'LOW'
-type PeriodFilter = 'today'|'tomorrow'|'week'
+type PeriodFilter = 'today'|'tomorrow'|'week'|'nextweek'
 
 const FLAGS: Record<string,string> = {
   US:'🇺🇸',EU:'🇪🇺',GB:'🇬🇧',JP:'🇯🇵',CN:'🇨🇳',CA:'🇨🇦',
@@ -34,6 +34,15 @@ function getTargetDates(period: PeriodFilter) {
     const tom=new Date(today); tom.setDate(tom.getDate()+1)
     const target=isWeekend(tom)?nextBD(tom):tom
     return { dates:[target.toISOString().split('T')[0]], isWeekend:false, nextBD:'', label:target.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}) }
+  }
+  if (period==='nextweek') {
+    const dates: string[]=[]
+    const cur=new Date(today)
+    // Avancer au lundi prochain
+    const daysUntilMonday = (8 - cur.getDay()) % 7 || 7
+    cur.setDate(cur.getDate()+daysUntilMonday)
+    while(dates.length<5){if(!isWeekend(cur))dates.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1)}
+    return { dates, isWeekend:false, nextBD:'', label:`Semaine prochaine — ${dates[0]} au ${dates[4]}` }
   }
   const dates: string[]=[]
   const cur=new Date(today)
@@ -199,7 +208,7 @@ export default function CalendrierPage(){
       {/* Controls */}
       <div style={{display:'flex',gap:12,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
         <div style={{display:'flex',background:'#161B22',border:'1px solid #1E2330',borderRadius:12,padding:4,gap:2}}>
-          {([{k:'today',l:"Aujourd'hui"},{k:'tomorrow',l:'Demain'},{k:'week',l:'Semaine'}] as {k:PeriodFilter,l:string}[]).map(p=>(
+          {([{k:'today',l:"Aujourd'hui"},{k:'tomorrow',l:'Demain'},{k:'week',l:'Semaine'},{k:'nextweek',l:'Sem. suivante'}] as {k:PeriodFilter,l:string}[]).map(p=>(
             <button key={p.k} onClick={()=>setPeriod(p.k)} style={{padding:'7px 18px',borderRadius:9,fontSize:12,fontWeight:500,cursor:'pointer',border:'none',background:period===p.k?'rgba(0,229,255,0.15)':'transparent',color:period===p.k?'#00E5FF':'#555C70',transition:'all 0.15s'}}>{p.l}</button>
           ))}
         </div>
