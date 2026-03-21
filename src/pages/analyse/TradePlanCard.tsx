@@ -377,18 +377,30 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
       setPrice(0); setPlan(null); setAiRaw(''); setSections(null)
     }
     const isCrypto = /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(sym)
-    if (isCrypto && priceProp > 0) {
-      priceRef.current = priceProp; setPrice(priceProp); return
-    }
+
     if (isCrypto) {
+      // Crypto → Binance ticker (prix temps réel)
+      if (priceProp > 0) { priceRef.current = priceProp; setPrice(priceProp); return }
       fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`)
         .then(r => r.json()).then(d => {
           if (symbolRef.current !== sym) return
           if (d.price) { priceRef.current = parseFloat(d.price); setPrice(parseFloat(d.price)) }
         }).catch(() => {})
     } else {
-      // Pour non-crypto, utiliser le prix depuis le composant parent si disponible
-      if (priceProp > 0) { priceRef.current = priceProp; setPrice(priceProp) }
+      // Non-crypto (actions, forex, indices) → fetchYahooCandles Cloud Function
+      const fetchNonCryptoPrice = async () => {
+        try {
+          const fn = httpsCallable<Record<string,unknown>, {s:string; candles:{t:number;o:number;h:number;l:number;c:number;v:number}[]}>(fbFn, 'fetchYahooCandles')
+          const res = await fn({ symbol: sym, interval: '1d', range: '5d' })
+          if (symbolRef.current !== sym) return
+          if (res.data.s === 'ok' && res.data.candles?.length > 0) {
+            const lastCandle = res.data.candles[res.data.candles.length - 1]
+            const p = lastCandle.c
+            if (p > 0) { priceRef.current = p; setPrice(p) }
+          }
+        } catch { /* ignore */ }
+      }
+      fetchNonCryptoPrice()
     }
   }, [symbol, priceProp])
 
@@ -411,7 +423,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
   if (price <= 0) return (
     <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
       <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'#0A85FF', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 }} />
-      <span style={{ fontSize:12, color:'#555C70' }}>Récupération du prix de {symbol}...</span>
+      <span style={{ fontSize:12, color:'#555C70' }}>Récupération du prix {symbol}...</span>
     </div>
   )
   if (!plan) return null
@@ -428,7 +440,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
           <div style={{ width:32, height:32, borderRadius:9, background:'linear-gradient(135deg,#0A85FF,#00E5FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
           <div>
             <div style={{ fontSize:13, fontWeight:700, color:'#F0F3FF' }}>Plan de Trade</div>
-            <div style={{ fontSize:10, color:'#555C70' }}>{symbol} · ${fmtP(price)}</div>
+            <div style={{ fontSize:10, color:'#555C70' }}>{symbol} · {/USDT$|BTC$|ETH$|BNB$/i.test(symbol) ? '$' : ''}{fmtP(price)}</div>
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
