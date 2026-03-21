@@ -131,10 +131,11 @@ interface VMCResult {
   sig:number[]; sigSignal:number[]; momentum:number[]
   bullConfirm:boolean; bearConfirm:boolean
   ribbonBull:boolean; ribbonBear:boolean; compression:boolean; status:string
+  emas:number[][]  // 8 EMA arrays for ribbon strip
 }
 
 function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'='swing'): VMCResult {
-  const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL'}
+  const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL',emas:[]}
   if (candles.length<60) return EMPTY
   const close=candles.map(c=>c.c), high=candles.map(c=>c.h), low=candles.map(c=>c.l), vol=candles.map(c=>c.v)
   const thresholds=preset==='scalping'?[40,-30]:preset==='swing'?[35,-25]:[30,-20]
@@ -178,7 +179,7 @@ function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'positio
   else if(bearConfirm&&(ribbonBear||compression)&&momentum[last]<=0)status='SELL'
   else if(sig[last]>thresholds[0])status='OVERBOUGHT'
   else if(sig[last]<thresholds[1])status='OVERSOLD'
-  return{sig,sigSignal,momentum,bullConfirm,bearConfirm,ribbonBull,ribbonBear,compression,status}
+  return{sig,sigSignal,momentum,bullConfirm,bearConfirm,ribbonBull,ribbonBear,compression,status,emas}
 }
 
 // ── Canvas helpers ─────────────────────────────────────────────────────────
@@ -199,14 +200,69 @@ function useCanvas(draw:(ctx:CanvasRenderingContext2D,W:number,H:number)=>void, 
   return ref
 }
 
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[]) {
+// Draw EMA ribbon strip in the bottom 18% of the canvas — pure pixel space, no VMC units
+function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:number[][], _minV:number, _maxV:number) {
+  if (!emas || emas.length < 2) return
+  const tail = 150
+  const es = emas.map(e => e.slice(-tail))
+  const n = es[0].length
+  if (n < 2) return
+  // Reserve bottom 18% of canvas for the ribbon strip
+  const stripTop = H * 0.82   // top of strip zone (pixels)
+  const stripBot = H * 0.98   // bottom of strip zone (pixels)
+  const stripH = stripBot - stripTop
+  const xp = (i:number) => (i / (n - 1)) * W
+  // For each bar: normalize EMAs around their midpoint into the strip zone
+  const toY = (barIdx:number, emaIdx:number): number => {
+    const mid = (es[0][barIdx] + es[es.length-1][barIdx]) / 2
+    const spread = Math.abs(es[0][barIdx] - es[es.length-1][barIdx]) || Math.abs(es[0][barIdx]) * 0.002 || 1
+    const pct = Math.max(-0.5, Math.min(0.5, (es[emaIdx][barIdx] - mid) / spread))
+    // e1 (fast) at top when bull, e8 (slow) at bottom
+    return stripTop + stripH * 0.5 + pct * stripH * 0.9
+  }
+  const isBull = es[0][n-1] > es[es.length-1][n-1]
+  // Subtle separator line
+  ctx.strokeStyle = 'rgba(42,47,62,0.8)'
+  ctx.lineWidth = 1
+  ctx.setLineDash([2, 4])
+  ctx.beginPath(); ctx.moveTo(0, stripTop - 2); ctx.lineTo(W, stripTop - 2); ctx.stroke()
+  ctx.setLineDash([])
+  // Fill between e1 and e8
+  ctx.beginPath()
+  for (let i = 0; i < n; i++) {
+    const x = xp(i), y = toY(i, 0)
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+  }
+  for (let i = n-1; i >= 0; i--) ctx.lineTo(xp(i), toY(i, es.length-1))
+  ctx.closePath()
+  ctx.fillStyle = isBull ? 'rgba(34,199,89,0.10)' : 'rgba(255,59,48,0.10)'
+  ctx.fill()
+  // Draw each of the 8 EMA lines
+  const bullColors = ['rgba(34,199,89,0.95)','rgba(34,199,89,0.8)','rgba(34,199,89,0.65)','rgba(34,199,89,0.5)','rgba(255,149,0,0.5)','rgba(255,59,48,0.65)','rgba(255,59,48,0.8)','rgba(255,59,48,0.95)']
+  const bearColors = ['rgba(255,59,48,0.95)','rgba(255,59,48,0.8)','rgba(255,59,48,0.65)','rgba(255,59,48,0.5)','rgba(255,149,0,0.5)','rgba(34,199,89,0.65)','rgba(34,199,89,0.8)','rgba(34,199,89,0.95)']
+  const colors = isBull ? bullColors : bearColors
+  es.forEach((_, ei) => {
+    ctx.beginPath()
+    ctx.strokeStyle = colors[ei] || 'rgba(150,150,150,0.5)'
+    ctx.lineWidth = 1
+    for (let i = 0; i < n; i++) {
+      const x = xp(i), y = toY(i, ei)
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  })
+}
+
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[], emas?:number[][]) {
   ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
   const tail=Math.min(main.length,150)
   const m=main.slice(-tail),s=signal.slice(-tail),h=histogram.slice(-tail)
   if(m.length<2)return
+  // When ribbon is present, oscillator uses top 76% of canvas height
+  const oscH = emas && emas.length > 0 ? H * 0.76 : H
   const allVals=[...m,...s,...h,obLevel,osLevel,0]
   const minV=Math.min(...allVals)*1.1,maxV=Math.max(...allVals)*1.1,range=maxV-minV||1
-  const yp=(v:number)=>H-((v-minV)/range)*H
+  const yp=(v:number)=>oscH-((v-minV)/range)*oscH
   const xp=(i:number)=>(i/(m.length-1))*W
   ctx.fillStyle='rgba(255,59,48,0.06)';ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
   ctx.fillStyle='rgba(34,199,89,0.06)';ctx.fillRect(0,yp(osLevel),W,yp(minV)-yp(osLevel))
@@ -218,6 +274,8 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   ctx.beginPath();ctx.strokeStyle=signalColor;ctx.lineWidth=1.2;s.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
   ctx.beginPath();ctx.strokeStyle=mainColor;ctx.lineWidth=2;m.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
   if(dots){const offset=main.length-tail;dots.filter(d=>d.i>=offset).forEach(d=>{const i=d.i-offset;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'#00E5FF':'#FF3B30';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
+  // Draw ribbon strip at bottom if emas provided
+  if (emas && emas.length > 0) drawRibbonStrip(ctx, W, H, emas, minV, maxV)
 }
 
 // ── WaveTrend Chart ────────────────────────────────────────────────────────
@@ -378,7 +436,7 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
 
   const canvasRef = useCanvas((ctx,W,H)=>{
     if(!result||result.sig.length<2)return
-    drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.55)','rgba(255,59,48,0.55)')
+    drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.55)','rgba(255,59,48,0.55)',undefined,result.emas)
   },[result])
 
   return (
@@ -430,7 +488,7 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
               : 'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}
           </span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={180} style={{width:'100%',height:180,display:'block',borderRadius:8}}/>
+        <canvas ref={canvasRef} width={800} height={230} style={{width:'100%',height:230,display:'block',borderRadius:8}}/>
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'VMC Sig'},{color:'#FF9500',label:'Signal'},{color:'#22C759',label:'Mom +'},{color:'#FF3B30',label:'Mom −'},{color:'#FF9500',label:`OB:${obLevel}`},{color:'#22C759',label:`OS:${osLevel}`}].map(({color,label})=>(
             <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'#555C70'}}>{label}</span></div>
