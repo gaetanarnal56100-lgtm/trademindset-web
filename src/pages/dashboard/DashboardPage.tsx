@@ -1,6 +1,7 @@
 // DashboardPage.tsx — Dashboard enrichi v2 (heatmap compact + interactif + analytics tabs)
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
+import PnLCurve from './PnLModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function safeTime(d: any): number {
@@ -76,31 +77,6 @@ function calcEmotions(moods: MoodEntry[], trades: Trade[]) {
   const impact=avg>=3.5?'Positif':avg>=2.5?'Neutre':'Négatif'
   const advice=consec>=3?'Pause recommandée':avg>=3.5?'Continuer':'Réduire la taille'
   return{avgState,risk,impact,advice,consec,entries:moods.length}
-}
-
-// ── P&L Curve ─────────────────────────────────────────────────────────────
-function PnLCurve({trades}:{trades:Trade[]}) {
-  const ref=useRef<HTMLCanvasElement>(null)
-  useEffect(()=>{
-    const canvas=ref.current;if(!canvas)return
-    const ctx=canvas.getContext('2d')!,W=canvas.width,H=canvas.height
-    ctx.clearRect(0,0,W,H)
-    const cl=[...trades].filter(t=>t.status==='closed').sort((a,b)=>safeTime(a.date)-safeTime(b.date))
-    if(cl.length<2){ctx.font='12px DM Sans';ctx.fillStyle='#3D4254';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('Pas assez de données',W/2,H/2);return}
-    let cum=0;const pts=cl.map(t=>{cum+=tradePnL(t);return cum})
-    const minV=Math.min(...pts,0),maxV=Math.max(...pts,0),range=maxV-minV||1,zY=H-((-minV)/range)*H
-    ctx.setLineDash([3,3]);ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1
-    ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
-    const last=pts[pts.length-1],c=last>=0?'#22C759':'#FF3B30'
-    ctx.beginPath();pts.forEach((v,i)=>{const x=(i/(pts.length-1))*W,y=H-((v-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
-    ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
-    const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,c+'30');g.addColorStop(1,c+'02')
-    ctx.fillStyle=g;ctx.fill()
-    ctx.beginPath();ctx.strokeStyle=c;ctx.lineWidth=1.5
-    pts.forEach((v,i)=>{const x=(i/(pts.length-1))*W,y=H-((v-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
-    ctx.stroke()
-  },[trades])
-  return <canvas ref={ref} width={600} height={100} style={{width:'100%',height:100,display:'block'}}/>
 }
 
 // ── Adaptive Calendar Heatmap with tooltip ────────────────────────────────
@@ -532,10 +508,6 @@ export default function DashboardPage() {
       {/* P&L Curve */}
       <div style={{...card(),marginBottom:16}}>
         <div style={hl()}/>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF'}}>Courbe P&L cumulée</div>
-          {!loading&&<div style={{fontSize:13,fontWeight:700,color:s.totalPnL>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(s.totalPnL)}</div>}
-        </div>
         <PnLCurve trades={trades}/>
       </div>
 
