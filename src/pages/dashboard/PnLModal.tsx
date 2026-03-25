@@ -180,7 +180,7 @@ function renderChart(
   ctx.fillStyle='#555C70'; ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='center'
   pts.forEach((p,i)=>{
     if(i%step===0||i===pts.length-1)
-      ctx.fillText(fmtD(p.date,true),toX(i),H-isModal?12:8)
+      ctx.fillText(fmtD(p.date,true),toX(i),H-(isModal?12:8))
   })
 
   // Crosshair
