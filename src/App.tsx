@@ -10,6 +10,7 @@ import TradesPage     from '@/pages/trades/TradesPage'
 import AnalysePage    from '@/pages/analyse/AnalysePage'
 import JournalPage    from '@/pages/journal/JournalPage'
 import AlertesPage    from '@/pages/alertes/AlertesPage'
+import CalendrierPage from '@/pages/calendrier/CalendrierPage'
 import SystemesPage   from '@/pages/systemes/SystemesPage'
 import ProfilPage     from '@/pages/profil/ProfilPage'
 import SettingsPage   from '@/pages/settings/SettingsPage'
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="analyse"          element={<AnalysePage />} />
         <Route path="journal"          element={<JournalPage />} />
         <Route path="alertes"          element={<AlertesPage />} />
+        <Route path="calendrier"       element={<CalendrierPage />} />
         <Route path="systemes"         element={<SystemesPage />} />
         <Route path="profil"           element={<ProfilPage />} />
         <Route path="settings"         element={<SettingsPage />} />

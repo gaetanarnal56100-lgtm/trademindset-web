@@ -9,6 +9,8 @@ import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
 import TradePlanCard from './TradePlanCard'
 import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
+import KeyLevelsCard from './KeyLevelsCard'
+import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
@@ -937,6 +939,12 @@ export default function AnalysePage() {
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
         <WaveTrendChart symbol={symbol} />
         <VMCOscillatorChart symbol={symbol} />
+      </div>}
+
+      {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
+      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+        <KeyLevelsCard symbol={symbol} />
+        <ChartScreenshotAnalysis symbol={symbol} />
       </div>}
 
       {/* ══ CRYPTO ONLY ══ Heatmap + CVD/Structure/Dérivés */}
