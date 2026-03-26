@@ -1,10 +1,377 @@
 // src/pages/systemes/SystemesPage.tsx — Connecté à Firestore users/{uid}/systems
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { subscribeSystems, subscribeTrades, createSystem, updateSystem, deleteSystem, tradePnL, type TradingSystem, type Trade } from '@/services/firestore'
 
 function fmtPnL(n: number) { return `${n>=0?'+':''}$${Math.abs(n).toFixed(2)}` }
 
+// ── Mini courbe P&L canvas par système ────────────────────────────────────────
+function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: string; systemId: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [hovered, setHovered] = useState<{x:number;y:number;val:number;date:string}|null>(null)
+
+  const draw = useCallback((tipIdx: number | null) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const dpr = window.devicePixelRatio || 1
+    const W = canvas.offsetWidth
+    const H = canvas.offsetHeight
+    canvas.width  = W * dpr
+    canvas.height = H * dpr
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, W, H)
+
+    const closed = trades
+      .filter(t => t.systemId === systemId && t.status === 'closed')
+      .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
+
+    if (closed.length === 0) {
+      ctx.fillStyle = '#3D4254'
+      ctx.font = '10px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('Aucun trade fermé', W / 2, H / 2)
+      return
+    }
+
+    // Cumulative PnL points
+    let cum = 0
+    const pts = closed.map(t => { cum += tradePnL(t); return cum })
+    const dates = closed.map(t => t.date ? t.date.toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit'}) : '')
+
+    const pad = { t: 8, b: 20, l: 8, r: 8 }
+    const cW = W - pad.l - pad.r
+    const cH = H - pad.t - pad.b
+
+    const minV = Math.min(0, ...pts)
+    const maxV = Math.max(0, ...pts)
+    const range = maxV - minV || 1
+
+    const toX = (i: number) => pad.l + (i / (pts.length - 1 || 1)) * cW
+    const toY = (v: number) => pad.t + (1 - (v - minV) / range) * cH
+
+    // Zero line
+    const zeroY = toY(0)
+    ctx.strokeStyle = '#2A2F3E'
+    ctx.lineWidth = 1
+    ctx.setLineDash([3, 3])
+    ctx.beginPath()
+    ctx.moveTo(pad.l, zeroY)
+    ctx.lineTo(pad.l + cW, zeroY)
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // Fill gradient
+    const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
+    const finalPnL = pts[pts.length - 1]
+    const fillColor = finalPnL >= 0 ? color : '#FF3B30'
+    grad.addColorStop(0, fillColor + '40')
+    grad.addColorStop(1, fillColor + '05')
+
+    ctx.beginPath()
+    ctx.moveTo(toX(0), toY(pts[0]))
+    for (let i = 1; i < pts.length; i++) {
+      const x0 = toX(i-1), y0 = toY(pts[i-1])
+      const x1 = toX(i),   y1 = toY(pts[i])
+      const cx = (x0 + x1) / 2
+      ctx.bezierCurveTo(cx, y0, cx, y1, x1, y1)
+    }
+    ctx.lineTo(toX(pts.length - 1), pad.t + cH)
+    ctx.lineTo(toX(0), pad.t + cH)
+    ctx.closePath()
+    ctx.fillStyle = grad
+    ctx.fill()
+
+    // Line
+    ctx.beginPath()
+    ctx.strokeStyle = fillColor
+    ctx.lineWidth = 2
+    ctx.lineJoin = 'round'
+    ctx.moveTo(toX(0), toY(pts[0]))
+    for (let i = 1; i < pts.length; i++) {
+      const x0 = toX(i-1), y0 = toY(pts[i-1])
+      const x1 = toX(i),   y1 = toY(pts[i])
+      const cx = (x0 + x1) / 2
+      ctx.bezierCurveTo(cx, y0, cx, y1, x1, y1)
+    }
+    ctx.stroke()
+
+    // Dots on hover
+    if (tipIdx !== null && tipIdx >= 0 && tipIdx < pts.length) {
+      const x = toX(tipIdx), y = toY(pts[tipIdx])
+      ctx.beginPath()
+      ctx.arc(x, y, 4, 0, Math.PI * 2)
+      ctx.fillStyle = fillColor
+      ctx.fill()
+      ctx.strokeStyle = '#0D1117'
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
+
+    // X-axis labels (first + last)
+    ctx.fillStyle = '#555C70'
+    ctx.font = '9px JetBrains Mono, monospace'
+    ctx.textAlign = 'left'
+    ctx.fillText(dates[0] ?? '', pad.l, H - 4)
+    ctx.textAlign = 'right'
+    ctx.fillText(dates[dates.length - 1] ?? '', pad.l + cW, H - 4)
+  }, [trades, color, systemId])
+
+  useEffect(() => { draw(null) }, [draw])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+
+    const closed = trades
+      .filter(t => t.systemId === systemId && t.status === 'closed')
+      .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
+    if (closed.length < 2) return
+
+    const pad = { l: 8, r: 8 }
+    const cW = canvas.offsetWidth - pad.l - pad.r
+    const idx = Math.round(((mx - pad.l) / cW) * (closed.length - 1))
+    const clampedIdx = Math.max(0, Math.min(closed.length - 1, idx))
+
+    let cum = 0
+    const pts = closed.map(t => { cum += tradePnL(t); return cum })
+    const date = closed[clampedIdx]?.date?.toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit',year:'2-digit'}) ?? ''
+
+    draw(clampedIdx)
+    setHovered({ x: mx, y: 0, val: pts[clampedIdx], date })
+  }, [trades, systemId, draw])
+
+  const handleMouseLeave = useCallback(() => {
+    draw(null)
+    setHovered(null)
+  }, [draw])
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {hovered && (
+        <div style={{
+          position: 'absolute', top: 4,
+          left: Math.min(hovered.x, 200),
+          background: '#1C2130', border: '1px solid #2A2F3E',
+          borderRadius: 6, padding: '3px 8px', pointerEvents: 'none',
+          fontSize: 11, color: hovered.val >= 0 ? '#22C759' : '#FF3B30',
+          fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', zIndex: 10
+        }}>
+          {fmtPnL(hovered.val)} · {hovered.date}
+        </div>
+      )}
+      <canvas
+        ref={canvasRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{ width: '100%', height: 80, display: 'block', cursor: 'crosshair' }}
+      />
+    </div>
+  )
+}
+
+// ── Graphique comparatif toutes systèmes ──────────────────────────────────────
+function SystemsComparisonChart({ systemStats, trades }: {
+  systemStats: (TradingSystem & { totalTrades: number; totalPnL: number; winRate: string })[]
+  trades: Trade[]
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [hovered, setHovered] = useState<{sysName:string;pnl:number;x:number}|null>(null)
+
+  const buildCurves = useCallback(() => {
+    return systemStats.map(s => {
+      const closed = trades
+        .filter(t => t.systemId === s.id && t.status === 'closed')
+        .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
+      let cum = 0
+      return {
+        id: s.id, name: s.name, color: s.color,
+        pts: closed.map(t => { cum += tradePnL(t); return cum })
+      }
+    }).filter(c => c.pts.length > 0)
+  }, [systemStats, trades])
+
+  const draw = useCallback((hoveredId: string | null) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const dpr = window.devicePixelRatio || 1
+    const W = canvas.offsetWidth
+    const H = canvas.offsetHeight
+    canvas.width  = W * dpr
+    canvas.height = H * dpr
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, W, H)
+
+    const curves = buildCurves()
+    if (curves.length === 0) return
+
+    const allPts = curves.flatMap(c => c.pts)
+    const minV = Math.min(0, ...allPts)
+    const maxV = Math.max(0, ...allPts)
+    const range = maxV - minV || 1
+    const maxLen = Math.max(...curves.map(c => c.pts.length))
+
+    const pad = { t: 12, b: 8, l: 8, r: 8 }
+    const cW = W - pad.l - pad.r
+    const cH = H - pad.t - pad.b
+
+    const toX = (i: number, len: number) => pad.l + (i / (len - 1 || 1)) * cW
+    const toY = (v: number) => pad.t + (1 - (v - minV) / range) * cH
+
+    // Zero line
+    ctx.strokeStyle = '#2A2F3E'
+    ctx.lineWidth = 1
+    ctx.setLineDash([3, 3])
+    ctx.beginPath()
+    ctx.moveTo(pad.l, toY(0))
+    ctx.lineTo(pad.l + cW, toY(0))
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // Draw curves
+    curves.forEach(c => {
+      if (c.pts.length < 2) return
+      const isHov = hoveredId === c.id
+      ctx.globalAlpha = hoveredId && !isHov ? 0.25 : 1
+      ctx.beginPath()
+      ctx.strokeStyle = c.color
+      ctx.lineWidth = isHov ? 2.5 : 1.5
+      ctx.lineJoin = 'round'
+      ctx.moveTo(toX(0, c.pts.length), toY(c.pts[0]))
+      for (let i = 1; i < c.pts.length; i++) {
+        const x0 = toX(i-1, c.pts.length), y0 = toY(c.pts[i-1])
+        const x1 = toX(i, c.pts.length),   y1 = toY(c.pts[i])
+        const cx = (x0 + x1) / 2
+        ctx.bezierCurveTo(cx, y0, cx, y1, x1, y1)
+      }
+      ctx.stroke()
+
+      // End dot
+      const lastX = toX(c.pts.length - 1, c.pts.length)
+      const lastY = toY(c.pts[c.pts.length - 1])
+      ctx.beginPath()
+      ctx.arc(lastX, lastY, isHov ? 5 : 3, 0, Math.PI * 2)
+      ctx.fillStyle = c.color
+      ctx.fill()
+      ctx.globalAlpha = 1
+    })
+  }, [buildCurves])
+
+  useEffect(() => { draw(null) }, [draw])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+
+    const curves = buildCurves()
+    if (curves.length === 0) return
+
+    const allPts = curves.flatMap(c => c.pts)
+    const minV = Math.min(0, ...allPts)
+    const maxV = Math.max(0, ...allPts)
+    const range = maxV - minV || 1
+    const pad = { t: 12, b: 8, l: 8, r: 8 }
+    const cW = canvas.offsetWidth - pad.l - pad.r
+    const cH = canvas.offsetHeight - pad.t - pad.b
+    const toX = (i: number, len: number) => pad.l + (i / (len - 1 || 1)) * cW
+    const toY = (v: number) => pad.t + (1 - (v - minV) / range) * cH
+
+    let closest: {sysName:string;pnl:number;x:number;dist:number} | null = null
+    curves.forEach(c => {
+      const idx = Math.round(((mx - pad.l) / cW) * (c.pts.length - 1))
+      const clampedIdx = Math.max(0, Math.min(c.pts.length - 1, idx))
+      const cx = toX(clampedIdx, c.pts.length)
+      const cy = toY(c.pts[clampedIdx])
+      const dist = Math.sqrt((cx - mx) ** 2 + (cy - my) ** 2)
+      if (!closest || dist < closest.dist) {
+        closest = { sysName: c.name, pnl: c.pts[clampedIdx], x: cx, dist }
+      }
+    })
+
+    if (closest && (closest as any).dist < 30) {
+      draw((closest as any).sysName ? curves.find(c => c.name === (closest as any).sysName)?.id ?? null : null)
+      setHovered({ sysName: (closest as any).sysName, pnl: (closest as any).pnl, x: mx })
+    } else {
+      draw(null)
+      setHovered(null)
+    }
+  }, [buildCurves, draw])
+
+  const handleMouseLeave = useCallback(() => { draw(null); setHovered(null) }, [draw])
+
+  const curves = buildCurves()
+  if (curves.length === 0) return null
+
+  return (
+    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:14, padding:'16px', marginTop:20 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+        <div>
+          <div style={{ fontSize:14, fontWeight:700, color:'#F0F3FF', fontFamily:'Syne,sans-serif' }}>Comparaison des systèmes</div>
+          <div style={{ fontSize:11, color:'#555C70' }}>P&L cumulé par système</div>
+        </div>
+        {/* Légende */}
+        <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+          {curves.map(c => (
+            <div key={c.id} style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <div style={{ width:20, height:2, background:c.color, borderRadius:1 }} />
+              <span style={{ fontSize:10, color:'#8F94A3', fontFamily:'JetBrains Mono,monospace' }}>{c.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ position:'relative' }}>
+        {hovered && (
+          <div style={{
+            position:'absolute', top:4,
+            left: Math.min(hovered.x, 240),
+            background:'#1C2130', border:'1px solid #2A2F3E',
+            borderRadius:6, padding:'4px 10px', pointerEvents:'none',
+            fontSize:11, zIndex:10, whiteSpace:'nowrap'
+          }}>
+            <span style={{ color:'#8F94A3' }}>{hovered.sysName} · </span>
+            <span style={{ color: hovered.pnl >= 0 ? '#22C759' : '#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>
+              {fmtPnL(hovered.pnl)}
+            </span>
+          </div>
+        )}
+        <canvas
+          ref={canvasRef}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          style={{ width:'100%', height:160, display:'block', cursor:'crosshair' }}
+        />
+      </div>
+
+      {/* Classement final */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8, marginTop:12, paddingTop:12, borderTop:'1px solid #1E2330' }}>
+        {[...curves].sort((a,b) => (b.pts[b.pts.length-1]??0) - (a.pts[a.pts.length-1]??0)).map((c, i) => (
+          <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'#1C2130', borderRadius:8, border:`1px solid ${c.color}25` }}>
+            <span style={{ fontSize:10, color:'#3D4254', fontWeight:700, minWidth:14 }}>#{i+1}</span>
+            <div style={{ width:8, height:8, borderRadius:'50%', background:c.color, flexShrink:0 }} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:11, color:'#F0F3FF', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name}</div>
+              <div style={{ fontSize:10, color: (c.pts[c.pts.length-1]??0) >= 0 ? '#22C759' : '#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>
+                {fmtPnL(c.pts[c.pts.length-1] ?? 0)}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Page principale ────────────────────────────────────────────────────────────
 export default function SystemesPage() {
   const [systems, setSystems] = useState<TradingSystem[]>([])
   const [trades,  setTrades]  = useState<Trade[]>([])
@@ -18,21 +385,24 @@ export default function SystemesPage() {
     return () => { unsubS(); unsubT() }
   }, [])
 
-  // Stats par système
   const systemStats = systems.map(s => {
     const st = trades.filter(t => t.systemId === s.id && t.status === 'closed')
     const pnls = st.map(tradePnL)
     const total = pnls.reduce((a, b) => a + b, 0)
     const wins = pnls.filter(p => p > 0).length
     const wr = st.length > 0 ? (wins / st.length * 100).toFixed(0) : '—'
-    return { ...s, totalTrades: st.length, totalPnL: total, winRate: wr }
+    const avgGain = wins > 0 ? pnls.filter(p=>p>0).reduce((a,b)=>a+b,0)/wins : 0
+    const losses = pnls.filter(p => p < 0)
+    const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((a,b)=>a+b,0)/losses.length) : 0
+    const payoff = avgLoss > 0 ? (avgGain / avgLoss).toFixed(2) : '—'
+    return { ...s, totalTrades: st.length, totalPnL: total, winRate: wr, payoff }
   })
 
   return (
-    <div style={{ padding:24, maxWidth:800, margin:'0 auto' }}>
+    <div style={{ padding:24, maxWidth:900, margin:'0 auto' }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#F0F3FF', margin:0 }}>Systèmes</h1>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'#F0F3FF', margin:0, fontFamily:'Syne,sans-serif' }}>Systèmes</h1>
           <p style={{ fontSize:13, color:'#8F94A3', margin:'3px 0 0' }}>{systems.length} système{systems.length > 1 ? 's' : ''} de trading</p>
         </div>
         <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:13, fontWeight:600, cursor:'pointer' }}>
@@ -51,51 +421,62 @@ export default function SystemesPage() {
           Aucun système. Crée ton premier système de trading.
         </div>
       ) : (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:12 }}>
-          {systemStats.map(s => (
-            <div key={s.id} style={{ background:'#161B22', border:`1px solid ${s.color}40`, borderRadius:14, padding:'16px', position:'relative', overflow:'hidden' }}>
-              <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:s.color, borderRadius:'14px 14px 0 0' }} />
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <div style={{ width:36, height:36, borderRadius:10, background:`${s.color}20`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📊</div>
-                  <div>
-                    <div style={{ fontSize:15, fontWeight:700, color:'#F0F3FF' }}>{s.name}</div>
-                    <div style={{ fontSize:10, color:'#555C70' }}>{s.totalTrades} trades</div>
+        <>
+          {/* Cards systèmes */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:12 }}>
+            {systemStats.map(s => (
+              <div key={s.id} style={{ background:'#161B22', border:`1px solid ${s.color}40`, borderRadius:14, padding:'16px', position:'relative', overflow:'hidden' }}>
+                <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:s.color, borderRadius:'14px 14px 0 0' }} />
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background:`${s.color}20`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📊</div>
+                    <div>
+                      <div style={{ fontSize:15, fontWeight:700, color:'#F0F3FF' }}>{s.name}</div>
+                      <div style={{ fontSize:10, color:'#555C70' }}>{s.totalTrades} trade{s.totalTrades > 1 ? 's' : ''}</div>
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <button onClick={() => setEditing(s)} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'#8F94A3', cursor:'pointer', fontSize:11 }}>✏️</button>
+                    <button onClick={() => { if(confirm(`Supprimer "${s.name}" ?`)) deleteSystem(s.id) }} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'#555C70', cursor:'pointer', fontSize:11 }}>✕</button>
                   </div>
                 </div>
-                <div style={{ display:'flex', gap:6 }}>
-                  <button onClick={() => setEditing(s)} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'#8F94A3', cursor:'pointer', fontSize:11 }}>✏️</button>
-                  <button onClick={() => { if(confirm(`Supprimer "${s.name}" ?`)) deleteSystem(s.id) }} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'#555C70', cursor:'pointer', fontSize:11 }}>✕</button>
+
+                {/* KPIs */}
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6, marginBottom:10 }}>
+                  {[
+                    { l:'P&L', v:fmtPnL(s.totalPnL), c: s.totalPnL>=0?'#22C759':'#FF3B30' },
+                    { l:'Win Rate', v:`${s.winRate}%`, c:'#F0F3FF' },
+                    { l:'Payoff', v:s.payoff, c:'#00E5FF' },
+                    { l:'Trades', v:s.totalTrades, c:'#8F94A3' },
+                  ].map(({ l, v, c }) => (
+                    <div key={l} style={{ background:'#1C2130', borderRadius:8, padding:'6px 4px', textAlign:'center' }}>
+                      <div style={{ fontSize:8, color:'#555C70', marginBottom:2 }}>{l}</div>
+                      <div style={{ fontSize:12, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
+                    </div>
+                  ))}
                 </div>
+
+                {/* Mini courbe P&L */}
+                {s.totalTrades > 0 && (
+                  <SystemPnLChart trades={trades} color={s.color} systemId={s.id} />
+                )}
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
-                {[
-                  { l:'P&L Total', v:fmtPnL(s.totalPnL), c: s.totalPnL>=0?'#22C759':'#FF3B30' },
-                  { l:'Win Rate', v:`${s.winRate}%`, c:'#F0F3FF' },
-                  { l:'Trades', v:s.totalTrades, c:'#8F94A3' },
-                ].map(({ l, v, c }) => (
-                  <div key={l} style={{ background:'#1C2130', borderRadius:8, padding:'8px', textAlign:'center' }}>
-                    <div style={{ fontSize:9, color:'#555C70', marginBottom:2 }}>{l}</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+
+          {/* Graphique comparatif multi-systèmes */}
+          {systemStats.filter(s => s.totalTrades > 0).length > 1 && (
+            <SystemsComparisonChart systemStats={systemStats} trades={trades} />
+          )}
+        </>
       )}
 
       {(showAdd || editing) && (
         <SystemModal
           system={editing}
           onSave={async (name, color) => {
-            if (editing) {
-              await updateSystem({ ...editing, name, color })
-              setEditing(null)
-            } else {
-              await createSystem({ id: crypto.randomUUID(), name, color })
-              setShowAdd(false)
-            }
+            if (editing) { await updateSystem({ ...editing, name, color }); setEditing(null) }
+            else { await createSystem({ id: crypto.randomUUID(), name, color }); setShowAdd(false) }
           }}
           onClose={() => { setShowAdd(false); setEditing(null) }}
         />
