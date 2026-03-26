@@ -861,56 +861,73 @@ export default function AnalysePage() {
         <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
       </div>
 
-      {/* État vide — page d'accueil analyse améliorée */}
+      {/* État vide — deux colonnes : recherche | analyse photo */}
       {!symbol && (
-        <div style={{maxWidth:800,margin:'0 auto'}}>
-          {/* Hero */}
-          <div style={{textAlign:'center',padding:'40px 20px 30px'}}>
-            <div style={{width:64,height:64,borderRadius:20,background:'linear-gradient(135deg,rgba(0,229,255,0.15),rgba(191,90,242,0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,margin:'0 auto 16px',border:'1px solid rgba(0,229,255,0.2)'}}>📊</div>
-            <div style={{fontSize:20,fontWeight:700,color:'#F0F3FF',marginBottom:8,fontFamily:'Syne,sans-serif'}}>Recherchez un actif</div>
-            <div style={{fontSize:13,color:'#555C70',maxWidth:400,margin:'0 auto'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche ci-dessus pour lancer l'analyse</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,alignItems:'start'}}>
+
+          {/* ── Colonne gauche : recherche par symbole ── */}
+          <div>
+            {/* Hero */}
+            <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
+              <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(0,229,255,0.15),rgba(191,90,242,0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(0,229,255,0.2)'}}>📊</div>
+              <div style={{fontSize:18,fontWeight:700,color:'#F0F3FF',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Recherchez un actif</div>
+              <div style={{fontSize:12,color:'#555C70',maxWidth:340,margin:'0 auto'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche pour lancer l'analyse</div>
+            </div>
+
+            {/* Accès rapide */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginBottom:16}}>
+              {[
+                {title:'🪙 Crypto',items:[{s:'BTCUSDT',n:'Bitcoin'},{s:'ETHUSDT',n:'Ethereum'},{s:'SOLUSDT',n:'Solana'},{s:'BNBUSDT',n:'BNB'}]},
+                {title:'📈 Actions US',items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
+                {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
+              ].map(cat=>(
+                <div key={cat.title} style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden'}}>
+                  <div style={{padding:'8px 14px',borderBottom:'1px solid #1E2330'}}>
+                    <span style={{fontSize:11,fontWeight:700,color:'#F0F3FF'}}>{cat.title}</span>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',padding:'4px 0'}}>
+                    {cat.items.map(item=>(
+                      <button key={item.s} onClick={()=>{setSymbol(item.s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}}
+                        style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}
+                        onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.03)'}
+                        onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:11,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{(item as any).d || item.s}</div>
+                          <div style={{fontSize:10,color:'#555C70'}}>{item.n}</div>
+                        </div>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3D4254" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Raccourcis */}
+            <div style={{display:'flex',justifyContent:'center',gap:16,flexWrap:'wrap'}}>
+              {[
+                {label:'Rechercher',keys:'Cliquez la barre'},
+                {label:'Crypto rapide',keys:'BTC, ETH, SOL...'},
+                {label:'Actions',keys:'AAPL, TSLA, NVDA...'},
+              ].map(h=>(
+                <div key={h.label} style={{display:'flex',alignItems:'center',gap:5}}>
+                  <span style={{fontSize:10,color:'#3D4254',background:'#1C2130',padding:'2px 7px',borderRadius:4,border:'1px solid #2A2F3E',fontFamily:'JetBrains Mono'}}>{h.keys}</span>
+                  <span style={{fontSize:10,color:'#3D4254'}}>{h.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Accès rapide par catégorie */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:24}}>
-            {[
-              {title:'🪙 Crypto',items:[{s:'BTCUSDT',n:'Bitcoin'},{s:'ETHUSDT',n:'Ethereum'},{s:'SOLUSDT',n:'Solana'},{s:'BNBUSDT',n:'BNB'}]},
-              {title:'📈 Actions US',items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
-              {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
-            ].map(cat=>(
-              <div key={cat.title} style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden'}}>
-                <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330'}}>
-                  <span style={{fontSize:12,fontWeight:700,color:'#F0F3FF'}}>{cat.title}</span>
-                </div>
-                <div style={{padding:'6px 0'}}>
-                  {cat.items.map(item=>(
-                    <button key={item.s} onClick={()=>{setSymbol(item.s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}}
-                      style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'8px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{(item as any).d || item.s}</div>
-                        <div style={{fontSize:10,color:'#555C70'}}>{item.n}</div>
-                      </div>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3D4254" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+          {/* ── Colonne droite : analyse photo ── */}
+          <div>
+            <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
+              <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(191,90,242,0.15),rgba(255,45,85,0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(191,90,242,0.2)'}}>📸</div>
+              <div style={{fontSize:18,fontWeight:700,color:'#F0F3FF',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Analyse Screenshot IA</div>
+              <div style={{fontSize:12,color:'#555C70',maxWidth:340,margin:'0 auto'}}>Upload une capture de graphique — GPT-4o Vision analyse la structure, les zones clés et génère un plan de trade</div>
+            </div>
+            <ChartScreenshotAnalysis />
           </div>
 
-          {/* Raccourcis clavier */}
-          <div style={{textAlign:'center',padding:'12px 0',display:'flex',justifyContent:'center',gap:20}}>
-            {[
-              {label:'Rechercher',keys:'Cliquez la barre'},
-              {label:'Crypto rapide',keys:'BTC, ETH, SOL...'},
-              {label:'Actions',keys:'AAPL, TSLA, NVDA...'},
-            ].map(h=>(
-              <div key={h.label} style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{fontSize:10,color:'#3D4254',background:'#1C2130',padding:'2px 8px',borderRadius:4,border:'1px solid #2A2F3E',fontFamily:'JetBrains Mono'}}>{h.keys}</span>
-                <span style={{fontSize:10,color:'#3D4254'}}>{h.label}</span>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 
