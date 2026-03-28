@@ -1,12 +1,48 @@
 // SettingsPage.tsx — Paramètres v2 : export/import, suppression données, suppression compte
 import { useState, useRef, useEffect } from 'react'
 import { getAuth, signOut, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth'
-import { collection, getDocs, doc, deleteDoc, writeBatch } from 'firebase/firestore'
+import { collection, getDocs, doc, deleteDoc, writeBatch, Timestamp, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function getUid(): string | null {
   return getAuth().currentUser?.uid ?? null
+}
+
+// ── Serialize Firestore data for export (Timestamps → ISO strings) ────────
+function serializeForExport(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj !== 'object') return obj
+  // Firestore Timestamp
+  if (typeof (obj as any).toDate === 'function') {
+    try { return (obj as any).toDate().toISOString() } catch { return null }
+  }
+  if ((obj as any).seconds !== undefined && (obj as any).nanoseconds !== undefined) {
+    return new Date((obj as any).seconds * 1000).toISOString()
+  }
+  if (obj instanceof Date) return obj.toISOString()
+  if (Array.isArray(obj)) return obj.map(serializeForExport)
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    out[k] = serializeForExport(v)
+  }
+  return out
+}
+
+// ── Deserialize imported data (ISO strings → Firestore Timestamps) ───────
+function deserializeForImport(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(obj)) {
+    const d = new Date(obj)
+    if (!isNaN(d.getTime())) return Timestamp.fromDate(d)
+  }
+  if (typeof obj !== 'object') return obj
+  if (Array.isArray(obj)) return obj.map(deserializeForImport)
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    out[k] = deserializeForImport(v)
+  }
+  return out
 }
 
 // ── Export all Firestore data ────────────────────────────────────────────
@@ -19,7 +55,7 @@ async function exportAllData(): Promise<{ data: Record<string, unknown[]>; stats
   for (const col of collections) {
     try {
       const snap = await getDocs(collection(db, 'users', uid, col))
-      data[col] = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
+      data[col] = snap.docs.map(d => serializeForExport({ _id: d.id, ...d.data() }) as Record<string, unknown>)
       stats[col] = snap.docs.length
     } catch {
       data[col] = []
@@ -58,7 +94,8 @@ async function importData(
         const raw = item as Record<string, unknown>
         const id = (raw._id as string) || (raw.id as string) || crypto.randomUUID()
         const { _id, ...rest } = raw
-        batch.set(doc(db, 'users', uid, col, id), rest, { merge: mode === 'merge' })
+        const deserialized = deserializeForImport(rest) as Record<string, unknown>
+        batch.set(doc(db, 'users', uid, col, id), deserialized, { merge: mode === 'merge' })
         count++
       }
       await batch.commit()
@@ -278,6 +315,21 @@ export default function SettingsPage() {
   const totalItems = dataStats ? Object.values(dataStats).reduce((a, b) => a + b, 0) : 0
   const isEmailUser = user?.providerData.some(p => p.providerId === 'password')
 
+  // Load profile photo from Firestore
+  const [profilePhoto, setProfilePhoto] = useState<string|null>(null)
+  const [profileName, setProfileName] = useState<string|null>(null)
+  useEffect(() => {
+    if (!user) return
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data()
+        setProfilePhoto(d.photoBase64 || d.photoURL || null)
+        if (d.displayName) setProfileName(d.displayName)
+      }
+    })
+    return unsub
+  }, [user])
+
   return (
     <div style={{ minHeight:'100vh', background:'#0D1117', padding:'32px 24px', maxWidth:800, margin:'0 auto' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}`}</style>
@@ -291,11 +343,15 @@ export default function SettingsPage() {
       {/* ── Account ──────────────────────────────────────────────────── */}
       <Section title="Compte" subtitle="Informations de connexion" icon="👤">
         <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:16 }}>
-          <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'#0D1117', flexShrink:0 }}>
-            {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+          <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'#0D1117', flexShrink:0, overflow:'hidden' }}>
+            {profilePhoto ? (
+              <img src={profilePhoto} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+            ) : (
+              (profileName || user?.displayName)?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'
+            )}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            {user?.displayName && <div style={{ fontSize:16, fontWeight:700, color:'#F0F3FF', marginBottom:2 }}>{user.displayName}</div>}
+            <div style={{ fontSize:16, fontWeight:700, color:'#F0F3FF', marginBottom:2 }}>{profileName || user?.displayName || 'Trader'}</div>
             <div style={{ fontSize:13, color:'#8F94A3' }}>{user?.email}</div>
           </div>
           <button onClick={() => signOut(auth)} style={{ padding:'8px 18px', borderRadius:10, border:'1px solid rgba(255,59,48,0.3)', background:'rgba(255,59,48,0.08)', color:'#FF3B30', fontSize:12, fontWeight:600, cursor:'pointer', flexShrink:0 }}>
@@ -448,6 +504,29 @@ export default function SettingsPage() {
             <div style={{ fontSize:11, color:'#8F94A3' }}>{Object.entries(importStats).map(([k, v]) => `${v} ${k}`).join(' · ')}</div>
           </div>
         )}
+      </Section>
+
+      {/* ── Contact ─────────────────────────────────────────────────── */}
+      <Section title="Contact & Communauté" icon="💬">
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {[
+            { icon:'💬', label:'Discord', value:'Rejoindre la communauté', href:'https://discord.gg/SqfMCVtEhV', color:'#5865F2' },
+            { icon:'🌐', label:'Site internet', value:'trademindsetapp.com', href:'https://trademindsetapp.com', color:'#00E5FF' },
+            { icon:'📧', label:'Email', value:'trademindsetapp@gmail.com', href:'mailto:trademindsetapp@gmail.com', color:'#22C759' },
+          ].map(({ icon, label, value, href, color }) => (
+            <a key={label} href={href} target="_blank" rel="noopener noreferrer"
+              style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', background:'rgba(255,255,255,0.02)', border:'1px solid #1E2330', borderRadius:12, textDecoration:'none', transition:'all 0.15s', cursor:'pointer' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = color + '60'; (e.currentTarget as HTMLElement).style.background = color + '08' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1E2330'; (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)' }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:`${color}15`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>{icon}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#F0F3FF' }}>{label}</div>
+                <div style={{ fontSize:11, color:'#8F94A3' }}>{value}</div>
+              </div>
+              <div style={{ fontSize:14, color:'#555C70' }}>→</div>
+            </a>
+          ))}
+        </div>
       </Section>
 
       {/* ── App Info (simplifié) ──────────────────────────────────────── */}

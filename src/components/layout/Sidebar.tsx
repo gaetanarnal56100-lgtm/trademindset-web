@@ -1,8 +1,11 @@
 // src/components/layout/Sidebar.tsx
+import { useState, useEffect } from 'react'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { logout } from '@/services/firebase/auth'
 import { useUser } from '@/hooks/useAuth'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { db } from '@/services/firebase/config'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
   IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier,
@@ -25,7 +28,22 @@ const NAV_BOTTOM = [
 export default function Sidebar() {
   const user     = useUser()
   const navigate = useNavigate()
+  const [profilePhoto, setProfilePhoto] = useState<string|null>(null)
+  const [profileName, setProfileName] = useState<string|null>(null)
   async function handleLogout() { await logout(); navigate('/login') }
+
+  // Subscribe to Firestore user doc for live photo/name updates
+  useEffect(() => {
+    if (!user?.uid) return
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data()
+        setProfilePhoto(d.photoBase64 || d.photoURL || null)
+        if (d.displayName) setProfileName(d.displayName)
+      }
+    })
+    return unsub
+  }, [user?.uid])
 
   return (
     <aside style={{
@@ -88,12 +106,16 @@ export default function Sidebar() {
 
         {/* User row */}
         <div style={{ marginTop: 6, padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #0A85FF33, #00E5FF33)', border: '1px solid rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#00E5FF', flexShrink: 0 }}>
-            {user?.displayName?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'G'}
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #0A85FF33, #00E5FF33)', border: '1px solid rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#00E5FF', flexShrink: 0, overflow: 'hidden' }}>
+            {profilePhoto ? (
+              <img src={profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              (profileName || user?.displayName)?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'G'
+            )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: '#F0F3FF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.displayName || 'Trader'}
+              {profileName || user?.displayName || 'Trader'}
             </div>
             <div style={{ fontSize: 10, color: '#555C70', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user?.email}
