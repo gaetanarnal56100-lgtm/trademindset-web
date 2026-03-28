@@ -1,6 +1,5 @@
-// OscillatorCharts.tsx — v2
-// WaveTrend + VMC Oscillator
-// Fix: smart fetch (Futures → Spot fallback) + preset recalc sans refetch + symbol reactivity
+// OscillatorCharts.tsx — v3
+// WaveTrend + VMC Oscillator — Interactive crosshair + tooltip (TradingView-style)
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
@@ -9,13 +8,11 @@ import { signalService } from '@/services/notifications/SignalNotificationServic
 
 const fbFn = getFunctions(app, 'europe-west1')
 
-// ── Live refresh interval per timeframe (ms) ──────────────────────────────
 const TF_REFRESH_MS: Record<string, number> = {
   '5m':300000,'15m':900000,'30m':1800000,'1h':3600000,
   '2h':7200000,'4h':14400000,'12h':43200000,'1d':86400000,'1w':604800000,
 }
 
-// ── Types ──────────────────────────────────────────────────────────────────
 interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
 
 const TF_OPTIONS = [
@@ -30,15 +27,12 @@ const TF_OPTIONS = [
   { label:'1S',  interval:'1w',  limit:200 },
 ]
 
-// ── Smart fetch — Futures → Spot → Cloud Functions (TwelveData/Finnhub) ──
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
 
 async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
   const sym = symbol.toUpperCase()
-
-  // ── 1. Crypto → Binance Futures puis Spot ─────────────────────────────
   if (isCryptoSymbol(sym)) {
     const binanceSymbols = [sym, sym.replace(/USDT$/i,'')+'USDT']
     for (const bSym of binanceSymbols) {
@@ -59,35 +53,22 @@ async function fetchCandles(symbol: string, interval: string, limit: number): Pr
     }
     throw new Error(`Crypto ${sym} introuvable sur Binance`)
   }
-
-  // ── 2. Non-crypto → fetchYahooCandles (Cloud Function, gratuit, sans limite) ─
-  const TF_TO_YH_INTERVAL: Record<string,string> = {
-    '5m':'5m','15m':'15m','30m':'30m','1h':'1h','2h':'1h','4h':'1h','12h':'1d','1d':'1d','1w':'1wk'
-  }
-  const TF_TO_YH_RANGE: Record<string,string> = {
-    '5m':'5d','15m':'5d','30m':'1mo','1h':'1mo','2h':'3mo','4h':'3mo','12h':'1y','1d':'1y','1w':'2y'
-  }
+  const TF_TO_YH_INTERVAL: Record<string,string> = {'5m':'5m','15m':'15m','30m':'30m','1h':'1h','2h':'1h','4h':'1h','12h':'1d','1d':'1d','1w':'1wk'}
+  const TF_TO_YH_RANGE: Record<string,string> = {'5m':'5d','15m':'5d','30m':'1mo','1h':'1mo','2h':'3mo','4h':'3mo','12h':'1y','1d':'1y','1w':'2y'}
   const yhInterval = TF_TO_YH_INTERVAL[interval] || '1d'
   const yhRange    = TF_TO_YH_RANGE[interval]    || '1y'
-
-  // Yahoo Finance via Cloud Function — essaie le symbole direct + variantes européennes
   const fn = httpsCallable<Record<string,unknown>, {s:string; candles:{t:number;o:number;h:number;l:number;c:number;v:number}[]}>(fbFn, 'fetchYahooCandles')
   const res = await fn({ symbol: sym, interval: yhInterval, range: yhRange })
   if (res.data.s === 'ok' && res.data.candles && res.data.candles.length > 5) {
-    return res.data.candles.map(c => ({
-      t: c.t * 1000, // Yahoo renvoie des secondes, OscillatorCharts utilise des ms
-      o: c.o, h: c.h, l: c.l, c: c.c, v: c.v,
-    }))
+    return res.data.candles.map(c => ({ t: c.t * 1000, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v }))
   }
-
-  throw new Error(`${sym} introuvable. Essayez: AAPL \u00b7 TSLA \u00b7 EURUSD=X \u00b7 GC=F (Or) \u00b7 ^FCHI (CAC40) \u00b7 MC.PA`)
+  throw new Error(`${sym} introuvable. Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA`)
 }
 
 // ── Math helpers ───────────────────────────────────────────────────────────
 function emaArr(vals: number[], length: number): number[] {
   if (!vals.length || length <= 0) return vals.map(() => 0)
-  const k = 2 / (length + 1)
-  const out = [vals[0]]
+  const k = 2 / (length + 1); const out = [vals[0]]
   for (let i = 1; i < vals.length; i++) out.push(vals[i] * k + out[i-1] * (1-k))
   return out
 }
@@ -97,9 +78,8 @@ function rollingSum(arr: number[], length: number): number[] {
   return out
 }
 
-// ── WaveTrend (exact WTCalculator.swift) ──────────────────────────────────
+// ── WaveTrend ──────────────────────────────────────────────────────────────
 interface WTResult { wt1: number[]; wt2: number[]; signals: (null|'bull'|'bear'|'smartBull'|'smartBear')[] }
-
 function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53): WTResult {
   if (candles.length < n1+n2) return { wt1:[], wt2:[], signals:[] }
   const ap = candles.map(c => (c.h+c.l+c.c)/3)
@@ -116,8 +96,7 @@ function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53)
   const wt2=wt1.map((_,i)=>i<3?wt1[i]:(wt1[i]+wt1[i-1]+wt1[i-2]+wt1[i-3])/4)
   const signals:WTResult['signals']=new Array(wt1.length).fill(null)
   for (let i=1; i<wt1.length; i++) {
-    const crossUp=wt1[i-1]<=wt2[i-1]&&wt1[i]>wt2[i]
-    const crossDn=wt1[i-1]>=wt2[i-1]&&wt1[i]<wt2[i]
+    const crossUp=wt1[i-1]<=wt2[i-1]&&wt1[i]>wt2[i], crossDn=wt1[i-1]>=wt2[i-1]&&wt1[i]<wt2[i]
     if (crossUp&&wt1[i]<=osLevel) signals[i]='smartBull'
     else if (crossUp) signals[i]='bull'
     else if (crossDn&&wt1[i]>=obLevel) signals[i]='smartBear'
@@ -126,14 +105,8 @@ function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53)
   return { wt1, wt2, signals }
 }
 
-// ── VMC Oscillator (exact VMCIndicator.swift) ──────────────────────────────
-interface VMCResult {
-  sig:number[]; sigSignal:number[]; momentum:number[]
-  bullConfirm:boolean; bearConfirm:boolean
-  ribbonBull:boolean; ribbonBear:boolean; compression:boolean; status:string
-  emas:number[][]  // 8 EMA arrays for ribbon strip
-}
-
+// ── VMC Oscillator ─────────────────────────────────────────────────────────
+interface VMCResult { sig:number[]; sigSignal:number[]; momentum:number[]; bullConfirm:boolean; bearConfirm:boolean; ribbonBull:boolean; ribbonBear:boolean; compression:boolean; status:string; emas:number[][] }
 function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'='swing'): VMCResult {
   const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL',emas:[]}
   if (candles.length<60) return EMPTY
@@ -145,16 +118,12 @@ function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'positio
   const losses=hlc3.map((v,i)=>i===0?0:Math.max(hlc3[i-1]-v,0))
   const agArr=emaArr(gains,rsiLen),alArr=emaArr(losses,rsiLen)
   const rsi=agArr.map((g,i)=>alArr[i]===0?100:100-100/(1+g/alArr[i]))
-  const n=candles.length
-  const tp=candles.map(c=>(c.h+c.l+c.c)/3)
+  const n=candles.length, tp=candles.map(c=>(c.h+c.l+c.c)/3)
   const pmf=new Array(n).fill(0),nmf=new Array(n).fill(0)
   for(let i=1;i<n;i++){const raw=tp[i]*vol[i];if(tp[i]>tp[i-1])pmf[i]=raw;else if(tp[i]<tp[i-1])nmf[i]=raw}
   const sPMF=rollingSum(pmf,7),sNMF=rollingSum(nmf,7)
   const mfi=sPMF.map((p,i)=>{const d=p+sNMF[i];return d===0?50:p/d*100})
-  const computeStoch=(src:number[],len:number)=>{
-    const out=src.map((v,i)=>{const win=src.slice(Math.max(0,i-len+1),i+1);const mn=Math.min(...win),mx=Math.max(...win);return mx-mn===0?50:(v-mn)/(mx-mn)*100})
-    return emaArr(out,2)
-  }
+  const computeStoch=(src:number[],len:number)=>{const out=src.map((v,i)=>{const win=src.slice(Math.max(0,i-len+1),i+1);const mn=Math.min(...win),mx=Math.max(...win);return mx-mn===0?50:(v-mn)/(mx-mn)*100});return emaArr(out,2)}
   const stoch=computeStoch(rsi,rsiLen)
   const mfiW=0.40,stochW=0.40,denom=1+mfiW+stochW
   const core=rsi.map((r,i)=>(r+mfiW*mfi[i]+stochW*stoch[i])/denom)
@@ -182,187 +151,224 @@ function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'positio
   return{sig,sigSignal,momentum,bullConfirm,bearConfirm,ribbonBull,ribbonBear,compression,status,emas}
 }
 
-// ── Canvas helpers ─────────────────────────────────────────────────────────
-function useCanvas(draw:(ctx:CanvasRenderingContext2D,W:number,H:number)=>void, deps:unknown[]) {
-  const ref=useRef<HTMLCanvasElement>(null)
-  useEffect(()=>{
-    const c=ref.current;if(!c)return
-    const dpr=window.devicePixelRatio||1
-    const cssW=c.offsetWidth||800,cssH=c.offsetHeight||180
-    c.width=cssW*dpr;c.height=cssH*dpr
-    c.style.width=cssW+'px';c.style.height=cssH+'px'
-    const ctx=c.getContext('2d')!
-    ctx.scale(dpr,dpr)
-    ctx.clearRect(0,0,cssW,cssH)
-    draw(ctx,cssW,cssH)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },deps)
-  return ref
-}
-
-// Draw EMA ribbon strip in bottom 22% of canvas — fully self-contained pixel space
-function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:number[][], _minV:number, _maxV:number) {
+// ── Draw ribbon strip ─────────────────────────────────────────────────────
+function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:number[][]) {
   if (!emas || emas.length < 8) return
-  const tail = 150
-  const es = emas.map(e => e.slice(-tail))
-  const n = es[0].length
-  if (n < 2) return
-
-  // Strip zone: bottom 20% of canvas, fixed height ~40px
-  const zMid = H * 0.895  // vertical center of the strip
-  const zH   = H * 0.09   // half-height of strip (total = 18% of canvas)
-  const xp   = (i: number) => (i / (n - 1)) * W
-
-  // TradingView-style normToStrip: for each bar, normalize around midpoint of e1/e8
-  // maxSpreadPct caps the visual spread so lines stay tight when EMA spread is small
-  const maxSpreadPct = 0.015 // 1.5% of price = full strip height
+  const tail = 150; const es = emas.map(e => e.slice(-tail)); const n = es[0].length; if (n < 2) return
+  const zMid = H * 0.895, zH = H * 0.09
+  const xp = (i: number) => (i / (n - 1)) * W
+  const maxSpreadPct = 0.015
   const toY = (barIdx: number, emaIdx: number): number => {
-    const mid   = (es[0][barIdx] + es[7][barIdx]) / 2
-    const price = mid || 1
-    const spread = Math.abs(es[0][barIdx] - es[7][barIdx])
-    const spreadPct = spread / price
-    // pct of this EMA relative to the spread, capped at ±0.5
-    const raw = spreadPct > 0
-      ? Math.max(-0.5, Math.min(0.5, (es[emaIdx][barIdx] - mid) / spread))
-      : (emaIdx - 3.5) / 8  // fallback when EMAs are identical
-    // Scale: when spread is tiny, lines are compressed; when spread > maxSpreadPct, full height
+    const mid = (es[0][barIdx] + es[7][barIdx]) / 2, price = mid || 1
+    const spread = Math.abs(es[0][barIdx] - es[7][barIdx]), spreadPct = spread / price
+    const raw = spreadPct > 0 ? Math.max(-0.5, Math.min(0.5, (es[emaIdx][barIdx] - mid) / spread)) : (emaIdx - 3.5) / 8
     const scale = Math.min(1, spreadPct / maxSpreadPct)
     return zMid + raw * zH * 2 * scale
   }
-
   const isBull = es[0][n-1] > es[7][n-1]
-
   ctx.save()
-
-  // Subtle separator
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-  ctx.lineWidth = 1
-  ctx.setLineDash([2, 6])
-  ctx.beginPath(); ctx.moveTo(0, zMid - zH); ctx.lineTo(W, zMid - zH); ctx.stroke()
-  ctx.setLineDash([])
-
-  // Fill between EMA1 and EMA8
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; ctx.setLineDash([2, 6])
+  ctx.beginPath(); ctx.moveTo(0, zMid - zH); ctx.lineTo(W, zMid - zH); ctx.stroke(); ctx.setLineDash([])
   ctx.beginPath()
-  for (let i = 0; i < n; i++) {
-    i === 0 ? ctx.moveTo(xp(i), toY(i, 0)) : ctx.lineTo(xp(i), toY(i, 0))
-  }
+  for (let i = 0; i < n; i++) { i === 0 ? ctx.moveTo(xp(i), toY(i, 0)) : ctx.lineTo(xp(i), toY(i, 0)) }
   for (let i = n - 1; i >= 0; i--) ctx.lineTo(xp(i), toY(i, 7))
-  ctx.closePath()
-  ctx.fillStyle = isBull ? 'rgba(34,199,89,0.10)' : 'rgba(255,59,48,0.10)'
-  ctx.fill()
-
-  // 8 EMA lines — green→red (bull) or red→green (bear), matching TradingView colors
+  ctx.closePath(); ctx.fillStyle = isBull ? 'rgba(34,199,89,0.10)' : 'rgba(255,59,48,0.10)'; ctx.fill()
   const bullC = ['#22C759','#36D174','#4ADC8F','#5EE7AA','#F59714','#FF6060','#FF3B30','#FF1818']
   const bearC = ['#FF1818','#FF3B30','#FF6060','#F59714','#5EE7AA','#4ADC8F','#36D174','#22C759']
-  const cols  = isBull ? bullC : bearC
+  const cols = isBull ? bullC : bearC
   for (let ei = 0; ei < 8; ei++) {
-    ctx.beginPath()
-    ctx.strokeStyle = cols[ei]
-    ctx.lineWidth = 1
-    ctx.globalAlpha = 0.9
-    for (let i = 0; i < n; i++) {
-      i === 0 ? ctx.moveTo(xp(i), toY(i, ei)) : ctx.lineTo(xp(i), toY(i, ei))
-    }
+    ctx.beginPath(); ctx.strokeStyle = cols[ei]; ctx.lineWidth = 1; ctx.globalAlpha = 0.9
+    for (let i = 0; i < n; i++) { i === 0 ? ctx.moveTo(xp(i), toY(i, ei)) : ctx.lineTo(xp(i), toY(i, ei)) }
     ctx.stroke()
   }
-
-  ctx.globalAlpha = 1
-  ctx.restore()
+  ctx.globalAlpha = 1; ctx.restore()
 }
 
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[], emas?:number[][]) {
+// ── Draw oscillator ───────────────────────────────────────────────────────
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null) {
   ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
   const tail=Math.min(main.length,150)
   const m=main.slice(-tail),s=signal.slice(-tail),h=histogram.slice(-tail)
   if(m.length<2)return
-  // When ribbon is present, oscillator uses top 76% of canvas height
   const oscH = emas && emas.length > 0 ? H * 0.76 : H
   const allVals=[...m,...s,...h,obLevel,osLevel,0]
   const minV=Math.min(...allVals)*1.1,maxV=Math.max(...allVals)*1.1,range=maxV-minV||1
   const yp=(v:number)=>oscH-((v-minV)/range)*oscH
   const xp=(i:number)=>(i/(m.length-1))*W
+
+  // Background zones
   ctx.fillStyle='rgba(255,59,48,0.06)';ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
   ctx.fillStyle='rgba(34,199,89,0.06)';ctx.fillRect(0,yp(osLevel),W,yp(minV)-yp(osLevel))
+
+  // Grid lines
   ctx.setLineDash([3,3]);ctx.strokeStyle='#2A2F3E';ctx.lineWidth=0.8
   ;[0,obLevel,osLevel].forEach(l=>{ctx.beginPath();ctx.moveTo(0,yp(l));ctx.lineTo(W,yp(l));ctx.stroke()})
   ctx.setLineDash([])
+
+  // Level labels on right
+  ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle='#3D4254';ctx.textAlign='right'
+  ctx.fillText(String(obLevel),W-4,yp(obLevel)-3)
+  ctx.fillText(String(osLevel),W-4,yp(osLevel)+11)
+  ctx.fillText('0',W-4,yp(0)-3)
+
+  // Histogram
   const barW=W/m.length
   h.forEach((v,i)=>{const x=xp(i),y=v>=0?yp(v):yp(0),bH=Math.abs(yp(v)-yp(0));ctx.fillStyle=v>=0?histBullColor:histBearColor;ctx.fillRect(x-barW/2+0.5,y,barW-1,bH||1)})
+
+  // Signal & Main lines
   ctx.beginPath();ctx.strokeStyle=signalColor;ctx.lineWidth=1.2;s.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
   ctx.beginPath();ctx.strokeStyle=mainColor;ctx.lineWidth=2;m.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
+
+  // Signal dots
   if(dots){const offset=main.length-tail;dots.filter(d=>d.i>=offset).forEach(d=>{const i=d.i-offset;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'#00E5FF':'#FF3B30';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
-  // Draw ribbon strip at bottom if emas provided
-  if (emas && emas.length > 0) drawRibbonStrip(ctx, W, H, emas, minV, maxV)
+
+  // ── Interactive crosshair ───────────────────────────────────────────
+  if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < m.length) {
+    const hx = xp(hoverIdx), hy = yp(m[hoverIdx])
+    // Vertical crosshair
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3])
+    ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, oscH); ctx.stroke()
+    // Horizontal crosshair
+    ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke()
+    ctx.setLineDash([])
+    // Main dot
+    ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI*2)
+    ctx.fillStyle = mainColor; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke()
+    // Signal dot
+    const sy = yp(s[hoverIdx])
+    ctx.beginPath(); ctx.arc(hx, sy, 3.5, 0, Math.PI*2)
+    ctx.fillStyle = signalColor; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke()
+    // Y-axis value label
+    ctx.fillStyle = mainColor
+    ctx.fillRect(W-52, hy-9, 52, 18)
+    ctx.fillStyle = '#0D1117'; ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+    ctx.fillText(m[hoverIdx].toFixed(1), W-26, hy+3)
+  }
+
+  if (emas && emas.length > 0) drawRibbonStrip(ctx, W, H, emas)
+}
+
+// ── Crosshair tooltip component ───────────────────────────────────────────
+function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW, type }:
+  { candles: Candle[]; main: number[]; signal: number[]; histogram: number[]; hoverIdx: number; canvasW: number; type: 'wt'|'vmc' }) {
+  const tail = Math.min(main.length, 150)
+  const offset = main.length - tail
+  const dataIdx = offset + hoverIdx
+  const candle = candles[dataIdx]
+  if (!candle) return null
+  const time = new Date(candle.t)
+  const timeStr = time.toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) + ' ' +
+    time.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
+  const mainVal = main[dataIdx], sigVal = signal[dataIdx], histVal = histogram[dataIdx]
+  const xp = (hoverIdx / (tail - 1)) * canvasW
+  const left = xp > canvasW / 2 ? 12 : canvasW - 200
+
+  return (
+    <div style={{ position:'absolute', top:4, left, background:'rgba(22,27,34,0.96)', border:'1px solid #2A2F3E', borderRadius:10, padding:'10px 14px', minWidth:175, pointerEvents:'none', boxShadow:'0 8px 24px rgba(0,0,0,0.6)', zIndex:20, backdropFilter:'blur(8px)' }}>
+      <div style={{fontSize:10,color:'#8F94A3',fontWeight:600,marginBottom:6,fontFamily:'JetBrains Mono,monospace'}}>{timeStr}</div>
+      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:10,color:'#555C70'}}>{type==='wt'?'WT1':'Signal'}</span>
+          <span style={{fontSize:12,fontWeight:700,color:'#37D7FF',fontFamily:'JetBrains Mono,monospace'}}>{mainVal?.toFixed(1)}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:10,color:'#555C70'}}>{type==='wt'?'WT2':'Sig. Signal'}</span>
+          <span style={{fontSize:12,fontWeight:700,color:'#FF9500',fontFamily:'JetBrains Mono,monospace'}}>{sigVal?.toFixed(1)}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:10,color:'#555C70'}}>Momentum</span>
+          <span style={{fontSize:12,fontWeight:700,color:histVal>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono,monospace'}}>{histVal>=0?'+':''}{histVal?.toFixed(1)}</span>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderTop:'1px solid #2A2F3E',paddingTop:4,marginTop:2}}>
+          <span style={{fontSize:10,color:'#555C70'}}>Close</span>
+          <span style={{fontSize:11,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{candle.c.toFixed(candle.c<10?4:2)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Interactive canvas hook ───────────────────────────────────────────────
+function useInteractiveCanvas(
+  draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
+  deps: unknown[], dataLen: number
+) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const [hoverIdx, setHoverIdx] = useState<number|null>(null)
+  const [canvasW, setCanvasW] = useState(800)
+
+  useEffect(() => {
+    const c = ref.current; if(!c) return
+    const dpr = window.devicePixelRatio || 1
+    const cssW = c.offsetWidth || 800, cssH = c.offsetHeight || 180
+    setCanvasW(cssW)
+    c.width = cssW * dpr; c.height = cssH * dpr
+    c.style.width = cssW + 'px'; c.style.height = cssH + 'px'
+    const ctx = c.getContext('2d')!
+    ctx.scale(dpr, dpr); ctx.clearRect(0, 0, cssW, cssH)
+    draw(ctx, cssW, cssH, hoverIdx)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, hoverIdx])
+
+  const onMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const c = ref.current; if (!c || dataLen < 2) return
+    const rect = c.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const tail = Math.min(dataLen, 150)
+    const idx = Math.round((x / rect.width) * (tail - 1))
+    setHoverIdx(Math.max(0, Math.min(tail - 1, idx)))
+  }, [dataLen])
+
+  const onLeave = useCallback(() => setHoverIdx(null), [])
+  return { ref, hoverIdx, canvasW, onMove, onLeave }
 }
 
 // ── WaveTrend Chart ────────────────────────────────────────────────────────
 export function WaveTrendChart({ symbol }: { symbol: string }) {
-  const [tf, setTf]               = useState(TF_OPTIONS[3])
-  const [candles, setCandles]     = useState<Candle[]>([])
-  const [result, setResult]       = useState<WTResult|null>(null)
-  const [status,   setStatus]     = useState<'idle'|'loading'|'error'>('idle')
-  const [errorMsg, setErrorMsg]   = useState('')
+  const [tf, setTf] = useState(TF_OPTIONS[3])
+  const [candles, setCandles] = useState<Candle[]>([])
+  const [result, setResult] = useState<WTResult|null>(null)
+  const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
   const [nextRefresh, setNextRefresh] = useState(0)
   const obLevel=53, osLevel=-53
 
-  // Fetch candles — réagit à symbol ET tf
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
-    try {
-      const c = await fetchCandles(symbol, tf.interval, tf.limit)
-      setCandles(c)
-      setStatus('idle')
-    } catch(e) { setErrorMsg((e as Error).message); setStatus('error') }
+    try { const c = await fetchCandles(symbol, tf.interval, tf.limit); setCandles(c); setStatus('idle') }
+    catch(e) { setErrorMsg((e as Error).message); setStatus('error') }
   }, [symbol, tf])
 
   useEffect(() => { loadCandles() }, [loadCandles])
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; setNextRefresh(ms / 1000); const t = setInterval(() => setNextRefresh(x => x <= 1 ? ms / 1000 : x - 1), 1000); return () => clearInterval(t) }, [tf])
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; const t = setInterval(() => loadCandles(), ms); return () => clearInterval(t) }, [tf, loadCandles])
 
-  // Countdown to next refresh
-  useEffect(() => {
-    const ms = TF_REFRESH_MS[tf.interval] || 3600000
-    setNextRefresh(ms / 1000)
-    const t = setInterval(() => setNextRefresh(x => x <= 1 ? ms / 1000 : x - 1), 1000)
-    return () => clearInterval(t)
-  }, [tf])
-
-  // Live refresh — interval = durée d'une bougie
-  useEffect(() => {
-    const ms = TF_REFRESH_MS[tf.interval] || 3600000
-    const t = setInterval(() => loadCandles(), ms)
-    return () => clearInterval(t)
-  }, [tf, loadCandles])
-
-  // Compute + signal detection
   useEffect(() => {
     if (candles.length < 20) return
-    const r = calcWaveTrend(candles, 10, 21, obLevel, osLevel)
-    setResult(r)
-    // Check signals after each refresh
+    const r = calcWaveTrend(candles, 10, 21, obLevel, osLevel); setResult(r)
     if (r.wt1.length > 1) signalService.checkWaveTrend(symbol, tf.label, r.wt1, r.wt2, obLevel, osLevel)
   }, [candles, symbol, tf.label])
 
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
-  const canvasRef = useCanvas((ctx,W,H)=>{
-    if(!result||result.wt1.length<2)return
-    drawOscillator(ctx,W,H,result.wt1,result.wt2,result.wt1.map((v,i)=>v-result.wt2[i]),obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots)
-  },[result])
+  const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
 
-  const wt1Last = result?.wt1[result.wt1.length-1]??0
-  const wt2Last = result?.wt2[result.wt2.length-1]??0
+  const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
+    (ctx, W, H, hi) => {
+      if(!result||result.wt1.length<2) return
+      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi)
+    }, [result], result?.wt1.length ?? 0
+  )
+
+  const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
   const badge = !result?null:wt1Last>obLevel?{label:'Overbought',color:'#FF3B30'}:wt1Last<osLevel?{label:'Oversold',color:'#22C759'}:result.signals[result.signals.length-1]==='smartBull'?{label:'Smart Bullish',color:'#00E5FF'}:result.signals[result.signals.length-1]==='bull'?{label:'Bullish Reversal',color:'#22C759'}:result.signals[result.signals.length-1]==='smartBear'?{label:'Smart Bearish',color:'#FF3B30'}:result.signals[result.signals.length-1]==='bear'?{label:'Bearish Reversal',color:'#FF3B30'}:{label:'Neutral',color:'#8F94A3'}
 
   return (
     <div style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>〜</div>
-        <div>
-          <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>WaveTrend Oscillator</div>
-          <div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div>
-        </div>
-        {/* Live badge */}
+        <div><div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
-          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/>
-          <span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
+          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
         </div>
         {badge&&<div style={{fontSize:10,fontWeight:700,color:badge.color,background:`${badge.color}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${badge.color}50`}}>{badge.label}</div>}
@@ -375,20 +381,18 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
         {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'#FF9500':'#2A2F3E'}`,background:t.label===tf.label?'rgba(255,149,0,0.15)':'#1C2130',color:t.label===tf.label?'#FF9500':'#555C70',whiteSpace:'nowrap'}}>{t.label}</button>)}
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
-        {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:2,gap:8,flexDirection:'column'}}>
-          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>
-          <span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
+        {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8,flexDirection:'column'}}>
+          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
         </div>}
         {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
-          <span style={{fontSize:22}}>📡</span>
-          <span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
-          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
-            {isCryptoSymbol(symbol)
-              ? "Ce symbole n'est pas disponible sur Binance Futures ni Spot."
-              : 'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}
-          </span>
+          <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
+          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={180} style={{width:'100%',height:180,display:'block',borderRadius:8}}/>
+        <canvas ref={canvasRef} width={800} height={180} onMouseMove={onMove} onMouseLeave={onLeave}
+          style={{width:'100%',height:180,display:'block',borderRadius:8,cursor:'crosshair'}}/>
+        {hoverIdx !== null && result && result.wt1.length > 0 && (
+          <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt"/>
+        )}
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'WT1'},{color:'#FF9500',label:'WT2'},{color:'#22C759',label:'Momentum +'},{color:'#FF3B30',label:'Momentum −'},{color:'#00E5FF',label:'● Smart'}].map(({color,label})=>(
             <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'#555C70'}}>{label}</span></div>
@@ -401,72 +405,49 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
 export function VMCOscillatorChart({ symbol }: { symbol: string }) {
-  const [tf, setTf]             = useState(TF_OPTIONS[3])
-  const [preset, setPreset]     = useState<'scalping'|'swing'|'position'>('swing')
-  const [candles, setCandles]   = useState<Candle[]>([])
-  const [result, setResult]     = useState<VMCResult|null>(null)
-  const [status, setStatus]     = useState<'idle'|'loading'|'error'>('idle')
+  const [tf, setTf] = useState(TF_OPTIONS[3])
+  const [preset, setPreset] = useState<'scalping'|'swing'|'position'>('swing')
+  const [candles, setCandles] = useState<Candle[]>([])
+  const [result, setResult] = useState<VMCResult|null>(null)
+  const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const obLevel=35, osLevel=-25
 
-  // Fetch — réagit uniquement à symbol et tf (PAS preset)
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
-    try {
-      const c = await fetchCandles(symbol, tf.interval, tf.limit)
-      setCandles(c)
-      setStatus('idle')
-    } catch(e) { setErrorMsg((e as Error).message); setStatus('error') }
-  }, [symbol, tf])  // ← preset absent intentionnellement ici
+    try { const c = await fetchCandles(symbol, tf.interval, tf.limit); setCandles(c); setStatus('idle') }
+    catch(e) { setErrorMsg((e as Error).message); setStatus('error') }
+  }, [symbol, tf])
 
   useEffect(() => { loadCandles() }, [loadCandles])
-
-  // Live refresh
-  useEffect(() => {
-    const ms = TF_REFRESH_MS[tf.interval] || 3600000
-    const t = setInterval(() => loadCandles(), ms)
-    return () => clearInterval(t)
-  }, [tf, loadCandles])
-
-  // VMC countdown
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; const t = setInterval(() => loadCandles(), ms); return () => clearInterval(t) }, [tf, loadCandles])
   const [nextRefreshVMC, setNextRefreshVMC] = useState(0)
-  useEffect(() => {
-    const ms = TF_REFRESH_MS[tf.interval] || 3600000
-    setNextRefreshVMC(ms/1000)
-    const t = setInterval(() => setNextRefreshVMC(x => x<=1?ms/1000:x-1), 1000)
-    return () => clearInterval(t)
-  }, [tf])
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; setNextRefreshVMC(ms/1000); const t = setInterval(() => setNextRefreshVMC(x => x<=1?ms/1000:x-1), 1000); return () => clearInterval(t) }, [tf])
 
-  // Recalcul — réagit aux candles ET au preset (sans refetch)
   useEffect(() => {
     if (candles.length < 60) return
-    const r = calcVMCOscillator(candles, preset)
-    setResult(r)
-    const sig = r.sig[r.sig.length-1]??0
-    const mom = r.momentum[r.momentum.length-1]??0
+    const r = calcVMCOscillator(candles, preset); setResult(r)
+    const sig = r.sig[r.sig.length-1]??0, mom = r.momentum[r.momentum.length-1]??0
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
-  }, [candles, preset, symbol, tf.label])  // ← preset ici = recalcul immédiat sans API call
+  }, [candles, preset, symbol, tf.label])
 
-  const lastSig=result?.sig[result.sig.length-1]??0
-  const lastMom=result?.momentum[result.momentum.length-1]??0
+  const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
   const statusColor=result?.status==='BUY'?'#22C759':result?.status==='SELL'?'#FF3B30':result?.status==='OVERBOUGHT'?'#FF3B30':result?.status==='OVERSOLD'?'#22C759':'#8F94A3'
 
-  const canvasRef = useCanvas((ctx,W,H)=>{
-    if(!result||result.sig.length<2)return
-    drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.55)','rgba(255,59,48,0.55)',undefined,result.emas)
-  },[result])
+  const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
+    (ctx, W, H, hi) => {
+      if(!result||result.sig.length<2) return
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.55)','rgba(255,59,48,0.55)',undefined,result.emas,hi)
+    }, [result], result?.sig.length ?? 0
+  )
 
   return (
     <div style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'white'}}>V</div>
-        <div>
-          <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>VMC Oscillator</div>
-          <div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div>
-        </div>
+        <div><div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
-          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/>
-          <span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
+          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefreshVMC/60)}:{String(nextRefreshVMC%60).padStart(2,'0')}</span>
         </div>
         {result&&<div style={{fontSize:10,fontWeight:700,color:statusColor,background:`${statusColor}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${statusColor}50`}}>{result.status}</div>}
@@ -478,13 +459,10 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
           <button onClick={loadCandles} style={{background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'#8F94A3'}}>↻</button>
         </div>
       </div>
-      {/* Preset + TF */}
       <div style={{display:'flex',gap:8,padding:'0 16px 8px',flexWrap:'wrap',alignItems:'center'}}>
         <div style={{display:'flex',background:'#1C2130',borderRadius:8,padding:2,gap:1}}>
           {(['scalping','swing','position'] as const).map(p=>(
-            <button key={p} onClick={()=>setPreset(p)} style={{padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',border:'none',background:preset===p?'#FF9500':'transparent',color:preset===p?'#0D1117':'#555C70',transition:'all 0.15s'}}>
-              {p}
-            </button>
+            <button key={p} onClick={()=>setPreset(p)} style={{padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',border:'none',background:preset===p?'#FF9500':'transparent',color:preset===p?'#0D1117':'#555C70',transition:'all 0.15s'}}>{p}</button>
           ))}
         </div>
         <div style={{display:'flex',gap:3,overflowX:'auto',scrollbarWidth:'none'}}>
@@ -492,20 +470,18 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
         </div>
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
-        {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:2,gap:8}}>
-          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>
-          <span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
+        {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>
+          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
         </div>}
         {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
-          <span style={{fontSize:22}}>📡</span>
-          <span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
-          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>
-            {isCryptoSymbol(symbol)
-              ? "Ce symbole n'est pas disponible sur Binance Futures ni Spot."
-              : 'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}
-          </span>
+          <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
+          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={230} style={{width:'100%',height:230,display:'block',borderRadius:8}}/>
+        <canvas ref={canvasRef} width={800} height={230} onMouseMove={onMove} onMouseLeave={onLeave}
+          style={{width:'100%',height:230,display:'block',borderRadius:8,cursor:'crosshair'}}/>
+        {hoverIdx !== null && result && result.sig.length > 0 && (
+          <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc"/>
+        )}
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'VMC Sig'},{color:'#FF9500',label:'Signal'},{color:'#22C759',label:'Mom +'},{color:'#FF3B30',label:'Mom −'},{color:'#FF9500',label:`OB:${obLevel}`},{color:'#22C759',label:`OS:${osLevel}`}].map(({color,label})=>(
             <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'#555C70'}}>{label}</span></div>

@@ -64,12 +64,12 @@ function calcStats(trades: Trade[]) {
 
 // ── Emotion helpers ───────────────────────────────────────────────────────
 function emotionScore(state: string): number {
-  const m: Record<string,number>={'Confiant':4,'Serein':4,'Focused':4,'Disciplined':4,'Neutre':3,'Neutral':3,'Stressé':2,'Anxieux':2,'Fatigué':2,'Stressed':2,'FOMO':1,'Impulsif':1,'Frustré':1}
+  const m: Record<string,number>={'confident':4,'calm':4,'focused':4,'excited':3,'stressed':2,'impatient':2,'fearful':1,'greedy':2,'frustrated':1,'distracted':2}
   return m[state]??3
 }
 function calcEmotions(moods: MoodEntry[], trades: Trade[]) {
   if(!moods.length)return null
-  const avg=moods.reduce((a,m)=>a+emotionScore(m.state),0)/moods.length
+  const avg=moods.reduce((a,m)=>a+emotionScore(m.emotionalState),0)/moods.length
   const avgState=avg>=3.5?'Confiant':avg>=2.5?'Neutre':avg>=1.5?'Stressé':'Impulsif'
   const sorted=[...trades].filter(t=>t.status==='closed').sort((a,b)=>safeTime(b.date)-safeTime(a.date))
   let consec=0;for(const t of sorted){if(tradePnL(t)<0)consec++;else break}
@@ -135,44 +135,45 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
 
   return(
     <div ref={containerRef} style={{position:'relative',width:'100%'}}>
-      {/* Day labels */}
-      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap,marginBottom:4}}>
-        {['D','L','M','M','J','V','S'].map((l,i)=>(
-          <div key={i} style={{fontSize:fs-1,color:'#555C70',textAlign:'center',fontWeight:600,lineHeight:`${cellSize}px`}}>{l}</div>
-        ))}
-      </div>
-      {/* Grid */}
-      <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap}}>
-        {cells.map(({date,key,inRange})=>{
-          const data=byDay[key];const pnl=data?.pnl
-          const intensity=pnl!=null?Math.min(Math.abs(pnl)/maxAbs,1):0
-          const isToday=date.toDateString()===today.toDateString()
-          const isBest=key===bestKey,isWorst=key===worstKey
-          let bg='rgba(255,255,255,0.03)'
-          if(inRange&&pnl!=null)bg=pnl>0?`rgba(34,199,89,${0.12+intensity*0.68})`:`rgba(255,59,48,${0.12+intensity*0.68})`
-          else if(!inRange)bg='transparent'
-          return(
-            <div
-              key={key}
-              onClick={e=>{
-                if(!inRange||!data)return
-                const rect=(e.currentTarget as HTMLElement).getBoundingClientRect()
-                setTooltip(t=>t?.key===key?null:{
-                  key,pnl:data.pnl,date,count:data.count,symbols:data.symbols,
-                  left:rect.left+rect.width/2,top:rect.top
-                })
-              }}
-              style={{
-                width:cellSize,height:cellSize,borderRadius:Math.max(2,cellSize/5),
-                background:bg,cursor:inRange&&data?'pointer':'default',
-                border:isToday?'1.5px solid rgba(255,255,255,0.3)':isBest?'1.5px solid rgba(34,199,89,0.7)':isWorst?'1.5px solid rgba(255,59,48,0.5)':'1px solid transparent',
-                transition:'transform 0.1s',boxSizing:'border-box' as const,
-              }}
-              title={inRange&&data?`${key}: ${fmtK(pnl!)}`:undefined}
-            />
-          )
-        })}
-      </div>
+      {/* Multi-month layout for 3M+ */}
+      {days >= 90 ? (
+        <MonthGrid byDay={byDay} since={since} today={today} maxAbs={maxAbs} bestKey={bestKey} worstKey={worstKey} setTooltip={setTooltip} tooltip={tooltip} days={days} />
+      ) : (
+        <>
+          {/* Day labels */}
+          <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap,marginBottom:4}}>
+            {['D','L','M','M','J','V','S'].map((l,i)=>(
+              <div key={i} style={{fontSize:fs-1,color:'#555C70',textAlign:'center',fontWeight:600,lineHeight:`${cellSize}px`}}>{l}</div>
+            ))}
+          </div>
+          {/* Grid */}
+          <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap}}>
+            {cells.map(({date,key,inRange})=>{
+              const data=byDay[key];const pnl=data?.pnl
+              const intensity=pnl!=null?Math.min(Math.abs(pnl)/maxAbs,1):0
+              const isToday=date.toDateString()===today.toDateString()
+              const isBest=key===bestKey,isWorst=key===worstKey
+              let bg='rgba(255,255,255,0.03)'
+              if(inRange&&pnl!=null)bg=pnl>0?`rgba(34,199,89,${0.12+intensity*0.68})`:`rgba(255,59,48,${0.12+intensity*0.68})`
+              else if(!inRange)bg='transparent'
+              return(
+                <div
+                  key={key}
+                  onClick={e=>{
+                    if(!inRange||!data)return
+                    const rect=(e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setTooltip(t=>t?.key===key?null:{key,pnl:data.pnl,date,count:data.count,symbols:data.symbols,left:rect.left+rect.width/2,top:rect.top})
+                  }}
+                  style={{width:cellSize,height:cellSize,borderRadius:Math.max(2,cellSize/5),background:bg,cursor:inRange&&data?'pointer':'default',
+                    border:isToday?'1.5px solid rgba(255,255,255,0.3)':isBest?'1.5px solid rgba(34,199,89,0.7)':isWorst?'1.5px solid rgba(255,59,48,0.5)':'1px solid transparent',
+                    transition:'transform 0.1s',boxSizing:'border-box' as const}}
+                  title={inRange&&data?`${key}: ${fmtK(pnl!)}`:undefined}
+                />
+              )
+            })}
+          </div>
+        </>
+      )}
       {/* Tooltip — portal-like fixed position */}
       {tooltip&&(
         <>
@@ -182,8 +183,7 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
             left:Math.min(tooltip.left-90,window.innerWidth-200),
             top:tooltip.top-120,
             background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:12,padding:'12px 16px',
-            minWidth:180,zIndex:50,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',
-            pointerEvents:'none',
+            minWidth:180,zIndex:50,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',pointerEvents:'none',
           }}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
               <div style={{fontSize:11,color:'#8F94A3',fontWeight:600}}>
@@ -197,6 +197,93 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// ── Month Grid for 3M+ periods ────────────────────────────────────────────
+function MonthGrid({ byDay, since, today, maxAbs, bestKey, worstKey, setTooltip, tooltip, days }:
+  { byDay: Record<string,{pnl:number,count:number,symbols:string[]}>; since:Date; today:Date; maxAbs:number; bestKey:string|null; worstKey:string|null; setTooltip:any; tooltip:any; days:number }) {
+  
+  // Build months array
+  const months: { label: string; year: number; month: number; days: { date:Date; key:string; data?:{pnl:number;count:number;symbols:string[]} }[] }[] = []
+  const cur = new Date(since)
+  cur.setDate(1)
+  while (cur <= today || months.length === 0) {
+    const m = cur.getMonth(), y = cur.getFullYear()
+    const label = cur.toLocaleDateString('fr-FR', { month:'short' })
+    const monthDays: typeof months[0]['days'] = []
+    const d = new Date(y, m, 1)
+    while (d.getMonth() === m) {
+      const key = d.toISOString().slice(0, 10)
+      if (d >= since && d <= today) {
+        monthDays.push({ date: new Date(d), key, data: byDay[key] })
+      }
+      d.setDate(d.getDate() + 1)
+    }
+    if (monthDays.length > 0) months.push({ label, year: y, month: m, days: monthDays })
+    cur.setMonth(cur.getMonth() + 1)
+    cur.setDate(1)
+  }
+
+  const cellSz = days > 180 ? 11 : 14
+  const gap = 2
+
+  return (
+    <div style={{ display:'flex', gap:16, overflowX:'auto', scrollbarWidth:'none', paddingBottom:4 }}>
+      {months.map((month, mi) => {
+        // Build a 7-column grid with proper day-of-week offset
+        const firstDow = new Date(month.year, month.month, 1).getDay()
+        const daysInMonth = new Date(month.year, month.month + 1, 0).getDate()
+        const cells: (typeof month.days[0] | null)[] = []
+        for (let i = 0; i < firstDow; i++) cells.push(null)
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dayData = month.days.find(dd => dd.date.getDate() === d)
+          if (dayData) cells.push(dayData)
+          else cells.push(null)
+        }
+        while (cells.length % 7 !== 0) cells.push(null)
+
+        return (
+          <div key={mi} style={{ flexShrink:0 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:'#8F94A3', textAlign:'center', marginBottom:6, textTransform:'capitalize' }}>
+              {month.label} {months.length > 6 ? '' : month.year}
+            </div>
+            {mi === 0 && (
+              <div style={{ display:'grid', gridTemplateColumns:`repeat(7,${cellSz}px)`, gap, marginBottom:2 }}>
+                {['D','L','M','M','J','V','S'].map((l,i)=>(
+                  <div key={i} style={{ fontSize:7, color:'#3D4254', textAlign:'center' }}>{l}</div>
+                ))}
+              </div>
+            )}
+            <div style={{ display:'grid', gridTemplateColumns:`repeat(7,${cellSz}px)`, gap }}>
+              {cells.map((cell, ci) => {
+                if (!cell) return <div key={ci} style={{ width:cellSz, height:cellSz }} />
+                const pnl = cell.data?.pnl
+                const intensity = pnl != null ? Math.min(Math.abs(pnl) / maxAbs, 1) : 0
+                const isToday = cell.date.toDateString() === today.toDateString()
+                const isBest = cell.key === bestKey, isWorst = cell.key === worstKey
+                let bg = 'rgba(255,255,255,0.03)'
+                if (pnl != null) bg = pnl > 0 ? `rgba(34,199,89,${0.15+intensity*0.65})` : `rgba(255,59,48,${0.15+intensity*0.65})`
+                return (
+                  <div key={ci} onClick={e => {
+                    if (!cell.data) return
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setTooltip((t:any) => t?.key===cell.key ? null : {
+                      key:cell.key, pnl:cell.data!.pnl, date:cell.date, count:cell.data!.count,
+                      symbols:cell.data!.symbols, left:rect.left+rect.width/2, top:rect.top
+                    })
+                  }} style={{
+                    width:cellSz, height:cellSz, borderRadius:2, background:bg,
+                    cursor: cell.data ? 'pointer' : 'default',
+                    border: isToday ? '1px solid rgba(255,255,255,0.4)' : isBest ? '1px solid rgba(34,199,89,0.7)' : isWorst ? '1px solid rgba(255,59,48,0.6)' : '1px solid transparent',
+                  }} title={cell.data ? `${cell.key}: ${fmtK(pnl!)}` : undefined} />
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -338,20 +425,25 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
           <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF',marginBottom:12}}>Performance par Mois</div>
           {months.length===0?<div style={{textAlign:'center',color:'#3D4254',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
             <>
-              <div style={{display:'flex',alignItems:'flex-end',gap:3,height:80,marginBottom:8}}>
+              <div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:10,padding:'0 4px'}}>
                 {months.map((m,i)=>{
-                  const h=Math.max((Math.abs(m.value)/maxAbsM)*72,3),c=m.value>=0?'#22C759':'#FF3B30'
-                  return(<div key={i} title={`${m.full}: ${fmtK(m.value)}`} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer'}}>
-                    <div style={{width:'100%',height:h,background:c,borderRadius:'3px 3px 0 0',opacity:0.85,transition:'opacity 0.15s'}}/>
-                    <div style={{fontSize:8,color:'#3D4254'}}>{m.label}</div>
+                  const h=Math.max((Math.abs(m.value)/maxAbsM)*100,4),c=m.value>=0?'#22C759':'#FF3B30'
+                  return(<div key={i} title={`${m.full}: ${fmtK(m.value)}`} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',position:'relative'}}
+                    onMouseEnter={e=>{const el=e.currentTarget.querySelector('[data-val]') as HTMLElement;if(el)el.style.opacity='1'}}
+                    onMouseLeave={e=>{const el=e.currentTarget.querySelector('[data-val]') as HTMLElement;if(el)el.style.opacity='0'}}>
+                    <div data-val="" style={{fontSize:10,fontWeight:700,color:c,fontFamily:'JetBrains Mono,monospace',opacity:0,transition:'opacity 0.15s',whiteSpace:'nowrap'}}>{fmtK(m.value)}</div>
+                    <div style={{width:'100%',maxWidth:36,height:h,background:`linear-gradient(${m.value>=0?'0deg':'180deg'},${c},${c}88)`,borderRadius:m.value>=0?'4px 4px 0 0':'0 0 4px 4px',transition:'height 0.3s'}}/>
+                    <div style={{fontSize:9,color:'#8F94A3',fontWeight:600,textTransform:'capitalize'}}>{m.full.slice(0,3)}</div>
                   </div>)
                 })}
               </div>
-              <div style={{display:'flex',gap:8}}>
-                {[{l:'Meilleur',v:fmtK(bestM),c:'#22C759'},{l:'Pire',v:fmtK(worstM),c:'#FF3B30'},{l:'Moyenne',v:fmtK(avgM),c:'#8F94A3'}].map(({l,v,c})=>(
-                  <div key={l} style={{flex:1,background:'rgba(255,255,255,0.02)',borderRadius:8,padding:'6px 8px',textAlign:'center'}}>
-                    <div style={{fontSize:9,color:'#555C70',marginBottom:2}}>{l}</div>
-                    <div style={{fontSize:11,fontWeight:700,color:c,fontFamily:'JetBrains Mono, monospace'}}>{v}</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+                {[{l:'Meilleur mois',v:fmtK(bestM),c:'#22C759',bg:'rgba(34,199,89,0.06)',bdr:'rgba(34,199,89,0.15)'},
+                  {l:'Pire mois',v:fmtK(worstM),c:'#FF3B30',bg:'rgba(255,59,48,0.06)',bdr:'rgba(255,59,48,0.15)'},
+                  {l:'Moyenne/mois',v:fmtK(avgM),c:'#8F94A3',bg:'rgba(255,255,255,0.02)',bdr:'#1E2330'}].map(({l,v,c,bg,bdr})=>(
+                  <div key={l} style={{background:bg,border:`1px solid ${bdr}`,borderRadius:10,padding:'10px 12px',textAlign:'center'}}>
+                    <div style={{fontSize:9,color:'#555C70',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.06em'}}>{l}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:c,fontFamily:'JetBrains Mono, monospace'}}>{v}</div>
                   </div>
                 ))}
               </div>

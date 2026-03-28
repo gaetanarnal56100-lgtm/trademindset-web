@@ -1,6 +1,6 @@
 // src/pages/journal/JournalPage.tsx — Connecté à Firestore users/{uid}/moods
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { subscribeMoods, subscribeTrades, createMood, deleteMood, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; label: string; color: string }[] = [
@@ -96,6 +96,9 @@ export default function JournalPage() {
         </div>
       )}
 
+      {/* Emotion curve chart */}
+      {!loading && moods.length >= 2 && <EmotionCurve moods={moods} />}
+
       {/* Entries */}
       {loading ? (
         <div style={{ textAlign:'center', padding:48, color:'#555C70' }}>
@@ -160,6 +163,138 @@ export default function JournalPage() {
       )}
 
       {showAdd && <AddMoodModal trades={trades} onClose={() => setShowAdd(false)} />}
+    </div>
+  )
+}
+
+// ── Emotion Curve Chart ────────────────────────────────────────────────────
+
+function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [hoverIdx, setHoverIdx] = useState<number|null>(null)
+
+  // Sort by date ascending
+  const sorted = [...moods].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+
+  // Map emotion to numeric score for the curve
+  const emotionToScore = (e: EmotionalState): number => {
+    const map: Record<EmotionalState, number> = {
+      confident:5, calm:4, focused:5, excited:3,
+      stressed:2, impatient:2, fearful:1, greedy:2,
+      frustrated:1, distracted:2,
+    }
+    return map[e] ?? 3
+  }
+
+  const points = sorted.map(m => ({
+    date: m.timestamp,
+    score: emotionToScore(m.emotionalState),
+    intensity: m.intensity,
+    emotion: m.emotionalState,
+    emoji: EMOTIONS.find(e => e.v === m.emotionalState)?.emoji ?? '😐',
+    label: EMOTIONS.find(e => e.v === m.emotionalState)?.label ?? '—',
+    color: EMOTIONS.find(e => e.v === m.emotionalState)?.color ?? '#8F94A3',
+  }))
+
+  useEffect(() => {
+    const c = canvasRef.current; if (!c || points.length < 2) return
+    const dpr = window.devicePixelRatio || 1
+    const cssW = c.offsetWidth || 700, cssH = 160
+    c.width = cssW * dpr; c.height = cssH * dpr
+    c.style.width = cssW + 'px'; c.style.height = cssH + 'px'
+    const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, cssW, cssH)
+
+    const PAD = { t:16, r:12, b:28, l:36 }
+    const cW = cssW - PAD.l - PAD.r, cH = cssH - PAD.t - PAD.b
+    const toX = (i: number) => PAD.l + (i / (points.length - 1)) * cW
+    const toY = (v: number) => PAD.t + cH - ((v - 0.5) / 5) * cH
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1
+    for (let v = 1; v <= 5; v++) {
+      const y = toY(v)
+      ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(cssW - PAD.r, y); ctx.stroke()
+    }
+    // Y labels
+    ctx.fillStyle = '#3D4254'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'right'
+    ctx.fillText('😎', PAD.l - 4, toY(5) + 4)
+    ctx.fillText('😐', PAD.l - 4, toY(3) + 4)
+    ctx.fillText('😰', PAD.l - 4, toY(1) + 4)
+
+    // Fill gradient
+    const isPos = points[points.length-1].score >= 3
+    const lc = isPos ? '#22C759' : '#FF3B30'
+    const g = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + cH)
+    g.addColorStop(0, lc + '2E'); g.addColorStop(1, lc + '00')
+    ctx.beginPath()
+    points.forEach((p, i) => i === 0 ? ctx.moveTo(toX(i), toY(p.score)) : ctx.lineTo(toX(i), toY(p.score)))
+    ctx.lineTo(toX(points.length - 1), PAD.t + cH); ctx.lineTo(toX(0), PAD.t + cH)
+    ctx.closePath(); ctx.fillStyle = g; ctx.fill()
+
+    // Line
+    ctx.beginPath(); ctx.strokeStyle = lc; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+    points.forEach((p, i) => i === 0 ? ctx.moveTo(toX(i), toY(p.score)) : ctx.lineTo(toX(i), toY(p.score)))
+    ctx.stroke()
+
+    // Dots
+    points.forEach((p, i) => {
+      const x = toX(i), y = toY(p.score)
+      const isHov = i === hoverIdx
+      ctx.beginPath(); ctx.arc(x, y, isHov ? 6 : 3, 0, Math.PI * 2)
+      ctx.fillStyle = isHov ? p.color : p.color + '88'; ctx.fill()
+      if (isHov) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke() }
+    })
+
+    // X labels
+    const step = Math.max(1, Math.ceil(points.length / 8))
+    ctx.fillStyle = '#555C70'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+    points.forEach((p, i) => {
+      if (i % step === 0 || i === points.length - 1)
+        ctx.fillText(p.date.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }), toX(i), cssH - 6)
+    })
+
+    // Crosshair
+    if (hoverIdx !== null && hoverIdx >= 0 && hoverIdx < points.length) {
+      const hx = toX(hoverIdx), hy = toY(points[hoverIdx].score)
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3])
+      ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, PAD.t + cH); ctx.stroke()
+      ctx.setLineDash([])
+    }
+  }, [points, hoverIdx])
+
+  const onMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const c = canvasRef.current; if (!c || points.length < 2) return
+    const rect = c.getBoundingClientRect()
+    const PAD_L = 36, PAD_R = 12
+    const x = e.clientX - rect.left
+    const pct = Math.max(0, Math.min(1, (x - PAD_L) / (rect.width - PAD_L - PAD_R)))
+    setHoverIdx(Math.round(pct * (points.length - 1)))
+  }, [points.length])
+
+  const hoveredPt = hoverIdx !== null ? points[hoverIdx] : null
+
+  return (
+    <div ref={wrapRef} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:12, padding:'14px 16px', marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+        <div style={{ fontSize:12, fontWeight:600, color:'#F0F3FF' }}>Courbe émotionnelle</div>
+        {hoveredPt && (
+          <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:11 }}>
+            <span>{hoveredPt.emoji}</span>
+            <span style={{ color:hoveredPt.color, fontWeight:600 }}>{hoveredPt.label}</span>
+            <span style={{ color:'#555C70', fontFamily:'JetBrains Mono,monospace' }}>
+              {hoveredPt.date.toLocaleDateString('fr-FR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+            </span>
+            <span style={{ color:'#8F94A3', fontFamily:'JetBrains Mono,monospace' }}>
+              {hoveredPt.intensity}/10
+            </span>
+          </div>
+        )}
+      </div>
+      <canvas ref={canvasRef} width={700} height={160}
+        onMouseMove={onMove} onMouseLeave={() => setHoverIdx(null)}
+        style={{ width:'100%', height:160, display:'block', borderRadius:8, cursor:'crosshair' }} />
     </div>
   )
 }

@@ -326,9 +326,11 @@ function useChart(pts: Pt[], showDD: boolean, showDots: boolean, isModal: boolea
   useEffect(()=>{
     const cv=canvasRef.current; if(!cv||pts.length<2) return
     const DPR=window.devicePixelRatio||1
-    cv.width=W*DPR; cv.height=H*DPR
+    cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR)
     cv.style.width=`${W}px`; cv.style.height=`${H}px`
     const ctx=cv.getContext('2d')!; ctx.scale(DPR,DPR)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
     const ez=sel?{s:Math.min(sel.s,sel.e),e:Math.max(sel.s,sel.e)}:zoom
     const slice=pts.slice(ez.s,ez.e+1)
     const localH=hIdx!==null?hIdx-ez.s:null

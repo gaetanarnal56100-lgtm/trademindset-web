@@ -320,12 +320,72 @@ function VMCBar({ vmc, width = 28 }: { vmc: number; width?: number }) {
   )
 }
 
+// ── Signal Detail Modal ────────────────────────────────────────────────────
+function SignalDetailModal({ r, onClose }: { r: MTFReading; onClose: () => void }) {
+  const sig = SIGNAL_CFG[r.signal]
+  const scoreColor = r.score < -40 ? '#22C759' : r.score < -10 ? '#FFD60A' : r.score > 40 ? '#FF3B30' : r.score > 10 ? '#FF9500' : '#8F94A3'
+  const rsiZone = r.rsi < 30 ? 'Survente' : r.rsi > 70 ? 'Surachat' : 'Neutre'
+  const rsiZoneColor = r.rsi < 30 ? '#42A5F5' : r.rsi > 70 ? '#EF5350' : '#8F94A3'
+  const vmcZone = r.vmc < -25 ? 'Fort négatif' : r.vmc > 35 ? 'Fort positif' : 'Neutre'
+  const vmcZoneColor = r.vmc < -25 ? '#22C759' : r.vmc > 35 ? '#EF5350' : '#8F94A3'
+  const interpretation = r.score < -40
+    ? 'Zone d\'achat forte — RSI en survente + VMC très négatif. Potentiel de rebond élevé. Attendre une confirmation de retournement avant d\'entrer.'
+    : r.score < -10
+    ? 'Biais haussier — Les indicateurs montrent un momentum ascendant. Le RSI remonte depuis les zones basses et le VMC confirme.'
+    : r.score > 40
+    ? 'Zone de vente forte — RSI en surachat + VMC très positif. Risque de correction élevé. Envisager de prendre des profits ou de shorter.'
+    : r.score > 10
+    ? 'Biais baissier — Le momentum faiblit. Le RSI est élevé et le VMC indique une pression vendeuse croissante.'
+    : 'Zone neutre — Pas de signal directionnel clair. Les indicateurs sont équilibrés. Attendre un signal plus marqué.'
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:'#161B22', border:`2px solid ${sig.color}50`, borderRadius:16, padding:24, width:420, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{ fontSize:14, fontWeight:800, color:sig.color, background:sig.bg, padding:'4px 14px', borderRadius:20, border:`1px solid ${sig.color}60` }}>{sig.label}</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#F0F3FF' }}>{r.label}</div>
+          </div>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:18 }}>✕</button>
+        </div>
+        {/* Score */}
+        <div style={{ textAlign:'center', marginBottom:20, padding:'16px', background:`${scoreColor}10`, border:`1px solid ${scoreColor}30`, borderRadius:12 }}>
+          <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Score combiné (RSI×40% + VMC×60%)</div>
+          <div style={{ fontSize:32, fontWeight:800, color:scoreColor, fontFamily:'JetBrains Mono,monospace' }}>{r.score.toFixed(1)}</div>
+        </div>
+        {/* Details */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+          <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+            <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>RSI (14)</div>
+            <div style={{ fontSize:20, fontWeight:700, color:'#F0F3FF', fontFamily:'JetBrains Mono,monospace' }}>{r.rsi.toFixed(1)}</div>
+            <div style={{ fontSize:10, color:rsiZoneColor, marginTop:4 }}>{rsiZone}</div>
+            <div style={{ fontSize:9, color:'#3D4254', marginTop:2 }}>Normalisé: {r.rsiNorm.toFixed(1)}</div>
+          </div>
+          <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+            <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>VMC</div>
+            <div style={{ fontSize:20, fontWeight:700, color:'#F0F3FF', fontFamily:'JetBrains Mono,monospace' }}>{r.vmc.toFixed(1)}</div>
+            <div style={{ fontSize:10, color:vmcZoneColor, marginTop:4 }}>{vmcZone}</div>
+            {r.divergence && <div style={{ fontSize:9, color:'#FF9500', marginTop:2 }}>⚡ Divergence RSI/VMC</div>}
+          </div>
+        </div>
+        {/* Interpretation */}
+        <div style={{ background:'rgba(191,90,242,0.06)', border:'1px solid rgba(191,90,242,0.2)', borderRadius:10, padding:'12px 16px' }}>
+          <div style={{ fontSize:10, fontWeight:700, color:'#BF5AF2', marginBottom:6 }}>✨ Interprétation</div>
+          <div style={{ fontSize:12, color:'#C5C8D6', lineHeight:1.7 }}>{interpretation}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Column ─────────────────────────────────────────────────────────────────
-function TFColumn({ r }: { r: MTFReading }) {
+function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) => void }) {
   const sig = SIGNAL_CFG[r.signal]
   const scoreColor = r.score < -40 ? '#22C759' : r.score < -10 ? '#FFD60A' : r.score > 40 ? '#FF3B30' : r.score > 10 ? '#FF9500' : '#8F94A3'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '8px 6px', background: '#111520', border: `1px solid ${sig.color}30`, borderRadius: 10, minWidth: 70, position: 'relative' }}>
+    <div onClick={() => onSelect(r)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '8px 6px', background: '#111520', border: `1px solid ${sig.color}30`, borderRadius: 10, minWidth: 70, position: 'relative', cursor:'pointer', transition:'all 0.15s' }}
+      onMouseEnter={e=>(e.currentTarget.style.borderColor=sig.color+'80')}
+      onMouseLeave={e=>(e.currentTarget.style.borderColor=sig.color+'30')}>
       {/* Signal badge */}
       <div style={{ fontSize: 9, fontWeight: 700, color: sig.color, background: sig.bg, padding: '2px 7px', borderRadius: 20, border: `1px solid ${sig.color}60`, textAlign: 'center' }}>
         {sig.label}
@@ -365,6 +425,7 @@ export default function MTFDashboard({ symbol }: { symbol: string }) {
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
   const [nextRefresh, setNextRefresh] = useState(MTF_REFRESH_MS/1000)
+  const [selectedReading, setSelectedReading] = useState<MTFReading | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -498,9 +559,10 @@ export default function MTFDashboard({ symbol }: { symbol: string }) {
           </div>
 
           {/* TF columns */}
-          {snap.readings.map(r => <TFColumn key={r.tf} r={r} />)}
+          {snap.readings.map(r => <TFColumn key={r.tf} r={r} onSelect={setSelectedReading} />)}
         </div>
       </div>
+      {selectedReading && <SignalDetailModal r={selectedReading} onClose={() => setSelectedReading(null)} />}
     </div>
   )
 }
