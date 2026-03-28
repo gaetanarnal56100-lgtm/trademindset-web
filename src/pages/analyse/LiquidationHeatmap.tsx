@@ -101,12 +101,21 @@ function buildHeatmap(candles: Kline[]): HeatmapData {
     matrix[ci].set(running)
   }
 
-  // Normalisation globale + tone mapping
+  // Normalisation globale + tone mapping adaptatif
   let gMax=0
   for(let col=0;col<N;col++){const m=Math.max(...matrix[col]);if(m>gMax)gMax=m}
 
+  // Calcul de la distribution pour adapter le gamma
+  // Plus les données sont concentrées dans les hautes valeurs, plus on augmente le gamma
+  let nonZeroCount = 0, sumNorm = 0
+  for(let col=0;col<N;col++){for(let b=0;b<BUCKETS;b++){const v=matrix[col][b]/Math.max(gMax,1);if(v>0.01){nonZeroCount++;sumNorm+=v}}}
+  const avgNorm = nonZeroCount > 0 ? sumNorm / nonZeroCount : 0.5
+  // Si la moyenne est haute (>0.3), beaucoup de valeurs sont fortes → gamma plus élevé pour étaler
+  // Gamma entre 0.45 (données étalées) et 0.75 (données concentrées en haut)
+  const gamma = Math.max(0.45, Math.min(0.75, 0.35 + avgNorm * 1.2))
+
   const cols: Float32Array[] = matrix.map(col=>
-    gMax>0 ? Float32Array.from(col, v=>Math.pow(v/gMax, 0.32)) : col
+    gMax>0 ? Float32Array.from(col, v=>Math.pow(v/gMax, gamma)) : col
   )
 
   return{pMin,pMax,step,N,cols,candles,buckets:BUCKETS}

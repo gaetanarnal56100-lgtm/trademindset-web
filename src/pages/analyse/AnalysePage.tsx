@@ -21,68 +21,48 @@ function isCryptoSymbol(symbol: string) {
 function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
+  const [hover, setHover] = useState(false)
 
   const handleShare = async () => {
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+    // Try to capture canvas elements inside the wrapper
     const el = ref.current
     if (!el) return
     try {
-      // Use html2canvas-like approach via native canvas
-      const canvas = document.createElement('canvas')
-      const rect = el.getBoundingClientRect()
-      const dpr = window.devicePixelRatio || 1
-      canvas.width = rect.width * dpr
-      canvas.height = rect.height * dpr
-      const ctx = canvas.getContext('2d')!
-      ctx.scale(dpr, dpr)
-
-      // Draw background
-      ctx.fillStyle = '#0D1117'
-      ctx.fillRect(0, 0, rect.width, rect.height)
-
-      // Try native share API with the element screenshot
-      // Fallback: copy a notification
-      const dataUrl = canvas.toDataURL('image/png')
-
-      // Try Web Share API
-      if (navigator.share && navigator.canShare) {
-        const blob = await (await fetch(dataUrl)).blob()
-        const file = new File([blob], `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`, { type: 'image/png' })
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ title: `TradeMindset — ${label}`, files: [file] })
-          return
+      const canvases = el.querySelectorAll('canvas')
+      if (canvases.length > 0) {
+        // Use the first visible canvas
+        const cv = canvases[0] as HTMLCanvasElement
+        const dataUrl = cv.toDataURL('image/png')
+        if (navigator.share && navigator.canShare) {
+          const blob = await (await fetch(dataUrl)).blob()
+          const file = new File([blob], `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`, { type:'image/png' })
+          if (navigator.canShare({ files:[file] })) { await navigator.share({ title:`TradeMindset — ${label}`, files:[file] }); return }
         }
+        const a = document.createElement('a'); a.href = dataUrl; a.download = `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`; a.click()
       }
-
-      // Fallback: download
-      const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`
-      a.click()
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
+    } catch {/**/}
   }
 
   return (
-    <div ref={ref} style={{ position:'relative', marginBottom:16 }}>
+    <div ref={ref} style={{ position:'relative', marginBottom:16 }}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       {children}
-      <button onClick={handleShare} title={`Partager ${label}`}
-        style={{
-          position:'absolute', top:8, right:8, zIndex:10,
-          width:28, height:28, borderRadius:8,
-          background: copied ? 'rgba(34,199,89,0.2)' : 'rgba(255,255,255,0.06)',
-          border: copied ? '1px solid rgba(34,199,89,0.4)' : '1px solid rgba(255,255,255,0.1)',
-          display:'flex', alignItems:'center', justifyContent:'center',
-          cursor:'pointer', fontSize:12, color: copied ? '#22C759' : '#8F94A3',
-          transition:'all 0.2s', backdropFilter:'blur(4px)',
-        }}
-        onMouseEnter={e => { if(!copied) { (e.currentTarget).style.background='rgba(0,229,255,0.15)'; (e.currentTarget).style.color='#00E5FF'; (e.currentTarget).style.borderColor='rgba(0,229,255,0.3)' }}}
-        onMouseLeave={e => { if(!copied) { (e.currentTarget).style.background='rgba(255,255,255,0.06)'; (e.currentTarget).style.color='#8F94A3'; (e.currentTarget).style.borderColor='rgba(255,255,255,0.1)' }}}>
-        {copied ? '✓' : '↗'}
-      </button>
+      {(hover || copied) && (
+        <button onClick={handleShare} title={`Partager ${label}`}
+          style={{
+            position:'absolute', bottom:12, right:12, zIndex:10,
+            padding:'4px 10px', borderRadius:8, display:'flex', alignItems:'center', gap:5,
+            background: copied ? 'rgba(34,199,89,0.85)' : 'rgba(13,17,23,0.85)',
+            border: copied ? '1px solid #22C759' : '1px solid #2A2F3E',
+            cursor:'pointer', fontSize:10, fontWeight:600,
+            color: copied ? '#fff' : '#8F94A3',
+            backdropFilter:'blur(8px)', transition:'all 0.15s',
+          }}>
+          {copied ? '✓ Sauvé' : '↗ Partager'}
+        </button>
+      )}
     </div>
   )
 }

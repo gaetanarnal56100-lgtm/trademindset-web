@@ -34,15 +34,17 @@ export default function Sidebar() {
 
   // Subscribe to Firestore user doc for live photo/name updates
   useEffect(() => {
-    if (!user?.uid) return
-    const unsub = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+    const uid = user?.uid
+    if (!uid) return
+    const unsub = onSnapshot(doc(db, 'users', uid), (snap) => {
       if (snap.exists()) {
         const d = snap.data()
-        setProfilePhoto(d.photoBase64 || d.photoURL || null)
+        const photo = d.photoBase64 || d.photoURL || null
+        setProfilePhoto(photo)
         if (d.displayName) setProfileName(d.displayName)
       }
-    })
-    return unsub
+    }, () => { /* ignore errors */ })
+    return () => unsub()
   }, [user?.uid])
 
   return (
