@@ -349,7 +349,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
           { label:'Score moyen', value:avgScore.toFixed(1), color:avgScore>=3.5?'#22C759':avgScore>=2.5?'#FF9500':'#FF3B30', icon:'📊' },
           { label:'Tendance', value:trend>0.2?'↑ Amélioration':trend<-0.2?'↓ Dégradation':'→ Stable', color:trend>0.2?'#22C759':trend<-0.2?'#FF3B30':'#8F94A3', icon:trend>0.2?'📈':trend<-0.2?'📉':'➡️' },
           { label:'Émotion dominante', value:bestEmotion, color:'#BF5AF2', icon:'💜' },
-          { label:'Dernière entrée', value:points[points.length-1]?.emoji + ' ' + points[points.length-1]?.label, color:points[points.length-1]?.color ?? '#8F94A3', icon:'🕐' },
+          { label:'Dernière entrée', value:points[points.length-1]?.label, color:points[points.length-1]?.color ?? '#8F94A3', icon:'🕐' },
         ].map(({ label, value, color, icon }) => (
           <div key={label} style={{ background:'rgba(255,255,255,0.02)', border:'1px solid #1E2330', borderRadius:8, padding:'8px 10px' }}>
             <div style={{ fontSize:9, color:'#555C70', marginBottom:3 }}>{icon} {label}</div>

@@ -209,6 +209,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
   const [status,       setStatus]       = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [filter,       setFilter]       = useState<'all' | 'above' | 'below'>('all')
   const [expanded,     setExpanded]     = useState(true)
+  const [showInfo,     setShowInfo]     = useState(false)
 
   useEffect(() => {
     if (priceProp > 0) setCurrentPrice(priceProp)
@@ -267,7 +268,10 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#FF9500,#FF3B30)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🎯</div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F3FF' }}>Niveaux Clés</div>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F3FF' }}>Niveaux Clés</span>
+              <div onClick={e => { e.stopPropagation(); setShowInfo(x => !x) }} style={{ width:16, height:16, borderRadius:'50%', background:'rgba(0,229,255,0.1)', border:'1px solid rgba(0,229,255,0.25)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:9, color:'#00E5FF', fontWeight:700, lineHeight:1 }}>i</div>
+            </div>
             <div style={{ fontSize: 10, color: '#555C70' }}>{symbol} · Pivots · OB · Swing</div>
           </div>
         </div>
@@ -284,6 +288,18 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
           <span style={{ fontSize: 10, color: '#555C70' }}>{expanded ? '▲' : '▼'}</span>
         </div>
       </div>
+
+      {showInfo && (
+        <div style={{ padding:'12px 16px', background:'rgba(0,229,255,0.04)', borderBottom:'1px solid rgba(0,229,255,0.15)' }}>
+          <div style={{ fontSize:11, fontWeight:700, color:'#00E5FF', marginBottom:6 }}>Comment sont déterminés les niveaux ?</div>
+          <div style={{ fontSize:11, color:'#8F94A3', lineHeight:1.7 }}>
+            <b style={{color:'#FF9500'}}>Pivots</b> — Calculés à partir du High, Low et Close de la dernière bougie confirmée (formule standard : PP, R1, R2, S1, S2).
+            <br/><b style={{color:'#0A85FF'}}>Swing High/Low</b> — Plus hauts et plus bas sur les 20 et 50 dernières bougies (4H pour crypto, 1D pour actions).
+            <br/><b style={{color:'#22C759'}}>Order Blocks</b> — Bougies à fort body ratio (&gt;60%) suivies d'un mouvement impulsif dans la direction opposée (3 bougies de confirmation).
+            <br/><b style={{color:'#BF5AF2'}}>Force</b> — Nombre de touches du niveau (≥3 touches = fort). Les niveaux proches (&lt;0.5%) sont fusionnés.
+          </div>
+        </div>
+      )}
 
       {expanded && (
         <div style={{ padding: '0 16px 16px' }}>

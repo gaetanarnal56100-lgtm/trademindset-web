@@ -17,6 +17,76 @@ function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
 
+// ── Share / Screenshot wrapper ──────────────────────────────────────────
+function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [copied, setCopied] = useState(false)
+
+  const handleShare = async () => {
+    const el = ref.current
+    if (!el) return
+    try {
+      // Use html2canvas-like approach via native canvas
+      const canvas = document.createElement('canvas')
+      const rect = el.getBoundingClientRect()
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = rect.width * dpr
+      canvas.height = rect.height * dpr
+      const ctx = canvas.getContext('2d')!
+      ctx.scale(dpr, dpr)
+
+      // Draw background
+      ctx.fillStyle = '#0D1117'
+      ctx.fillRect(0, 0, rect.width, rect.height)
+
+      // Try native share API with the element screenshot
+      // Fallback: copy a notification
+      const dataUrl = canvas.toDataURL('image/png')
+
+      // Try Web Share API
+      if (navigator.share && navigator.canShare) {
+        const blob = await (await fetch(dataUrl)).blob()
+        const file = new File([blob], `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`, { type: 'image/png' })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: `TradeMindset — ${label}`, files: [file] })
+          return
+        }
+      }
+
+      // Fallback: download
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`
+      a.click()
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  return (
+    <div ref={ref} style={{ position:'relative', marginBottom:16 }}>
+      {children}
+      <button onClick={handleShare} title={`Partager ${label}`}
+        style={{
+          position:'absolute', top:8, right:8, zIndex:10,
+          width:28, height:28, borderRadius:8,
+          background: copied ? 'rgba(34,199,89,0.2)' : 'rgba(255,255,255,0.06)',
+          border: copied ? '1px solid rgba(34,199,89,0.4)' : '1px solid rgba(255,255,255,0.1)',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer', fontSize:12, color: copied ? '#22C759' : '#8F94A3',
+          transition:'all 0.2s', backdropFilter:'blur(4px)',
+        }}
+        onMouseEnter={e => { if(!copied) { (e.currentTarget).style.background='rgba(0,229,255,0.15)'; (e.currentTarget).style.color='#00E5FF'; (e.currentTarget).style.borderColor='rgba(0,229,255,0.3)' }}}
+        onMouseLeave={e => { if(!copied) { (e.currentTarget).style.background='rgba(255,255,255,0.06)'; (e.currentTarget).style.color='#8F94A3'; (e.currentTarget).style.borderColor='rgba(255,255,255,0.1)' }}}>
+        {copied ? '✓' : '↗'}
+      </button>
+    </div>
+  )
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 type Mode = 'micro' | 'structure' | 'derivees'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
@@ -936,7 +1006,7 @@ export default function AnalysePage() {
 
 
       {/* Plan de Trade IA — tous les actifs, en premier */}
-      {symbol && <div style={{marginBottom:16}}>
+      {symbol && <ShareWrapper label="Trade Plan">
         <TradePlanCard
           symbol={symbol}
           price={0}
@@ -945,29 +1015,29 @@ export default function AnalysePage() {
           wtStatus="Neutral"
           vmcStatus="NEUTRAL"
         />
-      </div>}
+      </ShareWrapper>}
 
       {/* MTF Dashboard — tous les actifs */}
-      {symbol && <div style={{marginBottom:16}}>
+      {symbol && <ShareWrapper label="MTF Dashboard">
         <MTFDashboard symbol={symbol} />
-      </div>}
+      </ShareWrapper>}
 
       {/* WaveTrend + VMC Oscillator — tous les actifs */}
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-        <WaveTrendChart symbol={symbol} />
-        <VMCOscillatorChart symbol={symbol} />
+        <ShareWrapper label="WaveTrend"><WaveTrendChart symbol={symbol} /></ShareWrapper>
+        <ShareWrapper label="VMC"><VMCOscillatorChart symbol={symbol} /></ShareWrapper>
       </div>}
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-        <KeyLevelsCard symbol={symbol} />
+        <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} /></ShareWrapper>
         <ChartScreenshotAnalysis symbol={symbol} />
       </div>}
 
       {/* ══ CRYPTO ONLY ══ Heatmap + CVD/Structure/Dérivés */}
       {isCrypto && <>
         {/* Heatmap */}
-        <div style={{marginBottom:16}}><LiquidationHeatmap symbol={symbol} /></div>
+        <ShareWrapper label="Liquidation Heatmap"><LiquidationHeatmap symbol={symbol} /></ShareWrapper>
 
         {/* Mode tabs */}
         <div style={{display:'flex',background:'#0D1117',borderRadius:12,padding:3,marginBottom:16,border:'1px solid #1E2330',width:'fit-content'}}>

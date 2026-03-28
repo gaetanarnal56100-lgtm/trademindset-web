@@ -549,16 +549,30 @@ function TradesTable({ pts }: { pts:Pt[] }) {
 }
 
 // ── Modal portal ───────────────────────────────────────────────────────────
-function Modal({ trades, onClose }: { trades:Trade[]; onClose:()=>void }) {
+function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLike[]; onClose:()=>void }) {
   const [period, setPeriod] = useState<Period>('ALL')
   const [tf,     setTf]     = useState<TF>('TRADE')
   const [showDD, setShowDD] = useState(true)
   const [showDots, setShowDots] = useState(true)
+  const [showEmotion, setShowEmotion] = useState(false)
   const [tab, setTab]       = useState<'chart'|'stats'|'trades'>('chart')
 
   const pts   = useMemo(()=>buildData(trades,period,tf),[trades,period,tf])
   const stats = useMemo(()=>computeStats(pts),[pts])
   const isPos = (pts[pts.length-1]?.cum??0)>=0
+
+  const emotionData = useMemo(() => {
+    if (!showEmotion || !moods.length) return undefined
+    return moods
+      .filter(m => m.timestamp instanceof Date && !isNaN(m.timestamp.getTime()))
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      .map(m => ({
+        date: m.timestamp,
+        score: emotionToScore(m.emotionalState),
+        label: m.emotionalState,
+        color: EMOTION_COLORS[m.emotionalState] || '#8F94A3',
+      }))
+  }, [moods, showEmotion])
 
   // Close on Escape
   useEffect(()=>{
@@ -569,7 +583,8 @@ function Modal({ trades, onClose }: { trades:Trade[]; onClose:()=>void }) {
   const controls = (
     <PeriodBar period={period} setPeriod={setPeriod} tf={tf} setTf={setTf}
       showDD={showDD} setShowDD={setShowDD} showDots={showDots} setShowDots={setShowDots}
-      zoom={null} resetZoom={()=>{}} isZoomed={false}/>
+      zoom={null} resetZoom={()=>{}} isZoomed={false}
+      showEmotion={showEmotion} setShowEmotion={setShowEmotion} hasMoods={moods.length > 0}/>
   )
 
   return createPortal(
@@ -623,7 +638,7 @@ function Modal({ trades, onClose }: { trades:Trade[]; onClose:()=>void }) {
 
         {/* Content */}
         <div style={{flex:1,overflow:'auto',padding:28,display:'flex',flexDirection:'column'}}>
-          {tab==='chart'&&<ChartWidget pts={pts} showDD={showDD} showDots={showDots} isModal controls={controls}/>}
+          {tab==='chart'&&<ChartWidget pts={pts} showDD={showDD} showDots={showDots} isModal controls={controls} emotionData={emotionData}/>}
           {tab==='stats'&&<><div style={{marginBottom:16}}>{controls}</div><StatsGrid pts={pts}/></>}
           {tab==='trades'&&<><div style={{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
             {controls}<span style={{fontSize:11,color:'#555C70'}}>{pts.length} points</span>
@@ -679,7 +694,7 @@ export default function PnLCurve({ trades, moods = [] }: { trades: Trade[]; mood
     <>
       <ChartWidget pts={pts} showDD={showDD} showDots={showDots} isModal={false}
         controls={controls} onFullscreen={()=>setModal(true)} emotionData={emotionData}/>
-      {modal&&<Modal trades={trades} onClose={()=>setModal(false)}/>}
+      {modal&&<Modal trades={trades} moods={moods} onClose={()=>setModal(false)}/>}
     </>
   )
 }

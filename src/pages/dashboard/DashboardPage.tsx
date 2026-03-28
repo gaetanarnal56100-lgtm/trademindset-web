@@ -575,9 +575,23 @@ export default function DashboardPage() {
   return(
     <div style={{padding:'28px 28px 60px',maxWidth:1200,margin:'0 auto'}}>
       {/* Header */}
-      <div style={{marginBottom:28}}>
-        <h1 style={{fontSize:24,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne, sans-serif',letterSpacing:'-0.02em'}}>Dashboard</h1>
-        <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>{loading?'…':`${trades.length} trades · ${open.length} ouvert${open.length!==1?'s':''}`}</p>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,gap:16,flexWrap:'wrap'}}>
+        <div>
+          <h1 style={{fontSize:24,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne, sans-serif',letterSpacing:'-0.02em'}}>Dashboard</h1>
+          <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>{loading?'…':`${trades.length} trades · ${open.length} ouvert${open.length!==1?'s':''}`}</p>
+        </div>
+        {/* Info banner */}
+        <div style={{display:'flex',gap:10,alignItems:'center',padding:'10px 16px',background:'#161B22',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
+          <a href="https://discord.gg/SqfMCVtEhV" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',background:'rgba(88,101,242,0.1)',border:'1px solid rgba(88,101,242,0.25)',borderRadius:8,textDecoration:'none',fontSize:11,fontWeight:600,color:'#5865F2',transition:'all 0.15s'}}
+            onMouseEnter={e=>(e.currentTarget.style.background='rgba(88,101,242,0.2)')} onMouseLeave={e=>(e.currentTarget.style.background='rgba(88,101,242,0.1)')}>
+            💬 Discord
+          </a>
+          <a href="https://trademindsetapp.com" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',background:'rgba(0,229,255,0.06)',border:'1px solid rgba(0,229,255,0.2)',borderRadius:8,textDecoration:'none',fontSize:11,fontWeight:600,color:'#00E5FF',transition:'all 0.15s'}}
+            onMouseEnter={e=>(e.currentTarget.style.background='rgba(0,229,255,0.12)')} onMouseLeave={e=>(e.currentTarget.style.background='rgba(0,229,255,0.06)')}>
+            🌐 Site
+          </a>
+          <div style={{fontSize:10,color:'#3D4254',fontFamily:'JetBrains Mono,monospace'}}>v1.1</div>
+        </div>
       </div>
 
       {/* KPIs */}

@@ -276,6 +276,11 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
   },[])
 
   useEffect(()=>{load(symbol,period)},[symbol,period,load])
+  // Auto-refresh every 30s for live feel
+  useEffect(()=>{
+    const t=setInterval(()=>load(symbol,period),30000)
+    return()=>clearInterval(t)
+  },[symbol,period,load])
   useEffect(()=>{if(baseRef.current&&data)drawBase(baseRef.current,data,price,threshold)},[data,price,threshold])
   useEffect(()=>{if(overlayRef.current&&data)drawOverlay(overlayRef.current,tip,data)},[tip,data])
 

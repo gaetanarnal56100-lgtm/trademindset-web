@@ -406,7 +406,6 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
 export function VMCOscillatorChart({ symbol }: { symbol: string }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
-  const [preset, setPreset] = useState<'scalping'|'swing'|'position'>('swing')
   const [candles, setCandles] = useState<Candle[]>([])
   const [result, setResult] = useState<VMCResult|null>(null)
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
@@ -426,10 +425,10 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
 
   useEffect(() => {
     if (candles.length < 60) return
-    const r = calcVMCOscillator(candles, preset); setResult(r)
+    const r = calcVMCOscillator(candles, 'swing'); setResult(r)
     const sig = r.sig[r.sig.length-1]??0, mom = r.momentum[r.momentum.length-1]??0
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
-  }, [candles, preset, symbol, tf.label])
+  }, [candles, symbol, tf.label])
 
   const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
   const statusColor=result?.status==='BUY'?'#22C759':result?.status==='SELL'?'#FF3B30':result?.status==='OVERBOUGHT'?'#FF3B30':result?.status==='OVERSOLD'?'#22C759':'#8F94A3'
@@ -459,15 +458,8 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
           <button onClick={loadCandles} style={{background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'#8F94A3'}}>↻</button>
         </div>
       </div>
-      <div style={{display:'flex',gap:8,padding:'0 16px 8px',flexWrap:'wrap',alignItems:'center'}}>
-        <div style={{display:'flex',background:'#1C2130',borderRadius:8,padding:2,gap:1}}>
-          {(['scalping','swing','position'] as const).map(p=>(
-            <button key={p} onClick={()=>setPreset(p)} style={{padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',border:'none',background:preset===p?'#FF9500':'transparent',color:preset===p?'#0D1117':'#555C70',transition:'all 0.15s'}}>{p}</button>
-          ))}
-        </div>
-        <div style={{display:'flex',gap:3,overflowX:'auto',scrollbarWidth:'none'}}>
+      <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none'}}>
           {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'#FF9500':'#2A2F3E'}`,background:t.label===tf.label?'rgba(255,149,0,0.15)':'#1C2130',color:t.label===tf.label?'#FF9500':'#555C70',whiteSpace:'nowrap'}}>{t.label}</button>)}
-        </div>
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>
