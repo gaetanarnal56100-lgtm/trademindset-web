@@ -45,13 +45,21 @@ async function fetchFeed(url:string,label:string):Promise<{title:string;source:s
     const items:{title:string;source:string;url?:string}[]=[]
     const itemRx=/<item[\s\S]*?<\/item>|<entry[\s\S]*?<\/entry>/gi
     const titleRx=/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i
-    const linkRx=/<link[^>]*>([^<]+)<\/link>|<link[^>]+href="([^"]+)"/i
+    // Multiple link patterns: <link>url</link>, <link href="url"/>, <link href="url">, guid
+    const linkPatterns=[
+      /<link[^>]*href\s*=\s*"([^"]+)"/i,
+      /<link[^>]*href\s*=\s*'([^']+)'/i,
+      /<link[^>]*>([^<]+)<\/link>/i,
+      /<guid[^>]*>([^<]+)<\/guid>/i,
+    ]
     let m
     while((m=itemRx.exec(contents))!==null){
       const b=m[0]
-      const tm=titleRx.exec(b);const lm=linkRx.exec(b)
+      const tm=titleRx.exec(b)
+      let linkUrl:string|undefined
+      for(const lrx of linkPatterns){const lm=lrx.exec(b);if(lm?.[1]?.trim()?.startsWith('http')){linkUrl=lm[1].trim();break}}
       const title=tm?.[1]?.trim().replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#39;/g,"'").replace(/&quot;/g,'"')
-      if(title&&title.length>10)items.push({title,source:label,url:lm?.[1]?.trim()||lm?.[2]?.trim()})
+      if(title&&title.length>10)items.push({title,source:label,url:linkUrl})
       if(items.length>=10)break
     }
     return items

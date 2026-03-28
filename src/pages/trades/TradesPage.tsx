@@ -38,10 +38,31 @@ export default function TradesPage() {
     .filter(t => filter === 'all' || t.status === filter)
     .filter(t => !search || t.symbol.toLowerCase().includes(search.toLowerCase()))
 
-  const totalPnL = filtered.filter(t => t.status === 'closed').reduce((s, t) => s + tradePnL(t), 0)
-  const wins     = filtered.filter(t => t.status === 'closed' && tradePnL(t) > 0).length
-  const losses   = filtered.filter(t => t.status === 'closed' && tradePnL(t) <= 0).length
-  const wr       = wins + losses > 0 ? (wins / (wins + losses) * 100).toFixed(0) : '—'
+  const closed = filtered.filter(t => t.status === 'closed')
+  const totalPnL = closed.reduce((s, t) => s + tradePnL(t), 0)
+  const pnls = closed.map(tradePnL)
+  const wins     = pnls.filter(p => p > 0).length
+  const losses   = pnls.filter(p => p <= 0).length
+  const wr       = wins + losses > 0 ? (wins / (wins + losses) * 100).toFixed(1) : '—'
+  const avgWin   = wins > 0 ? pnls.filter(p => p > 0).reduce((a, b) => a + b, 0) / wins : 0
+  const avgLoss  = losses > 0 ? Math.abs(pnls.filter(p => p <= 0).reduce((a, b) => a + b, 0)) / losses : 0
+  const payoff   = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : '—'
+  const bestTrade = pnls.length ? Math.max(...pnls) : 0
+  const worstTrade = pnls.length ? Math.min(...pnls) : 0
+  const expectancy = pnls.length ? (pnls.reduce((a,b)=>a+b,0) / pnls.length) : 0
+  // Profit factor
+  const grossProfit = pnls.filter(p=>p>0).reduce((a,b)=>a+b,0)
+  const grossLoss = Math.abs(pnls.filter(p=>p<=0).reduce((a,b)=>a+b,0))
+  const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : grossProfit > 0 ? '∞' : '—'
+  // Streaks
+  let curStreak=0, bestStreak=0, worstStreak=0
+  for(const p of pnls){if(p>0){curStreak=curStreak>0?curStreak+1:1}else{curStreak=curStreak<0?curStreak-1:-1};if(curStreak>bestStreak)bestStreak=curStreak;if(curStreak<worstStreak)worstStreak=curStreak}
+  // By symbol
+  const bySymbol = new Map<string,{count:number;pnl:number;wins:number}>()
+  for(const t of closed){const s=t.symbol;const p=tradePnL(t);const e=bySymbol.get(s)||{count:0,pnl:0,wins:0};e.count++;e.pnl+=p;if(p>0)e.wins++;bySymbol.set(s,e)}
+  const topSymbols = [...bySymbol.entries()].sort((a,b)=>b[1].pnl-a[1].pnl).slice(0,5)
+
+  const [showStats, setShowStats] = useState(false)
 
   const systemName  = (id: string) => systems.find(s => s.id === id)?.name  ?? '—'
   const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? '#00E5FF'
@@ -62,7 +83,7 @@ export default function TradesPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:12 }}>
         {[
           { l:'P&L Total',  v:fmtPnL(totalPnL), c: totalPnL >= 0 ? '#22C759' : '#FF3B30' },
           { l:'Win Rate',   v:`${wr}%`,          c:'#F0F3FF' },
@@ -75,6 +96,85 @@ export default function TradesPage() {
           </div>
         ))}
       </div>
+
+      {/* Toggle advanced stats */}
+      <button onClick={() => setShowStats(x => !x)} style={{ width:'100%', padding:'8px', marginBottom:14, borderRadius:10, border:'1px solid #2A2F3E', background:showStats?'rgba(10,133,255,0.06)':'#161B22', color:showStats?'#0A85FF':'#555C70', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+        {showStats ? '▲ Masquer les statistiques avancées' : '▼ Statistiques avancées'}
+      </button>
+
+      {showStats && (
+        <div style={{ marginBottom:16, animation:'fadeIn 0.2s ease-out' }}>
+          <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}`}</style>
+          {/* Row 2: Advanced metrics */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:10 }}>
+            {[
+              { l:'Payoff Ratio',   v:payoff,                    c:'#00E5FF' },
+              { l:'Profit Factor',  v:profitFactor,              c: Number(profitFactor) >= 1.5 ? '#22C759' : '#FF9500' },
+              { l:'Expectancy',     v:fmtPnL(expectancy),        c: expectancy >= 0 ? '#22C759' : '#FF3B30' },
+              { l:'Trades fermés',  v:closed.length,             c:'#8F94A3' },
+            ].map(({ l, v, c }) => (
+              <div key={l} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+                <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{l}</div>
+                <div style={{ fontSize:16, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          {/* Row 3: Gains/losses details */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:10 }}>
+            {[
+              { l:'Moy. gain',       v:fmtPnL(avgWin),            c:'#22C759' },
+              { l:'Moy. perte',      v:fmtPnL(-avgLoss),          c:'#FF3B30' },
+              { l:'Meilleur trade',  v:fmtPnL(bestTrade),         c:'#22C759' },
+              { l:'Pire trade',      v:fmtPnL(worstTrade),        c:'#FF3B30' },
+            ].map(({ l, v, c }) => (
+              <div key={l} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+                <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{l}</div>
+                <div style={{ fontSize:16, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          {/* Row 4: Streaks + top symbols */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            {/* Streaks */}
+            <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'#F0F3FF', marginBottom:10 }}>Séries</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {[
+                  { l:'Meilleure série', v:`${bestStreak} wins`, c:'#22C759' },
+                  { l:'Pire série',      v:`${Math.abs(worstStreak)} losses`, c:'#FF3B30' },
+                  { l:'Profit brut',     v:fmtPnL(grossProfit), c:'#22C759' },
+                  { l:'Perte brute',     v:fmtPnL(-grossLoss), c:'#FF3B30' },
+                ].map(({ l, v, c }) => (
+                  <div key={l} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:11, color:'#8F94A3' }}>{l}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Top symbols */}
+            <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'#F0F3FF', marginBottom:10 }}>Top Symboles</div>
+              {topSymbols.length === 0 ? (
+                <div style={{ fontSize:11, color:'#3D4254' }}>Pas de données</div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {topSymbols.map(([sym, data]) => (
+                    <div key={sym} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:'#F0F3FF', minWidth:80, fontFamily:'monospace' }}>{sym}</span>
+                      <div style={{ flex:1, height:6, background:'#1C2130', borderRadius:3, overflow:'hidden' }}>
+                        <div style={{ width:`${Math.min(100, data.wins/Math.max(data.count,1)*100)}%`, height:'100%', background:'#22C759', borderRadius:3 }} />
+                      </div>
+                      <span style={{ fontSize:11, fontWeight:600, color:data.pnl>=0?'#22C759':'#FF3B30', fontFamily:'monospace', minWidth:70, textAlign:'right' }}>{fmtPnL(data.pnl)}</span>
+                      <span style={{ fontSize:9, color:'#555C70' }}>{data.count}t</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap' }}>
