@@ -1,7 +1,7 @@
-// SettingsPage.tsx — Paramètres complets avec export/import Firestore
+// SettingsPage.tsx — Paramètres v2 : export/import, suppression données, suppression compte
 import { useState, useRef, useEffect } from 'react'
-import { getAuth, signOut } from 'firebase/auth'
-import { collection, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore'
+import { getAuth, signOut, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth'
+import { collection, getDocs, doc, deleteDoc, writeBatch } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -9,25 +9,13 @@ function getUid(): string | null {
   return getAuth().currentUser?.uid ?? null
 }
 
-function fmtBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} Ko`
-  return `${(bytes / 1048576).toFixed(2)} Mo`
-}
-
-function fmtDate(d: Date): string {
-  return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
-}
-
 // ── Export all Firestore data ────────────────────────────────────────────
 async function exportAllData(): Promise<{ data: Record<string, unknown[]>; stats: Record<string, number> }> {
   const uid = getUid()
   if (!uid) throw new Error('Non authentifié')
-
   const collections = ['trades', 'systems', 'moods', 'exchanges']
   const data: Record<string, unknown[]> = {}
   const stats: Record<string, number> = {}
-
   for (const col of collections) {
     try {
       const snap = await getDocs(collection(db, 'users', uid, col))
@@ -38,7 +26,6 @@ async function exportAllData(): Promise<{ data: Record<string, unknown[]>; stats
       stats[col] = 0
     }
   }
-
   return { data, stats }
 }
 
@@ -50,17 +37,12 @@ async function importData(
 ): Promise<{ imported: Record<string, number> }> {
   const uid = getUid()
   if (!uid) throw new Error('Non authentifié')
-
   const imported: Record<string, number> = {}
   const validCollections = ['trades', 'systems', 'moods', 'exchanges']
-
   for (const col of validCollections) {
     const items = data[col]
     if (!Array.isArray(items) || items.length === 0) continue
-
     onProgress(`Import ${col}...`)
-
-    // If replace mode, delete existing first
     if (mode === 'replace') {
       onProgress(`Suppression ${col} existants...`)
       const existing = await getDocs(collection(db, 'users', uid, col))
@@ -68,8 +50,6 @@ async function importData(
       existing.docs.forEach(d => batch.delete(d.ref))
       await batch.commit()
     }
-
-    // Write items in batches of 100
     let count = 0
     for (let i = 0; i < items.length; i += 100) {
       const batch = writeBatch(db)
@@ -86,8 +66,47 @@ async function importData(
     }
     imported[col] = count
   }
-
   return { imported }
+}
+
+// ── Delete all user data (keep account) ─────────────────────────────────
+async function deleteAllUserData(onProgress: (msg: string) => void): Promise<void> {
+  const uid = getUid()
+  if (!uid) throw new Error('Non authentifié')
+  const collections = ['trades', 'systems', 'moods', 'exchanges']
+  for (const col of collections) {
+    onProgress(`Suppression ${col}...`)
+    const snap = await getDocs(collection(db, 'users', uid, col))
+    if (snap.docs.length === 0) continue
+    const batch = writeBatch(db)
+    snap.docs.forEach(d => batch.delete(d.ref))
+    await batch.commit()
+  }
+  // Delete user root doc if exists
+  try { await deleteDoc(doc(db, 'users', uid)) } catch {/**/}
+}
+
+// ── Delete account (Firebase Auth + data) ───────────────────────────────
+async function deleteAccountAndData(password: string, onProgress: (msg: string) => void): Promise<void> {
+  const auth = getAuth()
+  const user = auth.currentUser
+  if (!user) throw new Error('Non authentifié')
+
+  // Re-authenticate if email/password provider
+  const emailProvider = user.providerData.find(p => p.providerId === 'password')
+  if (emailProvider && user.email) {
+    onProgress('Ré-authentification...')
+    const cred = EmailAuthProvider.credential(user.email, password)
+    await reauthenticateWithCredential(user, cred)
+  }
+
+  // Delete all Firestore data
+  onProgress('Suppression des données...')
+  await deleteAllUserData(onProgress)
+
+  // Delete the Firebase Auth account
+  onProgress('Suppression du compte...')
+  await deleteUser(user)
 }
 
 // ── Section component ────────────────────────────────────────────────────
@@ -131,9 +150,17 @@ export default function SettingsPage() {
   const [dataStats, setDataStats] = useState<Record<string, number> | null>(null)
   const [loadingStats, setLoadingStats] = useState(true)
 
-  // Danger zone
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  // Delete data state
+  const [confirmDeleteData, setConfirmDeleteData] = useState(false)
+  const [deletingData, setDeletingData] = useState(false)
+  const [deleteDataProgress, setDeleteDataProgress] = useState('')
+
+  // Delete account state
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('')
+  const [deleteAccountError, setDeleteAccountError] = useState('')
+  const [deleteAccountProgress, setDeleteAccountProgress] = useState('')
 
   // Load stats on mount
   useEffect(() => {
@@ -154,21 +181,19 @@ export default function SettingsPage() {
       const blob = new Blob([JSON.stringify({
         _meta: {
           app: 'TradeMindset',
-          version: '1.0',
+          version: '1.1',
           exportedAt: new Date().toISOString(),
           uid: user?.uid,
           email: user?.email,
         },
         ...data,
       }, null, 2)], { type: 'application/json' })
-
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `trademindset-backup-${new Date().toISOString().slice(0, 10)}.json`
       a.click()
       URL.revokeObjectURL(url)
-
       setExportStats(stats)
       setExportDone(true)
     } catch (e) {
@@ -182,12 +207,10 @@ export default function SettingsPage() {
     const file = e.target.files?.[0]
     if (!file) return
     setImportError(''); setImportDone(false); setImportStats(null)
-
     const reader = new FileReader()
     reader.onload = () => {
       try {
         const parsed = JSON.parse(reader.result as string)
-        // Validate structure
         const validKeys = ['trades', 'systems', 'moods', 'exchanges']
         const found = validKeys.filter(k => Array.isArray(parsed[k]) && parsed[k].length > 0)
         if (found.length === 0) {
@@ -212,7 +235,6 @@ export default function SettingsPage() {
       setImportStats(imported)
       setImportDone(true)
       setPreviewData(null)
-      // Refresh stats
       const { stats } = await exportAllData()
       setDataStats(stats)
     } catch (e) {
@@ -221,27 +243,40 @@ export default function SettingsPage() {
     setImporting(false); setImportProgress('')
   }
 
-  // ── Delete all data ────────────────────────────────────────────────
-  const handleDeleteAll = async () => {
-    const uid = getUid()
-    if (!uid) return
-    setDeleting(true)
+  // ── Delete data handler ────────────────────────────────────────────
+  const handleDeleteData = async () => {
+    setDeletingData(true)
     try {
-      for (const col of ['trades', 'systems', 'moods', 'exchanges']) {
-        const snap = await getDocs(collection(db, 'users', uid, col))
-        const batch = writeBatch(db)
-        snap.docs.forEach(d => batch.delete(d.ref))
-        await batch.commit()
-      }
+      await deleteAllUserData(setDeleteDataProgress)
       setDataStats({ trades:0, systems:0, moods:0, exchanges:0 })
-      setConfirmDelete(false)
+      setConfirmDeleteData(false)
+      setDeleteDataProgress('')
     } catch (e) {
       alert('Erreur: ' + (e as Error).message)
     }
-    setDeleting(false)
+    setDeletingData(false)
+  }
+
+  // ── Delete account handler ─────────────────────────────────────────
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true); setDeleteAccountError('')
+    try {
+      await deleteAccountAndData(deleteAccountPassword, setDeleteAccountProgress)
+      // Account deleted — user is automatically signed out
+      window.location.href = '/login'
+    } catch (e) {
+      const msg = (e as any)?.code === 'auth/wrong-password'
+        ? 'Mot de passe incorrect'
+        : (e as any)?.code === 'auth/requires-recent-login'
+        ? 'Veuillez vous reconnecter puis réessayer'
+        : (e as Error).message
+      setDeleteAccountError(msg)
+    }
+    setDeletingAccount(false); setDeleteAccountProgress('')
   }
 
   const totalItems = dataStats ? Object.values(dataStats).reduce((a, b) => a + b, 0) : 0
+  const isEmailUser = user?.providerData.some(p => p.providerId === 'password')
 
   return (
     <div style={{ minHeight:'100vh', background:'#0D1117', padding:'32px 24px', maxWidth:800, margin:'0 auto' }}>
@@ -255,27 +290,31 @@ export default function SettingsPage() {
 
       {/* ── Account ──────────────────────────────────────────────────── */}
       <Section title="Compte" subtitle="Informations de connexion" icon="👤">
-        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-          <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'#0D1117' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:16 }}>
+          <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'#0D1117', flexShrink:0 }}>
             {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
           </div>
-          <div style={{ flex:1 }}>
+          <div style={{ flex:1, minWidth:0 }}>
             {user?.displayName && <div style={{ fontSize:16, fontWeight:700, color:'#F0F3FF', marginBottom:2 }}>{user.displayName}</div>}
             <div style={{ fontSize:13, color:'#8F94A3' }}>{user?.email}</div>
-            <div style={{ fontSize:11, color:'#555C70', marginTop:2 }}>UID: <span style={{ fontFamily:'JetBrains Mono,monospace', color:'#3D4254' }}>{user?.uid?.slice(0, 16)}...</span></div>
           </div>
-          <button onClick={() => signOut(auth)} style={{ padding:'8px 18px', borderRadius:10, border:'1px solid rgba(255,59,48,0.3)', background:'rgba(255,59,48,0.08)', color:'#FF3B30', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+          <button onClick={() => signOut(auth)} style={{ padding:'8px 18px', borderRadius:10, border:'1px solid rgba(255,59,48,0.3)', background:'rgba(255,59,48,0.08)', color:'#FF3B30', fontSize:12, fontWeight:600, cursor:'pointer', flexShrink:0 }}>
             Déconnexion
           </button>
+        </div>
+        {/* UID */}
+        <div style={{ padding:'10px 14px', background:'rgba(255,255,255,0.02)', border:'1px solid #1E2330', borderRadius:10 }}>
+          <div style={{ fontSize:10, color:'#555C70', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.08em' }}>Identifiant unique (UID)</div>
+          <div style={{ fontSize:12, color:'#8F94A3', fontFamily:'JetBrains Mono,monospace', wordBreak:'break-all', userSelect:'all' }}>{user?.uid}</div>
         </div>
       </Section>
 
       {/* ── Data Overview ────────────────────────────────────────────── */}
-      <Section title="Données" subtitle={`${totalItems} éléments au total dans Firestore`} icon="📦">
+      <Section title="Vos données" subtitle={`${totalItems} éléments au total`} icon="📦">
         {loadingStats ? (
           <div style={{ display:'flex', alignItems:'center', gap:10, color:'#555C70', fontSize:12 }}>
             <div style={{ width:16, height:16, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
-            Chargement des statistiques...
+            Chargement...
           </div>
         ) : (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
@@ -298,8 +337,8 @@ export default function SettingsPage() {
       {/* ── Export ────────────────────────────────────────────────────── */}
       <Section title="Exporter les données" subtitle="Télécharger toutes vos données en JSON" icon="📤">
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
-          <div style={{ fontSize:12, color:'#8F94A3', lineHeight:1.6 }}>
-            Exporte toutes vos données (trades, systèmes, moods, exchanges) dans un fichier JSON que vous pourrez réimporter plus tard.
+          <div style={{ fontSize:12, color:'#8F94A3', lineHeight:1.6, flex:1 }}>
+            Exporte tous vos trades, systèmes, moods et exchanges dans un fichier JSON réimportable.
           </div>
           <button onClick={handleExport} disabled={exporting} style={{
             padding:'10px 24px', borderRadius:12, border:'1px solid rgba(34,199,89,0.3)',
@@ -314,7 +353,7 @@ export default function SettingsPage() {
         </div>
         {exportDone && exportStats && (
           <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(34,199,89,0.06)', border:'1px solid rgba(34,199,89,0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#22C759', marginBottom:6 }}>✓ Export réussi</div>
+            <div style={{ fontSize:12, fontWeight:700, color:'#22C759', marginBottom:4 }}>✓ Export réussi</div>
             <div style={{ fontSize:11, color:'#8F94A3' }}>
               {Object.entries(exportStats).map(([k, v]) => `${v} ${k}`).join(' · ')}
             </div>
@@ -328,8 +367,8 @@ export default function SettingsPage() {
           <div style={{ fontSize:11, color:'#555C70', marginBottom:8 }}>MODE D'IMPORT</div>
           <div style={{ display:'flex', gap:8 }}>
             {([
-              { id:'merge' as const, label:'Fusionner', desc:'Ajoute les données sans supprimer les existantes', icon:'🔄' },
-              { id:'replace' as const, label:'Remplacer', desc:'Supprime tout puis importe le fichier', icon:'⚡' },
+              { id:'merge' as const, label:'Fusionner', desc:'Ajoute sans supprimer les existantes', icon:'🔄' },
+              { id:'replace' as const, label:'Remplacer', desc:'Supprime tout puis importe', icon:'⚡' },
             ]).map(m => (
               <button key={m.id} onClick={() => setImportMode(m.id)} style={{
                 flex:1, padding:'12px 14px', borderRadius:10, cursor:'pointer', textAlign:'left',
@@ -343,11 +382,9 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* File select */}
         {!previewData ? (
           <div onClick={() => fileInputRef.current?.click()} style={{
-            border:'2px dashed #2A2F3E', borderRadius:12, padding:'28px 20px', textAlign:'center',
-            cursor:'pointer', transition:'all 0.2s',
+            border:'2px dashed #2A2F3E', borderRadius:12, padding:'28px 20px', textAlign:'center', cursor:'pointer', transition:'all 0.2s',
           }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#0A85FF' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2A2F3E' }}>
@@ -358,7 +395,6 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div style={{ animation:'fadeIn 0.3s ease-out' }}>
-            {/* Preview */}
             <div style={{ padding:'14px 16px', background:'rgba(10,133,255,0.06)', border:'1px solid rgba(10,133,255,0.2)', borderRadius:10, marginBottom:12 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontSize:12, fontWeight:700, color:'#0A85FF' }}>📄 {previewName}</div>
@@ -381,13 +417,11 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-
             {importMode === 'replace' && (
               <div style={{ padding:'10px 14px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', borderRadius:8, marginBottom:12, fontSize:11, color:'#FF3B30' }}>
-                ⚠️ Le mode Remplacer supprimera toutes vos données existantes avant d'importer. Assurez-vous d'avoir une sauvegarde.
+                ⚠️ Le mode Remplacer supprimera toutes vos données existantes avant d'importer.
               </div>
             )}
-
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={handleImport} disabled={importing} style={{
                 flex:1, padding:'11px', borderRadius:10,
@@ -406,33 +440,24 @@ export default function SettingsPage() {
         )}
 
         {importError && (
-          <div style={{ marginTop:12, padding:'10px 14px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', borderRadius:8, fontSize:12, color:'#FF3B30' }}>
-            ⚠️ {importError}
-          </div>
+          <div style={{ marginTop:12, padding:'10px 14px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', borderRadius:8, fontSize:12, color:'#FF3B30' }}>⚠️ {importError}</div>
         )}
-
         {importDone && importStats && (
           <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(34,199,89,0.06)', border:'1px solid rgba(34,199,89,0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#22C759', marginBottom:6 }}>✓ Import réussi</div>
-            <div style={{ fontSize:11, color:'#8F94A3' }}>
-              {Object.entries(importStats).map(([k, v]) => `${v} ${k}`).join(' · ')}
-            </div>
+            <div style={{ fontSize:12, fontWeight:700, color:'#22C759', marginBottom:4 }}>✓ Import réussi</div>
+            <div style={{ fontSize:11, color:'#8F94A3' }}>{Object.entries(importStats).map(([k, v]) => `${v} ${k}`).join(' · ')}</div>
           </div>
         )}
       </Section>
 
-      {/* ── App Info ──────────────────────────────────────────────────── */}
-      <Section title="Application" subtitle="TradeMindset v1.1" icon="📱">
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+      {/* ── App Info (simplifié) ──────────────────────────────────────── */}
+      <Section title="Application" icon="📱">
+        <div style={{ display:'flex', gap:20 }}>
           {[
             { label:'Version', value:'1.1.0' },
-            { label:'Plateforme', value:'React + Vite' },
-            { label:'Backend', value:'Firebase / Firestore' },
-            { label:'Déployé sur', value:'Vercel' },
-            { label:'Cloud Functions', value:'europe-west1' },
             { label:'IA', value:'GPT-4o / GPT-4o-mini' },
           ].map(({ label, value }) => (
-            <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #1E2330' }}>
+            <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
               <span style={{ fontSize:12, color:'#555C70' }}>{label}</span>
               <span style={{ fontSize:12, fontWeight:600, color:'#8F94A3', fontFamily:'JetBrains Mono,monospace' }}>{value}</span>
             </div>
@@ -440,38 +465,96 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* ── Danger Zone ───────────────────────────────────────────────── */}
+      {/* ── Zone dangereuse ───────────────────────────────────────────── */}
       <Section title="Zone dangereuse" subtitle="Actions irréversibles" icon="⚠️">
-        {!confirmDelete ? (
-          <button onClick={() => setConfirmDelete(true)} style={{
-            width:'100%', padding:'12px', borderRadius:10,
-            border:'1px solid rgba(255,59,48,0.3)', background:'rgba(255,59,48,0.06)',
-            color:'#FF3B30', fontSize:13, fontWeight:600, cursor:'pointer',
-          }}>
-            🗑 Supprimer toutes les données
-          </button>
-        ) : (
-          <div style={{ padding:'16px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.3)', borderRadius:12 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:'#FF3B30', marginBottom:8 }}>⚠️ Confirmer la suppression</div>
-            <div style={{ fontSize:12, color:'#8F94A3', marginBottom:14, lineHeight:1.6 }}>
-              Cette action supprimera définitivement tous vos trades, systèmes, moods et exchanges. Cette action est irréversible. Exportez vos données avant de continuer.
-            </div>
-            <div style={{ display:'flex', gap:8 }}>
-              <button onClick={handleDeleteAll} disabled={deleting} style={{
-                flex:1, padding:'10px', borderRadius:8,
-                background: deleting ? '#1C2130' : 'rgba(255,59,48,0.15)',
-                border:'1px solid rgba(255,59,48,0.5)', color: deleting ? '#555C70' : '#FF3B30',
-                fontSize:12, fontWeight:700, cursor: deleting ? 'not-allowed' : 'pointer',
-              }}>
-                {deleting ? 'Suppression...' : 'Confirmer la suppression'}
-              </button>
-              <button onClick={() => setConfirmDelete(false)} style={{
-                padding:'10px 20px', borderRadius:8, background:'transparent',
-                border:'1px solid #2A2F3E', color:'#555C70', fontSize:12, cursor:'pointer',
-              }}>Annuler</button>
+        {/* ── Supprimer les données ── */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <div>
+              <div style={{ fontSize:13, fontWeight:600, color:'#F0F3FF' }}>Supprimer les données</div>
+              <div style={{ fontSize:11, color:'#555C70' }}>Supprime tous vos trades, systèmes, moods et exchanges. Votre compte reste actif.</div>
             </div>
           </div>
-        )}
+          {!confirmDeleteData ? (
+            <button onClick={() => setConfirmDeleteData(true)} style={{
+              width:'100%', padding:'10px', borderRadius:10,
+              border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)',
+              color:'#FF9500', fontSize:12, fontWeight:600, cursor:'pointer',
+            }}>
+              🗑 Supprimer toutes les données
+            </button>
+          ) : (
+            <div style={{ padding:'14px', background:'rgba(255,149,0,0.06)', border:'1px solid rgba(255,149,0,0.3)', borderRadius:12, animation:'fadeIn 0.2s ease-out' }}>
+              <div style={{ fontSize:12, color:'#FF9500', fontWeight:700, marginBottom:8 }}>⚠️ Confirmer la suppression des données</div>
+              <div style={{ fontSize:11, color:'#8F94A3', marginBottom:12, lineHeight:1.6 }}>
+                Tous vos trades, systèmes, moods et exchanges seront définitivement supprimés. Votre compte restera actif. Exportez vos données avant si nécessaire.
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={handleDeleteData} disabled={deletingData} style={{
+                  flex:1, padding:'9px', borderRadius:8,
+                  background: deletingData ? '#1C2130' : 'rgba(255,149,0,0.15)',
+                  border:'1px solid rgba(255,149,0,0.5)', color: deletingData ? '#555C70' : '#FF9500',
+                  fontSize:12, fontWeight:700, cursor: deletingData ? 'not-allowed' : 'pointer',
+                }}>
+                  {deletingData ? deleteDataProgress || 'Suppression...' : 'Confirmer la suppression'}
+                </button>
+                <button onClick={() => setConfirmDeleteData(false)} style={{ padding:'9px 16px', borderRadius:8, background:'transparent', border:'1px solid #2A2F3E', color:'#555C70', fontSize:12, cursor:'pointer' }}>Annuler</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Supprimer le compte ── */}
+        <div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <div>
+              <div style={{ fontSize:13, fontWeight:600, color:'#F0F3FF' }}>Supprimer le compte</div>
+              <div style={{ fontSize:11, color:'#555C70' }}>Supprime définitivement votre compte Firebase et toutes vos données associées.</div>
+            </div>
+          </div>
+          {!confirmDeleteAccount ? (
+            <button onClick={() => setConfirmDeleteAccount(true)} style={{
+              width:'100%', padding:'10px', borderRadius:10,
+              border:'1px solid rgba(255,59,48,0.3)', background:'rgba(255,59,48,0.06)',
+              color:'#FF3B30', fontSize:12, fontWeight:600, cursor:'pointer',
+            }}>
+              ☠️ Supprimer mon compte définitivement
+            </button>
+          ) : (
+            <div style={{ padding:'14px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.3)', borderRadius:12, animation:'fadeIn 0.2s ease-out' }}>
+              <div style={{ fontSize:12, color:'#FF3B30', fontWeight:700, marginBottom:8 }}>☠️ Suppression définitive du compte</div>
+              <div style={{ fontSize:11, color:'#8F94A3', marginBottom:12, lineHeight:1.6 }}>
+                Cette action est irréversible. Votre compte Firebase sera supprimé ainsi que toutes vos données (trades, systèmes, moods, exchanges). Vous serez automatiquement déconnecté.
+              </div>
+              {isEmailUser && (
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>MOT DE PASSE (confirmation)</div>
+                  <input type="password" value={deleteAccountPassword} onChange={e => setDeleteAccountPassword(e.target.value)}
+                    placeholder="Votre mot de passe" style={{
+                      width:'100%', padding:'8px 12px', borderRadius:8, border:'1px solid #2A2F3E',
+                      background:'#1C2130', color:'#F0F3FF', fontSize:13, outline:'none', boxSizing:'border-box',
+                    }} />
+                </div>
+              )}
+              {deleteAccountError && (
+                <div style={{ padding:'8px 12px', background:'rgba(255,59,48,0.1)', border:'1px solid rgba(255,59,48,0.3)', borderRadius:8, marginBottom:12, fontSize:11, color:'#FF3B30' }}>
+                  {deleteAccountError}
+                </div>
+              )}
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={handleDeleteAccount} disabled={deletingAccount || (isEmailUser && !deleteAccountPassword)} style={{
+                  flex:1, padding:'9px', borderRadius:8,
+                  background: deletingAccount ? '#1C2130' : 'rgba(255,59,48,0.15)',
+                  border:'1px solid rgba(255,59,48,0.5)', color: deletingAccount ? '#555C70' : '#FF3B30',
+                  fontSize:12, fontWeight:700, cursor: (deletingAccount || (isEmailUser && !deleteAccountPassword)) ? 'not-allowed' : 'pointer',
+                }}>
+                  {deletingAccount ? deleteAccountProgress || 'Suppression...' : 'Supprimer mon compte'}
+                </button>
+                <button onClick={() => { setConfirmDeleteAccount(false); setDeleteAccountError(''); setDeleteAccountPassword('') }} style={{ padding:'9px 16px', borderRadius:8, background:'transparent', border:'1px solid #2A2F3E', color:'#555C70', fontSize:12, cursor:'pointer' }}>Annuler</button>
+              </div>
+            </div>
+          )}
+        </div>
       </Section>
 
       {/* Footer */}
