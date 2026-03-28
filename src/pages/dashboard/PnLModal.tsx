@@ -103,10 +103,17 @@ function computeStats(pts: Pt[]) {
     days:Math.round(days), rf:maxDD>0?pts[pts.length-1].cum/(maxDD/100*(pts[pts.length-1].peak||1)):0 }
 }
 
+// ── Emotion score helper ──────────────────────────────────────────────────
+function emotionToScore(state: string): number {
+  const map: Record<string,number>={confident:5,calm:4.5,focused:5,excited:3.5,stressed:2,impatient:2,fearful:1,greedy:2.5,frustrated:1.5,distracted:2.5}
+  return map[state]??3
+}
+
 // ── Canvas renderer ────────────────────────────────────────────────────────
 function renderChart(
   ctx: CanvasRenderingContext2D, W: number, H: number,
-  pts: Pt[], hIdx: number|null, showDD: boolean, showDots: boolean, isModal: boolean
+  pts: Pt[], hIdx: number|null, showDD: boolean, showDots: boolean, isModal: boolean,
+  emotionData?: { date: Date; score: number; label: string; color: string }[]
 ) {
   const DPR = window.devicePixelRatio||1
   const PAD = { t:isModal?24:18, r:16, b:isModal?40:32, l:isModal?80:70 }
@@ -191,6 +198,47 @@ function renderChart(
     ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke()
     ctx.setLineDash([])
   }
+
+  // ── Emotion overlay ─────────────────────────────────────────────
+  if (emotionData && emotionData.length >= 2 && pts.length >= 2) {
+    // Map emotion entries to nearest trade point index
+    const emotionPts: { idx: number; score: number; color: string }[] = []
+    for (const e of emotionData) {
+      const et = e.date.getTime()
+      let bestIdx = 0, bestDist = Infinity
+      pts.forEach((p, i) => {
+        const d = Math.abs(p.date.getTime() - et)
+        if (d < bestDist) { bestDist = d; bestIdx = i }
+      })
+      emotionPts.push({ idx: bestIdx, score: e.score, color: e.color })
+    }
+    // Deduplicate by idx (keep latest)
+    const byIdx = new Map<number, typeof emotionPts[0]>()
+    emotionPts.forEach(p => byIdx.set(p.idx, p))
+    const sortedEmo = [...byIdx.values()].sort((a, b) => a.idx - b.idx)
+    if (sortedEmo.length >= 2) {
+      const emoToY = (score: number) => PAD.t + cH - ((score - 0.5) / 5) * cH
+      // Emotion line
+      ctx.beginPath()
+      ctx.strokeStyle = 'rgba(191,90,242,0.7)'
+      ctx.lineWidth = 1.5; ctx.setLineDash([4, 3])
+      sortedEmo.forEach((p, i) => {
+        const x = toX(p.idx), y = emoToY(p.score)
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+      })
+      ctx.stroke(); ctx.setLineDash([])
+      // Emotion dots
+      sortedEmo.forEach(p => {
+        const x = toX(p.idx), y = emoToY(p.score)
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2)
+        ctx.fillStyle = p.color + 'CC'; ctx.fill()
+      })
+      // Right axis label for emotion
+      ctx.fillStyle = '#BF5AF2'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'left'
+      ctx.fillText('😎5', W - PAD.r + 3, emoToY(5) + 3)
+      ctx.fillText('😰1', W - PAD.r + 3, emoToY(1) + 3)
+    }
+  }
 }
 
 // ── Tooltip ────────────────────────────────────────────────────────────────
@@ -224,7 +272,7 @@ function Tooltip({ pt, x, W, isModal }: { pt:Pt; x:number; W:number; isModal:boo
 
 // ── Period + TF controls ───────────────────────────────────────────────────
 function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, setShowDots,
-  zoom, resetZoom, isZoomed }: any) {
+  zoom, resetZoom, isZoomed, showEmotion, setShowEmotion, hasMoods }: any) {
   return (
     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
       {/* Grouped period */}
@@ -276,6 +324,14 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
         </button>
       ))}
 
+      {hasMoods && setShowEmotion && (
+        <button onClick={()=>setShowEmotion((x:boolean)=>!x)} style={{display:'flex',alignItems:'center',gap:5,
+          padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',
+          border:`1px solid ${showEmotion?'#BF5AF250':'#2A2F3E'}`,background:showEmotion?'rgba(191,90,242,0.1)':'transparent',color:showEmotion?'#BF5AF2':'#555C70'}}>
+          <div style={{width:7,height:7,borderRadius:1,background:showEmotion?'#BF5AF2':'#555C70'}}/>Émotion
+        </button>
+      )}
+
       {isZoomed&&(
         <button onClick={resetZoom} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 9px',
           borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',
@@ -299,7 +355,7 @@ function SB({label,value,sub,color='#F0F3FF'}:{label:string;value:string;sub?:st
 }
 
 // ── Main canvas hook ───────────────────────────────────────────────────────
-function useChart(pts: Pt[], showDD: boolean, showDots: boolean, isModal: boolean) {
+function useChart(pts: Pt[], showDD: boolean, showDots: boolean, isModal: boolean, emotionData?: { date: Date; score: number; label: string; color: string }[]) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef   = useRef<HTMLDivElement>(null)
   const [W, setW] = useState(800)
@@ -334,7 +390,7 @@ function useChart(pts: Pt[], showDD: boolean, showDots: boolean, isModal: boolea
     const ez=sel?{s:Math.min(sel.s,sel.e),e:Math.max(sel.s,sel.e)}:zoom
     const slice=pts.slice(ez.s,ez.e+1)
     const localH=hIdx!==null?hIdx-ez.s:null
-    renderChart(ctx,W,H,slice,localH,showDD,showDots,isModal)
+    renderChart(ctx,W,H,slice,localH,showDD,showDots,isModal,emotionData)
   },[pts,W,H,hIdx,zoom,sel,showDD,showDots,isModal])
 
   const PAD_L=isModal?80:70, PAD_R=16
@@ -379,12 +435,13 @@ function useChart(pts: Pt[], showDD: boolean, showDots: boolean, isModal: boolea
 }
 
 // ── The Chart Widget ───────────────────────────────────────────────────────
-function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen }: {
+function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, emotionData }: {
   pts:Pt[]; showDD:boolean; showDots:boolean; isModal:boolean;
-  controls:React.ReactNode; onFullscreen?:()=>void
+  controls:React.ReactNode; onFullscreen?:()=>void;
+  emotionData?: { date: Date; score: number; label: string; color: string }[]
 }) {
   const { canvasRef,wrapRef,W,H,hIdx,zoom,isZoomed,resetZoom,tDotX,
-    onMove,onDown,onUp,onLeave,cursor } = useChart(pts,showDD,showDots,isModal)
+    onMove,onDown,onUp,onLeave,cursor } = useChart(pts,showDD,showDots,isModal,emotionData)
   const hovered = hIdx!==null?pts[hIdx]:null
 
   return (
@@ -578,31 +635,50 @@ function Modal({ trades, onClose }: { trades:Trade[]; onClose:()=>void }) {
   )
 }
 
+// ── Emotion data types ────────────────────────────────────────────────────
+interface MoodLike { emotionalState: string; timestamp: Date }
+
+const EMOTION_COLORS: Record<string,string> = {
+  confident:'#4CAF50', calm:'#2196F3', focused:'#00BCD4', excited:'#E91E63',
+  stressed:'#F44336', impatient:'#FF9800', fearful:'#9C27B0', greedy:'#FFC107',
+  frustrated:'#795548', distracted:'#607D8B',
+}
+
 // ── Dashboard inline component ─────────────────────────────────────────────
-export default function PnLCurve({ trades }: { trades: Trade[] }) {
+export default function PnLCurve({ trades, moods = [] }: { trades: Trade[]; moods?: MoodLike[] }) {
   const [period, setPeriod] = useState<Period>('ALL')
   const [tf,     setTf]     = useState<TF>('TRADE')
   const [showDD, setShowDD] = useState(true)
   const [showDots, setShowDots] = useState(true)
+  const [showEmotion, setShowEmotion] = useState(false)
   const [modal,  setModal]  = useState(false)
 
   const pts = useMemo(()=>buildData(trades,period,tf),[trades,period,tf])
 
-  const { canvasRef, wrapRef, W, H, hIdx, zoom, isZoomed, resetZoom, tDotX,
-    onMove, onDown, onUp, onLeave, cursor } = useChart(pts,showDD,showDots,false)
-
-  const hovered = hIdx!==null?pts[hIdx]:null
+  const emotionData = useMemo(() => {
+    if (!showEmotion || !moods.length) return undefined
+    return moods
+      .filter(m => m.timestamp instanceof Date && !isNaN(m.timestamp.getTime()))
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      .map(m => ({
+        date: m.timestamp,
+        score: emotionToScore(m.emotionalState),
+        label: m.emotionalState,
+        color: EMOTION_COLORS[m.emotionalState] || '#8F94A3',
+      }))
+  }, [moods, showEmotion])
 
   const controls = (
     <PeriodBar period={period} setPeriod={setPeriod} tf={tf} setTf={setTf}
       showDD={showDD} setShowDD={setShowDD} showDots={showDots} setShowDots={setShowDots}
-      zoom={zoom} resetZoom={resetZoom} isZoomed={isZoomed}/>
+      zoom={null} resetZoom={()=>{}} isZoomed={false}
+      showEmotion={showEmotion} setShowEmotion={setShowEmotion} hasMoods={moods.length > 0}/>
   )
 
   return (
     <>
       <ChartWidget pts={pts} showDD={showDD} showDots={showDots} isModal={false}
-        controls={controls} onFullscreen={()=>setModal(true)}/>
+        controls={controls} onFullscreen={()=>setModal(true)} emotionData={emotionData}/>
       {modal&&<Modal trades={trades} onClose={()=>setModal(false)}/>}
     </>
   )

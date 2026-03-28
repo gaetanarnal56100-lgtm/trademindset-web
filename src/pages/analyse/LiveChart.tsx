@@ -197,66 +197,16 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         </button>
       </div>
 
-      {/* Deux bandeaux : outils + connexion TV */}
+      {/* Bandeau outils */}
       <div style={{ borderBottom:'1px solid #1E2330' }}>
-        {/* Outils */}
         <div style={{ padding:'5px 14px', background:'rgba(10,133,255,0.03)',
-          display:'flex', alignItems:'center', gap:6, overflowX:'auto', flexWrap:'nowrap',
-          borderBottom:'1px solid #1E233060' }}>
+          display:'flex', alignItems:'center', gap:6, overflowX:'auto', flexWrap:'nowrap' }}>
           <span style={{ fontSize:9, color:'#3D4254', flexShrink:0 }}>Outils :</span>
           {['↗ Tendance','◎ Fibo','▭ Rectangle','⟨⟩ Pitchfork','∥ Canal','📐 Mesure R/R','✏ Texte','📊 Indicateurs','↩ Undo','↪ Redo'].map(tool => (
             <span key={tool} style={{ fontSize:9, color:'#555C70', background:'rgba(255,255,255,0.03)',
               padding:'2px 6px', borderRadius:4, whiteSpace:'nowrap', flexShrink:0 }}>{tool}</span>
           ))}
           <span style={{ fontSize:9, color:'#3D4254', marginLeft:4, flexShrink:0 }}>← barre gauche</span>
-        </div>
-        {/* Connexion TradingView */}
-        <div style={{ padding:'6px 14px', background:'rgba(191,90,242,0.04)',
-          display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <span style={{ fontSize:11 }}>💾</span>
-            <span style={{ fontSize:10, color:'#8F94A3' }}>
-              Connecte-toi à ton compte TradingView pour <span style={{ color:'#BF5AF2', fontWeight:600 }}>sauvegarder tes analyses, dessins et layouts</span> sur leurs serveurs.
-            </span>
-          </div>
-          <div style={{ display:'flex', gap:6, flexShrink:0, alignItems:'center' }}>
-            <span style={{ fontSize:9, color:'#3D4254' }}>Popup :</span>
-            <button onClick={() => {
-              const w = window.open(
-                'https://www.tradingview.com/accounts/signin/',
-                'tv_login',
-                'width=520,height=640,left=' + (window.screenX + window.outerWidth/2 - 260) +
-                ',top=' + (window.screenY + window.outerHeight/2 - 320) +
-                ',toolbar=no,menubar=no,scrollbars=yes,resizable=yes'
-              )
-              // Poll jusqu'à ce que la fenêtre soit fermée, puis recharge le widget
-              const poll = setInterval(() => {
-                if (w && w.closed) {
-                  clearInterval(poll)
-                  buildWidgetRef.current()
-                }
-              }, 500)
-            }}
-              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:700, cursor:'pointer',
-                background:'rgba(191,90,242,0.15)', border:'1px solid rgba(191,90,242,0.4)',
-                color:'#BF5AF2', whiteSpace:'nowrap' }}>
-              Se connecter
-            </button>
-            <button onClick={() => {
-              window.open(
-                'https://www.tradingview.com/accounts/signup/',
-                'tv_signup',
-                'width=520,height=640,left=' + (window.screenX + window.outerWidth/2 - 260) +
-                ',top=' + (window.screenY + window.outerHeight/2 - 320) +
-                ',toolbar=no,menubar=no,scrollbars=yes,resizable=yes'
-              )
-            }}
-              style={{ padding:'4px 12px', borderRadius:8, fontSize:10, fontWeight:600, cursor:'pointer',
-                background:'transparent', border:'1px solid #2A2F3E',
-                color:'#555C70', whiteSpace:'nowrap' }}>
-              S'inscrire
-            </button>
-          </div>
         </div>
       </div>
 

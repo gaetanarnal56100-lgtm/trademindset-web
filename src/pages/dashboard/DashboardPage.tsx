@@ -600,7 +600,7 @@ export default function DashboardPage() {
       {/* P&L Curve */}
       <div style={{...card(),marginBottom:16}}>
         <div style={hl()}/>
-        <PnLCurve trades={trades}/>
+        <PnLCurve trades={trades} moods={moods}/>
       </div>
 
       {/* Long / Short */}
