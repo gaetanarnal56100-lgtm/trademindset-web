@@ -552,6 +552,8 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────
+import ModularDashboard from './modular/ModularDashboard'
+
 export default function DashboardPage() {
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [systems, setSystems] = useState<TradingSystem[]>([])
@@ -559,6 +561,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [period,  setPeriod]  = useState('1M')
   const [userCount, setUserCount] = useState<number|null>(null)
+  const [activeTab, setActiveTab] = useState<'journal' | 'modular'>('journal')
 
   useEffect(()=>{
     const u1=subscribeTrades(t=>{setTrades(t);setLoading(false)})
@@ -583,11 +586,26 @@ export default function DashboardPage() {
       {/* Header */}
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,gap:16,flexWrap:'wrap'}}>
         <div>
-          <h1 style={{fontSize:24,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne, sans-serif',letterSpacing:'-0.02em'}}>Dashboard</h1>
-          <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>{loading?'…':`${trades.length} trades · ${open.length} ouvert${open.length!==1?'s':''}`}</p>
+          <div>
+            <h1 style={{fontSize:24,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne, sans-serif',letterSpacing:'-0.02em'}}>Dashboard</h1>
+            <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>{loading?'…':`${trades.length} trades · ${open.length} ouvert${open.length!==1?'s':''}`}</p>
+          </div>
+
         </div>
         {/* Info banner */}
         <div style={{display:'flex',gap:8,alignItems:'center',padding:'8px 14px',background:'#161B22',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
+          <button onClick={()=>setActiveTab(activeTab==='modular'?'journal':'modular')} style={{
+            display:'flex',alignItems:'center',gap:6,padding:'4px 12px',
+            background:activeTab==='modular'?'rgba(0,229,255,0.12)':'rgba(0,229,255,0.04)',
+            border:`1px solid ${activeTab==='modular'?'rgba(0,229,255,0.4)':'rgba(0,229,255,0.15)'}`,
+            borderRadius:8,cursor:'pointer',fontSize:10,fontWeight:700,
+            color:activeTab==='modular'?'#00E5FF':'#555C70',
+            transition:'all 0.2s',letterSpacing:'0.04em',
+          }}>
+            <span style={{fontSize:12}}>⚡</span>
+            {activeTab==='modular'?'← Journal':'Widgets'}
+          </button>
+          <div style={{width:1,height:16,background:'#2A2F3E'}}/>
           <a href="https://discord.gg/SqfMCVtEhV" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(88,101,242,0.1)',border:'1px solid rgba(88,101,242,0.25)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'#5865F2'}}>
             Discord
           </a>
@@ -607,6 +625,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {activeTab === 'journal' && <>
       {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
         {[
@@ -808,6 +827,15 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+      </>
+      }
+
+      {/* Modular widget dashboard tab */}
+      {activeTab === 'modular' && (
+        <div style={{marginTop:8}}>
+          <ModularDashboard />
+        </div>
+      )}
     </div>
   )
 }

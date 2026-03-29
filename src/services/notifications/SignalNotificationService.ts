@@ -16,6 +16,7 @@ export interface TradingSignal {
   detail?: string
   timestamp: Date
   urgency: 'low' | 'medium' | 'high' | 'premium'
+  score?: number
 }
 
 type Listener = (signal: TradingSignal) => void

@@ -824,8 +824,8 @@ export default function AnalysePage() {
       const w30=tickBuf.current.filter(t=>t.ts>now-30000),bV=w30.filter(t=>t.isBuy).reduce((s,t)=>s+t.vol,0),sV=w30.filter(t=>!t.isBuy).reduce((s,t)=>s+t.vol,0)
       const delta=bV-sV,pp=w30[0]?.price||0,lp=w30[w30.length-1]?.price||0,mov=pp>0?Math.abs((lp-pp)/pp)*100:0
       const p=priceRef.current
-      if(delta>200000&&mov<0.05&&now-lastAbs.current.buy>15000){lastAbs.current.buy=now;setAbsorbs(prev=>[{id:`${now}b`,type:'buy',strength:delta,price:p,ts:now},...prev].slice(0,8))}
-      else if(delta<-200000&&mov<0.05&&now-lastAbs.current.sell>15000){lastAbs.current.sell=now;setAbsorbs(prev=>[{id:`${now}s`,type:'sell',strength:delta,price:p,ts:now},...prev].slice(0,8))}
+      if(delta>200000&&mov<0.05&&now-lastAbs.current.buy>15000){lastAbs.current.buy=now;setAbsorbs(prev=>[{id:`${now}b`,type:'buy' as const,strength:delta,price:p,ts:now},...prev].slice(0,8))}
+      else if(delta<-200000&&mov<0.05&&now-lastAbs.current.sell>15000){lastAbs.current.sell=now;setAbsorbs(prev=>[{id:`${now}s`,type:'sell' as const,strength:delta,price:p,ts:now},...prev].slice(0,8))}
       if(p>0&&Math.abs(score)>0.35&&now-(lastTrap.current.t||0)>20000){lastTrap.current.t=now;setTraps(prev=>[{id:`t${now}`,type:'failedWhalePush',price:p,conf:Math.min(0.4+Math.abs(score)*0.5,0.95),whaleDelta:wB-wS,cvdDelta:acc.all,age:0,ts:now},...prev].slice(0,15))}
       setTraps(prev=>prev.map(t=>({...t,age:Math.round((now-t.ts)/1000)})))
     },3000)
