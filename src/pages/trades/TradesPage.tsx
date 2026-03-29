@@ -67,8 +67,10 @@ export default function TradesPage() {
   const systemName  = (id: string) => systems.find(s => s.id === id)?.name  ?? '—'
   const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? '#00E5FF'
 
+  const [showImport, setShowImport] = useState(false)
+
   return (
-    <div style={{ padding:24, maxWidth:1100, margin:'0 auto' }}>
+    <div style={{ padding:24, maxWidth:1600, margin:'0 auto' }}>
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
@@ -77,9 +79,14 @@ export default function TradesPage() {
             {loading ? 'Connexion à Firestore...' : `${filtered.length} trade${filtered.length > 1?'s':''}`}
           </p>
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-          + Nouveau trade
-        </button>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={() => setShowImport(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid #2A2F3E', background:'#161B22', color:'#FF9500', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            📄 Importer CSV
+          </button>
+          <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            + Nouveau trade
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -241,6 +248,7 @@ export default function TradesPage() {
       )}
 
       {showAdd && <AddTradeModal systems={systems} onClose={() => setShowAdd(false)} />}
+      {showImport && <ImportCSVModal onClose={() => setShowImport(false)} />}
     </div>
   )
 }
@@ -327,6 +335,259 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
         <button onClick={save} disabled={saving || !form.symbol} style={{ width:'100%', marginTop:16, padding:10, borderRadius:10, border:'none', background:form.symbol?'#00E5FF':'#1C2130', color:form.symbol?'#0D1117':'#555C70', fontSize:14, fontWeight:600, cursor:form.symbol?'pointer':'not-allowed' }}>
           {saving ? 'Enregistrement...' : 'Créer le trade'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ── CSV Import Modal ─────────────────────────────────────────────────────────
+
+interface CSVTrade {
+  symbol: string
+  qty: number
+  buyPrice: number
+  sellPrice: number
+  pnl: number
+  boughtTimestamp: string
+  soldTimestamp: string
+  duration: string
+  direction: 'Long' | 'Short'
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (const ch of line) {
+    if (ch === '"') { inQuotes = !inQuotes }
+    else if (ch === ',' && !inQuotes) { result.push(current.trim()); current = '' }
+    else { current += ch }
+  }
+  result.push(current.trim())
+  return result
+}
+
+function parsePnL(raw: string): number {
+  // "$125.00" → 125, "$(175.00)" → -175
+  const cleaned = raw.replace(/[$,]/g, '')
+  const match = cleaned.match(/\((.+)\)/)
+  if (match) return -parseFloat(match[1])
+  return parseFloat(cleaned) || 0
+}
+
+function parseCSVDate(raw: string): Date {
+  // "03/16/2026 17:54:31" → Date
+  const [datePart, timePart] = raw.split(' ')
+  const [month, day, year] = datePart.split('/')
+  return new Date(`${year}-${month}-${day}T${timePart}`)
+}
+
+function parseCSVTrades(text: string): CSVTrade[] {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim())
+  if (lines.length < 2) return []
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim())
+  const iSym   = headers.indexOf('symbol')
+  const iQty   = headers.indexOf('qty')
+  const iBuy   = headers.indexOf('buyprice')
+  const iSell  = headers.indexOf('sellprice')
+  const iPnl   = headers.indexOf('pnl')
+  const iBTime = headers.indexOf('boughttimestamp')
+  const iSTime = headers.indexOf('soldtimestamp')
+  const iDur   = headers.indexOf('duration')
+
+  return lines.slice(1).map(line => {
+    const cols = parseCSVLine(line)
+    const buyPrice  = parseFloat(cols[iBuy]  || '0')
+    const sellPrice = parseFloat(cols[iSell] || '0')
+    // Determine direction: if bought first (boughtTimestamp < soldTimestamp) → Long, else Short
+    const boughtTime = cols[iBTime] || ''
+    const soldTime   = cols[iSTime] || ''
+    const boughtDate = parseCSVDate(boughtTime)
+    const soldDate   = parseCSVDate(soldTime)
+    const direction: 'Long' | 'Short' = boughtDate <= soldDate ? 'Long' : 'Short'
+
+    return {
+      symbol:          cols[iSym] || '',
+      qty:             parseFloat(cols[iQty] || '1'),
+      buyPrice,
+      sellPrice,
+      pnl:             parsePnL(cols[iPnl] || '$0'),
+      boughtTimestamp:  boughtTime,
+      soldTimestamp:    soldTime,
+      duration:         cols[iDur] || '',
+      direction,
+    }
+  }).filter(t => t.symbol)
+}
+
+function ImportCSVModal({ onClose }: { onClose: () => void }) {
+  const [parsed, setParsed]     = useState<CSVTrade[]>([])
+  const [fileName, setFileName] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [done, setDone]         = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [error, setError]       = useState('')
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setFileName(file.name)
+    setError('')
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target?.result as string
+        const trades = parseCSVTrades(text)
+        if (trades.length === 0) { setError('Aucun trade détecté dans le fichier.'); return }
+        setParsed(trades)
+      } catch { setError('Erreur de lecture du fichier CSV.') }
+    }
+    reader.readAsText(file)
+  }
+
+  const doImport = async () => {
+    if (parsed.length === 0) return
+    setImporting(true)
+    setProgress(0)
+    try {
+      for (let i = 0; i < parsed.length; i++) {
+        const t = parsed[i]
+        const boughtDate = parseCSVDate(t.boughtTimestamp)
+        const soldDate   = parseCSVDate(t.soldTimestamp)
+        const entryDate  = t.direction === 'Long' ? boughtDate : soldDate
+        const exitDate   = t.direction === 'Long' ? soldDate   : boughtDate
+        const entryPrice = t.direction === 'Long' ? t.buyPrice : t.sellPrice
+        const exitPrice  = t.direction === 'Long' ? t.sellPrice : t.buyPrice
+
+        await createTrade({
+          id:          crypto.randomUUID(),
+          date:        entryDate,
+          symbol:      t.symbol,
+          type:        t.direction,
+          entryPrice,
+          exitPrice,
+          quantity:    t.qty,
+          leverage:    1,
+          exchangeId:  '',
+          orderRole:   'Taker',
+          systemId:    '',
+          session:     'US',
+          flashPnLNet: t.pnl,
+          notes:       `Import CSV · Durée: ${t.duration}`,
+          tags:        ['csv-import'],
+          status:      'closed',
+          closedAt:    exitDate,
+        })
+        setProgress(i + 1)
+      }
+      setDone(true)
+    } catch (err) {
+      setError(`Erreur lors de l'import: ${(err as Error).message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const totalPnL = parsed.reduce((s, t) => s + t.pnl, 0)
+  const wins     = parsed.filter(t => t.pnl > 0).length
+  const losses   = parsed.filter(t => t.pnl < 0).length
+  const be       = parsed.filter(t => t.pnl === 0).length
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+      <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:560, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
+          <span style={{ fontSize:16, fontWeight:700, color:'#F0F3FF' }}>📄 Importer des trades (CSV Propfirm)</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:18 }}>✕</button>
+        </div>
+
+        {/* File input */}
+        {!done && (
+          <label style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'20px', border:'2px dashed #2A2F3E', borderRadius:12, cursor:'pointer', marginBottom:16, transition:'border-color 0.2s' }}
+            onMouseOver={e => (e.currentTarget.style.borderColor = '#FF9500')}
+            onMouseOut={e => (e.currentTarget.style.borderColor = '#2A2F3E')}>
+            <input type="file" accept=".csv" onChange={handleFile} style={{ display:'none' }} />
+            <div style={{ textAlign:'center' }}>
+              <div style={{ fontSize:28, marginBottom:6 }}>📁</div>
+              <div style={{ fontSize:13, color:'#8F94A3', fontWeight:600 }}>{fileName || 'Cliquez pour sélectionner un fichier .csv'}</div>
+              <div style={{ fontSize:11, color:'#3D4254', marginTop:4 }}>Format supporté : CSV de propfirm (Topstep, FTMO, etc.)</div>
+            </div>
+          </label>
+        )}
+
+        {error && (
+          <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(255,59,48,0.1)', border:'1px solid rgba(255,59,48,0.3)', color:'#FF3B30', fontSize:12, marginBottom:14 }}>
+            {error}
+          </div>
+        )}
+
+        {/* Preview */}
+        {parsed.length > 0 && !done && (
+          <>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:14 }}>
+              {[
+                { l: 'Trades détectés', v: parsed.length, c: '#00E5FF' },
+                { l: 'Gains', v: wins, c: '#22C759' },
+                { l: 'Pertes', v: losses, c: '#FF3B30' },
+                { l: 'P&L Total', v: `${totalPnL >= 0 ? '+' : ''}$${Math.abs(totalPnL).toFixed(2)}`, c: totalPnL >= 0 ? '#22C759' : '#FF3B30' },
+              ].map(({ l, v, c }) => (
+                <div key={l} style={{ background:'#1C2130', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
+                  <div style={{ fontSize:9, color:'#555C70', marginBottom:3 }}>{l}</div>
+                  <div style={{ fontSize:15, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Trade list preview */}
+            <div style={{ maxHeight:220, overflowY:'auto', marginBottom:14, borderRadius:10, border:'1px solid #2A2F3E' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                <thead>
+                  <tr style={{ background:'#1C2130' }}>
+                    {['Symbole','Dir','Qté','Entrée','Sortie','P&L','Date'].map(h => (
+                      <th key={h} style={{ padding:'6px 8px', textAlign:'left', color:'#555C70', fontWeight:600, fontSize:10, borderBottom:'1px solid #2A2F3E' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsed.map((t, i) => (
+                    <tr key={i} style={{ borderBottom:'1px solid #1C2130' }}>
+                      <td style={{ padding:'5px 8px', color:'#F0F3FF', fontWeight:600 }}>{t.symbol}</td>
+                      <td style={{ padding:'5px 8px', color: t.direction === 'Long' ? '#22C759' : '#FF3B30', fontWeight:600 }}>{t.direction}</td>
+                      <td style={{ padding:'5px 8px', color:'#8F94A3', fontFamily:'monospace' }}>{t.qty}</td>
+                      <td style={{ padding:'5px 8px', color:'#8F94A3', fontFamily:'monospace' }}>${t.buyPrice.toFixed(2)}</td>
+                      <td style={{ padding:'5px 8px', color:'#8F94A3', fontFamily:'monospace' }}>${t.sellPrice.toFixed(2)}</td>
+                      <td style={{ padding:'5px 8px', color: t.pnl >= 0 ? '#22C759' : '#FF3B30', fontWeight:600, fontFamily:'monospace' }}>{t.pnl >= 0 ? '+' : ''}${Math.abs(t.pnl).toFixed(2)}</td>
+                      <td style={{ padding:'5px 8px', color:'#555C70' }}>{t.boughtTimestamp.split(' ')[0]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Import button */}
+            <button onClick={doImport} disabled={importing} style={{ width:'100%', padding:12, borderRadius:10, border:'none', background: importing ? '#1C2130' : '#FF9500', color: importing ? '#555C70' : '#0D1117', fontSize:14, fontWeight:700, cursor: importing ? 'not-allowed' : 'pointer' }}>
+              {importing ? `Import en cours... ${progress}/${parsed.length}` : `Importer ${parsed.length} trades dans Firebase`}
+            </button>
+
+            {importing && (
+              <div style={{ marginTop:8, height:4, borderRadius:4, background:'#1C2130', overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${(progress / parsed.length) * 100}%`, background:'#FF9500', borderRadius:4, transition:'width 0.3s' }} />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Success */}
+        {done && (
+          <div style={{ textAlign:'center', padding:'20px 0' }}>
+            <div style={{ fontSize:48, marginBottom:12 }}>✅</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#22C759', marginBottom:6 }}>{parsed.length} trades importés avec succès !</div>
+            <div style={{ fontSize:12, color:'#555C70', marginBottom:16 }}>P&L total : <span style={{ color: totalPnL >= 0 ? '#22C759' : '#FF3B30', fontWeight:700, fontFamily:'monospace' }}>{totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toFixed(2)}</span></div>
+            <button onClick={onClose} style={{ padding:'10px 32px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+              Fermer
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -897,7 +897,7 @@ export default function AnalysePage() {
   }
 
   return (
-    <div style={{padding:'28px 28px 40px',maxWidth:1200,margin:'0 auto'}}>
+    <div style={{padding:'28px 28px 40px',maxWidth:1600,margin:'0 auto'}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
 
       {/* Header */}

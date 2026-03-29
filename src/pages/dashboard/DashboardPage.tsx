@@ -1,6 +1,8 @@
 // DashboardPage.tsx — Dashboard enrichi v2 (heatmap compact + interactif + analytics tabs)
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
+import { collection, getCountFromServer } from 'firebase/firestore'
+import { db } from '@/services/firebase/config'
 import PnLCurve from './PnLModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -556,11 +558,14 @@ export default function DashboardPage() {
   const [moods,   setMoods]   = useState<MoodEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [period,  setPeriod]  = useState('1M')
+  const [userCount, setUserCount] = useState<number|null>(null)
 
   useEffect(()=>{
     const u1=subscribeTrades(t=>{setTrades(t);setLoading(false)})
     const u2=subscribeSystems(setSystems)
     const u3=subscribeMoods(setMoods)
+    // Fetch total user count
+    getCountFromServer(collection(db, 'users')).then(snap => setUserCount(snap.data().count)).catch(()=>{})
     return()=>{u1();u2();u3()}
   },[])
 
@@ -573,7 +578,7 @@ export default function DashboardPage() {
   const systemColor=(id:string)=>systems.find(s=>s.id===id)?.color??'#00E5FF'
 
   return(
-    <div style={{padding:'28px 28px 60px',maxWidth:1200,margin:'0 auto'}}>
+    <div style={{padding:'28px 28px 60px',maxWidth:1600,margin:'0 auto'}}>
       {/* Header */}
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,gap:16,flexWrap:'wrap'}}>
         <div>
@@ -591,6 +596,11 @@ export default function DashboardPage() {
           <a href="mailto:trademindsetapp@gmail.com" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(34,199,89,0.06)',border:'1px solid rgba(34,199,89,0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'#22C759'}}>
             Contact
           </a>
+          <div style={{width:1,height:16,background:'#2A2F3E'}}/>
+          <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(255,149,0,0.06)',border:'1px solid rgba(255,149,0,0.2)',borderRadius:8,fontSize:10,fontWeight:600,color:'#FF9500'}}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:'#FF9500',display:'inline-block',boxShadow:'0 0 6px rgba(255,149,0,0.4)'}}/>
+            {userCount !== null ? `${userCount} utilisateur${userCount !== 1 ? 's' : ''}` : '…'}
+          </div>
           <div style={{width:1,height:16,background:'#2A2F3E'}}/>
           <div style={{fontSize:10,color:'#3D4254',fontFamily:'JetBrains Mono,monospace'}}>TradeMindset v1.1</div>
         </div>
