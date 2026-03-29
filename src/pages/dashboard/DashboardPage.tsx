@@ -1,8 +1,8 @@
 // DashboardPage.tsx — Dashboard enrichi v2 (heatmap compact + interactif + analytics tabs)
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
-import { collection, getCountFromServer } from 'firebase/firestore'
-import { db } from '@/services/firebase/config'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/services/firebase/config'
 import PnLCurve from './PnLModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -564,8 +564,9 @@ export default function DashboardPage() {
     const u1=subscribeTrades(t=>{setTrades(t);setLoading(false)})
     const u2=subscribeSystems(setSystems)
     const u3=subscribeMoods(setMoods)
-    // Fetch total user count
-    getCountFromServer(collection(db, 'users')).then(snap => setUserCount(snap.data().count)).catch(()=>{})
+    // Fetch total user count via Cloud Function
+    const countUsers = httpsCallable<void, { count: number }>(functions, 'countUsers')
+    countUsers().then(res => setUserCount(res.data.count)).catch(()=>{})
     return()=>{u1();u2();u3()}
   },[])
 
