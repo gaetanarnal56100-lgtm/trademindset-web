@@ -59,6 +59,7 @@ function ResizeHandle({ dir, onResizeStart }: ResizeHandleProps) {
 export function DraggableWidget({ item, containerWidth, children }: DraggableWidgetProps) {
   const { editMode, updateItem, toggleWidget, removeWidget } = useDashboardStore()
   const cfg = WIDGET_REGISTRY[item.widgetId]
+  if (!cfg) return null
 
   // px per column
   const colW = containerWidth > 0 ? containerWidth / GRID_COLS : 80
