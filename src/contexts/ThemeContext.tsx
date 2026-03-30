@@ -40,14 +40,14 @@ export const THEMES: ThemeConfig[] = [
     id: 'neon',
     label: 'Neon',
     description: 'Violet intense, accents électrisants',
-    isPremium: true,
+    isPremium: false,
     preview: { bg:'#05010a', card:'#160b22', accent:'#c77dff', profit:'#39ff90', loss:'#ff2d6b', text:'#f1e8ff' },
   },
   {
     id: 'midnight',
     label: 'Midnight',
     description: 'Bleu profond, élégance nocturne',
-    isPremium: true,
+    isPremium: false,
     preview: { bg:'#080c14', card:'#172035', accent:'#60a5fa', profit:'#34d399', loss:'#f87171', text:'#e8f0fe' },
   },
 ]
