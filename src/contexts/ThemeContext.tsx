@@ -34,7 +34,7 @@ export const THEMES: ThemeConfig[] = [
     label: 'Terminal',
     description: 'Thème sombre classique, focus maximum',
     isPremium: false,
-    preview: { bg:'#0D1117', card:'#1C2133', accent:'#00E5FF', profit:'#22C759', loss:'#FF3B30', text:'#F0F3FF' },
+    preview: { bg:'var(--tm-bg)', card:'var(--tm-bg-card)', accent:'var(--tm-accent)', profit:'var(--tm-profit)', loss:'var(--tm-loss)', text:'var(--tm-text-primary)' },
   },
   {
     id: 'neon',

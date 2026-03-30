@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 import { LayoutItem, PresetName, WidgetId, DASHBOARD_PRESETS, WIDGET_REGISTRY } from './types'
 import { saveDashboardLayout, loadDashboardLayout } from '@/services/firestore/dashboardLayout'
 
-const STORAGE_KEY = 'trademindset:dashboard:v4'
+const STORAGE_KEY = 'trademindset:dashboard:v3'
 
 let _debounce: ReturnType<typeof setTimeout> | null = null
 function syncFirestore(layout: LayoutItem[], activePreset: PresetName, symbol: string) {

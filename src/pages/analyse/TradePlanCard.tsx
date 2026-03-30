@@ -231,9 +231,9 @@ Génère l'analyse complète selon l'ordre strict défini. Sois précis et explo
 
 function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario: TradeScenario; price: number }) {
   const isBull = type === 'bull'
-  const color  = isBull ? '#22C759' : '#FF3B30'
-  const bgCol  = isBull ? 'rgba(34,199,89,0.06)' : 'rgba(255,59,48,0.06)'
-  const strengthColor = { premium:'#FFD700', strong:'#22C759', moderate:'#FF9500', none:'#555C70' }[scenario.signalStrength||'none']
+  const color  = isBull ? 'var(--tm-profit)' : 'var(--tm-loss)'
+  const bgCol  = isBull ? 'rgba(var(--tm-profit-rgb,34,199,89),0.06)' : 'rgba(var(--tm-loss-rgb,255,59,48),0.06)'
+  const strengthColor = { premium:'#FFD700', strong:'var(--tm-profit)', moderate:'var(--tm-warning)', none:'var(--tm-text-muted)' }[scenario.signalStrength||'none']
   const strengthLabel = { premium:'⭐ Premium', strong:'● Signal Fort', moderate:'◎ Modéré', none:'○ Faible' }[scenario.signalStrength||'none']
   const rr = (entry?: number, stop?: number, tp?: number) => {
     if (!entry || !stop || !tp) return '—'
@@ -246,7 +246,7 @@ function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario
       <div style={{ padding:'10px 14px', borderBottom:`1px solid ${color}20`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <div style={{ width:8, height:8, borderRadius:'50%', background:color }} />
-          <span style={{ fontSize:13, fontWeight:700, color:'#F0F3FF' }}>{isBull ? 'Scénario Haussier' : 'Scénario Baissier'}</span>
+          <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{isBull ? 'Scénario Haussier' : 'Scénario Baissier'}</span>
         </div>
         <span style={{ fontSize:10, fontWeight:700, color:strengthColor, background:`${strengthColor}15`, padding:'2px 8px', borderRadius:10, border:`1px solid ${strengthColor}30` }}>{strengthLabel}</span>
       </div>
@@ -257,20 +257,20 @@ function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario
       )}
       <div style={{ padding:'12px 14px', display:'flex', flexDirection:'column', gap:8 }}>
         <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{ fontSize:12, color:'#8F94A3' }}>Entrée</span>
+          <span style={{ fontSize:12, color:'var(--tm-text-secondary)' }}>Entrée</span>
           <span style={{ fontSize:13, fontWeight:700, color, fontFamily:'monospace' }}>${fmtP(scenario.entry||0)}</span>
         </div>
         <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{ fontSize:12, color:'#8F94A3' }}>Stop Loss</span>
-          <span style={{ fontSize:13, fontWeight:700, color:'#FF3B30', fontFamily:'monospace' }}>${fmtP(scenario.stop||0)}</span>
+          <span style={{ fontSize:12, color:'var(--tm-text-secondary)' }}>Stop Loss</span>
+          <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-loss)', fontFamily:'monospace' }}>${fmtP(scenario.stop||0)}</span>
         </div>
         <div style={{ height:1, background:`${color}20`, margin:'2px 0' }} />
-        <div style={{ fontSize:11, fontWeight:600, color:'#8F94A3', marginBottom:2 }}>Objectifs</div>
+        <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:2 }}>Objectifs</div>
         {([['TP1', scenario.tp1], ['TP2', scenario.tp2], ['TP3', scenario.tp3]] as [string, number|undefined][]).map(([label, tp]) => tp && (
           <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ fontSize:11, color:'#555C70', width:24 }}>{label}</span>
-              <span style={{ fontSize:12, fontWeight:600, color:'#22C759', fontFamily:'monospace' }}>${fmtP(tp)}</span>
+              <span style={{ fontSize:11, color:'var(--tm-text-muted)', width:24 }}>{label}</span>
+              <span style={{ fontSize:12, fontWeight:600, color:'var(--tm-profit)', fontFamily:'monospace' }}>${fmtP(tp)}</span>
             </div>
             <span style={{ fontSize:11, fontWeight:700, color:'#FFD700', background:'rgba(255,215,0,0.12)', padding:'1px 7px', borderRadius:6 }}>{rr(scenario.entry, scenario.stop, tp)}</span>
           </div>
@@ -286,7 +286,7 @@ function SectionLabel({ icon, label, color }: { icon: string; label: string; col
   return (
     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
       <span style={{ fontSize:16 }}>{icon}</span>
-      <span style={{ fontSize:13, fontWeight:700, color:'#F0F3FF' }}>{label}</span>
+      <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{label}</span>
       <div style={{ flex:1, height:1, background:`${color}30` }} />
     </div>
   )
@@ -320,11 +320,11 @@ function KVCard({ lines, accent }: { lines: string[]; accent: string }) {
 
 function NewsCard({ lines }: { lines: string[] }) {
   return (
-    <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,149,0,0.2)', borderRadius:12, padding:'12px 14px', marginBottom:16, display:'flex', flexDirection:'column', gap:8 }}>
+    <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)', borderRadius:12, padding:'12px 14px', marginBottom:16, display:'flex', flexDirection:'column', gap:8 }}>
       {lines.map((line, i) => {
         const isBull = line.includes('[⚡BULLISH]') || line.includes('[⚡HAUSSIER]')
         const isBear = line.includes('[⚡BEARISH]') || line.includes('[⚡BAISSIER]')
-        const color  = isBull ? '#22C759' : isBear ? '#FF3B30' : '#FF9500'
+        const color  = isBull ? 'var(--tm-profit)' : isBear ? 'var(--tm-loss)' : 'var(--tm-warning)'
         const clean  = line.replace(/\[⚡(BULLISH|BEARISH|NEUTRAL|HAUSSIER|BAISSIER|NEUTRE)\]\s*/g, '').trim()
         return (
           <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
@@ -344,12 +344,12 @@ function CollapsibleSection({ icon, label, color, preview, children }: { icon: s
       <button onClick={() => setOpen(x => !x)} style={{ width:'100%', background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: open ? 8 : 4 }}>
           <span style={{ fontSize:16 }}>{icon}</span>
-          <span style={{ fontSize:13, fontWeight:700, color:'#F0F3FF' }}>{label}</span>
+          <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{label}</span>
           <div style={{ flex:1, height:1, background:`${color}30` }} />
-          <span style={{ fontSize:10, color:'#555C70' }}>{open ? '▲' : '▼'}</span>
+          <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{open ? '▲' : '▼'}</span>
         </div>
         {!open && preview && (
-          <div style={{ fontSize:11, color:'#555C70', paddingLeft:24, marginBottom:8, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{preview}</div>
+          <div style={{ fontSize:11, color:'var(--tm-text-muted)', paddingLeft:24, marginBottom:8, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{preview}</div>
         )}
       </button>
       {open && children}
@@ -421,46 +421,46 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
   }, [plan, symbol, price, mtfSignal, wtStatus, vmcStatus, aiLoading])
 
   if (price <= 0) return (
-    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
-      <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'#0A85FF', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 }} />
-      <span style={{ fontSize:12, color:'#555C70' }}>Récupération du prix {symbol}...</span>
+    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
+      <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-blue)', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 }} />
+      <span style={{ fontSize:12, color:'var(--tm-text-muted)' }}>Récupération du prix {symbol}...</span>
     </div>
   )
   if (!plan) return null
 
-  const riskColor = { low:'#22C759', medium:'#FF9500', high:'#FF3B30' }[plan.riskLevel]
+  const riskColor = { low:'var(--tm-profit)', medium:'var(--tm-warning)', high:'var(--tm-loss)' }[plan.riskLevel]
   const riskLabel = { low:'Faible', medium:'Modéré', high:'Élevé' }[plan.riskLevel]
 
   return (
-    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden' }}>
+    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden' }}>
 
       {/* Header */}
       <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }} onClick={() => setExpanded(x=>!x)}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div style={{ width:32, height:32, borderRadius:9, background:'linear-gradient(135deg,#0A85FF,#00E5FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
           <div>
-            <div style={{ fontSize:13, fontWeight:700, color:'#F0F3FF' }}>Plan de Trade</div>
-            <div style={{ fontSize:10, color:'#555C70' }}>{symbol} · {/USDT$|BTC$|ETH$|BNB$/i.test(symbol) ? '$' : ''}{fmtP(price)}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>Plan de Trade</div>
+            <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{symbol} · {/USDT$|BTC$|ETH$|BNB$/i.test(symbol) ? '$' : ''}{fmtP(price)}</div>
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <span style={{ fontSize:10, color:'#555C70' }}>Bull</span>
-            <div style={{ width:60, height:6, background:'#1C2130', borderRadius:3, overflow:'hidden' }}>
-              <div style={{ width:`${plan.bullProb*100}%`, height:'100%', background:'#22C759', borderRadius:3 }} />
+            <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>Bull</span>
+            <div style={{ width:60, height:6, background:'var(--tm-bg-tertiary)', borderRadius:3, overflow:'hidden' }}>
+              <div style={{ width:`${plan.bullProb*100}%`, height:'100%', background:'var(--tm-profit)', borderRadius:3 }} />
             </div>
-            <span style={{ fontSize:10, fontWeight:700, color:'#22C759', fontFamily:'monospace' }}>{(plan.bullProb*100).toFixed(0)}%</span>
+            <span style={{ fontSize:10, fontWeight:700, color:'var(--tm-profit)', fontFamily:'monospace' }}>{(plan.bullProb*100).toFixed(0)}%</span>
           </div>
           <span style={{ fontSize:10, fontWeight:700, color:riskColor, background:`${riskColor}15`, padding:'2px 8px', borderRadius:6 }}>Risque {riskLabel}</span>
-          <span style={{ fontSize:10, color:'#555C70' }}>{expanded ? '▲' : '▼'}</span>
+          <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{expanded ? '▲' : '▼'}</span>
         </div>
       </div>
 
       {expanded && <>
         {/* Context */}
-        <div style={{ margin:'0 16px 12px', padding:'10px 12px', background:'rgba(10,133,255,0.06)', border:'1px solid rgba(10,133,255,0.15)', borderRadius:10 }}>
-          <span style={{ fontSize:11, fontWeight:600, color:'#00E5FF' }}>Contexte : </span>
-          <span style={{ fontSize:11, color:'#8F94A3', lineHeight:1.6 }}>{plan.context}</span>
+        <div style={{ margin:'0 16px 12px', padding:'10px 12px', background:'rgba(var(--tm-blue-rgb,10,133,255),0.06)', border:'1px solid rgba(var(--tm-blue-rgb,10,133,255),0.15)', borderRadius:10 }}>
+          <span style={{ fontSize:11, fontWeight:600, color:'var(--tm-accent)' }}>Contexte : </span>
+          <span style={{ fontSize:11, color:'var(--tm-text-secondary)', lineHeight:1.6 }}>{plan.context}</span>
         </div>
 
         {/* Scenarios */}
@@ -476,29 +476,29 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
             {/* Technical Analysis — collapsible */}
             {sections.technicalLines.length > 0 && (
               <CollapsibleSection
-                icon="📈" label="Technical Analysis" color="#0A85FF"
+                icon="📈" label="Technical Analysis" color="var(--tm-blue)"
                 preview={sections.technicalLines.slice(0,2).join(' · ')}
               >
-                <KVCard lines={sections.technicalLines} accent="#0A85FF" />
+                <KVCard lines={sections.technicalLines} accent="var(--tm-blue)" />
               </CollapsibleSection>
             )}
 
             {/* Risk Management */}
             {sections.riskLines.length > 0 && <>
-              <SectionLabel icon="🛡️" label="Risk Management" color="#FF3B30" />
-              <KVCard lines={sections.riskLines} accent="#FF3B30" />
+              <SectionLabel icon="🛡️" label="Risk Management" color="var(--tm-loss)" />
+              <KVCard lines={sections.riskLines} accent="var(--tm-loss)" />
             </>}
 
             {/* Timing & Context */}
             {sections.timingLines.length > 0 && <>
-              <SectionLabel icon="🕐" label="Timing & Context" color="#FF9500" />
-              <KVCard lines={sections.timingLines} accent="#FF9500" />
+              <SectionLabel icon="🕐" label="Timing & Context" color="var(--tm-warning)" />
+              <KVCard lines={sections.timingLines} accent="var(--tm-warning)" />
             </>}
 
             {/* Important Information — collapsible */}
             {sections.infoLines.length > 0 && (
               <CollapsibleSection
-                icon="⚡" label="Important Information" color="#FF9500"
+                icon="⚡" label="Important Information" color="var(--tm-warning)"
                 preview={sections.infoLines.slice(0,2).join(' · ').replace(/\[⚡(BULLISH|BEARISH|NEUTRAL|HAUSSIER|BAISSIER|NEUTRE)\]\s*/g, '')}
               >
                 <NewsCard lines={sections.infoLines} />
@@ -508,18 +508,18 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
             {/* Fundamental Analysis — collapsible */}
             {sections.fundamentalLines.length > 0 && !sections.fundamentalLines[0].toLowerCase().includes('not applicable') && (
               <CollapsibleSection
-                icon="🏢" label="Fundamental Analysis" color="#00E5FF"
+                icon="🏢" label="Fundamental Analysis" color="var(--tm-accent)"
                 preview={sections.fundamentalLines.slice(0,1).join('')}
               >
-                <KVCard lines={sections.fundamentalLines} accent="#00E5FF" />
+                <KVCard lines={sections.fundamentalLines} accent="var(--tm-accent)" />
               </CollapsibleSection>
             )}
 
             {/* Score Explanation */}
             {sections.scoreExplanation && (
-              <div style={{ padding:'10px 12px', background:'rgba(191,90,242,0.06)', border:'1px solid rgba(191,90,242,0.15)', borderRadius:10, marginTop:4 }}>
-                <div style={{ fontSize:10, color:'#BF5AF2', fontWeight:600, marginBottom:4 }}>✨ Score IA</div>
-                <div style={{ fontSize:11, color:'#8F94A3', lineHeight:1.6 }}>{sections.scoreExplanation}</div>
+              <div style={{ padding:'10px 12px', background:'rgba(var(--tm-purple-rgb,191,90,242),0.06)', border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.15)', borderRadius:10, marginTop:4 }}>
+                <div style={{ fontSize:10, color:'var(--tm-purple)', fontWeight:600, marginBottom:4 }}>✨ Score IA</div>
+                <div style={{ fontSize:11, color:'var(--tm-text-secondary)', lineHeight:1.6 }}>{sections.scoreExplanation}</div>
               </div>
             )}
           </div>
@@ -527,14 +527,14 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
           /* Bouton Analyser avec IA */
           <div style={{ margin:'0 16px 16px', padding:'10px 12px', background:'rgba(0,0,0,0.3)', border:'1px solid #2A2F3E', borderRadius:10 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <span style={{ fontSize:11, color:'#555C70' }}>Analyse complète : Risk · Timing · Technical · Informations</span>
+              <span style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Analyse complète : Risk · Timing · Technical · Informations</span>
               <button
                 onClick={loadAI}
                 disabled={aiLoading}
-                style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:8, background: aiLoading ? '#1C2130' : 'rgba(191,90,242,0.15)', color: aiLoading ? '#555C70' : '#BF5AF2', cursor: aiLoading ? 'not-allowed' : 'pointer', fontSize:11, fontWeight:600, border:'1px solid rgba(191,90,242,0.3)' }}
+                style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:8, background: aiLoading ? 'var(--tm-bg-tertiary)' : 'rgba(var(--tm-purple-rgb,191,90,242),0.15)', color: aiLoading ? 'var(--tm-text-muted)' : 'var(--tm-purple)', cursor: aiLoading ? 'not-allowed' : 'pointer', fontSize:11, fontWeight:600, border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.3)' }}
               >
                 {aiLoading
-                  ? <><div style={{ width:12, height:12, border:'2px solid #2A2F3E', borderTopColor:'#BF5AF2', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> Analyse...</>
+                  ? <><div style={{ width:12, height:12, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-purple)', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> Analyse...</>
                   : '✨ Analyser avec IA'
                 }
               </button>

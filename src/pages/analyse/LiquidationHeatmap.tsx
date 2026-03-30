@@ -179,7 +179,7 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, t
     ctx.restore()
     const label=fmtP(price)
     const bw=Math.max(label.length*7+14,68)
-    ctx.fillStyle='#00E5FF'
+    ctx.fillStyle='var(--tm-accent)'
     rr(ctx,chartW+1,py-11,bw,22,4); ctx.fill()
     ctx.fillStyle='#071018'; ctx.font='bold 10px monospace'
     ctx.textAlign='center'; ctx.textBaseline='middle'
@@ -223,7 +223,7 @@ function drawOverlay(canvas: HTMLCanvasElement, tip: Tip|null, data: HeatmapData
   ctx.fillStyle='rgba(6,3,18,0.96)'
   rr(ctx,tx,ty,TW,TH,10); ctx.fill()
   ctx.shadowBlur=0
-  ctx.strokeStyle='rgba(0,229,255,0.5)'; ctx.lineWidth=1
+  ctx.strokeStyle='rgba(var(--tm-accent-rgb,0,229,255),0.5)'; ctx.lineWidth=1
   rr(ctx,tx,ty,TW,TH,10); ctx.stroke()
 
   ctx.font='bold 10px monospace'; ctx.fillStyle='rgba(255,255,255,0.85)'
@@ -336,7 +336,7 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
             <div style={{width:10,height:10,border:'1.5px solid rgba(120,0,255,0.3)',borderTopColor:'#9B59B6',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
             Calcul...
           </div>}
-          {price>0&&<span style={{fontSize:14,fontWeight:700,color:'#00E5FF',fontFamily:'monospace'}}>{fmtP(price)}</span>}
+          {price>0&&<span style={{fontSize:14,fontWeight:700,color:'var(--tm-accent)',fontFamily:'monospace'}}>{fmtP(price)}</span>}
         </div>
       </div>
 
@@ -356,16 +356,16 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
       {/* Threshold slider — Seuil de liquidité comme Coinglass */}
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}>
         <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',whiteSpace:'nowrap'}}>
-          Seuil de liquidité = <span style={{color:'#00E5FF',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
+          Seuil de liquidité = <span style={{color:'var(--tm-accent)',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
         </span>
         <input
           type="range" min={0} max={0.8} step={0.01}
           value={threshold}
           onChange={e => setThreshold(parseFloat(e.target.value))}
-          style={{flex:1,accentColor:'#00E5FF',cursor:'pointer',height:4}}
+          style={{flex:1,accentColor:'var(--tm-accent)',cursor:'pointer',height:4}}
         />
         {threshold > 0 && (
-          <button onClick={()=>setThreshold(0)} style={{fontSize:9,color:'#555C70',background:'none',border:'1px solid #2A2F3E',borderRadius:4,padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>
+          <button onClick={()=>setThreshold(0)} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'1px solid #2A2F3E',borderRadius:4,padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>
             Reset
           </button>
         )}
@@ -376,7 +376,7 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
         <div style={{height:CANVAS_H,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10}}>
           <span style={{fontSize:24,opacity:0.3}}>📊</span>
           <span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>{error}</span>
-          <button onClick={()=>load(symbol,period)} style={{color:'#00E5FF',background:'none',border:'1px solid #00E5FF40',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:11}}>Réessayer</button>
+          <button onClick={()=>load(symbol,period)} style={{color:'var(--tm-accent)',background:'none',border:'1px solid #00E5FF40',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:11}}>Réessayer</button>
         </div>
       ):(
         <div style={{position:'relative',height:CANVAS_H}}>

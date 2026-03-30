@@ -29,7 +29,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
       .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
 
     if (closed.length === 0) {
-      ctx.fillStyle = '#3D4254'
+      ctx.fillStyle = 'var(--tm-text-muted)'
       ctx.font = '10px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('Aucun trade fermé', W / 2, H / 2)
@@ -54,7 +54,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
 
     // Zero line
     const zeroY = toY(0)
-    ctx.strokeStyle = '#2A2F3E'
+    ctx.strokeStyle = 'var(--tm-border)'
     ctx.lineWidth = 1
     ctx.setLineDash([3, 3])
     ctx.beginPath()
@@ -66,7 +66,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     // Fill gradient
     const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
     const finalPnL = pts[pts.length - 1]
-    const fillColor = finalPnL >= 0 ? color : '#FF3B30'
+    const fillColor = finalPnL >= 0 ? color : 'var(--tm-loss)'
     grad.addColorStop(0, fillColor + '40')
     grad.addColorStop(1, fillColor + '05')
 
@@ -105,13 +105,13 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
       ctx.arc(x, y, 4, 0, Math.PI * 2)
       ctx.fillStyle = fillColor
       ctx.fill()
-      ctx.strokeStyle = '#0D1117'
+      ctx.strokeStyle = 'var(--tm-bg)'
       ctx.lineWidth = 2
       ctx.stroke()
     }
 
     // X-axis labels (first + last)
-    ctx.fillStyle = '#555C70'
+    ctx.fillStyle = 'var(--tm-text-muted)'
     ctx.font = '9px JetBrains Mono, monospace'
     ctx.textAlign = 'left'
     ctx.fillText(dates[0] ?? '', pad.l, H - 4)
@@ -156,9 +156,9 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
         <div style={{
           position: 'absolute', top: 4,
           left: Math.min(hovered.x, 200),
-          background: '#1C2130', border: '1px solid #2A2F3E',
+          background: 'var(--tm-bg-tertiary)', border: '1px solid #2A2F3E',
           borderRadius: 6, padding: '3px 8px', pointerEvents: 'none',
-          fontSize: 11, color: hovered.val >= 0 ? '#22C759' : '#FF3B30',
+          fontSize: 11, color: hovered.val >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)',
           fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', zIndex: 10
         }}>
           {fmtPnL(hovered.val)} · {hovered.date}
@@ -225,7 +225,7 @@ function SystemsComparisonChart({ systemStats, trades }: {
     const toY = (v: number) => pad.t + (1 - (v - minV) / range) * cH
 
     // Zero line
-    ctx.strokeStyle = '#2A2F3E'
+    ctx.strokeStyle = 'var(--tm-border)'
     ctx.lineWidth = 1
     ctx.setLineDash([3, 3])
     ctx.beginPath()
@@ -312,18 +312,18 @@ function SystemsComparisonChart({ systemStats, trades }: {
   if (curves.length === 0) return null
 
   return (
-    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:14, padding:'16px', marginTop:20 }}>
+    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:14, padding:'16px', marginTop:20 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
         <div>
-          <div style={{ fontSize:14, fontWeight:700, color:'#F0F3FF', fontFamily:'Syne,sans-serif' }}>Comparaison des systèmes</div>
-          <div style={{ fontSize:11, color:'#555C70' }}>P&L cumulé par système</div>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>Comparaison des systèmes</div>
+          <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>P&L cumulé par système</div>
         </div>
         {/* Légende */}
         <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
           {curves.map(c => (
             <div key={c.id} style={{ display:'flex', alignItems:'center', gap:5 }}>
               <div style={{ width:20, height:2, background:c.color, borderRadius:1 }} />
-              <span style={{ fontSize:10, color:'#8F94A3', fontFamily:'JetBrains Mono,monospace' }}>{c.name}</span>
+              <span style={{ fontSize:10, color:'var(--tm-text-secondary)', fontFamily:'JetBrains Mono,monospace' }}>{c.name}</span>
             </div>
           ))}
         </div>
@@ -334,12 +334,12 @@ function SystemsComparisonChart({ systemStats, trades }: {
           <div style={{
             position:'absolute', top:4,
             left: Math.min(hovered.x, 240),
-            background:'#1C2130', border:'1px solid #2A2F3E',
+            background:'var(--tm-bg-tertiary)', border:'1px solid #2A2F3E',
             borderRadius:6, padding:'4px 10px', pointerEvents:'none',
             fontSize:11, zIndex:10, whiteSpace:'nowrap'
           }}>
-            <span style={{ color:'#8F94A3' }}>{hovered.sysName} · </span>
-            <span style={{ color: hovered.pnl >= 0 ? '#22C759' : '#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>
+            <span style={{ color:'var(--tm-text-secondary)' }}>{hovered.sysName} · </span>
+            <span style={{ color: hovered.pnl >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)', fontFamily:'JetBrains Mono,monospace' }}>
               {fmtPnL(hovered.pnl)}
             </span>
           </div>
@@ -355,12 +355,12 @@ function SystemsComparisonChart({ systemStats, trades }: {
       {/* Classement final */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8, marginTop:12, paddingTop:12, borderTop:'1px solid #1E2330' }}>
         {[...curves].sort((a,b) => (b.pts[b.pts.length-1]??0) - (a.pts[a.pts.length-1]??0)).map((c, i) => (
-          <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'#1C2130', borderRadius:8, border:`1px solid ${c.color}25` }}>
-            <span style={{ fontSize:10, color:'#3D4254', fontWeight:700, minWidth:14 }}>#{i+1}</span>
+          <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'var(--tm-bg-tertiary)', borderRadius:8, border:`1px solid ${c.color}25` }}>
+            <span style={{ fontSize:10, color:'var(--tm-text-muted)', fontWeight:700, minWidth:14 }}>#{i+1}</span>
             <div style={{ width:8, height:8, borderRadius:'50%', background:c.color, flexShrink:0 }} />
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:11, color:'#F0F3FF', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name}</div>
-              <div style={{ fontSize:10, color: (c.pts[c.pts.length-1]??0) >= 0 ? '#22C759' : '#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>
+              <div style={{ fontSize:11, color:'var(--tm-text-primary)', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name}</div>
+              <div style={{ fontSize:10, color: (c.pts[c.pts.length-1]??0) >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)', fontFamily:'JetBrains Mono,monospace' }}>
                 {fmtPnL(c.pts[c.pts.length-1] ?? 0)}
               </div>
             </div>
@@ -402,22 +402,22 @@ export default function SystemesPage() {
     <div style={{ padding:24, maxWidth:900, margin:'0 auto' }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#F0F3FF', margin:0, fontFamily:'Syne,sans-serif' }}>Systèmes</h1>
-          <p style={{ fontSize:13, color:'#8F94A3', margin:'3px 0 0' }}>{systems.length} système{systems.length > 1 ? 's' : ''} de trading</p>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne,sans-serif' }}>Systèmes</h1>
+          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'3px 0 0' }}>{systems.length} système{systems.length > 1 ? 's' : ''} de trading</p>
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+        <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
           + Nouveau système
         </button>
       </div>
 
       {loading ? (
-        <div style={{ textAlign:'center', padding:48, color:'#555C70' }}>
-          <div style={{ width:24, height:24, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
+        <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)' }}>
+          <div style={{ width:24, height:24, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
           Chargement...
         </div>
       ) : systems.length === 0 ? (
-        <div style={{ textAlign:'center', padding:48, color:'#555C70', fontSize:14 }}>
+        <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)', fontSize:14 }}>
           Aucun système. Crée ton premier système de trading.
         </div>
       ) : (
@@ -425,32 +425,32 @@ export default function SystemesPage() {
           {/* Cards systèmes */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:12 }}>
             {systemStats.map(s => (
-              <div key={s.id} style={{ background:'#161B22', border:`1px solid ${s.color}40`, borderRadius:14, padding:'16px', position:'relative', overflow:'hidden' }}>
+              <div key={s.id} style={{ background:'var(--tm-bg-secondary)', border:`1px solid ${s.color}40`, borderRadius:14, padding:'16px', position:'relative', overflow:'hidden' }}>
                 <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:s.color, borderRadius:'14px 14px 0 0' }} />
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <div style={{ width:36, height:36, borderRadius:10, background:`${s.color}20`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📊</div>
                     <div>
-                      <div style={{ fontSize:15, fontWeight:700, color:'#F0F3FF' }}>{s.name}</div>
-                      <div style={{ fontSize:10, color:'#555C70' }}>{s.totalTrades} trade{s.totalTrades > 1 ? 's' : ''}</div>
+                      <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)' }}>{s.name}</div>
+                      <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{s.totalTrades} trade{s.totalTrades > 1 ? 's' : ''}</div>
                     </div>
                   </div>
                   <div style={{ display:'flex', gap:6 }}>
-                    <button onClick={() => setEditing(s)} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'#8F94A3', cursor:'pointer', fontSize:11 }}>✏️</button>
-                    <button onClick={() => { if(confirm(`Supprimer "${s.name}" ?`)) deleteSystem(s.id) }} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'#555C70', cursor:'pointer', fontSize:11 }}>✕</button>
+                    <button onClick={() => setEditing(s)} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:11 }}>✏️</button>
+                    <button onClick={() => { if(confirm(`Supprimer "${s.name}" ?`)) deleteSystem(s.id) }} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:11 }}>✕</button>
                   </div>
                 </div>
 
                 {/* KPIs */}
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6, marginBottom:10 }}>
                   {[
-                    { l:'P&L', v:fmtPnL(s.totalPnL), c: s.totalPnL>=0?'#22C759':'#FF3B30' },
-                    { l:'Win Rate', v:`${s.winRate}%`, c:'#F0F3FF' },
-                    { l:'Payoff', v:s.payoff, c:'#00E5FF' },
-                    { l:'Trades', v:s.totalTrades, c:'#8F94A3' },
+                    { l:'P&L', v:fmtPnL(s.totalPnL), c: s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)' },
+                    { l:'Win Rate', v:`${s.winRate}%`, c:'var(--tm-text-primary)' },
+                    { l:'Payoff', v:s.payoff, c:'var(--tm-accent)' },
+                    { l:'Trades', v:s.totalTrades, c:'var(--tm-text-secondary)' },
                   ].map(({ l, v, c }) => (
-                    <div key={l} style={{ background:'#1C2130', borderRadius:8, padding:'6px 4px', textAlign:'center' }}>
-                      <div style={{ fontSize:8, color:'#555C70', marginBottom:2 }}>{l}</div>
+                    <div key={l} style={{ background:'var(--tm-bg-tertiary)', borderRadius:8, padding:'6px 4px', textAlign:'center' }}>
+                      <div style={{ fontSize:8, color:'var(--tm-text-muted)', marginBottom:2 }}>{l}</div>
                       <div style={{ fontSize:12, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
                     </div>
                   ))}
@@ -487,9 +487,9 @@ export default function SystemesPage() {
 
 function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null; onSave: (n: string, c: string) => Promise<void>; onClose: () => void }) {
   const [name, setName]   = useState(system?.name ?? '')
-  const [color, setColor] = useState(system?.color ?? '#00E5FF')
+  const [color, setColor] = useState(system?.color ?? 'var(--tm-accent)')
   const [saving, setSaving] = useState(false)
-  const COLORS = ['#00E5FF','#22C759','#FF9500','#FF3B30','#9B59B6','#E91E63','#4CAF50','#2196F3','#FF6B35','#FFD700']
+  const COLORS = ['var(--tm-accent)','var(--tm-profit)','var(--tm-warning)','var(--tm-loss)','#9B59B6','#E91E63','#4CAF50','#2196F3','#FF6B35','#FFD700']
 
   const save = async () => {
     if (!name.trim()) return
@@ -500,18 +500,18 @@ function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-      <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:380, maxWidth:'95vw' }}>
+      <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:380, maxWidth:'95vw' }}>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'#F0F3FF' }}>{system ? 'Modifier' : 'Nouveau'} système</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:18 }}>✕</button>
+          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{system ? 'Modifier' : 'Nouveau'} système</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
         </div>
         <div style={{ marginBottom:12 }}>
-          <div style={{ fontSize:10, color:'#555C70', marginBottom:6 }}>NOM DU SYSTÈME</div>
+          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>NOM DU SYSTÈME</div>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Breakout BTC" autoFocus
-            style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'#1C2130', color:'#F0F3FF', fontSize:14, outline:'none', boxSizing:'border-box' }} />
+            style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:14, outline:'none', boxSizing:'border-box' }} />
         </div>
         <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:10, color:'#555C70', marginBottom:8 }}>COULEUR</div>
+          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8 }}>COULEUR</div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
             {COLORS.map(c => (
               <button key={c} onClick={() => setColor(c)} style={{ width:30, height:30, borderRadius:8, background:c, border: color===c?`3px solid white`:'3px solid transparent', cursor:'pointer' }} />
@@ -519,7 +519,7 @@ function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null
           </div>
         </div>
         <button onClick={save} disabled={!name.trim() || saving}
-          style={{ width:'100%', padding:10, borderRadius:10, border:'none', background: name.trim()?color:'#1C2130', color: name.trim()?'#0D1117':'#555C70', fontSize:14, fontWeight:600, cursor: name.trim()?'pointer':'not-allowed' }}>
+          style={{ width:'100%', padding:10, borderRadius:10, border:'none', background: name.trim()?color:'var(--tm-bg-tertiary)', color: name.trim()?'var(--tm-bg)':'var(--tm-text-muted)', fontSize:14, fontWeight:600, cursor: name.trim()?'pointer':'not-allowed' }}>
           {saving ? 'Enregistrement...' : system ? 'Mettre à jour' : 'Créer le système'}
         </button>
       </div>

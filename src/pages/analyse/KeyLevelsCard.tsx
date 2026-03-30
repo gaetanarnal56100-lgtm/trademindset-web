@@ -165,13 +165,13 @@ function pctFromPrice(price: number, current: number): string {
 function LevelRow({ level, currentPrice }: { level: KeyLevel; currentPrice: number }) {
   const isAbove = level.price > currentPrice
   const typeConfig: Record<KeyLevel['type'], { color: string; bg: string; icon: string }> = {
-    resistance:     { color: '#FF3B30', bg: 'rgba(255,59,48,0.08)',   icon: '⟰' },
-    support:        { color: '#22C759', bg: 'rgba(34,199,89,0.08)',   icon: '⟱' },
-    pivot:          { color: '#FF9500', bg: 'rgba(255,149,0,0.08)',   icon: '◈' },
-    orderblock_bull:{ color: '#22C759', bg: 'rgba(34,199,89,0.06)',   icon: '▣' },
-    orderblock_bear:{ color: '#FF3B30', bg: 'rgba(255,59,48,0.06)',   icon: '▣' },
-    high:           { color: '#0A85FF', bg: 'rgba(10,133,255,0.06)',  icon: '▲' },
-    low:            { color: '#BF5AF2', bg: 'rgba(191,90,242,0.06)',  icon: '▼' },
+    resistance:     { color: 'var(--tm-loss)', bg: 'rgba(var(--tm-loss-rgb,255,59,48),0.08)',   icon: '⟰' },
+    support:        { color: 'var(--tm-profit)', bg: 'rgba(var(--tm-profit-rgb,34,199,89),0.08)',   icon: '⟱' },
+    pivot:          { color: 'var(--tm-warning)', bg: 'rgba(var(--tm-warning-rgb,255,149,0),0.08)',   icon: '◈' },
+    orderblock_bull:{ color: 'var(--tm-profit)', bg: 'rgba(var(--tm-profit-rgb,34,199,89),0.06)',   icon: '▣' },
+    orderblock_bear:{ color: 'var(--tm-loss)', bg: 'rgba(var(--tm-loss-rgb,255,59,48),0.06)',   icon: '▣' },
+    high:           { color: 'var(--tm-blue)', bg: 'rgba(var(--tm-blue-rgb,10,133,255),0.06)',  icon: '▲' },
+    low:            { color: 'var(--tm-purple)', bg: 'rgba(var(--tm-purple-rgb,191,90,242),0.06)',  icon: '▼' },
   }
   const cfg = typeConfig[level.type]
   const strengthDots = level.strength === 'strong' ? '●●●' : level.strength === 'medium' ? '●●○' : '●○○'
@@ -186,15 +186,15 @@ function LevelRow({ level, currentPrice }: { level: KeyLevel; currentPrice: numb
       <span style={{ fontSize: 14, color: cfg.color, width: 18, textAlign: 'center' }}>{cfg.icon}</span>
       <div style={{ flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#F0F3FF', fontFamily: 'monospace' }}>{fmtP(level.price)}</span>
-          <span style={{ fontSize: 10, color: isAbove ? '#FF9500' : '#22C759', fontFamily: 'monospace' }}>{pct}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'monospace' }}>{fmtP(level.price)}</span>
+          <span style={{ fontSize: 10, color: isAbove ? 'var(--tm-warning)' : 'var(--tm-profit)', fontFamily: 'monospace' }}>{pct}</span>
         </div>
-        <div style={{ fontSize: 10, color: '#555C70', marginTop: 1 }}>{level.label}</div>
+        <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginTop: 1 }}>{level.label}</div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
         <span style={{ fontSize: 9, color: cfg.color, letterSpacing: 1 }}>{strengthDots}</span>
         {level.touches !== undefined && level.touches > 0 && (
-          <span style={{ fontSize: 9, color: '#3D4254' }}>{level.touches}x</span>
+          <span style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>{level.touches}x</span>
         )}
       </div>
     </div>
@@ -259,7 +259,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
   const supports    = levels.filter(l => l.price < currentPrice).length
 
   return (
-    <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
       {/* Header */}
       <div
         style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
@@ -269,34 +269,34 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
           <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#FF9500,#FF3B30)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🎯</div>
           <div>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F3FF' }}>Niveaux Clés</span>
-              <div onClick={e => { e.stopPropagation(); setShowInfo(x => !x) }} style={{ width:16, height:16, borderRadius:'50%', background:'rgba(0,229,255,0.1)', border:'1px solid rgba(0,229,255,0.25)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:9, color:'#00E5FF', fontWeight:700, lineHeight:1 }}>i</div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Niveaux Clés</span>
+              <div onClick={e => { e.stopPropagation(); setShowInfo(x => !x) }} style={{ width:16, height:16, borderRadius:'50%', background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)', border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.25)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:9, color:'var(--tm-accent)', fontWeight:700, lineHeight:1 }}>i</div>
             </div>
-            <div style={{ fontSize: 10, color: '#555C70' }}>{symbol} · Pivots · OB · Swing</div>
+            <div style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{symbol} · Pivots · OB · Swing</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {status === 'done' && (
             <>
-              <span style={{ fontSize: 10, color: '#FF3B30', background: 'rgba(255,59,48,0.1)', padding: '2px 7px', borderRadius: 6 }}>↑ {resistances}</span>
-              <span style={{ fontSize: 10, color: '#22C759', background: 'rgba(34,199,89,0.1)', padding: '2px 7px', borderRadius: 6 }}>↓ {supports}</span>
+              <span style={{ fontSize: 10, color: 'var(--tm-loss)', background: 'rgba(var(--tm-loss-rgb,255,59,48),0.1)', padding: '2px 7px', borderRadius: 6 }}>↑ {resistances}</span>
+              <span style={{ fontSize: 10, color: 'var(--tm-profit)', background: 'rgba(var(--tm-profit-rgb,34,199,89),0.1)', padding: '2px 7px', borderRadius: 6 }}>↓ {supports}</span>
             </>
           )}
           {status === 'loading' && (
-            <div style={{ width: 14, height: 14, border: '2px solid #2A2F3E', borderTopColor: '#FF9500', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+            <div style={{ width: 14, height: 14, border: '2px solid #2A2F3E', borderTopColor: 'var(--tm-warning)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
           )}
-          <span style={{ fontSize: 10, color: '#555C70' }}>{expanded ? '▲' : '▼'}</span>
+          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{expanded ? '▲' : '▼'}</span>
         </div>
       </div>
 
       {showInfo && (
-        <div style={{ padding:'12px 16px', background:'rgba(0,229,255,0.04)', borderBottom:'1px solid rgba(0,229,255,0.15)' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'#00E5FF', marginBottom:6 }}>Comment sont déterminés les niveaux ?</div>
-          <div style={{ fontSize:11, color:'#8F94A3', lineHeight:1.7 }}>
-            <b style={{color:'#FF9500'}}>Pivots</b> — Calculés à partir du High, Low et Close de la dernière bougie confirmée (formule standard : PP, R1, R2, S1, S2).
-            <br/><b style={{color:'#0A85FF'}}>Swing High/Low</b> — Plus hauts et plus bas sur les 20 et 50 dernières bougies (4H pour crypto, 1D pour actions).
-            <br/><b style={{color:'#22C759'}}>Order Blocks</b> — Bougies à fort body ratio (&gt;60%) suivies d'un mouvement impulsif dans la direction opposée (3 bougies de confirmation).
-            <br/><b style={{color:'#BF5AF2'}}>Force</b> — Nombre de touches du niveau (≥3 touches = fort). Les niveaux proches (&lt;0.5%) sont fusionnés.
+        <div style={{ padding:'12px 16px', background:'rgba(var(--tm-accent-rgb,0,229,255),0.04)', borderBottom:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)' }}>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--tm-accent)', marginBottom:6 }}>Comment sont déterminés les niveaux ?</div>
+          <div style={{ fontSize:11, color:'var(--tm-text-secondary)', lineHeight:1.7 }}>
+            <b style={{color:'var(--tm-warning)'}}>Pivots</b> — Calculés à partir du High, Low et Close de la dernière bougie confirmée (formule standard : PP, R1, R2, S1, S2).
+            <br/><b style={{color:'var(--tm-blue)'}}>Swing High/Low</b> — Plus hauts et plus bas sur les 20 et 50 dernières bougies (4H pour crypto, 1D pour actions).
+            <br/><b style={{color:'var(--tm-profit)'}}>Order Blocks</b> — Bougies à fort body ratio (&gt;60%) suivies d'un mouvement impulsif dans la direction opposée (3 bougies de confirmation).
+            <br/><b style={{color:'var(--tm-purple)'}}>Force</b> — Nombre de touches du niveau (≥3 touches = fort). Les niveaux proches (&lt;0.5%) sont fusionnés.
           </div>
         </div>
       )}
@@ -305,9 +305,9 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
         <div style={{ padding: '0 16px 16px' }}>
           {/* Prix courant */}
           {currentPrice > 0 && (
-            <div style={{ margin: '0 0 12px', padding: '8px 12px', background: 'rgba(10,133,255,0.06)', border: '1px solid rgba(10,133,255,0.2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: '#8F94A3' }}>Prix actuel</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#00E5FF', fontFamily: 'monospace' }}>{fmtP(currentPrice)}</span>
+            <div style={{ margin: '0 0 12px', padding: '8px 12px', background: 'rgba(var(--tm-blue-rgb,10,133,255),0.06)', border: '1px solid rgba(var(--tm-blue-rgb,10,133,255),0.2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--tm-text-secondary)' }}>Prix actuel</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-accent)', fontFamily: 'monospace' }}>{fmtP(currentPrice)}</span>
             </div>
           )}
 
@@ -316,9 +316,9 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
             {(['all', 'above', 'below'] as const).map(f => (
               <button key={f} onClick={() => setFilter(f)} style={{
                 padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-                border: `1px solid ${filter === f ? '#FF9500' : '#2A2F3E'}`,
-                background: filter === f ? 'rgba(255,149,0,0.15)' : 'transparent',
-                color: filter === f ? '#FF9500' : '#555C70'
+                border: `1px solid ${filter === f ? 'var(--tm-warning)' : 'var(--tm-border)'}`,
+                background: filter === f ? 'rgba(var(--tm-warning-rgb,255,149,0),0.15)' : 'transparent',
+                color: filter === f ? 'var(--tm-warning)' : 'var(--tm-text-muted)'
               }}>
                 {{ all: 'Tous', above: '↑ Résistances', below: '↓ Supports' }[f]}
               </button>
@@ -327,7 +327,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
 
           {/* Error */}
           {status === 'error' && (
-            <div style={{ textAlign: 'center', padding: '20px', color: '#555C70', fontSize: 12 }}>
+            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--tm-text-muted)', fontSize: 12 }}>
               <div style={{ fontSize: 24, marginBottom: 8 }}>📡</div>
               Données insuffisantes pour calculer les niveaux
             </div>
@@ -337,7 +337,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
           {status === 'loading' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[1, 2, 3, 4].map(i => (
-                <div key={i} style={{ height: 44, borderRadius: 8, background: '#1C2130', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
+                <div key={i} style={{ height: 44, borderRadius: 8, background: 'var(--tm-bg-tertiary)', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: `${i * 0.1}s` }} />
               ))}
             </div>
           )}
@@ -354,9 +354,9 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
                     <div key={`${level.label}-${level.price}`}>
                       {showPriceBar && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-                          <div style={{ flex: 1, height: 1, background: 'rgba(0,229,255,0.3)', borderTop: '1px dashed rgba(0,229,255,0.5)' }} />
-                          <span style={{ fontSize: 10, color: '#00E5FF', fontFamily: 'monospace', flexShrink: 0 }}>▶ {fmtP(currentPrice)}</span>
-                          <div style={{ flex: 1, height: 1, background: 'rgba(0,229,255,0.3)', borderTop: '1px dashed rgba(0,229,255,0.5)' }} />
+                          <div style={{ flex: 1, height: 1, background: 'rgba(var(--tm-accent-rgb,0,229,255),0.3)', borderTop: '1px dashed rgba(var(--tm-accent-rgb,0,229,255),0.5)' }} />
+                          <span style={{ fontSize: 10, color: 'var(--tm-accent)', fontFamily: 'monospace', flexShrink: 0 }}>▶ {fmtP(currentPrice)}</span>
+                          <div style={{ flex: 1, height: 1, background: 'rgba(var(--tm-accent-rgb,0,229,255),0.3)', borderTop: '1px dashed rgba(var(--tm-accent-rgb,0,229,255),0.5)' }} />
                         </div>
                       )}
                       <LevelRow level={level} currentPrice={currentPrice} />
@@ -368,15 +368,15 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
               {/* Légende */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #1E2330' }}>
                 {[
-                  { icon: '⟰', color: '#FF3B30', label: 'Résistance' },
-                  { icon: '⟱', color: '#22C759', label: 'Support' },
-                  { icon: '◈', color: '#FF9500', label: 'Pivot' },
-                  { icon: '▣', color: '#0A85FF', label: 'Order Block' },
-                  { icon: '▲▼', color: '#BF5AF2', label: 'Swing H/L' },
+                  { icon: '⟰', color: 'var(--tm-loss)', label: 'Résistance' },
+                  { icon: '⟱', color: 'var(--tm-profit)', label: 'Support' },
+                  { icon: '◈', color: 'var(--tm-warning)', label: 'Pivot' },
+                  { icon: '▣', color: 'var(--tm-blue)', label: 'Order Block' },
+                  { icon: '▲▼', color: 'var(--tm-purple)', label: 'Swing H/L' },
                 ].map(({ icon, color, label }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 10, color }}>{icon}</span>
-                    <span style={{ fontSize: 10, color: '#3D4254' }}>{label}</span>
+                    <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{label}</span>
                   </div>
                 ))}
               </div>

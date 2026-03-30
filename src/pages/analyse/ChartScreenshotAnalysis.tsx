@@ -221,29 +221,29 @@ function Section({ icon, label, content, color }: { icon: string; label: string;
 }
 
 function PlanCard({ plan, isMulti }: { plan: TradePlan; isMulti: boolean }) {
-  const biaisColor = /hauss/i.test(plan.biais) ? '#22C759' : /baiss/i.test(plan.biais) ? '#FF3B30' : '#FF9500'
+  const biaisColor = /hauss/i.test(plan.biais) ? 'var(--tm-profit)' : /baiss/i.test(plan.biais) ? 'var(--tm-loss)' : 'var(--tm-warning)'
   const rows = [
     { label: 'Biais', value: plan.biais, color: biaisColor, bold: true },
-    { label: 'Entrée', value: plan.entree, color: '#00E5FF' },
-    { label: 'Stop Loss', value: plan.stop, color: '#FF3B30' },
-    { label: 'Objectifs', value: plan.objectifs, color: '#22C759' },
-    { label: 'Confirmation', value: plan.confirmation, color: '#FF9500' },
-    { label: 'Invalidation', value: plan.invalidation, color: '#FF3B30' },
+    { label: 'Entrée', value: plan.entree, color: 'var(--tm-accent)' },
+    { label: 'Stop Loss', value: plan.stop, color: 'var(--tm-loss)' },
+    { label: 'Objectifs', value: plan.objectifs, color: 'var(--tm-profit)' },
+    { label: 'Confirmation', value: plan.confirmation, color: 'var(--tm-warning)' },
+    { label: 'Invalidation', value: plan.invalidation, color: 'var(--tm-loss)' },
     ...(isMulti && plan.rr ? [{ label: 'R:R', value: plan.rr, color: '#FFD700' }] : []),
-    ...(isMulti && plan.zones_retournement ? [{ label: 'Zones retournement', value: plan.zones_retournement, color: '#BF5AF2' }] : []),
+    ...(isMulti && plan.zones_retournement ? [{ label: 'Zones retournement', value: plan.zones_retournement, color: 'var(--tm-purple)' }] : []),
   ].filter(r => r.value?.trim())
 
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span>🎯</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#00E5FF' }}>Plan de Trade</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-accent)' }}>Plan de Trade</span>
         {plan.biais && <span style={{ fontSize: 11, fontWeight: 700, color: biaisColor,
           background: `${biaisColor}15`, padding: '1px 9px', borderRadius: 10 }}>{plan.biais}</span>}
         {isMulti && plan.rr && <span style={{ fontSize: 10, color: '#FFD700',
           background: 'rgba(255,215,0,0.1)', padding: '1px 7px', borderRadius: 8 }}>R:R {plan.rr}</span>}
       </div>
-      <div style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.15)', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: 'rgba(var(--tm-accent-rgb,0,229,255),0.04)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)', borderRadius: 10, overflow: 'hidden' }}>
         {rows.map((row, i) => (
           <div key={row.label} style={{ display: 'flex', gap: 12, padding: '8px 14px',
             borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
@@ -262,18 +262,18 @@ function AnalysisResults({ analysis, isMulti }: { analysis: ChartAnalysis; isMul
       {/* Symbol badge */}
       {analysis.symbol && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-          <span style={{ fontSize: 11, color: '#555C70' }}>Symbole détecté :</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#00E5FF', background: 'rgba(0,229,255,0.1)',
+          <span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Symbole détecté :</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-accent)', background: 'rgba(var(--tm-accent-rgb,0,229,255),0.1)',
             padding: '2px 10px', borderRadius: 8, fontFamily: 'monospace' }}>{analysis.symbol}</span>
         </div>
       )}
 
       {/* Résumé */}
       {analysis.resume && (
-        <div style={{ padding: '12px 14px', background: 'rgba(191,90,242,0.08)',
-          border: '1px solid rgba(191,90,242,0.2)', borderRadius: 10, marginBottom: 16 }}>
-          <div style={{ fontSize: 10, color: '#BF5AF2', fontWeight: 700, marginBottom: 4 }}>✨ RÉSUMÉ IA</div>
-          <div style={{ fontSize: 13, color: '#F0F3FF', lineHeight: 1.65 }}>{analysis.resume}</div>
+        <div style={{ padding: '12px 14px', background: 'rgba(var(--tm-purple-rgb,191,90,242),0.08)',
+          border: '1px solid rgba(var(--tm-purple-rgb,191,90,242),0.2)', borderRadius: 10, marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: 'var(--tm-purple)', fontWeight: 700, marginBottom: 4 }}>✨ RÉSUMÉ IA</div>
+          <div style={{ fontSize: 13, color: 'var(--tm-text-primary)', lineHeight: 1.65 }}>{analysis.resume}</div>
         </div>
       )}
 
@@ -281,18 +281,18 @@ function AnalysisResults({ analysis, isMulti }: { analysis: ChartAnalysis; isMul
       {analysis.plan && <PlanCard plan={analysis.plan} isMulti={isMulti} />}
 
       {/* Multi-TF enriched sections */}
-      {isMulti && <Section icon="🔗" label="Confluences inter-UT" content={analysis.confluences} color="#00E5FF" />}
-      {isMulti && <Section icon="⚠️" label="Risques identifiés" content={analysis.risques} color="#FF9500" />}
-      {isMulti && <Section icon="🔄" label="Scénario alternatif" content={analysis.scenario_alternatif} color="#BF5AF2" />}
+      {isMulti && <Section icon="🔗" label="Confluences inter-UT" content={analysis.confluences} color="var(--tm-accent)" />}
+      {isMulti && <Section icon="⚠️" label="Risques identifiés" content={analysis.risques} color="var(--tm-warning)" />}
+      {isMulti && <Section icon="🔄" label="Scénario alternatif" content={analysis.scenario_alternatif} color="var(--tm-purple)" />}
 
       {/* Technical sections */}
-      <Section icon="🧱" label="Structure de marché" content={analysis.structure} color="#0A85FF" />
-      <Section icon="📍" label="Zones clés" content={analysis.zones} color="#FF9500" />
-      <Section icon="📈" label="Tendance & Momentum" content={analysis.momentum} color="#22C759" />
-      <Section icon="🕯️" label="Patterns & Chandeliers" content={analysis.patterns} color="#BF5AF2" />
+      <Section icon="🧱" label="Structure de marché" content={analysis.structure} color="var(--tm-blue)" />
+      <Section icon="📍" label="Zones clés" content={analysis.zones} color="var(--tm-warning)" />
+      <Section icon="📈" label="Tendance & Momentum" content={analysis.momentum} color="var(--tm-profit)" />
+      <Section icon="🕯️" label="Patterns & Chandeliers" content={analysis.patterns} color="var(--tm-purple)" />
       <Section icon="📊" label="Indicateurs" content={analysis.indicateurs} color="#64D2FF" />
-      <Section icon="🧭" label="Lecture Multi-Timeframe" content={analysis.mtf} color="#FF9500" />
-      <Section icon="🧠" label="Psychologie de marché" content={analysis.psychologie} color="#FF9500" />
+      <Section icon="🧭" label="Lecture Multi-Timeframe" content={analysis.mtf} color="var(--tm-warning)" />
+      <Section icon="🧠" label="Psychologie de marché" content={analysis.psychologie} color="var(--tm-warning)" />
     </div>
   )
 }
@@ -364,7 +364,7 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
   }
 
   return (
-    <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* Header */}
@@ -373,15 +373,15 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
           <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#BF5AF2,#FF2D55)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>📸</div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F3FF' }}>Analyse Screenshot IA</div>
-            <div style={{ fontSize: 10, color: '#555C70' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Analyse Screenshot IA</div>
+            <div style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>
               {isMulti ? `Multi-timeframe · ${images.length} graphiques · GPT-4o Vision` : 'Upload graphique → GPT-4o Vision → Analyse complète'}
             </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {status === 'done' && <span style={{ fontSize: 10, color: '#22C759', background: 'rgba(34,199,89,0.1)', padding: '2px 8px', borderRadius: 6 }}>✓ Analysé</span>}
-          {isMulti && <span style={{ fontSize: 10, color: '#00E5FF', background: 'rgba(0,229,255,0.1)', padding: '2px 8px', borderRadius: 6 }}>Multi-TF</span>}
+          {status === 'done' && <span style={{ fontSize: 10, color: 'var(--tm-profit)', background: 'rgba(var(--tm-profit-rgb,34,199,89),0.1)', padding: '2px 8px', borderRadius: 6 }}>✓ Analysé</span>}
+          {isMulti && <span style={{ fontSize: 10, color: 'var(--tm-accent)', background: 'rgba(var(--tm-accent-rgb,0,229,255),0.1)', padding: '2px 8px', borderRadius: 6 }}>Multi-TF</span>}
         </div>
       </div>
 
@@ -394,12 +394,12 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
             onDragLeave={() => setIsDragging(false)}
             onDrop={e => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) addImage(f, pendingTF) }}
             onClick={() => fileInputRef.current?.click()}
-            style={{ border: `2px dashed ${isDragging ? '#BF5AF2' : '#2A2F3E'}`, borderRadius: 12,
+            style={{ border: `2px dashed ${isDragging ? 'var(--tm-purple)' : 'var(--tm-border)'}`, borderRadius: 12,
               padding: '36px 20px', textAlign: 'center', cursor: 'pointer',
-              background: isDragging ? 'rgba(191,90,242,0.05)' : 'transparent', transition: 'all 0.2s' }}>
+              background: isDragging ? 'rgba(var(--tm-purple-rgb,191,90,242),0.05)' : 'transparent', transition: 'all 0.2s' }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>🖼️</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#F0F3FF', marginBottom: 4 }}>Glisser une capture de graphique</div>
-            <div style={{ fontSize: 11, color: '#555C70' }}>ou cliquer pour sélectionner · PNG, JPG, WebP</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tm-text-primary)', marginBottom: 4 }}>Glisser une capture de graphique</div>
+            <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>ou cliquer pour sélectionner · PNG, JPG, WebP</div>
             <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
               onChange={e => { const f = e.target.files?.[0]; if (f) addImage(f, pendingTF) }} />
           </div>
@@ -413,8 +413,8 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
                   <img src={img.preview} alt={img.tf} style={{ width: '100%', height: 90, objectFit: 'cover', display: 'block' }} />
                   <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '4px 8px',
                     background: 'linear-gradient(transparent,rgba(0,0,0,0.8))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#00E5FF', fontFamily: 'monospace' }}>{img.tf}</span>
-                    <button onClick={() => removeImage(img.tf)} style={{ background: 'rgba(255,59,48,0.3)', border: 'none',
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', fontFamily: 'monospace' }}>{img.tf}</span>
+                    <button onClick={() => removeImage(img.tf)} style={{ background: 'rgba(var(--tm-loss-rgb,255,59,48),0.3)', border: 'none',
                       borderRadius: 4, color: 'white', cursor: 'pointer', fontSize: 11, padding: '1px 5px' }}>✕</button>
                   </div>
                 </div>
@@ -425,8 +425,8 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
                 <div>
                   <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
                     <select value={pendingTF} onChange={e => setPendingTF(e.target.value as TF)}
-                      style={{ flex: 1, background: '#0D1117', border: '1px solid #2A2F3E', borderRadius: 6,
-                        color: '#8F94A3', fontSize: 10, padding: '3px 6px', cursor: 'pointer' }}>
+                      style={{ flex: 1, background: 'var(--tm-bg)', border: '1px solid #2A2F3E', borderRadius: 6,
+                        color: 'var(--tm-text-secondary)', fontSize: 10, padding: '3px 6px', cursor: 'pointer' }}>
                       {TIMEFRAMES.filter(tf => !images.find(i => i.tf === tf)).map(tf => (
                         <option key={tf} value={tf}>{tf}</option>
                       ))}
@@ -435,9 +435,9 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
                   <div onClick={() => addFileInputRef.current?.click()}
                     style={{ height: 66, border: '2px dashed #2A2F3E', borderRadius: 10, display: 'flex',
                       flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                      gap: 4, color: '#3D4254', transition: 'all 0.15s' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#BF5AF2'; (e.currentTarget as HTMLElement).style.color = '#BF5AF2' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2A2F3E'; (e.currentTarget as HTMLElement).style.color = '#3D4254' }}>
+                      gap: 4, color: 'var(--tm-text-muted)', transition: 'all 0.15s' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--tm-purple)'; (e.currentTarget as HTMLElement).style.color = 'var(--tm-purple)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--tm-border)'; (e.currentTarget as HTMLElement).style.color = 'var(--tm-text-muted)' }}>
                     <span style={{ fontSize: 18 }}>+</span>
                     <span style={{ fontSize: 9 }}>Ajouter {pendingTF}</span>
                     <input ref={addFileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -451,32 +451,32 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
             {status === 'idle' && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={analyze} style={{ flex: 1, padding: '11px', borderRadius: 10,
-                  background: 'linear-gradient(135deg,rgba(191,90,242,0.2),rgba(255,45,85,0.2))',
-                  border: '1px solid rgba(191,90,242,0.4)', color: '#BF5AF2', fontSize: 13, fontWeight: 700,
+                  background: 'linear-gradient(135deg,rgba(var(--tm-purple-rgb,191,90,242),0.2),rgba(255,45,85,0.2))',
+                  border: '1px solid rgba(var(--tm-purple-rgb,191,90,242),0.4)', color: 'var(--tm-purple)', fontSize: 13, fontWeight: 700,
                   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   ✨ {isMulti ? `Analyser ${images.length} TF avec GPT-4o` : 'Analyser avec GPT-4o Vision'}
                 </button>
                 <button onClick={reset} style={{ padding: '11px 14px', borderRadius: 10, background: 'transparent',
-                  border: '1px solid #2A2F3E', color: '#555C70', fontSize: 12, cursor: 'pointer' }}>↺</button>
+                  border: '1px solid #2A2F3E', color: 'var(--tm-text-muted)', fontSize: 12, cursor: 'pointer' }}>↺</button>
               </div>
             )}
 
             {/* Analyzing */}
             {status === 'analyzing' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '24px' }}>
-                <div style={{ width: 32, height: 32, border: '3px solid #2A2F3E', borderTopColor: '#BF5AF2',
+                <div style={{ width: 32, height: 32, border: '3px solid #2A2F3E', borderTopColor: 'var(--tm-purple)',
                   borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                 <div style={{ fontSize: 13, color: '#C5C8D6', fontWeight: 600 }}>{progress || 'Analyse en cours...'}</div>
-                {isMulti && <div style={{ fontSize: 11, color: '#3D4254' }}>Analyse séquentielle des timeframes puis synthèse multi-TF</div>}
+                {isMulti && <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Analyse séquentielle des timeframes puis synthèse multi-TF</div>}
               </div>
             )}
 
             {/* Error */}
             {status === 'error' && (
-              <div style={{ padding: '12px 14px', background: 'rgba(255,59,48,0.08)',
-                border: '1px solid rgba(255,59,48,0.2)', borderRadius: 10, marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: '#FF3B30', marginBottom: 6 }}>⚠️ {errorMsg}</div>
-                <button onClick={analyze} style={{ fontSize: 11, color: '#BF5AF2', background: 'none',
+              <div style={{ padding: '12px 14px', background: 'rgba(var(--tm-loss-rgb,255,59,48),0.08)',
+                border: '1px solid rgba(var(--tm-loss-rgb,255,59,48),0.2)', borderRadius: 10, marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: 'var(--tm-loss)', marginBottom: 6 }}>⚠️ {errorMsg}</div>
+                <button onClick={analyze} style={{ fontSize: 11, color: 'var(--tm-purple)', background: 'none',
                   border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Réessayer</button>
               </div>
             )}
@@ -489,14 +489,14 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
                   : (
                     <div style={{ padding: '12px', background: 'rgba(255,255,255,0.03)',
                       border: '1px solid #2A2F3E', borderRadius: 10, marginBottom: 12 }}>
-                      <div style={{ fontSize: 10, color: '#555C70', marginBottom: 8 }}>✨ Analyse IA</div>
+                      <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginBottom: 8 }}>✨ Analyse IA</div>
                       <div style={{ fontSize: 12, color: '#C5C8D6', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{rawText}</div>
                     </div>
                   )
                 }
                 <button onClick={analyze} style={{ marginTop: 12, width: '100%', padding: '8px',
                   borderRadius: 8, background: 'transparent', border: '1px solid #2A2F3E',
-                  color: '#555C70', fontSize: 11, cursor: 'pointer' }}>↺ Relancer l'analyse</button>
+                  color: 'var(--tm-text-muted)', fontSize: 11, cursor: 'pointer' }}>↺ Relancer l'analyse</button>
               </div>
             )}
           </div>

@@ -48,7 +48,7 @@ function ResizeHandle({ dir, onResizeStart }: ResizeHandleProps) {
           style={{ position:'absolute', bottom:2, right:2, opacity:0.4 }}
           width="10" height="10" viewBox="0 0 10 10"
         >
-          <path d="M2 8 L8 2 M5 8 L8 5 M8 8 L8 8" stroke="#00E5FF" strokeWidth="1.5" strokeLinecap="round"/>
+          <path d="M2 8 L8 2 M5 8 L8 5 M8 8 L8 8" stroke="var(--tm-accent)" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
       )}
     </div>
@@ -59,7 +59,6 @@ function ResizeHandle({ dir, onResizeStart }: ResizeHandleProps) {
 export function DraggableWidget({ item, containerWidth, children }: DraggableWidgetProps) {
   const { editMode, updateItem, toggleWidget, removeWidget } = useDashboardStore()
   const cfg = WIDGET_REGISTRY[item.widgetId]
-  if (!cfg) return null
 
   // px per column
   const colW = containerWidth > 0 ? containerWidth / GRID_COLS : 80
@@ -222,7 +221,7 @@ export function DraggableWidget({ item, containerWidth, children }: DraggableWid
       {resizing && (
         <div
           className="absolute inset-0 rounded-2xl pointer-events-none ring-2 ring-brand-cyan/60"
-          style={{ background: 'rgba(0,229,255,0.03)' }}
+          style={{ background: 'rgba(var(--tm-accent-rgb,0,229,255),0.03)' }}
         >
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-mono text-brand-cyan bg-bg-secondary/90 px-2 py-0.5 rounded-full border border-brand-cyan/30">
             {displayW} col × {displayH} rang

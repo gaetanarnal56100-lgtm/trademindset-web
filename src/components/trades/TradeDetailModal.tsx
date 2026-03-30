@@ -86,19 +86,25 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop + scrollable container */}
       <div
-        style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', backdropFilter:'blur(6px)', zIndex:200 }}
-        onClick={onClose}
-      />
+        style={{
+          position:'fixed', inset:0, zIndex:200,
+          background:'rgba(0,0,0,0.75)', backdropFilter:'blur(6px)',
+          overflowY:'auto', display:'flex', alignItems:'flex-start',
+          justifyContent:'center', padding:'5vh 16px 5vh',
+        }}
+        onClick={e => e.target === e.currentTarget && onClose()}
+      >
 
       {/* Modal */}
       <div style={{
-        position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
-        zIndex:201, width:'100%', maxWidth:560, maxHeight:'90vh',
+        position:'relative',
+        width:'100%', maxWidth:560,
         background:'var(--tm-bg-secondary)', border:'1px solid var(--tm-border)',
         borderRadius:20, overflow:'hidden', display:'flex', flexDirection:'column',
         boxShadow:'0 32px 64px rgba(0,0,0,0.7)',
+        flexShrink:0,
       }}>
         {/* Toolbar */}
         <div style={{
@@ -112,8 +118,8 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
           </div>
         </div>
 
-        {/* Scrollable content */}
-        <div style={{ overflowY:'auto', flex:1, padding:18, display:'flex', flexDirection:'column', gap:14 }}>
+        {/* Content */}
+        <div style={{ padding:18, display:'flex', flexDirection:'column', gap:14 }}>
 
           {/* ── HEADER: Symbol + P&L ── */}
           <div style={{
@@ -133,7 +139,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
                   {/* Type badge */}
                   <span style={{
                     padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:700,
-                    background: trade.type === 'Long' ? 'rgba(34,199,89,0.15)' : 'rgba(255,59,48,0.15)',
+                    background: trade.type === 'Long' ? 'rgba(var(--tm-profit-rgb,34,199,89),0.15)' : 'rgba(var(--tm-loss-rgb,255,59,48),0.15)',
                     color: trade.type === 'Long' ? 'var(--tm-profit)' : 'var(--tm-loss)',
                     border: `1px solid ${trade.type === 'Long' ? 'var(--tm-profit)' : 'var(--tm-loss)'}40`,
                   }}>
@@ -153,9 +159,9 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
                   {/* Status badge */}
                   <span style={{
                     padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600,
-                    background: trade.status === 'open' ? 'rgba(255,149,0,0.15)' : 'rgba(255,255,255,0.06)',
+                    background: trade.status === 'open' ? 'rgba(var(--tm-warning-rgb,255,149,0),0.15)' : 'rgba(255,255,255,0.06)',
                     color: trade.status === 'open' ? 'var(--tm-warning)' : 'var(--tm-text-muted)',
-                    border: `1px solid ${trade.status === 'open' ? 'rgba(255,149,0,0.3)' : 'var(--tm-border)'}`,
+                    border: `1px solid ${trade.status === 'open' ? 'rgba(var(--tm-warning-rgb,255,149,0),0.3)' : 'var(--tm-border)'}`,
                   }}>
                     {trade.status === 'open' ? '● OUVERT' : '✓ FERMÉ'}
                   </span>
@@ -266,9 +272,11 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
             <ActionButton icon="🗑" label="Supprimer" onClick={() => setShowDelete(true)} variant="danger" />
           </div>
         </div>
-      </div>
+      </div>{/* end modal */}
+      </div>{/* end backdrop */}
 
-      {/* Delete confirm dialog */}
+
+      {/* Delete confirm dialog — rendered outside backdrop for proper z-index */}
       {showDelete && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
           <div style={{
@@ -396,7 +404,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
           {/* Symbol info */}
           <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:'var(--tm-bg-tertiary)', borderRadius:10 }}>
             <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'monospace' }}>{trade.symbol}</span>
-            <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background: trade.type==='Long'?'rgba(34,199,89,0.15)':'rgba(255,59,48,0.15)', color: trade.type==='Long'?'var(--tm-profit)':'var(--tm-loss)' }}>
+            <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background: trade.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.15)':'rgba(var(--tm-loss-rgb,255,59,48),0.15)', color: trade.type==='Long'?'var(--tm-profit)':'var(--tm-loss)' }}>
               {trade.type}
             </span>
           </div>
@@ -409,7 +417,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
                 <button key={s} onClick={() => setStatus(s)} style={{
                   flex:1, padding:'9px', borderRadius:9, cursor:'pointer', fontSize:12, fontWeight:600,
                   border: status===s ? 'none' : '1px solid var(--tm-border)',
-                  background: status===s ? (s==='open'?'rgba(255,149,0,0.2)':'rgba(34,199,89,0.2)') : 'transparent',
+                  background: status===s ? (s==='open'?'rgba(var(--tm-warning-rgb,255,149,0),0.2)':'rgba(var(--tm-profit-rgb,34,199,89),0.2)') : 'transparent',
                   color: status===s ? (s==='open'?'var(--tm-warning)':'var(--tm-profit)') : 'var(--tm-text-muted)',
                 }}>
                   {s === 'open' ? '● Ouvert' : '✓ Fermé'}
@@ -444,7 +452,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
             <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:9, border:'1px solid var(--tm-border)', background:'transparent', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:13 }}>
               Annuler
             </button>
-            <button onClick={handleSave} disabled={saving} style={{ flex:2, padding:'10px', borderRadius:9, border:'none', background:'var(--tm-accent)', color:'#0D1117', cursor:'pointer', fontSize:13, fontWeight:700, opacity:saving?0.7:1 }}>
+            <button onClick={handleSave} disabled={saving} style={{ flex:2, padding:'10px', borderRadius:9, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', cursor:'pointer', fontSize:13, fontWeight:700, opacity:saving?0.7:1 }}>
               {saving ? '…' : 'Enregistrer'}
             </button>
           </div>
@@ -484,8 +492,8 @@ function ActionButton({ icon, label, onClick, variant }: { icon: string; label: 
     <button onClick={onClick} style={{
       display:'flex', alignItems:'center', justifyContent:'center', gap:8,
       padding:'11px', borderRadius:10, cursor:'pointer', fontSize:13, fontWeight:600,
-      border: variant==='danger' ? '1px solid rgba(255,59,48,0.3)' : '1px solid var(--tm-border)',
-      background: variant==='danger' ? 'rgba(255,59,48,0.08)' : 'var(--tm-bg-card)',
+      border: variant==='danger' ? '1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)' : '1px solid var(--tm-border)',
+      background: variant==='danger' ? 'rgba(var(--tm-loss-rgb,255,59,48),0.08)' : 'var(--tm-bg-card)',
       color: variant==='danger' ? 'var(--tm-loss)' : 'var(--tm-text-secondary)',
       transition:'all 0.15s',
     }}>

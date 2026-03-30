@@ -130,7 +130,7 @@ function fmtDate(d:string){try{return new Date(d).toLocaleDateString('fr-FR',{we
 function isPast(d:string){return new Date(d)<new Date()}
 
 function ImpactDots({v}:{v:string}){
-  const cfg={HIGH:{c:'#FF3B30',dots:'●●●'},MEDIUM:{c:'#FF9500',dots:'●●○'},LOW:{c:'#22C759',dots:'●○○'},NONE:{c:'#555C70',dots:'○○○'}}[v]||{c:'#555C70',dots:'○○○'}
+  const cfg={HIGH:{c:'var(--tm-loss)',dots:'●●●'},MEDIUM:{c:'var(--tm-warning)',dots:'●●○'},LOW:{c:'var(--tm-profit)',dots:'●○○'},NONE:{c:'var(--tm-text-muted)',dots:'○○○'}}[v]||{c:'var(--tm-text-muted)',dots:'○○○'}
   return <span style={{fontSize:11,color:cfg.c,letterSpacing:1,flexShrink:0}}>{cfg.dots}</span>
 }
 
@@ -138,25 +138,25 @@ function EventCard({event}:{event:CalendarEvent}){
   const past=isPast(event.dateUtc)
   const hasActual=event.actual&&event.actual!=='null'
   const actualNum=parseFloat(event.actual||''),cNum=parseFloat(event.consensus||'')
-  const aC=!isNaN(actualNum)&&!isNaN(cNum)?(actualNum>cNum?'#22C759':actualNum<cNum?'#FF3B30':'#F0F3FF'):'#F0F3FF'
-  const bg={HIGH:'rgba(255,59,48,0.06)',MEDIUM:'rgba(255,149,0,0.04)',LOW:'rgba(34,199,89,0.04)',NONE:'transparent'}[event.volatility]||'transparent'
-  const br={HIGH:'rgba(255,59,48,0.2)',MEDIUM:'rgba(255,149,0,0.15)',LOW:'rgba(34,199,89,0.12)',NONE:'rgba(255,255,255,0.04)'}[event.volatility]||'rgba(255,255,255,0.04)'
+  const aC=!isNaN(actualNum)&&!isNaN(cNum)?(actualNum>cNum?'var(--tm-profit)':actualNum<cNum?'var(--tm-loss)':'var(--tm-text-primary)'):'var(--tm-text-primary)'
+  const bg={HIGH:'rgba(var(--tm-loss-rgb,255,59,48),0.06)',MEDIUM:'rgba(var(--tm-warning-rgb,255,149,0),0.04)',LOW:'rgba(var(--tm-profit-rgb,34,199,89),0.04)',NONE:'transparent'}[event.volatility]||'transparent'
+  const br={HIGH:'rgba(var(--tm-loss-rgb,255,59,48),0.2)',MEDIUM:'rgba(var(--tm-warning-rgb,255,149,0),0.15)',LOW:'rgba(var(--tm-profit-rgb,34,199,89),0.12)',NONE:'rgba(255,255,255,0.04)'}[event.volatility]||'rgba(255,255,255,0.04)'
   return(
     <div style={{display:'flex',alignItems:'flex-start',gap:14,padding:'14px 20px',background:bg,border:`1px solid ${br}`,borderRadius:12,opacity:past?0.5:1}}>
       <div style={{width:48,flexShrink:0,textAlign:'center'}}>
-        <div style={{fontSize:13,fontWeight:700,color:past?'#555C70':'#F0F3FF',fontFamily:'monospace'}}>{fmtTime(event.dateUtc)}</div>
-        <div style={{fontSize:10,color:'#3D4254',marginTop:2}}>{event.currencyCode||event.countryCode}</div>
-        {past&&<div style={{fontSize:9,color:'#3D4254',marginTop:2}}>✓</div>}
+        <div style={{fontSize:13,fontWeight:700,color:past?'var(--tm-text-muted)':'var(--tm-text-primary)',fontFamily:'monospace'}}>{fmtTime(event.dateUtc)}</div>
+        <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:2}}>{event.currencyCode||event.countryCode}</div>
+        {past&&<div style={{fontSize:9,color:'var(--tm-text-muted)',marginTop:2}}>✓</div>}
       </div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
           <span style={{fontSize:18,lineHeight:1}}>{FLAGS[event.countryCode]||'🌍'}</span>
-          <span style={{fontSize:13,fontWeight:600,color:past?'#8F94A3':'#F0F3FF'}}>{event.name}</span>
+          <span style={{fontSize:13,fontWeight:600,color:past?'var(--tm-text-secondary)':'var(--tm-text-primary)'}}>{event.name}</span>
         </div>
         <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
-          {event.previous&&<span style={{fontSize:11,color:'#555C70'}}>Préc. <span style={{color:'#8F94A3'}}>{event.previous}</span></span>}
-          {event.consensus&&<span style={{fontSize:11,color:'#555C70'}}>Prévu <span style={{color:'#FF9500',fontWeight:600}}>{event.consensus}</span></span>}
-          {hasActual&&<span style={{fontSize:11,color:'#555C70'}}>Réel <span style={{color:aC,fontWeight:700}}>{event.actual}</span></span>}
+          {event.previous&&<span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Préc. <span style={{color:'var(--tm-text-secondary)'}}>{event.previous}</span></span>}
+          {event.consensus&&<span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Prévu <span style={{color:'var(--tm-warning)',fontWeight:600}}>{event.consensus}</span></span>}
+          {hasActual&&<span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Réel <span style={{color:aC,fontWeight:700}}>{event.actual}</span></span>}
         </div>
       </div>
       <ImpactDots v={event.volatility}/>
@@ -170,18 +170,18 @@ function RiskBanner({events}:{events:CalendarEvent[]}){
   const m=up.filter(e=>e.volatility==='MEDIUM').length
   const next=up.find(e=>e.volatility==='HIGH')
   if(!h&&!m)return null
-  const c=h>=3?'#FF3B30':h>=1?'#FF9500':'#22C759'
+  const c=h>=3?'var(--tm-loss)':h>=1?'var(--tm-warning)':'var(--tm-profit)'
   const l=h>=3?'RISQUE ÉLEVÉ':h>=1?'RISQUE MODÉRÉ':'RISQUE FAIBLE'
   return(
     <div style={{padding:'14px 20px',background:`${c}08`,border:`1px solid ${c}25`,borderRadius:14,marginBottom:16}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:next?8:0}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>⚠️</span><span style={{fontSize:14,fontWeight:700,color:c}}>{l}</span></div>
         <div style={{display:'flex',gap:8}}>
-          {h>0&&<span style={{fontSize:11,color:'#FF3B30',background:'rgba(255,59,48,0.12)',padding:'3px 10px',borderRadius:20}}>●●● ×{h}</span>}
-          {m>0&&<span style={{fontSize:11,color:'#FF9500',background:'rgba(255,149,0,0.12)',padding:'3px 10px',borderRadius:20}}>●●○ ×{m}</span>}
+          {h>0&&<span style={{fontSize:11,color:'var(--tm-loss)',background:'rgba(var(--tm-loss-rgb,255,59,48),0.12)',padding:'3px 10px',borderRadius:20}}>●●● ×{h}</span>}
+          {m>0&&<span style={{fontSize:11,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.12)',padding:'3px 10px',borderRadius:20}}>●●○ ×{m}</span>}
         </div>
       </div>
-      {next&&<div style={{fontSize:12,color:'#8F94A3'}}>Prochain HIGH : <span style={{color:'#FF3B30',fontWeight:600}}>{next.name}</span> à <span style={{color:'#F0F3FF'}}>{fmtTime(next.dateUtc)}</span></div>}
+      {next&&<div style={{fontSize:12,color:'var(--tm-text-secondary)'}}>Prochain HIGH : <span style={{color:'var(--tm-loss)',fontWeight:600}}>{next.name}</span> à <span style={{color:'var(--tm-text-primary)'}}>{fmtTime(next.dateUtc)}</span></div>}
     </div>
   )
 }
@@ -196,23 +196,23 @@ function AISection({events}:{events:CalendarEvent[]}){
     setLoading(false)
   }
   return(
-    <div style={{background:'rgba(191,90,242,0.05)',border:'1px solid rgba(191,90,242,0.2)',borderRadius:14,padding:'16px 20px',marginBottom:20}}>
+    <div style={{background:'rgba(var(--tm-purple-rgb,191,90,242),0.05)',border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.2)',borderRadius:14,padding:'16px 20px',marginBottom:20}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:done?12:0}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontSize:16}}>✨</span>
-          <span style={{fontSize:13,fontWeight:700,color:'#BF5AF2'}}>Analyse IA de la session</span>
-          <span style={{fontSize:10,color:'#555C70',background:'rgba(191,90,242,0.1)',padding:'2px 8px',borderRadius:10}}>GPT-4o</span>
+          <span style={{fontSize:13,fontWeight:700,color:'var(--tm-purple)'}}>Analyse IA de la session</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'rgba(var(--tm-purple-rgb,191,90,242),0.1)',padding:'2px 8px',borderRadius:10}}>GPT-4o</span>
         </div>
         {!done?(
-          <button onClick={run} disabled={loading} style={{display:'flex',alignItems:'center',gap:6,padding:'7px 16px',borderRadius:20,background:loading?'#1C2130':'rgba(191,90,242,0.15)',border:'1px solid rgba(191,90,242,0.35)',color:loading?'#555C70':'#BF5AF2',fontSize:11,fontWeight:600,cursor:loading?'not-allowed':'pointer'}}>
-            {loading?<><div style={{width:12,height:12,border:'2px solid #3D4254',borderTopColor:'#BF5AF2',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>Analyse...</>:'✨ Analyser la session'}
+          <button onClick={run} disabled={loading} style={{display:'flex',alignItems:'center',gap:6,padding:'7px 16px',borderRadius:20,background:loading?'var(--tm-bg-tertiary)':'rgba(var(--tm-purple-rgb,191,90,242),0.15)',border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.35)',color:loading?'var(--tm-text-muted)':'var(--tm-purple)',fontSize:11,fontWeight:600,cursor:loading?'not-allowed':'pointer'}}>
+            {loading?<><div style={{width:12,height:12,border:'2px solid #3D4254',borderTopColor:'var(--tm-purple)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>Analyse...</>:'✨ Analyser la session'}
           </button>
         ):(
-          <button onClick={run} disabled={loading} style={{fontSize:11,color:'#555C70',background:'none',border:'none',cursor:'pointer'}}>{loading?'...':'↺'}</button>
+          <button onClick={run} disabled={loading} style={{fontSize:11,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer'}}>{loading?'...':'↺'}</button>
         )}
       </div>
       {done&&text&&<div style={{fontSize:12,color:'#C5C8D6',lineHeight:1.8,whiteSpace:'pre-wrap'}}>{text}</div>}
-      {!done&&<div style={{fontSize:11,color:'#3D4254',marginTop:8}}>Risque global · Événements prioritaires · Impact BTC / SPX / EUR/USD · Recommandations</div>}
+      {!done&&<div style={{fontSize:11,color:'var(--tm-text-muted)',marginTop:8}}>Risque global · Événements prioritaires · Impact BTC / SPX / EUR/USD · Recommandations</div>}
     </div>
   )
 }
@@ -236,42 +236,42 @@ export default function CalendrierPage(){
   const byDate=period==='week'?filtered.reduce((acc,e)=>{const d=fmtDate(e.dateUtc);if(!acc[d])acc[d]=[];acc[d].push(e);return acc},{}  as Record<string,CalendarEvent[]>):null
 
   return(
-    <div style={{minHeight:'100vh',background:'#0D1117',padding:'32px 24px',maxWidth:900,margin:'0 auto'}}>
+    <div style={{minHeight:'100vh',background:'var(--tm-bg)',padding:'32px 24px',maxWidth:900,margin:'0 auto'}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:0.8}}`}</style>
 
       {/* Header */}
       <div style={{marginBottom:28}}>
         <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
-          <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,rgba(10,133,255,0.2),rgba(0,229,255,0.2))',border:'1px solid rgba(0,229,255,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>📅</div>
+          <div style={{width:40,height:40,borderRadius:12,background:'linear-gradient(135deg,rgba(var(--tm-blue-rgb,10,133,255),0.2),rgba(var(--tm-accent-rgb,0,229,255),0.2))',border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>📅</div>
           <div>
-            <h1 style={{fontSize:22,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne,sans-serif'}}>Calendrier Économique</h1>
-            <p style={{fontSize:12,color:'#555C70',margin:0}}>{pInfo?.label||'Événements macro · Heure Paris'}</p>
+            <h1 style={{fontSize:22,fontWeight:700,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne,sans-serif'}}>Calendrier Économique</h1>
+            <p style={{fontSize:12,color:'var(--tm-text-muted)',margin:0}}>{pInfo?.label||'Événements macro · Heure Paris'}</p>
           </div>
         </div>
       </div>
 
       {/* Controls */}
       <div style={{display:'flex',gap:12,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
-        <div style={{display:'flex',background:'#161B22',border:'1px solid #1E2330',borderRadius:12,padding:4,gap:2}}>
+        <div style={{display:'flex',background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:12,padding:4,gap:2}}>
           {([{k:'today',l:"Aujourd'hui"},{k:'tomorrow',l:'Demain'},{k:'week',l:'Semaine'},{k:'nextweek',l:'Sem. suivante'}] as {k:PeriodFilter,l:string}[]).map(p=>(
-            <button key={p.k} onClick={()=>setPeriod(p.k)} style={{padding:'7px 18px',borderRadius:9,fontSize:12,fontWeight:500,cursor:'pointer',border:'none',background:period===p.k?'rgba(0,229,255,0.15)':'transparent',color:period===p.k?'#00E5FF':'#555C70',transition:'all 0.15s'}}>{p.l}</button>
+            <button key={p.k} onClick={()=>setPeriod(p.k)} style={{padding:'7px 18px',borderRadius:9,fontSize:12,fontWeight:500,cursor:'pointer',border:'none',background:period===p.k?'rgba(var(--tm-accent-rgb,0,229,255),0.15)':'transparent',color:period===p.k?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s'}}>{p.l}</button>
           ))}
         </div>
         <div style={{display:'flex',gap:6}}>
           {(['ALL','HIGH','MEDIUM','LOW'] as ImpactFilter[]).map(f=>{
-            const colors:Record<ImpactFilter,string>={ALL:'#8F94A3',HIGH:'#FF3B30',MEDIUM:'#FF9500',LOW:'#22C759'}; const c=colors[f]
-            return <button key={f} onClick={()=>setFilter(f)} style={{padding:'7px 14px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',border:`1px solid ${filter===f?c:'#2A2F3E'}`,background:filter===f?`${c}15`:'transparent',color:filter===f?c:'#555C70',transition:'all 0.15s'}}>{f==='ALL'?'Tous':f}</button>
+            const colors:Record<ImpactFilter,string>={ALL:'var(--tm-text-secondary)',HIGH:'var(--tm-loss)',MEDIUM:'var(--tm-warning)',LOW:'var(--tm-profit)'}; const c=colors[f]
+            return <button key={f} onClick={()=>setFilter(f)} style={{padding:'7px 14px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',border:`1px solid ${filter===f?c:'var(--tm-border)'}`,background:filter===f?`${c}15`:'transparent',color:filter===f?c:'var(--tm-text-muted)',transition:'all 0.15s'}}>{f==='ALL'?'Tous':f}</button>
           })}
         </div>
-        <button onClick={()=>load(period)} style={{marginLeft:'auto',padding:'7px 14px',borderRadius:20,fontSize:11,background:'transparent',border:'1px solid #2A2F3E',color:'#555C70',cursor:'pointer'}}>↺ Actualiser</button>
+        <button onClick={()=>load(period)} style={{marginLeft:'auto',padding:'7px 14px',borderRadius:20,fontSize:11,background:'transparent',border:'1px solid #2A2F3E',color:'var(--tm-text-muted)',cursor:'pointer'}}>↺ Actualiser</button>
       </div>
 
       {/* Weekend banner */}
       {status==='done'&&isWE&&(
-        <div style={{padding:'20px',background:'rgba(255,149,0,0.06)',border:'1px solid rgba(255,149,0,0.2)',borderRadius:14,marginBottom:16,textAlign:'center'}}>
+        <div style={{padding:'20px',background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',borderRadius:14,marginBottom:16,textAlign:'center'}}>
           <div style={{fontSize:28,marginBottom:8}}>🏖️</div>
-          <div style={{fontSize:14,fontWeight:700,color:'#FF9500',marginBottom:4}}>Marchés fermés ce weekend</div>
-          <div style={{fontSize:12,color:'#8F94A3',marginTop:4}}>Prochain jour ouvré : <span style={{color:'#F0F3FF',fontWeight:600}}>{pInfo?.nextBD ? new Date(pInfo.nextBD).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}) : '—'}</span></div>
+          <div style={{fontSize:14,fontWeight:700,color:'var(--tm-warning)',marginBottom:4}}>Marchés fermés ce weekend</div>
+          <div style={{fontSize:12,color:'var(--tm-text-secondary)',marginTop:4}}>Prochain jour ouvré : <span style={{color:'var(--tm-text-primary)',fontWeight:600}}>{pInfo?.nextBD ? new Date(pInfo.nextBD).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}) : '—'}</span></div>
         </div>
       )}
 
@@ -280,26 +280,26 @@ export default function CalendrierPage(){
       {status==='done'&&events.length>0&&<RiskBanner events={events}/>}
 
       {/* Loading */}
-      {status==='loading'&&<div style={{display:'flex',flexDirection:'column',gap:10}}>{[1,2,3,4,5].map(i=><div key={i} style={{height:72,borderRadius:12,background:'#161B22',animation:`pulse 1.5s ease-in-out ${i*0.08}s infinite`}}/>)}</div>}
+      {status==='loading'&&<div style={{display:'flex',flexDirection:'column',gap:10}}>{[1,2,3,4,5].map(i=><div key={i} style={{height:72,borderRadius:12,background:'var(--tm-bg-secondary)',animation:`pulse 1.5s ease-in-out ${i*0.08}s infinite`}}/>)}</div>}
 
       {/* Error */}
-      {status==='error'&&<div style={{textAlign:'center',padding:'60px 20px',color:'#555C70'}}><div style={{fontSize:40,marginBottom:12}}>📡</div><div style={{fontSize:14,marginBottom:8}}>Impossible de charger</div><button onClick={()=>load(period)} style={{padding:'8px 20px',borderRadius:10,background:'rgba(0,229,255,0.1)',border:'1px solid rgba(0,229,255,0.2)',color:'#00E5FF',fontSize:12,cursor:'pointer'}}>Réessayer</button></div>}
+      {status==='error'&&<div style={{textAlign:'center',padding:'60px 20px',color:'var(--tm-text-muted)'}}><div style={{fontSize:40,marginBottom:12}}>📡</div><div style={{fontSize:14,marginBottom:8}}>Impossible de charger</div><button onClick={()=>load(period)} style={{padding:'8px 20px',borderRadius:10,background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)',color:'var(--tm-accent)',fontSize:12,cursor:'pointer'}}>Réessayer</button></div>}
 
       {/* Empty */}
-      {status==='done'&&filtered.length===0&&!isWE&&<div style={{textAlign:'center',padding:'60px 20px',color:'#555C70'}}><div style={{fontSize:40,marginBottom:12}}>🗓️</div><div style={{fontSize:14}}>Aucun événement {filter!=='ALL'?filter:''} pour cette période</div></div>}
+      {status==='done'&&filtered.length===0&&!isWE&&<div style={{textAlign:'center',padding:'60px 20px',color:'var(--tm-text-muted)'}}><div style={{fontSize:40,marginBottom:12}}>🗓️</div><div style={{fontSize:14}}>Aucun événement {filter!=='ALL'?filter:''} pour cette période</div></div>}
 
       {/* Events */}
       {status==='done'&&filtered.length>0&&(byDate?Object.entries(byDate).map(([date,evts])=>(
         <div key={date} style={{marginBottom:24}}>
-          <div style={{fontSize:12,fontWeight:700,color:'#555C70',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10,paddingBottom:6,borderBottom:'1px solid #1E2330'}}>{date}</div>
+          <div style={{fontSize:12,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10,paddingBottom:6,borderBottom:'1px solid #1E2330'}}>{date}</div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>{evts.map(e=><EventCard key={e.id} event={e}/>)}</div>
         </div>
       )):<div style={{display:'flex',flexDirection:'column',gap:8}}>{filtered.map(e=><EventCard key={e.id} event={e}/>)}</div>)}
 
       {/* Legend */}
-      {status==='done'&&<div style={{display:'flex',gap:16,marginTop:24,padding:'14px 20px',background:'#161B22',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
-        {[{d:'●●●',c:'#FF3B30',l:'Impact fort — éviter de trader'},{d:'●●○',c:'#FF9500',l:'Impact modéré — prudence'},{d:'●○○',c:'#22C759',l:'Impact faible'}].map(({d,c,l})=>(
-          <div key={l} style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:11,color:c,letterSpacing:1}}>{d}</span><span style={{fontSize:11,color:'#555C70'}}>{l}</span></div>
+      {status==='done'&&<div style={{display:'flex',gap:16,marginTop:24,padding:'14px 20px',background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
+        {[{d:'●●●',c:'var(--tm-loss)',l:'Impact fort — éviter de trader'},{d:'●●○',c:'var(--tm-warning)',l:'Impact modéré — prudence'},{d:'●○○',c:'var(--tm-profit)',l:'Impact faible'}].map(({d,c,l})=>(
+          <div key={l} style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:11,color:c,letterSpacing:1}}>{d}</span><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>{l}</span></div>
         ))}
       </div>}
     </div>

@@ -11,7 +11,7 @@ export default function AuthLayout() {
         {/* Logo */}
         <div className="flex flex-col items-center gap-3 mb-8">
           <div className="w-12 h-12 rounded-2xl bg-brand-cyan bg-opacity-10 border border-brand-cyan border-opacity-20 flex items-center justify-center">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" strokeWidth="2" strokeLinecap="round">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--tm-accent)" strokeWidth="2" strokeLinecap="round">
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
               <polyline points="16 7 22 7 22 13" />
             </svg>

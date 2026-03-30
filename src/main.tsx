@@ -14,14 +14,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         position="bottom-right"
         toastOptions={{
           style: {
-            background: '#1C2133',
-            color: '#F0F3FF',
+            background: 'var(--tm-bg-card)',
+            color: 'var(--tm-text-primary)',
             border: '1px solid #2A2F3E',
             borderRadius: '10px',
             fontSize: '14px',
           },
-          success: { iconTheme: { primary: '#22C759', secondary: '#0D1117' } },
-          error:   { iconTheme: { primary: '#FF3B30', secondary: '#0D1117' } },
+          success: { iconTheme: { primary: 'var(--tm-profit)', secondary: 'var(--tm-bg)' } },
+          error:   { iconTheme: { primary: 'var(--tm-loss)', secondary: 'var(--tm-bg)' } },
         }}
       />
     </BrowserRouter>

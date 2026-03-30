@@ -22,10 +22,10 @@ function Skel({ h = 20 }: { h?: number }) {
 export function KPIBarWidget() {
   const { s, loading, closed, open } = useContext(WidgetDataContext)
   const items = [
-    { label:'P&L Total', value: loading ? null : fmtK(s.totalPnL), color: s.totalPnL>=0?'#22C759':'#FF3B30', sub:`${closed.length} trades fermés` },
-    { label:'Win Rate',  value: loading ? null : `${s.winRate.toFixed(1)}%`, color:'#F0F3FF', sub:`${s.wins}W / ${s.losses}L` },
-    { label:'Ratio R/R', value: loading ? null : s.payoffRatio.toFixed(2),   color:'#00E5FF', sub:'Rendement/Risque' },
-    { label:'Ouverts',   value: loading ? null : String(open.length),         color: open.length>0?'#FF9500':'#8F94A3', sub:'Positions actives' },
+    { label:'P&L Total', value: loading ? null : fmtK(s.totalPnL), color: s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} trades fermés` },
+    { label:'Win Rate',  value: loading ? null : `${s.winRate.toFixed(1)}%`, color:'var(--tm-text-primary)', sub:`${s.wins}W / ${s.losses}L` },
+    { label:'Ratio R/R', value: loading ? null : s.payoffRatio.toFixed(2),   color:'var(--tm-accent)', sub:'Rendement/Risque' },
+    { label:'Ouverts',   value: loading ? null : String(open.length),         color: open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives' },
   ]
   return (
     <div className="grid grid-cols-4 gap-3 p-3 h-full">
@@ -51,8 +51,8 @@ export function LongShortWidget() {
       <div className="text-[11px] text-text-secondary font-medium">Win rate & P&L par direction</div>
       <div className="grid grid-cols-2 gap-3 flex-1">
         {[
-          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'#22C759', bdr:'rgba(34,199,89,0.2)' },
-          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'#FF3B30', bdr:'rgba(255,59,48,0.2)' },
+          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)', bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.2)' },
+          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)', bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.2)' },
         ].map(({ label, icon, wr, pnl, count, c, bdr }) => (
           <div key={label} className="rounded-xl p-3 flex flex-col gap-2"
             style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${bdr}` }}>
@@ -65,7 +65,7 @@ export function LongShortWidget() {
               <>
                 <div className="text-2xl font-black font-mono" style={{ color:c }}>{wr.toFixed(1)}<span className="text-sm">%</span></div>
                 <div className="text-[10px] text-text-muted">{count} trades</div>
-                <div className="text-xs font-semibold font-mono" style={{ color:pnl>=0?'#22C759':'#FF3B30' }}>{fmtK(pnl)}</div>
+                <div className="text-xs font-semibold font-mono" style={{ color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(pnl)}</div>
               </>
             )}
           </div>
@@ -79,10 +79,10 @@ export function LongShortWidget() {
 export function MainMetricsWidget() {
   const { s, loading, closed } = useContext(WidgetDataContext)
   const items = loading ? [] : [
-    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'#22C759', bg:'rgba(34,199,89,0.08)' },
-    { icon:'💲', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'#00E5FF', bg:'rgba(0,229,255,0.08)' },
-    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain/Perte',                c:'#0A85FF', bg:'rgba(10,133,255,0.08)' },
-    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total',                     c:'#BF5AF2', bg:'rgba(191,90,242,0.08)' },
+    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'var(--tm-profit)', bg:'rgba(var(--tm-profit-rgb,34,199,89),0.08)' },
+    { icon:'💲', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'var(--tm-accent)', bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)' },
+    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain/Perte',                c:'var(--tm-blue)', bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)' },
+    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total',                     c:'var(--tm-purple)', bg:'rgba(var(--tm-purple-rgb,191,90,242),0.08)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3">
@@ -105,10 +105,10 @@ export function MainMetricsWidget() {
 export function AdvancedMetricsWidget() {
   const { s, loading } = useContext(WidgetDataContext)
   const items = loading ? [] : [
-    { icon:'📉', value:fmtK(-s.maxDD),       label:'Max Drawdown', sub:'Max loss',     c:'#FF3B30', bg:'rgba(255,59,48,0.08)' },
-    { icon:'📊', value:s.sharpe.toFixed(2),   label:'Sharpe Ratio', sub:'Return/Risk',  c:'#0A85FF', bg:'rgba(10,133,255,0.08)' },
-    { icon:'🎯', value:fmtK(s.expectancy),    label:'Expectancy',   sub:'Avg gain/trade',c:'#00E5FF', bg:'rgba(0,229,255,0.08)' },
-    { icon:'🔥', value:String(s.bestStreak),  label:'Best Streak',  sub:`${s.worstStreak} max losses`,c:'#FF9500', bg:'rgba(255,149,0,0.08)' },
+    { icon:'📉', value:fmtK(-s.maxDD),       label:'Max Drawdown', sub:'Max loss',     c:'var(--tm-loss)', bg:'rgba(var(--tm-loss-rgb,255,59,48),0.08)' },
+    { icon:'📊', value:s.sharpe.toFixed(2),   label:'Sharpe Ratio', sub:'Return/Risk',  c:'var(--tm-blue)', bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)' },
+    { icon:'🎯', value:fmtK(s.expectancy),    label:'Expectancy',   sub:'Avg gain/trade',c:'var(--tm-accent)', bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)' },
+    { icon:'🔥', value:String(s.bestStreak),  label:'Best Streak',  sub:`${s.worstStreak} max losses`,c:'var(--tm-warning)', bg:'rgba(var(--tm-warning-rgb,255,149,0),0.08)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3">
@@ -134,10 +134,10 @@ export function EmotionsWidget() {
     <div className="p-4 text-xs text-text-muted text-center pt-8">Aucune donnée émotionnelle</div>
   )
   const items = emo ? [
-    { tag:'ÉTAT MOYEN',    icon:'✅', value:emo.avgState, sub:`${emo.entries} entrées`,     c:'#22C759', bg:'rgba(34,199,89,0.06)',  bdr:'rgba(34,199,89,0.15)' },
-    { tag:'IMPACT',        icon:'⊜',  value:emo.impact,  sub:'Corrélation P&L',            c:'#8F94A3', bg:'rgba(255,255,255,0.02)',bdr:'#1E2330' },
-    { tag:'RISQUE ÉMOTIONNEL', icon:'⚠️', value:emo.risk, sub:emo.consec>0?`${emo.consec} pertes consec.`:'Aucune série', c:'#FF9500', bg:'rgba(255,149,0,0.06)', bdr:'rgba(255,149,0,0.15)' },
-    { tag:'IA CONSEIL',    icon:'▶',  value:emo.advice,  sub:'Recommandation',             c:'#22C759', bg:'rgba(34,199,89,0.06)',  bdr:'rgba(34,199,89,0.15)' },
+    { tag:'ÉTAT MOYEN',    icon:'✅', value:emo.avgState, sub:`${emo.entries} entrées`,     c:'var(--tm-profit)', bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',  bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)' },
+    { tag:'IMPACT',        icon:'⊜',  value:emo.impact,  sub:'Corrélation P&L',            c:'var(--tm-text-secondary)', bg:'rgba(255,255,255,0.02)',bdr:'var(--tm-border-sub)' },
+    { tag:'RISQUE ÉMOTIONNEL', icon:'⚠️', value:emo.risk, sub:emo.consec>0?`${emo.consec} pertes consec.`:'Aucune série', c:'var(--tm-warning)', bg:'rgba(var(--tm-warning-rgb,255,149,0),0.06)', bdr:'rgba(var(--tm-warning-rgb,255,149,0),0.15)' },
+    { tag:'IA CONSEIL',    icon:'▶',  value:emo.advice,  sub:'Recommandation',             c:'var(--tm-profit)', bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',  bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)' },
   ] : []
   return (
     <div className="p-4 h-full flex flex-col gap-3">
@@ -165,7 +165,7 @@ export function EmotionsWidget() {
 export function RecentTradesWidget() {
   const { recent, loading, systems, tradePnLFn } = useContext(WidgetDataContext)
   const systemName  = (id: string) => systems.find(s => s.id === id)?.name  ?? '—'
-  const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? '#00E5FF'
+  const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? 'var(--tm-accent)'
   return (
     <div className="p-4 h-full flex flex-col gap-3 overflow-auto">
       <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-widest">Trades récents</div>
@@ -179,8 +179,8 @@ export function RecentTradesWidget() {
               <div key={t.id} className="flex items-center gap-2 px-3 py-2 rounded-xl"
                 style={{ background:'rgba(255,255,255,0.02)' }}>
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs flex-shrink-0"
-                  style={{ background: t.type==='Long'?'rgba(34,199,89,0.1)':'rgba(255,59,48,0.1)',
-                           color:       t.type==='Long'?'#22C759':'#FF3B30' }}>
+                  style={{ background: t.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',
+                           color:       t.type==='Long'?'var(--tm-profit)':'var(--tm-loss)' }}>
                   {t.type==='Long'?'↑':'↓'}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -188,8 +188,8 @@ export function RecentTradesWidget() {
                   <div className="text-[10px] text-text-muted">{fmtDate(t.date)} · <span style={{ color:systemColor(t.systemId) }}>{systemName(t.systemId)}</span></div>
                 </div>
                 {t.status==='open'
-                  ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background:'rgba(255,149,0,0.1)', color:'#FF9500' }}>OUVERT</span>
-                  : <span className="text-xs font-bold font-mono" style={{ color:pnl>=0?'#22C759':'#FF3B30' }}>{fmtK(pnl)}</span>
+                  ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)', color:'var(--tm-warning)' }}>OUVERT</span>
+                  : <span className="text-xs font-bold font-mono" style={{ color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(pnl)}</span>
                 }
               </div>
             )
@@ -204,12 +204,12 @@ export function RecentTradesWidget() {
 export function StatsSummaryWidget() {
   const { s, loading, closed } = useContext(WidgetDataContext)
   const rows = [
-    { label:'Trades fermés',   value: closed.length,                    c:'#F0F3FF' },
-    { label:'Gain moyen',      value: `+$${fmt(s.avgWin)}`,             c:'#22C759' },
-    { label:'Perte moyenne',   value: `-$${fmt(s.avgLoss)}`,            c:'#FF3B30' },
-    { label:'Série gagnante',  value: `${s.bestStreak} trades`,         c:'#FF9500' },
-    { label:'Série perdante',  value: `${s.worstStreak} trades`,        c:'#FF3B30' },
-    { label:'Streak actuel',   value: s.currentStreak>0 ? `+${s.currentStreak} wins` : `${Math.abs(s.currentStreak)} losses`, c: s.currentStreak>0?'#22C759':'#FF3B30' },
+    { label:'Trades fermés',   value: closed.length,                    c:'var(--tm-text-primary)' },
+    { label:'Gain moyen',      value: `+$${fmt(s.avgWin)}`,             c:'var(--tm-profit)' },
+    { label:'Perte moyenne',   value: `-$${fmt(s.avgLoss)}`,            c:'var(--tm-loss)' },
+    { label:'Série gagnante',  value: `${s.bestStreak} trades`,         c:'var(--tm-warning)' },
+    { label:'Série perdante',  value: `${s.worstStreak} trades`,        c:'var(--tm-loss)' },
+    { label:'Streak actuel',   value: s.currentStreak>0 ? `+${s.currentStreak} wins` : `${Math.abs(s.currentStreak)} losses`, c: s.currentStreak>0?'var(--tm-profit)':'var(--tm-loss)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3 overflow-auto">
@@ -246,7 +246,7 @@ export function RSIWidget({ symbol }: { symbol: string }) {
         <span className="text-[9px] font-mono text-text-muted">RSI(14)</span>
       </div>
       {data.map(d => {
-        const color = d.signal==='bull' ? '#22C759' : d.signal==='bear' ? '#FF3B30' : '#FF9500'
+        const color = d.signal==='bull' ? 'var(--tm-profit)' : d.signal==='bear' ? 'var(--tm-loss)' : 'var(--tm-warning)'
         return (
           <div key={d.tf} className="flex items-center gap-2 py-1 border-b border-border-subtle last:border-0">
             <span className="text-[10px] font-mono text-text-muted w-8 flex-shrink-0">{d.tf}</span>
@@ -298,9 +298,9 @@ export function MACDWidget({ symbol }: { symbol: string }) {
 
 export function DivergenceWidget({ symbol }: { symbol: string }) {
   const divs = [
-    { tf:'1h', type:'Baissière cachée',   indicator:'RSI',  strength:78, color:'#FF3B30' },
-    { tf:'4h', type:'Haussière régulière',indicator:'MACD', strength:62, color:'#22C759' },
-    { tf:'1d', type:'Haussière cachée',   indicator:'VMC',  strength:45, color:'#22C759' },
+    { tf:'1h', type:'Baissière cachée',   indicator:'RSI',  strength:78, color:'var(--tm-loss)' },
+    { tf:'4h', type:'Haussière régulière',indicator:'MACD', strength:62, color:'var(--tm-profit)' },
+    { tf:'1d', type:'Haussière cachée',   indicator:'VMC',  strength:45, color:'var(--tm-profit)' },
   ]
   return (
     <div className="p-4 flex flex-col gap-2 h-full overflow-auto">
@@ -373,7 +373,7 @@ export function VolumeCVDWidget({ symbol }: { symbol: string }) {
           <div key={i} className="flex-1 flex flex-col justify-end">
             <div className="rounded-sm opacity-70" style={{
               height:`${(b.vol/maxVol)*100}%`,
-              background: b.delta>=0 ? '#22C759' : '#FF3B30',
+              background: b.delta>=0 ? 'var(--tm-profit)' : 'var(--tm-loss)',
             }}/>
           </div>
         ))}

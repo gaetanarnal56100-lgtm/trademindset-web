@@ -194,11 +194,11 @@ function scoreToSignal(score: number): Signal {
 }
 
 const SIGNAL_CFG: Record<Signal, { label: string; color: string; bg: string }> = {
-  BUY:     { label: 'ACHETER', color: '#22C759', bg: 'rgba(34,199,89,0.25)'    },
+  BUY:     { label: 'ACHETER', color: 'var(--tm-profit)', bg: 'rgba(var(--tm-profit-rgb,34,199,89),0.25)'    },
   BULLISH: { label: 'BAISSIER',color: '#FFD60A', bg: 'rgba(255,214,10,0.2)'   },
-  NEUTRAL: { label: 'NEUTRE',  color: '#8F94A3', bg: 'rgba(143,148,163,0.15)' },
-  BEARISH: { label: 'HAUSSIER',color: '#FF9500', bg: 'rgba(255,149,0,0.2)'    },
-  SELL:    { label: 'VENDRE',  color: '#FF3B30', bg: 'rgba(255,59,48,0.25)'   },
+  NEUTRAL: { label: 'NEUTRE',  color: 'var(--tm-text-secondary)', bg: 'rgba(143,148,163,0.15)' },
+  BEARISH: { label: 'HAUSSIER',color: 'var(--tm-warning)', bg: 'rgba(var(--tm-warning-rgb,255,149,0),0.2)'    },
+  SELL:    { label: 'VENDRE',  color: 'var(--tm-loss)', bg: 'rgba(var(--tm-loss-rgb,255,59,48),0.25)'   },
 }
 
 // ── Fetch + Compute ────────────────────────────────────────────────────────
@@ -277,9 +277,9 @@ function RSIBar({ rsi, norm, width = 22 }: { rsi: number; norm: number; width?: 
   const fromBottom = norm < 0
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-      <div style={{ width, height: H, background: '#0D1117', borderRadius: 4, position: 'relative', border: '1px solid #2A2F3E', overflow: 'hidden' }}>
+      <div style={{ width, height: H, background: 'var(--tm-bg)', borderRadius: 4, position: 'relative', border: '1px solid #2A2F3E', overflow: 'hidden' }}>
         {/* Zero line */}
-        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: '#2A2F3E' }} />
+        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: 'var(--tm-border)' }} />
         {/* Fill */}
         <div style={{
           position: 'absolute', left: 2, right: 2,
@@ -290,7 +290,7 @@ function RSIBar({ rsi, norm, width = 22 }: { rsi: number; norm: number; width?: 
           opacity: 0.85,
         }} />
       </div>
-      <div style={{ fontSize: 8, color: '#8F94A3', fontFamily: 'monospace' }}>{rsi.toFixed(0)}</div>
+      <div style={{ fontSize: 8, color: 'var(--tm-text-secondary)', fontFamily: 'monospace' }}>{rsi.toFixed(0)}</div>
     </div>
   )
 }
@@ -300,12 +300,12 @@ function VMCBar({ vmc, width = 28 }: { vmc: number; width?: number }) {
   const H = 90
   const clamped = Math.max(-100, Math.min(100, vmc))
   const fillH = Math.abs(clamped) / 100 * H
-  const color = clamped < -25 ? '#22C759' : clamped < 0 ? '#66BB6A' : clamped < 35 ? '#CE93D8' : '#EF5350'
+  const color = clamped < -25 ? 'var(--tm-profit)' : clamped < 0 ? '#66BB6A' : clamped < 35 ? '#CE93D8' : '#EF5350'
   const fromBottom = clamped < 0
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-      <div style={{ width, height: H, background: '#0D1117', borderRadius: 4, position: 'relative', border: '1px solid #2A2F3E', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: '#2A2F3E' }} />
+      <div style={{ width, height: H, background: 'var(--tm-bg)', borderRadius: 4, position: 'relative', border: '1px solid #2A2F3E', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: 'var(--tm-border)' }} />
         <div style={{
           position: 'absolute', left: 2, right: 2,
           height: fillH, borderRadius: 3,
@@ -315,7 +315,7 @@ function VMCBar({ vmc, width = 28 }: { vmc: number; width?: number }) {
           opacity: 0.85,
         }} />
       </div>
-      <div style={{ fontSize: 8, color: '#8F94A3', fontFamily: 'monospace' }}>{vmc.toFixed(1)}</div>
+      <div style={{ fontSize: 8, color: 'var(--tm-text-secondary)', fontFamily: 'monospace' }}>{vmc.toFixed(1)}</div>
     </div>
   )
 }
@@ -323,11 +323,11 @@ function VMCBar({ vmc, width = 28 }: { vmc: number; width?: number }) {
 // ── Signal Detail Modal ────────────────────────────────────────────────────
 function SignalDetailModal({ r, onClose }: { r: MTFReading; onClose: () => void }) {
   const sig = SIGNAL_CFG[r.signal]
-  const scoreColor = r.score < -40 ? '#22C759' : r.score < -10 ? '#FFD60A' : r.score > 40 ? '#FF3B30' : r.score > 10 ? '#FF9500' : '#8F94A3'
+  const scoreColor = r.score < -40 ? 'var(--tm-profit)' : r.score < -10 ? '#FFD60A' : r.score > 40 ? 'var(--tm-loss)' : r.score > 10 ? 'var(--tm-warning)' : 'var(--tm-text-secondary)'
   const rsiZone = r.rsi < 30 ? 'Survente' : r.rsi > 70 ? 'Surachat' : 'Neutre'
-  const rsiZoneColor = r.rsi < 30 ? '#42A5F5' : r.rsi > 70 ? '#EF5350' : '#8F94A3'
+  const rsiZoneColor = r.rsi < 30 ? '#42A5F5' : r.rsi > 70 ? '#EF5350' : 'var(--tm-text-secondary)'
   const vmcZone = r.vmc < -25 ? 'Fort négatif' : r.vmc > 35 ? 'Fort positif' : 'Neutre'
-  const vmcZoneColor = r.vmc < -25 ? '#22C759' : r.vmc > 35 ? '#EF5350' : '#8F94A3'
+  const vmcZoneColor = r.vmc < -25 ? 'var(--tm-profit)' : r.vmc > 35 ? '#EF5350' : 'var(--tm-text-secondary)'
   const interpretation = r.score < -40
     ? 'Zone d\'achat forte — RSI en survente + VMC très négatif. Potentiel de rebond élevé. Attendre une confirmation de retournement avant d\'entrer.'
     : r.score < -10
@@ -340,37 +340,37 @@ function SignalDetailModal({ r, onClose }: { r: MTFReading; onClose: () => void 
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:'#161B22', border:`2px solid ${sig.color}50`, borderRadius:16, padding:24, width:420, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:'var(--tm-bg-secondary)', border:`2px solid ${sig.color}50`, borderRadius:16, padding:24, width:420, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <div style={{ fontSize:14, fontWeight:800, color:sig.color, background:sig.bg, padding:'4px 14px', borderRadius:20, border:`1px solid ${sig.color}60` }}>{sig.label}</div>
-            <div style={{ fontSize:16, fontWeight:700, color:'#F0F3FF' }}>{r.label}</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{r.label}</div>
           </div>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:18 }}>✕</button>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
         </div>
         {/* Score */}
         <div style={{ textAlign:'center', marginBottom:20, padding:'16px', background:`${scoreColor}10`, border:`1px solid ${scoreColor}30`, borderRadius:12 }}>
-          <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Score combiné (RSI×40% + VMC×60%)</div>
+          <div style={{ fontSize:9, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Score combiné (RSI×40% + VMC×60%)</div>
           <div style={{ fontSize:32, fontWeight:800, color:scoreColor, fontFamily:'JetBrains Mono,monospace' }}>{r.score.toFixed(1)}</div>
         </div>
         {/* Details */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
           <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
-            <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>RSI (14)</div>
-            <div style={{ fontSize:20, fontWeight:700, color:'#F0F3FF', fontFamily:'JetBrains Mono,monospace' }}>{r.rsi.toFixed(1)}</div>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>RSI (14)</div>
+            <div style={{ fontSize:20, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'JetBrains Mono,monospace' }}>{r.rsi.toFixed(1)}</div>
             <div style={{ fontSize:10, color:rsiZoneColor, marginTop:4 }}>{rsiZone}</div>
-            <div style={{ fontSize:9, color:'#3D4254', marginTop:2 }}>Normalisé: {r.rsiNorm.toFixed(1)}</div>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginTop:2 }}>Normalisé: {r.rsiNorm.toFixed(1)}</div>
           </div>
           <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
-            <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>VMC</div>
-            <div style={{ fontSize:20, fontWeight:700, color:'#F0F3FF', fontFamily:'JetBrains Mono,monospace' }}>{r.vmc.toFixed(1)}</div>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>VMC</div>
+            <div style={{ fontSize:20, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'JetBrains Mono,monospace' }}>{r.vmc.toFixed(1)}</div>
             <div style={{ fontSize:10, color:vmcZoneColor, marginTop:4 }}>{vmcZone}</div>
-            {r.divergence && <div style={{ fontSize:9, color:'#FF9500', marginTop:2 }}>⚡ Divergence RSI/VMC</div>}
+            {r.divergence && <div style={{ fontSize:9, color:'var(--tm-warning)', marginTop:2 }}>⚡ Divergence RSI/VMC</div>}
           </div>
         </div>
         {/* Interpretation */}
-        <div style={{ background:'rgba(191,90,242,0.06)', border:'1px solid rgba(191,90,242,0.2)', borderRadius:10, padding:'12px 16px' }}>
-          <div style={{ fontSize:10, fontWeight:700, color:'#BF5AF2', marginBottom:6 }}>✨ Interprétation</div>
+        <div style={{ background:'rgba(var(--tm-purple-rgb,191,90,242),0.06)', border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.2)', borderRadius:10, padding:'12px 16px' }}>
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--tm-purple)', marginBottom:6 }}>✨ Interprétation</div>
           <div style={{ fontSize:12, color:'#C5C8D6', lineHeight:1.7 }}>{interpretation}</div>
         </div>
       </div>
@@ -381,7 +381,7 @@ function SignalDetailModal({ r, onClose }: { r: MTFReading; onClose: () => void 
 // ── Column ─────────────────────────────────────────────────────────────────
 function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) => void }) {
   const sig = SIGNAL_CFG[r.signal]
-  const scoreColor = r.score < -40 ? '#22C759' : r.score < -10 ? '#FFD60A' : r.score > 40 ? '#FF3B30' : r.score > 10 ? '#FF9500' : '#8F94A3'
+  const scoreColor = r.score < -40 ? 'var(--tm-profit)' : r.score < -10 ? '#FFD60A' : r.score > 40 ? 'var(--tm-loss)' : r.score > 10 ? 'var(--tm-warning)' : 'var(--tm-text-secondary)'
   return (
     <div onClick={() => onSelect(r)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '8px 6px', background: '#111520', border: `1px solid ${sig.color}30`, borderRadius: 10, minWidth: 70, position: 'relative', cursor:'pointer', transition:'all 0.15s' }}
       onMouseEnter={e=>(e.currentTarget.style.borderColor=sig.color+'80')}
@@ -391,21 +391,21 @@ function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) =>
         {sig.label}
       </div>
       {r.divergence && (
-        <div style={{ position: 'absolute', top: 4, right: 4, fontSize: 8, color: '#FF9500' }}>⚡</div>
+        <div style={{ position: 'absolute', top: 4, right: 4, fontSize: 8, color: 'var(--tm-warning)' }}>⚡</div>
       )}
       {/* Bars */}
       <div style={{ display: 'flex', gap: 5, alignItems: 'flex-end' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <div style={{ fontSize: 7, color: '#555C70' }}>RSI</div>
+          <div style={{ fontSize: 7, color: 'var(--tm-text-muted)' }}>RSI</div>
           <RSIBar rsi={r.rsi} norm={r.rsiNorm} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <div style={{ fontSize: 7, color: '#555C70' }}>VMC</div>
+          <div style={{ fontSize: 7, color: 'var(--tm-text-muted)' }}>VMC</div>
           <VMCBar vmc={r.vmc} />
         </div>
       </div>
       {/* Labels RSI/VMC */}
-      <div style={{ display: 'flex', gap: 4, fontSize: 7, color: '#555C70' }}>
+      <div style={{ display: 'flex', gap: 4, fontSize: 7, color: 'var(--tm-text-muted)' }}>
         <span>RSI</span><span>VMC</span>
       </div>
       {/* Score */}
@@ -413,7 +413,7 @@ function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) =>
         {r.score.toFixed(0)}
       </div>
       {/* TF label */}
-      <div style={{ fontSize: 10, fontWeight: 600, color: '#8F94A3' }}>{r.label}</div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--tm-text-secondary)' }}>{r.label}</div>
     </div>
   )
 }
@@ -454,56 +454,56 @@ export default function MTFDashboard({ symbol }: { symbol: string }) {
   }, [symbol])
 
   if (loading) return (
-    <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, padding: '24px', textAlign: 'center' }}>
-      <div style={{ width: 24, height: 24, border: '2px solid #2A2F3E', borderTopColor: '#FF9500', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
-      <div style={{ fontSize: 12, color: '#555C70' }}>Calcul RSI + VMC sur {TIMEFRAMES.length} timeframes...</div>
+    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, padding: '24px', textAlign: 'center' }}>
+      <div style={{ width: 24, height: 24, border: '2px solid #2A2F3E', borderTopColor: 'var(--tm-warning)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
+      <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>Calcul RSI + VMC sur {TIMEFRAMES.length} timeframes...</div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
   if (error) return (
-    <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, padding: '16px', textAlign: 'center' }}>
-      <div style={{ fontSize: 12, color: '#555C70', marginBottom: 8 }}>{error}</div>
-      <button onClick={load} style={{ fontSize: 11, color: '#00E5FF', background: 'none', border: '1px solid #00E5FF40', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}>Réessayer</button>
+    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, padding: '16px', textAlign: 'center' }}>
+      <div style={{ fontSize: 12, color: 'var(--tm-text-muted)', marginBottom: 8 }}>{error}</div>
+      <button onClick={load} style={{ fontSize: 11, color: 'var(--tm-accent)', background: 'none', border: '1px solid #00E5FF40', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}>Réessayer</button>
     </div>
   )
 
   if (!snap) return null
 
   const gSig = SIGNAL_CFG[snap.globalSignal]
-  const confColor = snap.confluence >= 70 ? '#22C759' : snap.confluence >= 50 ? '#FF9500' : '#8F94A3'
-  const scoreColor = snap.globalScore < -40 ? '#22C759' : snap.globalScore < -10 ? '#FFD60A' : snap.globalScore > 40 ? '#FF3B30' : snap.globalScore > 10 ? '#FF9500' : '#8F94A3'
+  const confColor = snap.confluence >= 70 ? 'var(--tm-profit)' : snap.confluence >= 50 ? 'var(--tm-warning)' : 'var(--tm-text-secondary)'
+  const scoreColor = snap.globalScore < -40 ? 'var(--tm-profit)' : snap.globalScore < -10 ? '#FFD60A' : snap.globalScore > 40 ? 'var(--tm-loss)' : snap.globalScore > 10 ? 'var(--tm-warning)' : 'var(--tm-text-secondary)'
 
   return (
-    <div style={{ background: '#161B22', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
+    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)' }} />
 
       {/* Header */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <div style={{ fontSize: 11, color: '#555C70', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Global Signal</div>
+          <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Global Signal</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: gSig.color, fontFamily: 'Syne, sans-serif' }}>{gSig.label}</div>
         </div>
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: '#555C70', marginBottom: 2 }}>Combined Score</div>
+            <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginBottom: 2 }}>Combined Score</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: scoreColor, fontFamily: 'JetBrains Mono, monospace' }}>
               {snap.globalScore >= 0 ? '+' : ''}{snap.globalScore.toFixed(1)}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 11, color: '#555C70', marginBottom: 2 }}>Confluence</div>
+            <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginBottom: 2 }}>Confluence</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: confColor, fontFamily: 'JetBrains Mono, monospace' }}>{snap.confluence}%</div>
-              {snap.confluence >= 70 && <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#22C75920', border: '2px solid #22C759', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#22C759' }}>✓</div>}
+              {snap.confluence >= 70 && <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#22C75920', border: '2px solid #22C759', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: 'var(--tm-profit)' }}>✓</div>}
             </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
-            <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/>
-            <span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
-            <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
+          <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(var(--tm-profit-rgb,34,199,89),0.1)',border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
+            <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/>
+            <span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
+            <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
           </div>
-          <button onClick={load} style={{ background: '#1C2130', border: '1px solid #2A2F3E', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 11, color: '#8F94A3' }}>↻</button>
+          <button onClick={load} style={{ background: 'var(--tm-bg-tertiary)', border: '1px solid #2A2F3E', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 11, color: 'var(--tm-text-secondary)' }}>↻</button>
         </div>
       </div>
 
@@ -513,13 +513,13 @@ export default function MTFDashboard({ symbol }: { symbol: string }) {
           { color: '#42A5F5', label: 'RSI Survente (<30)' },
           { color: '#7E57C2', label: 'RSI Neutre' },
           { color: '#EF5350', label: 'RSI Surachat (>70)' },
-          { color: '#22C759', label: 'VMC Fort négatif' },
+          { color: 'var(--tm-profit)', label: 'VMC Fort négatif' },
           { color: '#CE93D8', label: 'VMC Neutre' },
           { color: '#EF5350', label: 'VMC Fort positif' },
         ].map(({ color, label }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-            <span style={{ fontSize: 9, color: '#555C70' }}>{label}</span>
+            <span style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>{label}</span>
           </div>
         ))}
       </div>
@@ -542,18 +542,18 @@ export default function MTFDashboard({ symbol }: { symbol: string }) {
             </div>
             <div style={{ display: 'flex', gap: 5, alignItems: 'flex-end' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <div style={{ fontSize: 7, color: '#555C70' }}>Dash</div>
+                <div style={{ fontSize: 7, color: 'var(--tm-text-muted)' }}>Dash</div>
                 <RSIBar rsi={50 + snap.globalRSI/2} norm={snap.globalRSI} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <div style={{ fontSize: 7, color: '#555C70' }}>Add</div>
+                <div style={{ fontSize: 7, color: 'var(--tm-text-muted)' }}>Add</div>
                 <VMCBar vmc={snap.globalVMC} />
               </div>
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'white', background: `${scoreColor}25`, border: `1px solid ${scoreColor}50`, borderRadius: 6, padding: '2px 8px', fontFamily: 'monospace' }}>
               {snap.globalScore >= 0 ? '+' : ''}{snap.globalScore.toFixed(1)}
             </div>
-            <div style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 3, color: snap.isTurningUp ? '#22C759' : snap.isTurningDown ? '#FF3B30' : '#555C70' }}>
+            <div style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 3, color: snap.isTurningUp ? 'var(--tm-profit)' : snap.isTurningDown ? 'var(--tm-loss)' : 'var(--tm-text-muted)' }}>
               {snap.isTurningUp ? '↑' : snap.isTurningDown ? '↓' : '●'} Global
             </div>
           </div>

@@ -52,7 +52,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
       theme:               'dark',
       style:               chartType,
       locale:              'fr',
-      toolbar_bg:          '#161B22',
+      toolbar_bg:          'var(--tm-bg-secondary)',
       width:               '100%',
       height:              expanded ? 620 : 440,
       autosize:            true,
@@ -92,35 +92,35 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
 
       // Couleurs custom pour matcher le design de l'app
       overrides: {
-        'paneProperties.background':                        '#0D1117',
+        'paneProperties.background':                        'var(--tm-bg)',
         'paneProperties.backgroundType':                    'solid',
         'paneProperties.vertGridProperties.color':          '#1E233060',
         'paneProperties.horzGridProperties.color':          '#1E233060',
-        'paneProperties.crossHairProperties.color':         '#555C70',
-        'scalesProperties.textColor':                       '#555C70',
-        'scalesProperties.lineColor':                       '#1E2330',
-        'scalesProperties.backgroundColor':                 '#161B22',
+        'paneProperties.crossHairProperties.color':         'var(--tm-text-muted)',
+        'scalesProperties.textColor':                       'var(--tm-text-muted)',
+        'scalesProperties.lineColor':                       'var(--tm-border-sub)',
+        'scalesProperties.backgroundColor':                 'var(--tm-bg-secondary)',
         // Bougies
-        'mainSeriesProperties.candleStyle.upColor':         '#22C759',
-        'mainSeriesProperties.candleStyle.downColor':       '#FF3B30',
-        'mainSeriesProperties.candleStyle.wickUpColor':     '#22C759',
-        'mainSeriesProperties.candleStyle.wickDownColor':   '#FF3B30',
-        'mainSeriesProperties.candleStyle.borderUpColor':   '#22C759',
-        'mainSeriesProperties.candleStyle.borderDownColor': '#FF3B30',
+        'mainSeriesProperties.candleStyle.upColor':         'var(--tm-profit)',
+        'mainSeriesProperties.candleStyle.downColor':       'var(--tm-loss)',
+        'mainSeriesProperties.candleStyle.wickUpColor':     'var(--tm-profit)',
+        'mainSeriesProperties.candleStyle.wickDownColor':   'var(--tm-loss)',
+        'mainSeriesProperties.candleStyle.borderUpColor':   'var(--tm-profit)',
+        'mainSeriesProperties.candleStyle.borderDownColor': 'var(--tm-loss)',
         // Ligne
-        'mainSeriesProperties.lineStyle.color':             '#00E5FF',
+        'mainSeriesProperties.lineStyle.color':             'var(--tm-accent)',
         'mainSeriesProperties.lineStyle.linewidth':         2,
         // Aire
         'mainSeriesProperties.areaStyle.color1':            '#00E5FF30',
         'mainSeriesProperties.areaStyle.color2':            '#00E5FF05',
-        'mainSeriesProperties.areaStyle.linecolor':         '#00E5FF',
+        'mainSeriesProperties.areaStyle.linecolor':         'var(--tm-accent)',
         'mainSeriesProperties.areaStyle.linewidth':         2,
       },
 
       // Indicateurs chargés par défaut
       studies: ['Volume@tv-basicstudies'],
 
-      loading_screen: { backgroundColor: '#0D1117', foregroundColor: '#22C75940' },
+      loading_screen: { backgroundColor: 'var(--tm-bg)', foregroundColor: '#22C75940' },
 
       // Callback quand le widget est prêt
       onready: () => setLoading(false),
@@ -144,7 +144,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
   const chartH = expanded ? 620 : 440
 
   return (
-    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
 
       {/* Header */}
       <div style={{ padding:'10px 14px', display:'flex', alignItems:'center', gap:8, borderBottom:'1px solid #1E2330', flexWrap:'wrap' }}>
@@ -153,8 +153,8 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, marginRight:4 }}>
           <div style={{ width:26, height:26, borderRadius:7, background:'linear-gradient(135deg,#0A85FF,#00E5FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>📈</div>
           <div>
-            <div style={{ fontSize:11, fontWeight:700, color:'#F0F3FF', lineHeight:1.2 }}>Graphique Live</div>
-            <div style={{ fontSize:9, color:'#555C70' }}>TradingView · {tvSymbol}</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'var(--tm-text-primary)', lineHeight:1.2 }}>Graphique Live</div>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)' }}>TradingView · {tvSymbol}</div>
           </div>
         </div>
 
@@ -163,15 +163,15 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
           {TIMEFRAMES.map(t => (
             <button key={t.label} onClick={() => setTf(t)} style={{
               padding:'3px 8px', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer',
-              border:`1px solid ${tf.label===t.label?'#0A85FF':'#2A2F3E'}`,
-              background: tf.label===t.label?'rgba(10,133,255,0.15)':'transparent',
-              color: tf.label===t.label?'#0A85FF':'#555C70',
+              border:`1px solid ${tf.label===t.label?'var(--tm-blue)':'var(--tm-border)'}`,
+              background: tf.label===t.label?'rgba(var(--tm-blue-rgb,10,133,255),0.15)':'transparent',
+              color: tf.label===t.label?'var(--tm-blue)':'var(--tm-text-muted)',
             }}>{t.label}</button>
           ))}
         </div>
 
         {/* Séparateur */}
-        <div style={{ width:1, height:14, background:'#2A2F3E', flexShrink:0 }}/>
+        <div style={{ width:1, height:14, background:'var(--tm-border)', flexShrink:0 }}/>
 
         {/* Type de graphique */}
         {([
@@ -181,9 +181,9 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         ]).map(({ type, icon, label }) => (
           <button key={type} onClick={() => setChartType(type)} title={label} style={{
             padding:'3px 9px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer',
-            border:`1px solid ${chartType===type?'#FF9500':'#2A2F3E'}`,
-            background: chartType===type?'rgba(255,149,0,0.12)':'transparent',
-            color: chartType===type?'#FF9500':'#555C70',
+            border:`1px solid ${chartType===type?'var(--tm-warning)':'var(--tm-border)'}`,
+            background: chartType===type?'rgba(var(--tm-warning-rgb,255,149,0),0.12)':'transparent',
+            color: chartType===type?'var(--tm-warning)':'var(--tm-text-muted)',
           }}>{icon}</button>
         ))}
 
@@ -191,7 +191,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         <button onClick={() => setExpanded(x => !x)} style={{
           marginLeft:'auto', padding:'3px 10px', borderRadius:6, fontSize:10,
           fontWeight:600, cursor:'pointer', border:'1px solid #2A2F3E',
-          background:'transparent', color:'#555C70', flexShrink:0,
+          background:'transparent', color:'var(--tm-text-muted)', flexShrink:0,
         }}>
           {expanded ? '⊡ Réduire' : '⊞ Agrandir'}
         </button>
@@ -199,25 +199,25 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
 
       {/* Bandeau outils */}
       <div style={{ borderBottom:'1px solid #1E2330' }}>
-        <div style={{ padding:'5px 14px', background:'rgba(10,133,255,0.03)',
+        <div style={{ padding:'5px 14px', background:'rgba(var(--tm-blue-rgb,10,133,255),0.03)',
           display:'flex', alignItems:'center', gap:6, overflowX:'auto', flexWrap:'nowrap' }}>
-          <span style={{ fontSize:9, color:'#3D4254', flexShrink:0 }}>Outils :</span>
+          <span style={{ fontSize:9, color:'var(--tm-text-muted)', flexShrink:0 }}>Outils :</span>
           {['↗ Tendance','◎ Fibo','▭ Rectangle','⟨⟩ Pitchfork','∥ Canal','📐 Mesure R/R','✏ Texte','📊 Indicateurs','↩ Undo','↪ Redo'].map(tool => (
-            <span key={tool} style={{ fontSize:9, color:'#555C70', background:'rgba(255,255,255,0.03)',
+            <span key={tool} style={{ fontSize:9, color:'var(--tm-text-muted)', background:'rgba(255,255,255,0.03)',
               padding:'2px 6px', borderRadius:4, whiteSpace:'nowrap', flexShrink:0 }}>{tool}</span>
           ))}
-          <span style={{ fontSize:9, color:'#3D4254', marginLeft:4, flexShrink:0 }}>← barre gauche</span>
+          <span style={{ fontSize:9, color:'var(--tm-text-muted)', marginLeft:4, flexShrink:0 }}>← barre gauche</span>
         </div>
       </div>
 
       {/* Chart */}
-      <div style={{ position:'relative', height:chartH, background:'#0D1117' }}>
+      <div style={{ position:'relative', height:chartH, background:'var(--tm-bg)' }}>
         {loading && (
           <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center',
-            justifyContent:'center', background:'#0D1117', zIndex:2, gap:12 }}>
-            <div style={{ width:32, height:32, border:'3px solid #1E2330', borderTopColor:'#22C759',
+            justifyContent:'center', background:'var(--tm-bg)', zIndex:2, gap:12 }}>
+            <div style={{ width:32, height:32, border:'3px solid #1E2330', borderTopColor:'var(--tm-profit)',
               borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
-            <div style={{ fontSize:12, color:'#555C70' }}>Chargement du graphique…</div>
+            <div style={{ fontSize:12, color:'var(--tm-text-muted)' }}>Chargement du graphique…</div>
           </div>
         )}
         <div id="tv-chart-container" ref={containerRef} style={{ width:'100%', height:'100%' }}/>

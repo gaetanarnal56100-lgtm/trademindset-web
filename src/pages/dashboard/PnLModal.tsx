@@ -134,7 +134,7 @@ function renderChart(
     const v=minV+rng*i/steps, y=toY(v)
     ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1; ctx.setLineDash([])
     ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke()
-    ctx.fillStyle='#555C70'; ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='right'
+    ctx.fillStyle='var(--tm-text-muted)'; ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='right'
     ctx.fillText(fmtK(v,0), PAD.l-6, y+4)
   }
 
@@ -147,7 +147,7 @@ function renderChart(
 
   // Drawdown zone
   if(showDD){
-    ctx.fillStyle='rgba(255,59,48,0.1)'
+    ctx.fillStyle='rgba(var(--tm-loss-rgb,255,59,48),0.1)'
     ctx.beginPath()
     pts.forEach((p,i)=>i===0?ctx.moveTo(toX(i),toY(p.peak)):ctx.lineTo(toX(i),toY(p.peak)))
     for(let i=pts.length-1;i>=0;i--)ctx.lineTo(toX(i),toY(pts[i].cum))
@@ -155,7 +155,7 @@ function renderChart(
   }
 
   const isPos=(pts[pts.length-1]?.cum??0)>=0
-  const lc=isPos?'#22C759':'#FF3B30'
+  const lc=isPos?'var(--tm-profit)':'var(--tm-loss)'
 
   // Fill
   const g=ctx.createLinearGradient(0,PAD.t,0,PAD.t+cH)
@@ -175,7 +175,7 @@ function renderChart(
   // Dots
   if(showDots){
     pts.forEach((p,i)=>{
-      const x=toX(i),y=toY(p.cum),c=p.pnl>=0?'#22C759':'#FF3B30',hov=i===hIdx
+      const x=toX(i),y=toY(p.cum),c=p.pnl>=0?'var(--tm-profit)':'var(--tm-loss)',hov=i===hIdx
       ctx.beginPath(); ctx.arc(x,y,hov?7:2.5,0,Math.PI*2)
       ctx.fillStyle=hov?c:c+'88'; ctx.fill()
       if(hov){ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}
@@ -184,7 +184,7 @@ function renderChart(
 
   // X labels
   const maxL=Math.min(isModal?12:8,pts.length), step=Math.max(1,Math.ceil(pts.length/maxL))
-  ctx.fillStyle='#555C70'; ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='center'
+  ctx.fillStyle='var(--tm-text-muted)'; ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='center'
   pts.forEach((p,i)=>{
     if(i%step===0||i===pts.length-1)
       ctx.fillText(fmtD(p.date,true),toX(i),H-(isModal?12:8))
@@ -220,7 +220,7 @@ function renderChart(
       const emoToY = (score: number) => PAD.t + cH - ((score - 0.5) / 5) * cH
       // Emotion line
       ctx.beginPath()
-      ctx.strokeStyle = 'rgba(191,90,242,0.7)'
+      ctx.strokeStyle = 'rgba(var(--tm-purple-rgb,191,90,242),0.7)'
       ctx.lineWidth = 1.5; ctx.setLineDash([4, 3])
       sortedEmo.forEach((p, i) => {
         const x = toX(p.idx), y = emoToY(p.score)
@@ -234,7 +234,7 @@ function renderChart(
         ctx.fillStyle = p.color + 'CC'; ctx.fill()
       })
       // Right axis label for emotion
-      ctx.fillStyle = '#BF5AF2'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'left'
+      ctx.fillStyle = 'var(--tm-purple)'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'left'
       ctx.fillText('😎5', W - PAD.r + 3, emoToY(5) + 3)
       ctx.fillText('😰1', W - PAD.r + 3, emoToY(1) + 3)
     }
@@ -245,24 +245,24 @@ function renderChart(
 function Tooltip({ pt, x, W, isModal }: { pt:Pt; x:number; W:number; isModal:boolean }) {
   const tW=210, left=Math.min(x+16, W-tW-8), top=isModal?24:8
   return (
-    <div style={{position:'absolute',left,top,width:tW,background:'#161B22',border:'1px solid #2A2F3E',
+    <div style={{position:'absolute',left,top,width:tW,background:'var(--tm-bg-secondary)',border:'1px solid #2A2F3E',
       borderRadius:12,padding:'12px 14px',pointerEvents:'none',boxShadow:'0 12px 32px rgba(0,0,0,0.7)',zIndex:20}}>
-      <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,fontSize:10,color:'#555C70'}}>
+      <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,fontSize:10,color:'var(--tm-text-muted)'}}>
         <span>{fmtD(pt.date)}</span>
-        <span style={{color:pt.pnl>=0?'#22C759':'#FF3B30',fontWeight:700}}>
+        <span style={{color:pt.pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontWeight:700}}>
           {pt.n>1?`${pt.n} trades`:`${pt.dir==='Long'?'▲':'▼'} ${pt.sym}`}
         </span>
       </div>
       {[
-        {l:'P&L', v:fmtK(pt.pnl), c:pt.pnl>=0?'#22C759':'#FF3B30', sz:16},
-        {l:'Cumulé', v:fmtK(pt.cum), c:'#F0F3FF', sz:13},
-        ...(pt.dd>0?[{l:'Drawdown', v:`-${pt.dd.toFixed(1)}%`, c:'#FF9500', sz:12}]:[]),
-        ...(pt.n>1?[{l:'Trades', v:String(pt.n), c:'#8F94A3', sz:11}]:[]),
+        {l:'P&L', v:fmtK(pt.pnl), c:pt.pnl>=0?'var(--tm-profit)':'var(--tm-loss)', sz:16},
+        {l:'Cumulé', v:fmtK(pt.cum), c:'var(--tm-text-primary)', sz:13},
+        ...(pt.dd>0?[{l:'Drawdown', v:`-${pt.dd.toFixed(1)}%`, c:'var(--tm-warning)', sz:12}]:[]),
+        ...(pt.n>1?[{l:'Trades', v:String(pt.n), c:'var(--tm-text-secondary)', sz:11}]:[]),
       ].map(({l,v,c,sz},i,a)=>(
         <div key={l} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',
           marginBottom:i<a.length-1?6:0, paddingBottom:i<a.length-1?6:0,
           borderBottom:i<a.length-1?'1px solid #1E2330':'none'}}>
-          <span style={{fontSize:10,color:'#555C70'}}>{l}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>{l}</span>
           <span style={{fontSize:sz,fontWeight:700,color:c,fontFamily:'JetBrains Mono,monospace'}}>{v}</span>
         </div>
       ))}
@@ -276,17 +276,17 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
   return (
     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
       {/* Grouped period */}
-      <div style={{display:'flex',alignItems:'center',gap:3,background:'#0D1117',
+      <div style={{display:'flex',alignItems:'center',gap:3,background:'var(--tm-bg)',
         borderRadius:8,padding:'3px 6px',border:'1px solid #1E2330'}}>
         {GROUPS.map((g,gi)=>(
           <div key={gi} style={{display:'flex',alignItems:'center',gap:1}}>
-            {gi>0&&<div style={{width:1,height:14,background:'#2A2F3E',margin:'0 4px'}}/>}
-            {g.lbl&&<span style={{fontSize:9,color:'#3D4254',fontFamily:'monospace',marginRight:2,userSelect:'none'}}>{g.lbl}</span>}
+            {gi>0&&<div style={{width:1,height:14,background:'var(--tm-border)',margin:'0 4px'}}/>}
+            {g.lbl&&<span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace',marginRight:2,userSelect:'none'}}>{g.lbl}</span>}
             {g.ps.map(p=>(
               <button key={p} onClick={()=>setPeriod(p)} style={{padding:'3px 8px',borderRadius:5,fontSize:10,
                 fontWeight:600,cursor:'pointer',border:'none',fontFamily:'JetBrains Mono,monospace',
-                background:period===p?'#1C2130':'transparent',
-                color:period===p?'#F0F3FF':'#555C70',
+                background:period===p?'var(--tm-bg-tertiary)':'transparent',
+                color:period===p?'var(--tm-text-primary)':'var(--tm-text-muted)',
                 outline:period===p?'1px solid #2A2F3E':'none',transition:'all 0.1s'}}>
                 {P_LBL[p]}
               </button>
@@ -295,47 +295,47 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
         ))}
       </div>
 
-      <div style={{width:1,height:16,background:'#2A2F3E'}}/>
+      <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
 
       {/* Timeframe */}
-      <div style={{display:'flex',background:'#0D1117',borderRadius:7,padding:2,gap:1,border:'1px solid #1E2330'}}>
+      <div style={{display:'flex',background:'var(--tm-bg)',borderRadius:7,padding:2,gap:1,border:'1px solid #1E2330'}}>
         {(Object.keys(TF_LBL) as TF[]).map(t=>(
           <button key={t} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:5,fontSize:10,
             fontWeight:600,cursor:'pointer',border:'none',
-            background:tf===t?'rgba(0,229,255,0.12)':'transparent',
-            color:tf===t?'#00E5FF':'#555C70',
-            outline:tf===t?'1px solid rgba(0,229,255,0.3)':'none'}}>
+            background:tf===t?'rgba(var(--tm-accent-rgb,0,229,255),0.12)':'transparent',
+            color:tf===t?'var(--tm-accent)':'var(--tm-text-muted)',
+            outline:tf===t?'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.3)':'none'}}>
             {TF_LBL[t]}
           </button>
         ))}
       </div>
 
-      <div style={{width:1,height:16,background:'#2A2F3E'}}/>
+      <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
 
       {/* Toggles */}
       {[
-        {lbl:'Drawdown',on:showDD,set:setShowDD,c:'#FF3B30'},
+        {lbl:'Drawdown',on:showDD,set:setShowDD,c:'var(--tm-loss)'},
         {lbl:'Points',on:showDots,set:setShowDots,c:'#F59714'},
       ].map(({lbl,on,set,c})=>(
         <button key={lbl} onClick={()=>set((x:boolean)=>!x)} style={{display:'flex',alignItems:'center',gap:5,
           padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',
-          border:`1px solid ${on?c+'50':'#2A2F3E'}`,background:on?c+'10':'transparent',color:on?c:'#555C70'}}>
-          <div style={{width:7,height:7,borderRadius:1,background:on?c:'#555C70'}}/>{lbl}
+          border:`1px solid ${on?c+'50':'var(--tm-border)'}`,background:on?c+'10':'transparent',color:on?c:'var(--tm-text-muted)'}}>
+          <div style={{width:7,height:7,borderRadius:1,background:on?c:'var(--tm-text-muted)'}}/>{lbl}
         </button>
       ))}
 
       {hasMoods && setShowEmotion && (
         <button onClick={()=>setShowEmotion((x:boolean)=>!x)} style={{display:'flex',alignItems:'center',gap:5,
           padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',
-          border:`1px solid ${showEmotion?'#BF5AF250':'#2A2F3E'}`,background:showEmotion?'rgba(191,90,242,0.1)':'transparent',color:showEmotion?'#BF5AF2':'#555C70'}}>
-          <div style={{width:7,height:7,borderRadius:1,background:showEmotion?'#BF5AF2':'#555C70'}}/>Émotion
+          border:`1px solid ${showEmotion?'#BF5AF250':'var(--tm-border)'}`,background:showEmotion?'rgba(var(--tm-purple-rgb,191,90,242),0.1)':'transparent',color:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}>
+          <div style={{width:7,height:7,borderRadius:1,background:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}/>Émotion
         </button>
       )}
 
       {isZoomed&&(
         <button onClick={resetZoom} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 9px',
           borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',
-          border:'1px solid rgba(0,229,255,0.4)',background:'rgba(0,229,255,0.08)',color:'#00E5FF'}}>
+          border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.4)',background:'rgba(var(--tm-accent-rgb,0,229,255),0.08)',color:'var(--tm-accent)'}}>
           ↺ Dézoom
         </button>
       )}
@@ -344,12 +344,12 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
 }
 
 // ── StatBox ────────────────────────────────────────────────────────────────
-function SB({label,value,sub,color='#F0F3FF'}:{label:string;value:string;sub?:string;color?:string}) {
+function SB({label,value,sub,color='var(--tm-text-primary)'}:{label:string;value:string;sub?:string;color?:string}) {
   return (
-    <div style={{padding:'12px 16px',background:'#0D1117',border:'1px solid #1E2330',borderRadius:10}}>
-      <div style={{fontSize:9,color:'#555C70',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>{label}</div>
+    <div style={{padding:'12px 16px',background:'var(--tm-bg)',border:'1px solid #1E2330',borderRadius:10}}>
+      <div style={{fontSize:9,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>{label}</div>
       <div style={{fontSize:17,fontWeight:700,color,fontFamily:'JetBrains Mono,monospace',lineHeight:1}}>{value}</div>
-      {sub&&<div style={{fontSize:10,color:'#3D4254',marginTop:4}}>{sub}</div>}
+      {sub&&<div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:4}}>{sub}</div>}
     </div>
   )
 }
@@ -452,7 +452,7 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
           <button onClick={onFullscreen}
             style={{display:'flex',alignItems:'center',gap:6,padding:'4px 12px',borderRadius:7,
               fontSize:11,fontWeight:600,cursor:'pointer',border:'1px solid #2A2F3E',
-              background:'#1C2130',color:'#8F94A3',transition:'all 0.15s',whiteSpace:'nowrap'}}
+              background:'var(--tm-bg-tertiary)',color:'var(--tm-text-secondary)',transition:'all 0.15s',whiteSpace:'nowrap'}}
             onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.cssText+=';border-color:#00E5FF;color:#00E5FF'}}
             onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.cssText+=';border-color:#2A2F3E;color:#8F94A3'}}>
             ⛶ Plein écran
@@ -461,7 +461,7 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
       </div>
 
       {pts.length<2?(
-        <div style={{height:H,display:'flex',alignItems:'center',justifyContent:'center',color:'#3D4254',fontSize:13}}>
+        <div style={{height:H,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:13}}>
           Pas encore assez de trades fermés
         </div>
       ):(
@@ -471,7 +471,7 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
             onMouseDown={onDown} onMouseUp={onUp}
             style={{display:'block',width:'100%',height:H,cursor}}/>
           {!isModal&&pts.length>1&&(
-            <div style={{position:'absolute',bottom:38,right:8,fontSize:9,color:'#3D4254'}}>
+            <div style={{position:'absolute',bottom:38,right:8,fontSize:9,color:'var(--tm-text-muted)'}}>
               {isZoomed?`${zoom.e-zoom.s+1} pts · `:''}glisser pour zoomer
             </div>
           )}
@@ -485,24 +485,24 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
 // ── Stats grid ─────────────────────────────────────────────────────────────
 function StatsGrid({ pts }: { pts:Pt[] }) {
   const s=computeStats(pts)
-  if(!s) return <div style={{color:'#555C70',textAlign:'center',padding:40}}>Pas de données</div>
+  if(!s) return <div style={{color:'var(--tm-text-muted)',textAlign:'center',padding:40}}>Pas de données</div>
   return (
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(155px,1fr))',gap:8}}>
-      <SB label="P&L Total"       value={fmtK(s.total)}                   color={s.total>=0?'#22C759':'#FF3B30'} sub={`${s.count} trades`}/>
-      <SB label="Win Rate"         value={`${(s.wr*100).toFixed(1)}%`}     color={s.wr>=0.5?'#22C759':'#FF9500'} sub={`${s.wins}W / ${s.losses}L`}/>
-      <SB label="Profit Factor"    value={isFinite(s.pf)?s.pf.toFixed(2):'∞'} color={s.pf>=1.5?'#22C759':s.pf>=1?'#FF9500':'#FF3B30'} sub={`G:${fmtK(s.gp,0)} P:${fmtK(-s.gl,0)}`}/>
-      <SB label="Payoff Ratio"     value={s.payoff.toFixed(2)}             color={s.payoff>=1.5?'#22C759':s.payoff>=1?'#FF9500':'#FF3B30'} sub="moy win/loss"/>
-      <SB label="Expectancy"       value={fmtK(s.exp)}                     color={s.exp>=0?'#22C759':'#FF3B30'} sub="par trade"/>
-      <SB label="Max Drawdown"     value={`${s.maxDD.toFixed(1)}%`}        color={s.maxDD>20?'#FF3B30':s.maxDD>10?'#FF9500':'#22C759'} sub={s.maxDDPt?fmtD(s.maxDDPt.date):undefined}/>
-      <SB label="Meilleur trade"   value={fmtK(s.best)}                    color="#22C759" sub={s.bestPt?`${s.bestPt.sym} · ${fmtD(s.bestPt.date)}`:undefined}/>
-      <SB label="Pire trade"       value={fmtK(s.worst)}                   color="#FF3B30" sub={s.worstPt?`${s.worstPt.sym} · ${fmtD(s.worstPt.date)}`:undefined}/>
-      <SB label="Série gagnante"   value={`+${s.bStrk}`}                   color="#22C759" sub="consécutifs"/>
-      <SB label="Série perdante"   value={`${s.wStrk}`}                    color="#FF3B30" sub="consécutifs"/>
-      <SB label="Série actuelle"   value={s.cur>=0?`+${s.cur}`:`${s.cur}`} color={s.cur>=0?'#22C759':'#FF3B30'}/>
-      <SB label="Moy. gain"        value={fmtK(s.avgW)}                    color="#22C759"/>
-      <SB label="Moy. perte"       value={fmtK(s.avgL)}                    color="#FF3B30"/>
-      <SB label="Recovery Factor"  value={s.rf.toFixed(2)}                 color={s.rf>=2?'#22C759':s.rf>=1?'#FF9500':'#FF3B30'}/>
-      <SB label="Durée analysée"   value={`${s.days}j`}                    color="#8F94A3"/>
+      <SB label="P&L Total"       value={fmtK(s.total)}                   color={s.total>=0?'var(--tm-profit)':'var(--tm-loss)'} sub={`${s.count} trades`}/>
+      <SB label="Win Rate"         value={`${(s.wr*100).toFixed(1)}%`}     color={s.wr>=0.5?'var(--tm-profit)':'var(--tm-warning)'} sub={`${s.wins}W / ${s.losses}L`}/>
+      <SB label="Profit Factor"    value={isFinite(s.pf)?s.pf.toFixed(2):'∞'} color={s.pf>=1.5?'var(--tm-profit)':s.pf>=1?'var(--tm-warning)':'var(--tm-loss)'} sub={`G:${fmtK(s.gp,0)} P:${fmtK(-s.gl,0)}`}/>
+      <SB label="Payoff Ratio"     value={s.payoff.toFixed(2)}             color={s.payoff>=1.5?'var(--tm-profit)':s.payoff>=1?'var(--tm-warning)':'var(--tm-loss)'} sub="moy win/loss"/>
+      <SB label="Expectancy"       value={fmtK(s.exp)}                     color={s.exp>=0?'var(--tm-profit)':'var(--tm-loss)'} sub="par trade"/>
+      <SB label="Max Drawdown"     value={`${s.maxDD.toFixed(1)}%`}        color={s.maxDD>20?'var(--tm-loss)':s.maxDD>10?'var(--tm-warning)':'var(--tm-profit)'} sub={s.maxDDPt?fmtD(s.maxDDPt.date):undefined}/>
+      <SB label="Meilleur trade"   value={fmtK(s.best)}                    color="var(--tm-profit)" sub={s.bestPt?`${s.bestPt.sym} · ${fmtD(s.bestPt.date)}`:undefined}/>
+      <SB label="Pire trade"       value={fmtK(s.worst)}                   color="var(--tm-loss)" sub={s.worstPt?`${s.worstPt.sym} · ${fmtD(s.worstPt.date)}`:undefined}/>
+      <SB label="Série gagnante"   value={`+${s.bStrk}`}                   color="var(--tm-profit)" sub="consécutifs"/>
+      <SB label="Série perdante"   value={`${s.wStrk}`}                    color="var(--tm-loss)" sub="consécutifs"/>
+      <SB label="Série actuelle"   value={s.cur>=0?`+${s.cur}`:`${s.cur}`} color={s.cur>=0?'var(--tm-profit)':'var(--tm-loss)'}/>
+      <SB label="Moy. gain"        value={fmtK(s.avgW)}                    color="var(--tm-profit)"/>
+      <SB label="Moy. perte"       value={fmtK(s.avgL)}                    color="var(--tm-loss)"/>
+      <SB label="Recovery Factor"  value={s.rf.toFixed(2)}                 color={s.rf>=2?'var(--tm-profit)':s.rf>=1?'var(--tm-warning)':'var(--tm-loss)'}/>
+      <SB label="Durée analysée"   value={`${s.days}j`}                    color="var(--tm-text-secondary)"/>
     </div>
   )
 }
@@ -515,7 +515,7 @@ function TradesTable({ pts }: { pts:Pt[] }) {
         <thead>
           <tr style={{borderBottom:'1px solid #2A2F3E'}}>
             {['#','Date','Symbole','Direction','P&L','Cumulé','Drawdown','Trades'].map(h=>(
-              <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:9,color:'#555C70',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600}}>{h}</th>
+              <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:9,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600}}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -524,22 +524,22 @@ function TradesTable({ pts }: { pts:Pt[] }) {
             <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.04)'}}
               onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.025)'}
               onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
-              <td style={{padding:'7px 12px',color:'#555C70',fontFamily:'monospace'}}>{i+1}</td>
-              <td style={{padding:'7px 12px',color:'#8F94A3',fontFamily:'monospace'}}>{fmtD(p.date)}</td>
-              <td style={{padding:'7px 12px',fontWeight:600,color:'#F0F3FF'}}>{p.sym}</td>
+              <td style={{padding:'7px 12px',color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{i+1}</td>
+              <td style={{padding:'7px 12px',color:'var(--tm-text-secondary)',fontFamily:'monospace'}}>{fmtD(p.date)}</td>
+              <td style={{padding:'7px 12px',fontWeight:600,color:'var(--tm-text-primary)'}}>{p.sym}</td>
               <td style={{padding:'7px 12px'}}>
-                <span style={{fontSize:10,fontWeight:700,color:p.dir==='Long'?'#22C759':'#FF3B30',
-                  background:p.dir==='Long'?'rgba(34,199,89,0.1)':'rgba(255,59,48,0.1)',
+                <span style={{fontSize:10,fontWeight:700,color:p.dir==='Long'?'var(--tm-profit)':'var(--tm-loss)',
+                  background:p.dir==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',
                   padding:'1px 8px',borderRadius:4}}>
                   {p.dir==='Long'?'▲ Long':'▼ Short'}
                 </span>
               </td>
-              <td style={{padding:'7px 12px',fontFamily:'monospace',fontWeight:600,color:p.pnl>=0?'#22C759':'#FF3B30'}}>{fmtK(p.pnl)}</td>
-              <td style={{padding:'7px 12px',fontFamily:'monospace',color:'#F0F3FF'}}>{fmtK(p.cum)}</td>
-              <td style={{padding:'7px 12px',fontFamily:'monospace',color:p.dd>10?'#FF3B30':p.dd>5?'#FF9500':'#555C70'}}>
+              <td style={{padding:'7px 12px',fontFamily:'monospace',fontWeight:600,color:p.pnl>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{fmtK(p.pnl)}</td>
+              <td style={{padding:'7px 12px',fontFamily:'monospace',color:'var(--tm-text-primary)'}}>{fmtK(p.cum)}</td>
+              <td style={{padding:'7px 12px',fontFamily:'monospace',color:p.dd>10?'var(--tm-loss)':p.dd>5?'var(--tm-warning)':'var(--tm-text-muted)'}}>
                 {p.dd>0?`-${p.dd.toFixed(1)}%`:'—'}
               </td>
-              <td style={{padding:'7px 12px',color:'#555C70',fontFamily:'monospace'}}>{p.n>1?p.n:'—'}</td>
+              <td style={{padding:'7px 12px',color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{p.n>1?p.n:'—'}</td>
             </tr>
           ))}
         </tbody>
@@ -570,7 +570,7 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
         date: m.timestamp,
         score: emotionToScore(m.emotionalState),
         label: m.emotionalState,
-        color: EMOTION_COLORS[m.emotionalState] || '#8F94A3',
+        color: EMOTION_COLORS[m.emotionalState] || 'var(--tm-text-secondary)',
       }))
   }, [moods, showEmotion])
 
@@ -590,14 +590,14 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
   return createPortal(
     <div style={{position:'fixed',inset:0,zIndex:9999,background:'rgba(0,0,0,0.92)',
       display:'flex',flexDirection:'column'}}>
-      <div style={{flex:1,background:'#0D1117',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{flex:1,background:'var(--tm-bg)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
 
         {/* Header */}
         <div style={{padding:'18px 28px',borderBottom:'1px solid #1E2330',display:'flex',
           alignItems:'center',gap:20,flexShrink:0}}>
           <div>
-            <div style={{fontSize:11,color:'#555C70',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>Courbe P&L</div>
-            <div style={{fontSize:30,fontWeight:800,color:isPos?'#22C759':'#FF3B30',
+            <div style={{fontSize:11,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>Courbe P&L</div>
+            <div style={{fontSize:30,fontWeight:800,color:isPos?'var(--tm-profit)':'var(--tm-loss)',
               fontFamily:'JetBrains Mono,monospace',lineHeight:1}}>
               {stats?fmtK(stats.total):'—'}
             </div>
@@ -605,14 +605,14 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
           {stats&&(
             <div style={{display:'flex',gap:28}}>
               {[
-                {l:'Win Rate',v:`${(stats.wr*100).toFixed(0)}%`,c:stats.wr>=0.5?'#22C759':'#FF9500'},
-                {l:'Profit Factor',v:isFinite(stats.pf)?stats.pf.toFixed(2):'∞',c:stats.pf>=1.5?'#22C759':'#FF9500'},
-                {l:'Max DD',v:`${stats.maxDD.toFixed(1)}%`,c:stats.maxDD>20?'#FF3B30':stats.maxDD>10?'#FF9500':'#22C759'},
-                {l:'Expectancy',v:fmtK(stats.exp),c:stats.exp>=0?'#22C759':'#FF3B30'},
-                {l:'Trades',v:String(stats.count),c:'#8F94A3'},
+                {l:'Win Rate',v:`${(stats.wr*100).toFixed(0)}%`,c:stats.wr>=0.5?'var(--tm-profit)':'var(--tm-warning)'},
+                {l:'Profit Factor',v:isFinite(stats.pf)?stats.pf.toFixed(2):'∞',c:stats.pf>=1.5?'var(--tm-profit)':'var(--tm-warning)'},
+                {l:'Max DD',v:`${stats.maxDD.toFixed(1)}%`,c:stats.maxDD>20?'var(--tm-loss)':stats.maxDD>10?'var(--tm-warning)':'var(--tm-profit)'},
+                {l:'Expectancy',v:fmtK(stats.exp),c:stats.exp>=0?'var(--tm-profit)':'var(--tm-loss)'},
+                {l:'Trades',v:String(stats.count),c:'var(--tm-text-secondary)'},
               ].map(({l,v,c})=>(
                 <div key={l}>
-                  <div style={{fontSize:9,color:'#555C70',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>{l}</div>
+                  <div style={{fontSize:9,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>{l}</div>
                   <div style={{fontSize:16,fontWeight:700,color:c,fontFamily:'JetBrains Mono,monospace'}}>{v}</div>
                 </div>
               ))}
@@ -620,7 +620,7 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
           )}
           <button onClick={onClose} style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8,
             padding:'8px 16px',borderRadius:8,cursor:'pointer',border:'1px solid #2A2F3E',
-            background:'#1C2130',color:'#8F94A3',fontSize:12,fontWeight:600}}>
+            background:'var(--tm-bg-tertiary)',color:'var(--tm-text-secondary)',fontSize:12,fontWeight:600}}>
             Esc ✕ Fermer
           </button>
         </div>
@@ -629,8 +629,8 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
         <div style={{padding:'0 28px',borderBottom:'1px solid #1E2330',display:'flex',flexShrink:0}}>
           {([['chart','📈 Graphique'],['stats','📊 Statistiques'],['trades','📋 Trades']] as [typeof tab,string][]).map(([t,l])=>(
             <button key={t} onClick={()=>setTab(t)} style={{padding:'14px 20px',background:'none',border:'none',
-              borderBottom:`2px solid ${tab===t?'#00E5FF':'transparent'}`,cursor:'pointer',
-              color:tab===t?'#00E5FF':'#555C70',fontSize:13,fontWeight:tab===t?600:400,transition:'all 0.15s'}}>
+              borderBottom:`2px solid ${tab===t?'var(--tm-accent)':'transparent'}`,cursor:'pointer',
+              color:tab===t?'var(--tm-accent)':'var(--tm-text-muted)',fontSize:13,fontWeight:tab===t?600:400,transition:'all 0.15s'}}>
               {l}
             </button>
           ))}
@@ -641,7 +641,7 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
           {tab==='chart'&&<ChartWidget pts={pts} showDD={showDD} showDots={showDots} isModal controls={controls} emotionData={emotionData}/>}
           {tab==='stats'&&<><div style={{marginBottom:16}}>{controls}</div><StatsGrid pts={pts}/></>}
           {tab==='trades'&&<><div style={{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            {controls}<span style={{fontSize:11,color:'#555C70'}}>{pts.length} points</span>
+            {controls}<span style={{fontSize:11,color:'var(--tm-text-muted)'}}>{pts.length} points</span>
           </div><TradesTable pts={pts}/></>}
         </div>
       </div>
@@ -679,7 +679,7 @@ export default function PnLCurve({ trades, moods = [] }: { trades: Trade[]; mood
         date: m.timestamp,
         score: emotionToScore(m.emotionalState),
         label: m.emotionalState,
-        color: EMOTION_COLORS[m.emotionalState] || '#8F94A3',
+        color: EMOTION_COLORS[m.emotionalState] || 'var(--tm-text-secondary)',
       }))
   }, [moods, showEmotion])
 

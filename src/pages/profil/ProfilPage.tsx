@@ -44,12 +44,12 @@ const DAYS = [
 // ── Section ──────────────────────────────────────────────────────────────
 function Section({ title, subtitle, icon, children, badge }: { title:string; subtitle?:string; icon:string; children:React.ReactNode; badge?:React.ReactNode }) {
   return (
-    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
       <div style={{ padding:'16px 20px', borderBottom:'1px solid #1E2330', display:'flex', alignItems:'center', gap:12 }}>
-        <div style={{ width:36, height:36, borderRadius:10, background:'rgba(0,229,255,0.08)', border:'1px solid rgba(0,229,255,0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{icon}</div>
+        <div style={{ width:36, height:36, borderRadius:10, background:'rgba(var(--tm-accent-rgb,0,229,255),0.08)', border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{icon}</div>
         <div style={{ flex:1 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:'#F0F3FF' }}>{title}</div>
-          {subtitle && <div style={{ fontSize:11, color:'#555C70' }}>{subtitle}</div>}
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)' }}>{title}</div>
+          {subtitle && <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>{subtitle}</div>}
         </div>
         {badge}
       </div>
@@ -62,7 +62,7 @@ function Section({ title, subtitle, icon, children, badge }: { title:string; sub
 function Field({ label, children }: { label:string; children:React.ReactNode }) {
   return (
     <div style={{ marginBottom:14 }}>
-      <div style={{ fontSize:10, color:'#555C70', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:600 }}>{label}</div>
+      <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:600 }}>{label}</div>
       {children}
     </div>
   )
@@ -71,7 +71,7 @@ function Field({ label, children }: { label:string; children:React.ReactNode }) 
 function Input({ value, onChange, placeholder, type='text', disabled=false }: { value:string|number; onChange:(v:string)=>void; placeholder?:string; type?:string; disabled?:boolean }) {
   return (
     <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
-      style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:disabled?'#0D1117':'#1C2130', color:disabled?'#555C70':'#F0F3FF', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'inherit' }} />
+      style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:disabled?'var(--tm-bg)':'var(--tm-bg-tertiary)', color:disabled?'var(--tm-text-muted)':'var(--tm-text-primary)', fontSize:13, outline:'none', boxSizing:'border-box' as const, fontFamily:'inherit' }} />
   )
 }
 
@@ -79,12 +79,12 @@ function SaveBtn({ onClick, saving, saved, label='Enregistrer' }: { onClick:()=>
   return (
     <button onClick={onClick} disabled={saving} style={{
       padding:'8px 20px', borderRadius:10, fontSize:12, fontWeight:700, cursor:saving?'not-allowed':'pointer',
-      border: saved ? '1px solid rgba(34,199,89,0.4)' : '1px solid rgba(0,229,255,0.3)',
-      background: saved ? 'rgba(34,199,89,0.1)' : saving ? '#1C2130' : 'rgba(0,229,255,0.1)',
-      color: saved ? '#22C759' : saving ? '#555C70' : '#00E5FF',
+      border: saved ? '1px solid rgba(var(--tm-profit-rgb,34,199,89),0.4)' : '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.3)',
+      background: saved ? 'rgba(var(--tm-profit-rgb,34,199,89),0.1)' : saving ? 'var(--tm-bg-tertiary)' : 'rgba(var(--tm-accent-rgb,0,229,255),0.1)',
+      color: saved ? 'var(--tm-profit)' : saving ? 'var(--tm-text-muted)' : 'var(--tm-accent)',
       display:'flex', alignItems:'center', gap:6,
     }}>
-      {saving ? <div style={{ width:12, height:12, border:'2px solid #3D4254', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.7s linear infinite' }}/> : null}
+      {saving ? <div style={{ width:12, height:12, border:'2px solid #3D4254', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.7s linear infinite' }}/> : null}
       {saved ? '✓ Sauvegardé' : saving ? 'Enregistrement...' : label}
     </button>
   )
@@ -239,12 +239,12 @@ export default function ProfilPage() {
   const isEmailUser = user?.providerData.some(p => p.providerId === 'password')
 
   return (
-    <div style={{ minHeight:'100vh', background:'#0D1117', padding:'32px 24px', maxWidth:800, margin:'0 auto' }}>
+    <div style={{ minHeight:'100vh', background:'var(--tm-bg)', padding:'32px 24px', maxWidth:800, margin:'0 auto' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}`}</style>
 
       <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontSize:24, fontWeight:700, color:'#F0F3FF', margin:0, fontFamily:'Syne,sans-serif' }}>Profil</h1>
-        <p style={{ fontSize:13, color:'#555C70', margin:'4px 0 0' }}>Identité · Préférences · Objectifs</p>
+        <h1 style={{ fontSize:24, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne,sans-serif' }}>Profil</h1>
+        <p style={{ fontSize:13, color:'var(--tm-text-muted)', margin:'4px 0 0' }}>Identité · Préférences · Objectifs</p>
       </div>
 
       {/* ── Photo + Identité ─────────────────────────────────────────── */}
@@ -261,16 +261,16 @@ export default function ProfilPage() {
               {photoPreview ? (
                 <img src={photoPreview} alt="avatar" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
               ) : (
-                <span style={{ fontSize:32, fontWeight:700, color:'#0D1117' }}>
+                <span style={{ fontSize:32, fontWeight:700, color:'var(--tm-bg)' }}>
                   {displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
                 </span>
               )}
-              <div style={{ position:'absolute', bottom:0, right:0, width:24, height:24, borderRadius:'50%', background:'#161B22', border:'2px solid #2A2F3E', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>📷</div>
+              <div style={{ position:'absolute', bottom:0, right:0, width:24, height:24, borderRadius:'50%', background:'var(--tm-bg-secondary)', border:'2px solid #2A2F3E', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>📷</div>
             </div>
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display:'none' }} onChange={handlePhoto} />
-            <div style={{ fontSize:9, color:'#3D4254' }}>Max 500 Ko</div>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)' }}>Max 500 Ko</div>
             {photoPreview && (
-              <button onClick={() => { setPhotoURL(''); setPhotoPreview('') }} style={{ fontSize:10, color:'#FF3B30', background:'none', border:'none', cursor:'pointer' }}>Supprimer</button>
+              <button onClick={() => { setPhotoURL(''); setPhotoPreview('') }} style={{ fontSize:10, color:'var(--tm-loss)', background:'none', border:'none', cursor:'pointer' }}>Supprimer</button>
             )}
           </div>
 
@@ -283,7 +283,7 @@ export default function ProfilPage() {
               <Input value={user?.email || ''} onChange={() => {}} disabled />
             </Field>
             {memberSince && (
-              <div style={{ fontSize:11, color:'#3D4254', display:'flex', alignItems:'center', gap:6 }}>
+              <div style={{ fontSize:11, color:'var(--tm-text-muted)', display:'flex', alignItems:'center', gap:6 }}>
                 <span>📅</span> Membre depuis {memberSince.toLocaleDateString('fr-FR', { month:'long', year:'numeric' })}
               </div>
             )}
@@ -297,7 +297,7 @@ export default function ProfilPage() {
           placeholder="Ex: Trader crypto day-trading, spécialisé en BTC/ETH. J'utilise le Price Action et le Volume Profile..."
           rows={3} style={{
             width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #2A2F3E',
-            background:'#1C2130', color:'#F0F3FF', fontSize:13, outline:'none', resize:'vertical',
+            background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none', resize:'vertical',
             boxSizing:'border-box', fontFamily:'inherit', lineHeight:1.6,
           }} />
       </Section>
@@ -313,11 +313,11 @@ export default function ProfilPage() {
               <Input value={emailPassword} onChange={setEmailPassword} placeholder="••••••••" type="password" />
             </Field>
           </div>
-          {emailError && <div style={{ fontSize:11, color:'#FF3B30', marginBottom:8, padding:'6px 10px', background:'rgba(255,59,48,0.06)', borderRadius:6 }}>{emailError}</div>}
-          {emailStatus === 'done' && <div style={{ fontSize:11, color:'#22C759', marginBottom:8, padding:'6px 10px', background:'rgba(34,199,89,0.06)', borderRadius:6 }}>✓ Email modifié — vérifiez votre boîte mail</div>}
+          {emailError && <div style={{ fontSize:11, color:'var(--tm-loss)', marginBottom:8, padding:'6px 10px', background:'rgba(var(--tm-loss-rgb,255,59,48),0.06)', borderRadius:6 }}>{emailError}</div>}
+          {emailStatus === 'done' && <div style={{ fontSize:11, color:'var(--tm-profit)', marginBottom:8, padding:'6px 10px', background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)', borderRadius:6 }}>✓ Email modifié — vérifiez votre boîte mail</div>}
           <button onClick={handleEmailChange} disabled={emailStatus === 'saving' || !newEmail || !emailPassword} style={{
             padding:'8px 20px', borderRadius:10, fontSize:12, fontWeight:600, cursor:(!newEmail||!emailPassword)?'not-allowed':'pointer',
-            border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.1)', color:(!newEmail||!emailPassword)?'#555C70':'#00E5FF',
+            border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.3)', background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)', color:(!newEmail||!emailPassword)?'var(--tm-text-muted)':'var(--tm-accent)',
           }}>
             {emailStatus === 'saving' ? 'Modification...' : 'Modifier l\'email'}
           </button>
@@ -338,11 +338,11 @@ export default function ProfilPage() {
               <Input value={confirmPwd} onChange={setConfirmPwd} placeholder="••••••••" type="password" />
             </Field>
           </div>
-          {pwdError && <div style={{ fontSize:11, color:'#FF3B30', marginBottom:8, padding:'6px 10px', background:'rgba(255,59,48,0.06)', borderRadius:6 }}>{pwdError}</div>}
-          {pwdStatus === 'done' && <div style={{ fontSize:11, color:'#22C759', marginBottom:8, padding:'6px 10px', background:'rgba(34,199,89,0.06)', borderRadius:6 }}>✓ Mot de passe modifié</div>}
+          {pwdError && <div style={{ fontSize:11, color:'var(--tm-loss)', marginBottom:8, padding:'6px 10px', background:'rgba(var(--tm-loss-rgb,255,59,48),0.06)', borderRadius:6 }}>{pwdError}</div>}
+          {pwdStatus === 'done' && <div style={{ fontSize:11, color:'var(--tm-profit)', marginBottom:8, padding:'6px 10px', background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)', borderRadius:6 }}>✓ Mot de passe modifié</div>}
           <button onClick={handlePasswordChange} disabled={pwdStatus === 'saving' || !currentPwd || !newPwd || !confirmPwd} style={{
             padding:'8px 20px', borderRadius:10, fontSize:12, fontWeight:600, cursor:(!currentPwd||!newPwd)?'not-allowed':'pointer',
-            border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.1)', color:(!currentPwd||!newPwd)?'#555C70':'#00E5FF',
+            border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.3)', background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)', color:(!currentPwd||!newPwd)?'var(--tm-text-muted)':'var(--tm-accent)',
           }}>
             {pwdStatus === 'saving' ? 'Modification...' : 'Modifier le mot de passe'}
           </button>
@@ -358,7 +358,7 @@ export default function ProfilPage() {
             <div style={{ display:'flex', gap:8 }}>
               <Input value={prefs.startingCapital} onChange={v => updatePref('startingCapital', Number(v) || 0)} type="number" />
               <select value={prefs.currency} onChange={e => updatePref('currency', e.target.value)}
-                style={{ width:80, padding:'9px 8px', borderRadius:8, border:'1px solid #2A2F3E', background:'#1C2130', color:'#F0F3FF', fontSize:13, cursor:'pointer' }}>
+                style={{ width:80, padding:'9px 8px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, cursor:'pointer' }}>
                 {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -366,14 +366,14 @@ export default function ProfilPage() {
 
           <Field label="Marché principal">
             <select value={prefs.defaultMarket} onChange={e => updatePref('defaultMarket', e.target.value)}
-              style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'#1C2130', color:'#F0F3FF', fontSize:13, cursor:'pointer' }}>
+              style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, cursor:'pointer' }}>
               {MARKETS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </Field>
 
           <Field label="Session par défaut">
             <select value={prefs.defaultSession} onChange={e => updatePref('defaultSession', e.target.value)}
-              style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'#1C2130', color:'#F0F3FF', fontSize:13, cursor:'pointer' }}>
+              style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, cursor:'pointer' }}>
               {SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
@@ -392,9 +392,9 @@ export default function ProfilPage() {
                 <button key={d.id} onClick={() => updatePref('tradingDays', active ? prefs.tradingDays.filter(x=>x!==d.id) : [...prefs.tradingDays, d.id])}
                   style={{
                     width:36, height:36, borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer',
-                    border:`1px solid ${active ? '#00E5FF' : '#2A2F3E'}`,
-                    background: active ? 'rgba(0,229,255,0.12)' : 'transparent',
-                    color: active ? '#00E5FF' : '#555C70',
+                    border:`1px solid ${active ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
+                    background: active ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'transparent',
+                    color: active ? 'var(--tm-accent)' : 'var(--tm-text-muted)',
                   }}>{d.label}</button>
               )
             })}
@@ -410,10 +410,10 @@ export default function ProfilPage() {
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <input type="range" min={0.1} max={5} step={0.1} value={prefs.riskPerTrade}
                 onChange={e => updatePref('riskPerTrade', Number(e.target.value))}
-                style={{ flex:1, accentColor:'#FF9500' }} />
-              <span style={{ fontSize:14, fontWeight:700, color:'#FF9500', fontFamily:'JetBrains Mono,monospace', minWidth:40, textAlign:'right' }}>{prefs.riskPerTrade}%</span>
+                style={{ flex:1, accentColor:'var(--tm-warning)' }} />
+              <span style={{ fontSize:14, fontWeight:700, color:'var(--tm-warning)', fontFamily:'JetBrains Mono,monospace', minWidth:40, textAlign:'right' }}>{prefs.riskPerTrade}%</span>
             </div>
-            <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:'#3D4254', marginTop:2 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:'var(--tm-text-muted)', marginTop:2 }}>
               <span>Conservateur</span><span>Agressif</span>
             </div>
           </Field>
@@ -422,8 +422,8 @@ export default function ProfilPage() {
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <input type="range" min={1} max={10} step={0.5} value={prefs.maxDailyLoss}
                 onChange={e => updatePref('maxDailyLoss', Number(e.target.value))}
-                style={{ flex:1, accentColor:'#FF3B30' }} />
-              <span style={{ fontSize:14, fontWeight:700, color:'#FF3B30', fontFamily:'JetBrains Mono,monospace', minWidth:40, textAlign:'right' }}>{prefs.maxDailyLoss}%</span>
+                style={{ flex:1, accentColor:'var(--tm-loss)' }} />
+              <span style={{ fontSize:14, fontWeight:700, color:'var(--tm-loss)', fontFamily:'JetBrains Mono,monospace', minWidth:40, textAlign:'right' }}>{prefs.maxDailyLoss}%</span>
             </div>
           </Field>
         </div>
@@ -437,8 +437,8 @@ export default function ProfilPage() {
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <input type="range" min={30} max={80} step={1} value={prefs.targetWinRate}
                 onChange={e => updatePref('targetWinRate', Number(e.target.value))}
-                style={{ flex:1, accentColor:'#22C759' }} />
-              <span style={{ fontSize:14, fontWeight:700, color:'#22C759', fontFamily:'JetBrains Mono,monospace', minWidth:40, textAlign:'right' }}>{prefs.targetWinRate}%</span>
+                style={{ flex:1, accentColor:'var(--tm-profit)' }} />
+              <span style={{ fontSize:14, fontWeight:700, color:'var(--tm-profit)', fontFamily:'JetBrains Mono,monospace', minWidth:40, textAlign:'right' }}>{prefs.targetWinRate}%</span>
             </div>
           </Field>
 
@@ -448,18 +448,18 @@ export default function ProfilPage() {
         </div>
 
         {/* Visual target recap */}
-        <div style={{ marginTop:14, padding:'14px 16px', background:'rgba(34,199,89,0.04)', border:'1px solid rgba(34,199,89,0.15)', borderRadius:12 }}>
-          <div style={{ fontSize:10, color:'#555C70', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.08em' }}>Récapitulatif objectifs</div>
+        <div style={{ marginTop:14, padding:'14px 16px', background:'rgba(var(--tm-profit-rgb,34,199,89),0.04)', border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.15)', borderRadius:12 }}>
+          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.08em' }}>Récapitulatif objectifs</div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
             {[
-              { label:'Capital', value:`${prefs.startingCapital.toLocaleString()} ${prefs.currency}`, color:'#F0F3FF' },
-              { label:'Risque/trade', value:`${prefs.riskPerTrade}%`, color:'#FF9500' },
-              { label:'Win Rate cible', value:`${prefs.targetWinRate}%`, color:'#22C759' },
-              { label:'P&L/mois', value:`${prefs.targetMonthlyPnL >= 0 ? '+' : ''}${prefs.targetMonthlyPnL} ${prefs.currency}`, color:'#00E5FF' },
+              { label:'Capital', value:`${prefs.startingCapital.toLocaleString()} ${prefs.currency}`, color:'var(--tm-text-primary)' },
+              { label:'Risque/trade', value:`${prefs.riskPerTrade}%`, color:'var(--tm-warning)' },
+              { label:'Win Rate cible', value:`${prefs.targetWinRate}%`, color:'var(--tm-profit)' },
+              { label:'P&L/mois', value:`${prefs.targetMonthlyPnL >= 0 ? '+' : ''}${prefs.targetMonthlyPnL} ${prefs.currency}`, color:'var(--tm-accent)' },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ textAlign:'center' }}>
                 <div style={{ fontSize:16, fontWeight:800, color, fontFamily:'JetBrains Mono,monospace' }}>{value}</div>
-                <div style={{ fontSize:9, color:'#555C70', marginTop:2 }}>{label}</div>
+                <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginTop:2 }}>{label}</div>
               </div>
             ))}
           </div>
@@ -467,7 +467,7 @@ export default function ProfilPage() {
       </Section>
 
       {/* Footer */}
-      <div style={{ textAlign:'center', padding:'20px 0 40px', fontSize:11, color:'#3D4254' }}>
+      <div style={{ textAlign:'center', padding:'20px 0 40px', fontSize:11, color:'var(--tm-text-muted)' }}>
         TradeMindset v1.1 · trademindsetapp@gmail.com
       </div>
     </div>

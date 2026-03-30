@@ -150,12 +150,12 @@ async function deleteAccountAndData(password: string, onProgress: (msg: string) 
 // ── Section component ────────────────────────────────────────────────────
 function Section({ title, subtitle, icon, children }: { title: string; subtitle?: string; icon: string; children: React.ReactNode }) {
   return (
-    <div style={{ background:'#161B22', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
       <div style={{ padding:'16px 20px', borderBottom:'1px solid #1E2330', display:'flex', alignItems:'center', gap:12 }}>
-        <div style={{ width:36, height:36, borderRadius:10, background:'rgba(0,229,255,0.08)', border:'1px solid rgba(0,229,255,0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{icon}</div>
+        <div style={{ width:36, height:36, borderRadius:10, background:'rgba(var(--tm-accent-rgb,0,229,255),0.08)', border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{icon}</div>
         <div>
-          <div style={{ fontSize:14, fontWeight:700, color:'#F0F3FF' }}>{title}</div>
-          {subtitle && <div style={{ fontSize:11, color:'#555C70' }}>{subtitle}</div>}
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)' }}>{title}</div>
+          {subtitle && <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>{subtitle}</div>}
         </div>
       </div>
       <div style={{ padding:'16px 20px' }}>{children}</div>
@@ -332,13 +332,13 @@ export default function SettingsPage() {
   }, [user])
 
   return (
-    <div style={{ minHeight:'100vh', background:'#0D1117', padding:'32px 24px', maxWidth:800, margin:'0 auto' }}>
+    <div style={{ minHeight:'100vh', background:'var(--tm-bg)', padding:'32px 24px', maxWidth:800, margin:'0 auto' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}`}</style>
 
       {/* Header */}
       <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontSize:24, fontWeight:700, color:'#F0F3FF', margin:0, fontFamily:'Syne,sans-serif' }}>Paramètres</h1>
-        <p style={{ fontSize:13, color:'#555C70', margin:'4px 0 0' }}>Compte · Données · Export · Import</p>
+        <h1 style={{ fontSize:24, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne,sans-serif' }}>Paramètres</h1>
+        <p style={{ fontSize:13, color:'var(--tm-text-muted)', margin:'4px 0 0' }}>Compte · Données · Export · Import</p>
       </div>
 
       {/* ── Account ──────────────────────────────────────────────────── */}
@@ -348,7 +348,7 @@ export default function SettingsPage() {
 
       <Section title="Compte" subtitle="Informations de connexion" icon="👤">
         <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:16 }}>
-          <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'#0D1117', flexShrink:0, overflow:'hidden' }}>
+          <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'var(--tm-bg)', flexShrink:0, overflow:'hidden' }}>
             {profilePhoto ? (
               <img src={profilePhoto} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
             ) : (
@@ -356,39 +356,39 @@ export default function SettingsPage() {
             )}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:16, fontWeight:700, color:'#F0F3FF', marginBottom:2 }}>{profileName || user?.displayName || 'Trader'}</div>
-            <div style={{ fontSize:13, color:'#8F94A3' }}>{user?.email}</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:2 }}>{profileName || user?.displayName || 'Trader'}</div>
+            <div style={{ fontSize:13, color:'var(--tm-text-secondary)' }}>{user?.email}</div>
           </div>
-          <button onClick={() => signOut(auth)} style={{ padding:'8px 18px', borderRadius:10, border:'1px solid rgba(255,59,48,0.3)', background:'rgba(255,59,48,0.08)', color:'#FF3B30', fontSize:12, fontWeight:600, cursor:'pointer', flexShrink:0 }}>
+          <button onClick={() => signOut(auth)} style={{ padding:'8px 18px', borderRadius:10, border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)', background:'rgba(var(--tm-loss-rgb,255,59,48),0.08)', color:'var(--tm-loss)', fontSize:12, fontWeight:600, cursor:'pointer', flexShrink:0 }}>
             Déconnexion
           </button>
         </div>
         {/* UID */}
         <div style={{ padding:'10px 14px', background:'rgba(255,255,255,0.02)', border:'1px solid #1E2330', borderRadius:10 }}>
-          <div style={{ fontSize:10, color:'#555C70', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.08em' }}>Identifiant unique (UID)</div>
-          <div style={{ fontSize:12, color:'#8F94A3', fontFamily:'JetBrains Mono,monospace', wordBreak:'break-all', userSelect:'all' }}>{user?.uid}</div>
+          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.08em' }}>Identifiant unique (UID)</div>
+          <div style={{ fontSize:12, color:'var(--tm-text-secondary)', fontFamily:'JetBrains Mono,monospace', wordBreak:'break-all', userSelect:'all' }}>{user?.uid}</div>
         </div>
       </Section>
 
       {/* ── Data Overview ────────────────────────────────────────────── */}
       <Section title="Vos données" subtitle={`${totalItems} éléments au total`} icon="📦">
         {loadingStats ? (
-          <div style={{ display:'flex', alignItems:'center', gap:10, color:'#555C70', fontSize:12 }}>
-            <div style={{ width:16, height:16, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
+          <div style={{ display:'flex', alignItems:'center', gap:10, color:'var(--tm-text-muted)', fontSize:12 }}>
+            <div style={{ width:16, height:16, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
             Chargement...
           </div>
         ) : (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
             {[
-              { key:'trades', icon:'📊', label:'Trades', color:'#22C759' },
-              { key:'systems', icon:'⚙️', label:'Systèmes', color:'#0A85FF' },
-              { key:'moods', icon:'💜', label:'Moods', color:'#BF5AF2' },
-              { key:'exchanges', icon:'🏛️', label:'Exchanges', color:'#FF9500' },
+              { key:'trades', icon:'📊', label:'Trades', color:'var(--tm-profit)' },
+              { key:'systems', icon:'⚙️', label:'Systèmes', color:'var(--tm-blue)' },
+              { key:'moods', icon:'💜', label:'Moods', color:'var(--tm-purple)' },
+              { key:'exchanges', icon:'🏛️', label:'Exchanges', color:'var(--tm-warning)' },
             ].map(({ key, icon, label, color }) => (
               <div key={key} style={{ background:`${color}08`, border:`1px solid ${color}20`, borderRadius:12, padding:'14px', textAlign:'center' }}>
                 <div style={{ fontSize:20, marginBottom:6 }}>{icon}</div>
                 <div style={{ fontSize:22, fontWeight:800, color, fontFamily:'JetBrains Mono,monospace' }}>{dataStats?.[key] ?? 0}</div>
-                <div style={{ fontSize:11, color:'#555C70', marginTop:2 }}>{label}</div>
+                <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginTop:2 }}>{label}</div>
               </div>
             ))}
           </div>
@@ -398,24 +398,24 @@ export default function SettingsPage() {
       {/* ── Export ────────────────────────────────────────────────────── */}
       <Section title="Exporter les données" subtitle="Télécharger toutes vos données en JSON" icon="📤">
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
-          <div style={{ fontSize:12, color:'#8F94A3', lineHeight:1.6, flex:1 }}>
+          <div style={{ fontSize:12, color:'var(--tm-text-secondary)', lineHeight:1.6, flex:1 }}>
             Exporte tous vos trades, systèmes, moods et exchanges dans un fichier JSON réimportable.
           </div>
           <button onClick={handleExport} disabled={exporting} style={{
-            padding:'10px 24px', borderRadius:12, border:'1px solid rgba(34,199,89,0.3)',
-            background: exporting ? '#1C2130' : 'rgba(34,199,89,0.1)',
-            color: exporting ? '#555C70' : '#22C759', fontSize:13, fontWeight:700,
+            padding:'10px 24px', borderRadius:12, border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.3)',
+            background: exporting ? 'var(--tm-bg-tertiary)' : 'rgba(var(--tm-profit-rgb,34,199,89),0.1)',
+            color: exporting ? 'var(--tm-text-muted)' : 'var(--tm-profit)', fontSize:13, fontWeight:700,
             cursor: exporting ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', gap:8, flexShrink:0,
           }}>
             {exporting ? (
-              <><div style={{ width:14, height:14, border:'2px solid #3D4254', borderTopColor:'#22C759', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> Export...</>
+              <><div style={{ width:14, height:14, border:'2px solid #3D4254', borderTopColor:'var(--tm-profit)', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> Export...</>
             ) : '📥 Exporter tout'}
           </button>
         </div>
         {exportDone && exportStats && (
-          <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(34,199,89,0.06)', border:'1px solid rgba(34,199,89,0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#22C759', marginBottom:4 }}>✓ Export réussi</div>
-            <div style={{ fontSize:11, color:'#8F94A3' }}>
+          <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)', border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-profit)', marginBottom:4 }}>✓ Export réussi</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>
               {Object.entries(exportStats).map(([k, v]) => `${v} ${k}`).join(' · ')}
             </div>
           </div>
@@ -425,7 +425,7 @@ export default function SettingsPage() {
       {/* ── Import ────────────────────────────────────────────────────── */}
       <Section title="Importer des données" subtitle="Restaurer depuis un fichier de sauvegarde" icon="📥">
         <div style={{ marginBottom:12 }}>
-          <div style={{ fontSize:11, color:'#555C70', marginBottom:8 }}>MODE D'IMPORT</div>
+          <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginBottom:8 }}>MODE D'IMPORT</div>
           <div style={{ display:'flex', gap:8 }}>
             {([
               { id:'merge' as const, label:'Fusionner', desc:'Ajoute sans supprimer les existantes', icon:'🔄' },
@@ -433,11 +433,11 @@ export default function SettingsPage() {
             ]).map(m => (
               <button key={m.id} onClick={() => setImportMode(m.id)} style={{
                 flex:1, padding:'12px 14px', borderRadius:10, cursor:'pointer', textAlign:'left',
-                border:`1px solid ${importMode === m.id ? '#0A85FF' : '#2A2F3E'}`,
-                background: importMode === m.id ? 'rgba(10,133,255,0.08)' : 'transparent',
+                border:`1px solid ${importMode === m.id ? 'var(--tm-blue)' : 'var(--tm-border)'}`,
+                background: importMode === m.id ? 'rgba(var(--tm-blue-rgb,10,133,255),0.08)' : 'transparent',
               }}>
-                <div style={{ fontSize:13, fontWeight:600, color: importMode === m.id ? '#0A85FF' : '#8F94A3', marginBottom:2 }}>{m.icon} {m.label}</div>
-                <div style={{ fontSize:10, color:'#555C70' }}>{m.desc}</div>
+                <div style={{ fontSize:13, fontWeight:600, color: importMode === m.id ? 'var(--tm-blue)' : 'var(--tm-text-secondary)', marginBottom:2 }}>{m.icon} {m.label}</div>
+                <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{m.desc}</div>
               </button>
             ))}
           </div>
@@ -447,66 +447,66 @@ export default function SettingsPage() {
           <div onClick={() => fileInputRef.current?.click()} style={{
             border:'2px dashed #2A2F3E', borderRadius:12, padding:'28px 20px', textAlign:'center', cursor:'pointer', transition:'all 0.2s',
           }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#0A85FF' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2A2F3E' }}>
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--tm-blue)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--tm-border)' }}>
             <div style={{ fontSize:32, marginBottom:8 }}>📂</div>
-            <div style={{ fontSize:13, fontWeight:600, color:'#F0F3FF', marginBottom:4 }}>Sélectionner un fichier de sauvegarde</div>
-            <div style={{ fontSize:11, color:'#555C70' }}>Format JSON · Exporté depuis TradeMindset</div>
+            <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-primary)', marginBottom:4 }}>Sélectionner un fichier de sauvegarde</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Format JSON · Exporté depuis TradeMindset</div>
             <input ref={fileInputRef} type="file" accept=".json" style={{ display:'none' }} onChange={handleFileSelect} />
           </div>
         ) : (
           <div style={{ animation:'fadeIn 0.3s ease-out' }}>
-            <div style={{ padding:'14px 16px', background:'rgba(10,133,255,0.06)', border:'1px solid rgba(10,133,255,0.2)', borderRadius:10, marginBottom:12 }}>
+            <div style={{ padding:'14px 16px', background:'rgba(var(--tm-blue-rgb,10,133,255),0.06)', border:'1px solid rgba(var(--tm-blue-rgb,10,133,255),0.2)', borderRadius:10, marginBottom:12 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                <div style={{ fontSize:12, fontWeight:700, color:'#0A85FF' }}>📄 {previewName}</div>
-                <button onClick={() => setPreviewData(null)} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:14 }}>✕</button>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-blue)' }}>📄 {previewName}</div>
+                <button onClick={() => setPreviewData(null)} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:14 }}>✕</button>
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
                 {['trades', 'systems', 'moods', 'exchanges'].map(col => {
                   const count = Array.isArray(previewData[col]) ? previewData[col].length : 0
                   return (
                     <div key={col} style={{ textAlign:'center', padding:'6px 8px', background:'rgba(0,0,0,0.2)', borderRadius:6 }}>
-                      <div style={{ fontSize:16, fontWeight:800, color: count > 0 ? '#F0F3FF' : '#3D4254', fontFamily:'JetBrains Mono,monospace' }}>{count}</div>
-                      <div style={{ fontSize:9, color:'#555C70' }}>{col}</div>
+                      <div style={{ fontSize:16, fontWeight:800, color: count > 0 ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>{count}</div>
+                      <div style={{ fontSize:9, color:'var(--tm-text-muted)' }}>{col}</div>
                     </div>
                   )
                 })}
               </div>
               {(previewData as any)._meta && (
-                <div style={{ fontSize:10, color:'#3D4254', marginTop:8 }}>
+                <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginTop:8 }}>
                   Exporté le {(previewData as any)._meta.exportedAt?.slice(0, 10)} · {(previewData as any)._meta.email}
                 </div>
               )}
             </div>
             {importMode === 'replace' && (
-              <div style={{ padding:'10px 14px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', borderRadius:8, marginBottom:12, fontSize:11, color:'#FF3B30' }}>
+              <div style={{ padding:'10px 14px', background:'rgba(var(--tm-loss-rgb,255,59,48),0.06)', border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.2)', borderRadius:8, marginBottom:12, fontSize:11, color:'var(--tm-loss)' }}>
                 ⚠️ Le mode Remplacer supprimera toutes vos données existantes avant d'importer.
               </div>
             )}
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={handleImport} disabled={importing} style={{
                 flex:1, padding:'11px', borderRadius:10,
-                background: importing ? '#1C2130' : 'rgba(10,133,255,0.15)',
-                border:'1px solid rgba(10,133,255,0.4)', color: importing ? '#555C70' : '#0A85FF',
+                background: importing ? 'var(--tm-bg-tertiary)' : 'rgba(var(--tm-blue-rgb,10,133,255),0.15)',
+                border:'1px solid rgba(var(--tm-blue-rgb,10,133,255),0.4)', color: importing ? 'var(--tm-text-muted)' : 'var(--tm-blue)',
                 fontSize:13, fontWeight:700, cursor: importing ? 'not-allowed' : 'pointer',
                 display:'flex', alignItems:'center', justifyContent:'center', gap:8,
               }}>
                 {importing ? (
-                  <><div style={{ width:14, height:14, border:'2px solid #3D4254', borderTopColor:'#0A85FF', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> {importProgress}</>
+                  <><div style={{ width:14, height:14, border:'2px solid #3D4254', borderTopColor:'var(--tm-blue)', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> {importProgress}</>
                 ) : `📥 Importer (${importMode === 'merge' ? 'fusion' : 'remplacement'})`}
               </button>
-              <button onClick={() => setPreviewData(null)} style={{ padding:'11px 16px', borderRadius:10, background:'transparent', border:'1px solid #2A2F3E', color:'#555C70', fontSize:12, cursor:'pointer' }}>Annuler</button>
+              <button onClick={() => setPreviewData(null)} style={{ padding:'11px 16px', borderRadius:10, background:'transparent', border:'1px solid #2A2F3E', color:'var(--tm-text-muted)', fontSize:12, cursor:'pointer' }}>Annuler</button>
             </div>
           </div>
         )}
 
         {importError && (
-          <div style={{ marginTop:12, padding:'10px 14px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', borderRadius:8, fontSize:12, color:'#FF3B30' }}>⚠️ {importError}</div>
+          <div style={{ marginTop:12, padding:'10px 14px', background:'rgba(var(--tm-loss-rgb,255,59,48),0.06)', border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.2)', borderRadius:8, fontSize:12, color:'var(--tm-loss)' }}>⚠️ {importError}</div>
         )}
         {importDone && importStats && (
-          <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(34,199,89,0.06)', border:'1px solid rgba(34,199,89,0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'#22C759', marginBottom:4 }}>✓ Import réussi</div>
-            <div style={{ fontSize:11, color:'#8F94A3' }}>{Object.entries(importStats).map(([k, v]) => `${v} ${k}`).join(' · ')}</div>
+          <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)', border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-profit)', marginBottom:4 }}>✓ Import réussi</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{Object.entries(importStats).map(([k, v]) => `${v} ${k}`).join(' · ')}</div>
           </div>
         )}
       </Section>
@@ -516,19 +516,19 @@ export default function SettingsPage() {
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           {[
             { icon:'💬', label:'Discord', value:'Rejoindre la communauté', href:'https://discord.gg/SqfMCVtEhV', color:'#5865F2' },
-            { icon:'🌐', label:'Site internet', value:'trademindsetapp.com', href:'https://trademindsetapp.com', color:'#00E5FF' },
-            { icon:'📧', label:'Email', value:'trademindsetapp@gmail.com', href:'mailto:trademindsetapp@gmail.com', color:'#22C759' },
+            { icon:'🌐', label:'Site internet', value:'trademindsetapp.com', href:'https://trademindsetapp.com', color:'var(--tm-accent)' },
+            { icon:'📧', label:'Email', value:'trademindsetapp@gmail.com', href:'mailto:trademindsetapp@gmail.com', color:'var(--tm-profit)' },
           ].map(({ icon, label, value, href, color }) => (
             <a key={label} href={href} target="_blank" rel="noopener noreferrer"
               style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', background:'rgba(255,255,255,0.02)', border:'1px solid #1E2330', borderRadius:12, textDecoration:'none', transition:'all 0.15s', cursor:'pointer' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = color + '60'; (e.currentTarget as HTMLElement).style.background = color + '08' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1E2330'; (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)' }}>
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--tm-border-sub)'; (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)' }}>
               <div style={{ width:36, height:36, borderRadius:10, background:`${color}15`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>{icon}</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:13, fontWeight:600, color:'#F0F3FF' }}>{label}</div>
-                <div style={{ fontSize:11, color:'#8F94A3' }}>{value}</div>
+                <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-primary)' }}>{label}</div>
+                <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{value}</div>
               </div>
-              <div style={{ fontSize:14, color:'#555C70' }}>→</div>
+              <div style={{ fontSize:14, color:'var(--tm-text-muted)' }}>→</div>
             </a>
           ))}
         </div>
@@ -542,8 +542,8 @@ export default function SettingsPage() {
             { label:'IA', value:'GPT-4o / GPT-4o-mini' },
           ].map(({ label, value }) => (
             <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <span style={{ fontSize:12, color:'#555C70' }}>{label}</span>
-              <span style={{ fontSize:12, fontWeight:600, color:'#8F94A3', fontFamily:'JetBrains Mono,monospace' }}>{value}</span>
+              <span style={{ fontSize:12, color:'var(--tm-text-muted)' }}>{label}</span>
+              <span style={{ fontSize:12, fontWeight:600, color:'var(--tm-text-secondary)', fontFamily:'JetBrains Mono,monospace' }}>{value}</span>
             </div>
           ))}
         </div>
@@ -555,34 +555,34 @@ export default function SettingsPage() {
         <div style={{ marginBottom:16 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
             <div>
-              <div style={{ fontSize:13, fontWeight:600, color:'#F0F3FF' }}>Supprimer les données</div>
-              <div style={{ fontSize:11, color:'#555C70' }}>Supprime tous vos trades, systèmes, moods et exchanges. Votre compte reste actif.</div>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-primary)' }}>Supprimer les données</div>
+              <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Supprime tous vos trades, systèmes, moods et exchanges. Votre compte reste actif.</div>
             </div>
           </div>
           {!confirmDeleteData ? (
             <button onClick={() => setConfirmDeleteData(true)} style={{
               width:'100%', padding:'10px', borderRadius:10,
-              border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)',
-              color:'#FF9500', fontSize:12, fontWeight:600, cursor:'pointer',
+              border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.3)', background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',
+              color:'var(--tm-warning)', fontSize:12, fontWeight:600, cursor:'pointer',
             }}>
               🗑 Supprimer toutes les données
             </button>
           ) : (
-            <div style={{ padding:'14px', background:'rgba(255,149,0,0.06)', border:'1px solid rgba(255,149,0,0.3)', borderRadius:12, animation:'fadeIn 0.2s ease-out' }}>
-              <div style={{ fontSize:12, color:'#FF9500', fontWeight:700, marginBottom:8 }}>⚠️ Confirmer la suppression des données</div>
-              <div style={{ fontSize:11, color:'#8F94A3', marginBottom:12, lineHeight:1.6 }}>
+            <div style={{ padding:'14px', background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)', border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.3)', borderRadius:12, animation:'fadeIn 0.2s ease-out' }}>
+              <div style={{ fontSize:12, color:'var(--tm-warning)', fontWeight:700, marginBottom:8 }}>⚠️ Confirmer la suppression des données</div>
+              <div style={{ fontSize:11, color:'var(--tm-text-secondary)', marginBottom:12, lineHeight:1.6 }}>
                 Tous vos trades, systèmes, moods et exchanges seront définitivement supprimés. Votre compte restera actif. Exportez vos données avant si nécessaire.
               </div>
               <div style={{ display:'flex', gap:8 }}>
                 <button onClick={handleDeleteData} disabled={deletingData} style={{
                   flex:1, padding:'9px', borderRadius:8,
-                  background: deletingData ? '#1C2130' : 'rgba(255,149,0,0.15)',
-                  border:'1px solid rgba(255,149,0,0.5)', color: deletingData ? '#555C70' : '#FF9500',
+                  background: deletingData ? 'var(--tm-bg-tertiary)' : 'rgba(var(--tm-warning-rgb,255,149,0),0.15)',
+                  border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.5)', color: deletingData ? 'var(--tm-text-muted)' : 'var(--tm-warning)',
                   fontSize:12, fontWeight:700, cursor: deletingData ? 'not-allowed' : 'pointer',
                 }}>
                   {deletingData ? deleteDataProgress || 'Suppression...' : 'Confirmer la suppression'}
                 </button>
-                <button onClick={() => setConfirmDeleteData(false)} style={{ padding:'9px 16px', borderRadius:8, background:'transparent', border:'1px solid #2A2F3E', color:'#555C70', fontSize:12, cursor:'pointer' }}>Annuler</button>
+                <button onClick={() => setConfirmDeleteData(false)} style={{ padding:'9px 16px', borderRadius:8, background:'transparent', border:'1px solid #2A2F3E', color:'var(--tm-text-muted)', fontSize:12, cursor:'pointer' }}>Annuler</button>
               </div>
             </div>
           )}
@@ -592,49 +592,49 @@ export default function SettingsPage() {
         <div>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
             <div>
-              <div style={{ fontSize:13, fontWeight:600, color:'#F0F3FF' }}>Supprimer le compte</div>
-              <div style={{ fontSize:11, color:'#555C70' }}>Supprime définitivement votre compte Firebase et toutes vos données associées.</div>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-primary)' }}>Supprimer le compte</div>
+              <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Supprime définitivement votre compte Firebase et toutes vos données associées.</div>
             </div>
           </div>
           {!confirmDeleteAccount ? (
             <button onClick={() => setConfirmDeleteAccount(true)} style={{
               width:'100%', padding:'10px', borderRadius:10,
-              border:'1px solid rgba(255,59,48,0.3)', background:'rgba(255,59,48,0.06)',
-              color:'#FF3B30', fontSize:12, fontWeight:600, cursor:'pointer',
+              border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)', background:'rgba(var(--tm-loss-rgb,255,59,48),0.06)',
+              color:'var(--tm-loss)', fontSize:12, fontWeight:600, cursor:'pointer',
             }}>
               ☠️ Supprimer mon compte définitivement
             </button>
           ) : (
-            <div style={{ padding:'14px', background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.3)', borderRadius:12, animation:'fadeIn 0.2s ease-out' }}>
-              <div style={{ fontSize:12, color:'#FF3B30', fontWeight:700, marginBottom:8 }}>☠️ Suppression définitive du compte</div>
-              <div style={{ fontSize:11, color:'#8F94A3', marginBottom:12, lineHeight:1.6 }}>
+            <div style={{ padding:'14px', background:'rgba(var(--tm-loss-rgb,255,59,48),0.06)', border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)', borderRadius:12, animation:'fadeIn 0.2s ease-out' }}>
+              <div style={{ fontSize:12, color:'var(--tm-loss)', fontWeight:700, marginBottom:8 }}>☠️ Suppression définitive du compte</div>
+              <div style={{ fontSize:11, color:'var(--tm-text-secondary)', marginBottom:12, lineHeight:1.6 }}>
                 Cette action est irréversible. Votre compte Firebase sera supprimé ainsi que toutes vos données (trades, systèmes, moods, exchanges). Vous serez automatiquement déconnecté.
               </div>
               {isEmailUser && (
                 <div style={{ marginBottom:12 }}>
-                  <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>MOT DE PASSE (confirmation)</div>
+                  <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>MOT DE PASSE (confirmation)</div>
                   <input type="password" value={deleteAccountPassword} onChange={e => setDeleteAccountPassword(e.target.value)}
                     placeholder="Votre mot de passe" style={{
                       width:'100%', padding:'8px 12px', borderRadius:8, border:'1px solid #2A2F3E',
-                      background:'#1C2130', color:'#F0F3FF', fontSize:13, outline:'none', boxSizing:'border-box',
+                      background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none', boxSizing:'border-box',
                     }} />
                 </div>
               )}
               {deleteAccountError && (
-                <div style={{ padding:'8px 12px', background:'rgba(255,59,48,0.1)', border:'1px solid rgba(255,59,48,0.3)', borderRadius:8, marginBottom:12, fontSize:11, color:'#FF3B30' }}>
+                <div style={{ padding:'8px 12px', background:'rgba(var(--tm-loss-rgb,255,59,48),0.1)', border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)', borderRadius:8, marginBottom:12, fontSize:11, color:'var(--tm-loss)' }}>
                   {deleteAccountError}
                 </div>
               )}
               <div style={{ display:'flex', gap:8 }}>
                 <button onClick={handleDeleteAccount} disabled={deletingAccount || (isEmailUser && !deleteAccountPassword)} style={{
                   flex:1, padding:'9px', borderRadius:8,
-                  background: deletingAccount ? '#1C2130' : 'rgba(255,59,48,0.15)',
-                  border:'1px solid rgba(255,59,48,0.5)', color: deletingAccount ? '#555C70' : '#FF3B30',
+                  background: deletingAccount ? 'var(--tm-bg-tertiary)' : 'rgba(var(--tm-loss-rgb,255,59,48),0.15)',
+                  border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.5)', color: deletingAccount ? 'var(--tm-text-muted)' : 'var(--tm-loss)',
                   fontSize:12, fontWeight:700, cursor: (deletingAccount || (isEmailUser && !deleteAccountPassword)) ? 'not-allowed' : 'pointer',
                 }}>
                   {deletingAccount ? deleteAccountProgress || 'Suppression...' : 'Supprimer mon compte'}
                 </button>
-                <button onClick={() => { setConfirmDeleteAccount(false); setDeleteAccountError(''); setDeleteAccountPassword('') }} style={{ padding:'9px 16px', borderRadius:8, background:'transparent', border:'1px solid #2A2F3E', color:'#555C70', fontSize:12, cursor:'pointer' }}>Annuler</button>
+                <button onClick={() => { setConfirmDeleteAccount(false); setDeleteAccountError(''); setDeleteAccountPassword('') }} style={{ padding:'9px 16px', borderRadius:8, background:'transparent', border:'1px solid #2A2F3E', color:'var(--tm-text-muted)', fontSize:12, cursor:'pointer' }}>Annuler</button>
               </div>
             </div>
           )}
@@ -642,7 +642,7 @@ export default function SettingsPage() {
       </Section>
 
       {/* Footer */}
-      <div style={{ textAlign:'center', padding:'20px 0 40px', fontSize:11, color:'#3D4254' }}>
+      <div style={{ textAlign:'center', padding:'20px 0 40px', fontSize:11, color:'var(--tm-text-muted)' }}>
         TradeMindset · trademindsetapp@gmail.com · {new Date().getFullYear()}
       </div>
     </div>

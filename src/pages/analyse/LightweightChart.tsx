@@ -26,7 +26,7 @@ const TIMEFRAMES = [
   {label:'1m',min:1},{label:'5m',min:5},{label:'15m',min:15},{label:'30m',min:30},
   {label:'1h',min:60},{label:'4h',min:240},{label:'1j',min:1440},{label:'1S',min:10080},
 ]
-const COLORS = ['#FF3B30','#FF9500','#FFD60A','#22C759','#00E5FF','#0A85FF','#BF5AF2','#F0F3FF']
+const COLORS = ['var(--tm-loss)','var(--tm-warning)','#FFD60A','var(--tm-profit)','var(--tm-accent)','var(--tm-blue)','var(--tm-purple)','var(--tm-text-primary)']
 const FIBO_LEVELS = [
   {r:0,l:'0%'},{r:0.236,l:'23.6%'},{r:0.382,l:'38.2%'},{r:0.5,l:'50%'},
   {r:0.618,l:'61.8%'},{r:0.786,l:'78.6%'},{r:1,l:'100%'},
@@ -188,34 +188,34 @@ function VMCPanel({vmcResult,settings}:{vmcResult:VMCResult;settings:VMCSettings
     const draw=()=>{
       const dpr=window.devicePixelRatio||1,cw=canvas.offsetWidth,ch=canvas.offsetHeight
       canvas.width=cw*dpr;canvas.height=ch*dpr;canvas.style.width=cw+'px';canvas.style.height=ch+'px'
-      const ctx=canvas.getContext('2d')!;ctx.scale(dpr,dpr);ctx.clearRect(0,0,cw,ch);ctx.fillStyle='#0D1117';ctx.fillRect(0,0,cw,ch)
+      const ctx=canvas.getContext('2d')!;ctx.scale(dpr,dpr);ctx.clearRect(0,0,cw,ch);ctx.fillStyle='var(--tm-bg)';ctx.fillRect(0,0,cw,ch)
       const n=vmcResult.sig.length,vis=Math.min(n,Math.floor(cw/2))
       const sig=vmcResult.sig.slice(-vis),ss=vmcResult.sigSignal.slice(-vis),mom=vmcResult.mom.slice(-vis),len=sig.length
       if(!len)return
       const minV=Math.min(...sig,...ss,-70),maxV=Math.max(...sig,...ss,70),rng=maxV-minV||1
       const toY=(v:number)=>ch*0.88-((v-minV)/rng)*(ch*0.78),toX=(i:number)=>(i/(len-1||1))*cw
-      ctx.strokeStyle='#2A2F3E';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(0,toY(0));ctx.lineTo(cw,toY(0));ctx.stroke();ctx.setLineDash([])
+      ctx.strokeStyle='var(--tm-border)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(0,toY(0));ctx.lineTo(cw,toY(0));ctx.stroke();ctx.setLineDash([])
       const uT=settings.upThreshold,lT=settings.loThreshold
       for(const t of[uT,lT]){
-        ctx.strokeStyle=t>0?'rgba(255,59,48,0.3)':'rgba(34,199,89,0.3)';ctx.lineWidth=1;ctx.setLineDash([3,5])
+        ctx.strokeStyle=t>0?'rgba(var(--tm-loss-rgb,255,59,48),0.3)':'rgba(var(--tm-profit-rgb,34,199,89),0.3)';ctx.lineWidth=1;ctx.setLineDash([3,5])
         ctx.beginPath();ctx.moveTo(0,toY(t));ctx.lineTo(cw,toY(t));ctx.stroke();ctx.setLineDash([])
         ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=t>0?'#FF3B3090':'#22C75990'
         ctx.fillText(t>0?`+${uT}`:String(lT),3,toY(t)-3)
       }
       const bw=Math.max(1,cw/len-0.5)
-      for(let i=0;i<len;i++){const m=mom[i],x=toX(i)-bw/2,y0=toY(0),ym=toY(m);ctx.fillStyle=m>=0?'rgba(34,199,89,0.45)':'rgba(255,59,48,0.45)';ctx.fillRect(x,Math.min(ym,y0),bw,Math.abs(ym-y0))}
+      for(let i=0;i<len;i++){const m=mom[i],x=toX(i)-bw/2,y0=toY(0),ym=toY(m);ctx.fillStyle=m>=0?'rgba(var(--tm-profit-rgb,34,199,89),0.45)':'rgba(var(--tm-loss-rgb,255,59,48),0.45)';ctx.fillRect(x,Math.min(ym,y0),bw,Math.abs(ym-y0))}
       ctx.beginPath();for(let i=0;i<len;i++)i===0?ctx.moveTo(toX(i),toY(sig[i])):ctx.lineTo(toX(i),toY(sig[i]));for(let i=len-1;i>=0;i--)ctx.lineTo(toX(i),toY(ss[i]));ctx.closePath()
-      const bull=vmcResult.isBull[vmcResult.isBull.length-1];ctx.fillStyle=bull?'rgba(34,199,89,0.12)':'rgba(255,59,48,0.12)';ctx.fill()
-      ctx.strokeStyle='#00E5FF';ctx.lineWidth=2;ctx.beginPath();for(let i=0;i<len;i++)i===0?ctx.moveTo(toX(i),toY(sig[i])):ctx.lineTo(toX(i),toY(sig[i]));ctx.stroke()
-      ctx.strokeStyle='#FF9500';ctx.lineWidth=1.5;ctx.beginPath();for(let i=0;i<len;i++)i===0?ctx.moveTo(toX(i),toY(ss[i])):ctx.lineTo(toX(i),toY(ss[i]));ctx.stroke()
+      const bull=vmcResult.isBull[vmcResult.isBull.length-1];ctx.fillStyle=bull?'rgba(var(--tm-profit-rgb,34,199,89),0.12)':'rgba(var(--tm-loss-rgb,255,59,48),0.12)';ctx.fill()
+      ctx.strokeStyle='var(--tm-accent)';ctx.lineWidth=2;ctx.beginPath();for(let i=0;i<len;i++)i===0?ctx.moveTo(toX(i),toY(sig[i])):ctx.lineTo(toX(i),toY(sig[i]));ctx.stroke()
+      ctx.strokeStyle='var(--tm-warning)';ctx.lineWidth=1.5;ctx.beginPath();for(let i=0;i<len;i++)i===0?ctx.moveTo(toX(i),toY(ss[i])):ctx.lineTo(toX(i),toY(ss[i]));ctx.stroke()
       const off=n-len
-      for(const idx of vmcResult.buySignals){const ri=idx-off;if(ri<0||ri>=len)continue;const x=toX(ri);ctx.fillStyle='#22C759';ctx.beginPath();ctx.moveTo(x,ch-2);ctx.lineTo(x-5,ch-12);ctx.lineTo(x+5,ch-12);ctx.closePath();ctx.fill()}
-      for(const idx of vmcResult.sellSignals){const ri=idx-off;if(ri<0||ri>=len)continue;const x=toX(ri);ctx.fillStyle='#FF3B30';ctx.beginPath();ctx.moveTo(x,2);ctx.lineTo(x-5,12);ctx.lineTo(x+5,12);ctx.closePath();ctx.fill()}
-      const last=sig[len-1];ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle='#00E5FF';ctx.fillText(`VMC ${last>=0?'+':''}${last.toFixed(1)}`,6,12);ctx.fillStyle=bull?'#22C759':'#FF3B30';ctx.fillText(bull?'▲ BULL':'▼ BEAR',75,12)
+      for(const idx of vmcResult.buySignals){const ri=idx-off;if(ri<0||ri>=len)continue;const x=toX(ri);ctx.fillStyle='var(--tm-profit)';ctx.beginPath();ctx.moveTo(x,ch-2);ctx.lineTo(x-5,ch-12);ctx.lineTo(x+5,ch-12);ctx.closePath();ctx.fill()}
+      for(const idx of vmcResult.sellSignals){const ri=idx-off;if(ri<0||ri>=len)continue;const x=toX(ri);ctx.fillStyle='var(--tm-loss)';ctx.beginPath();ctx.moveTo(x,2);ctx.lineTo(x-5,12);ctx.lineTo(x+5,12);ctx.closePath();ctx.fill()}
+      const last=sig[len-1];ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle='var(--tm-accent)';ctx.fillText(`VMC ${last>=0?'+':''}${last.toFixed(1)}`,6,12);ctx.fillStyle=bull?'var(--tm-profit)':'var(--tm-loss)';ctx.fillText(bull?'▲ BULL':'▼ BEAR',75,12)
     }
     draw();const ro=new ResizeObserver(draw);ro.observe(canvas);return()=>ro.disconnect()
   },[vmcResult,settings])
-  return(<div style={{borderTop:'1px solid #1E2330'}}><div style={{padding:'3px 14px',background:'rgba(191,90,242,0.06)',display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:9,fontWeight:700,color:'#BF5AF2'}}>〜 VMC</span><span style={{fontSize:8,color:'#555C70'}}>cyan=VMC · orange=Signal · ▲▼=signaux</span></div><canvas ref={ref} style={{width:'100%',height:90,display:'block'}}/></div>)
+  return(<div style={{borderTop:'1px solid #1E2330'}}><div style={{padding:'3px 14px',background:'rgba(var(--tm-purple-rgb,191,90,242),0.06)',display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:9,fontWeight:700,color:'var(--tm-purple)'}}>〜 VMC</span><span style={{fontSize:8,color:'var(--tm-text-muted)'}}>cyan=VMC · orange=Signal · ▲▼=signaux</span></div><canvas ref={ref} style={{width:'100%',height:90,display:'block'}}/></div>)
 }
 
 // ── Settings Panel ────────────────────────────────────────────────────────
@@ -231,28 +231,28 @@ function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSe
   const Slider = ({label,value,min,max,step=1,onChange}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void}) => (
     <div style={{marginBottom:10}}>
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-        <span style={{fontSize:10,color:'#8F94A3'}}>{label}</span>
-        <span style={{fontSize:10,fontWeight:700,color:'#F0F3FF',fontFamily:'JetBrains Mono'}}>{value}</span>
+        <span style={{fontSize:10,color:'var(--tm-text-secondary)'}}>{label}</span>
+        <span style={{fontSize:10,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{value}</span>
       </div>
       <input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(+e.target.value)}
-        style={{width:'100%',accentColor:'#0A85FF',height:3}}/>
+        style={{width:'100%',accentColor:'var(--tm-blue)',height:3}}/>
     </div>
   )
   const Toggle = ({label,value,onChange}:{label:string;value:boolean;onChange:(v:boolean)=>void}) => (
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-      <span style={{fontSize:10,color:'#8F94A3'}}>{label}</span>
-      <div onClick={()=>onChange(!value)} style={{width:32,height:17,borderRadius:9,background:value?'#0A85FF':'#2A2F3E',cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
-        <div style={{position:'absolute',top:2,left:value?16:2,width:13,height:13,borderRadius:'50%',background:'#F0F3FF',transition:'left 0.2s'}}/>
+      <span style={{fontSize:10,color:'var(--tm-text-secondary)'}}>{label}</span>
+      <div onClick={()=>onChange(!value)} style={{width:32,height:17,borderRadius:9,background:value?'var(--tm-blue)':'var(--tm-border)',cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
+        <div style={{position:'absolute',top:2,left:value?16:2,width:13,height:13,borderRadius:'50%',background:'var(--tm-text-primary)',transition:'left 0.2s'}}/>
       </div>
     </div>
   )
   return(
-    <div style={{position:'absolute',top:0,right:0,bottom:0,width:240,background:'#161B22',borderLeft:'1px solid #1E2330',zIndex:20,display:'flex',flexDirection:'column'}}>
+    <div style={{position:'absolute',top:0,right:0,bottom:0,width:240,background:'var(--tm-bg-secondary)',borderLeft:'1px solid #1E2330',zIndex:20,display:'flex',flexDirection:'column'}}>
       <div style={{padding:'12px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <span style={{fontSize:12,fontWeight:700,color:'#F0F3FF'}}>
+        <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)'}}>
           {activeId==='vmc'?'〜 VMC':activeId==='smc'?'🏦 SMC':activeId==='msd'?'📊 Structure':'📈 Mkt Profile'}
         </span>
-        <button onClick={onClose} style={{background:'transparent',border:'none',color:'#555C70',cursor:'pointer',fontSize:16,padding:'0 4px'}}>✕</button>
+        <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--tm-text-muted)',cursor:'pointer',fontSize:16,padding:'0 4px'}}>✕</button>
       </div>
       <div style={{flex:1,overflowY:'auto',padding:'12px 14px'}}>
         {activeId==='vmc'&&(<>
@@ -279,7 +279,7 @@ function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSe
         </>)}
       </div>
       <div style={{padding:'10px 14px',borderTop:'1px solid #1E2330'}}>
-        <div style={{fontSize:9,color:'#3D4254',textAlign:'center'}}>Les modifications s'appliquent en temps réel</div>
+        <div style={{fontSize:9,color:'var(--tm-text-muted)',textAlign:'center'}}>Les modifications s'appliquent en temps réel</div>
       </div>
     </div>
   )
@@ -300,7 +300,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
   const [tool,     setTool]     = useState<ToolId>('cursor')
   const [magnet,   setMagnet]   = useState(false)
-  const [color,    setColor]    = useState('#FF9500')
+  const [color,    setColor]    = useState('var(--tm-warning)')
   const [liveP,    setLiveP]    = useState<number|null>(null)
   const [change,   setChange]   = useState(0)
   const [loading,  setLoading]  = useState(true)
@@ -348,16 +348,16 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     const el=chartEl.current;if(!el)return
     const c=createChart(el,{
       width:el.clientWidth,height:430,
-      layout:{background:{color:'#0D1117'},textColor:'#6B7280',fontSize:11,fontFamily:'JetBrains Mono, monospace'},
+      layout:{background:{color:'var(--tm-bg)'},textColor:'#6B7280',fontSize:11,fontFamily:'JetBrains Mono, monospace'},
       grid:{vertLines:{color:'#1E233028'},horzLines:{color:'#1E233028'}},
-      crosshair:{mode:CrosshairMode.Normal,vertLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'#2A2F3E'},horzLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'#2A2F3E'}},
-      rightPriceScale:{borderColor:'#1E2330',scaleMargins:{top:0.05,bottom:0.05}},
-      timeScale:{borderColor:'#1E2330',timeVisible:true,secondsVisible:false},
+      crosshair:{mode:CrosshairMode.Normal,vertLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'var(--tm-border)'},horzLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'var(--tm-border)'}},
+      rightPriceScale:{borderColor:'var(--tm-border-sub)',scaleMargins:{top:0.05,bottom:0.05}},
+      timeScale:{borderColor:'var(--tm-border-sub)',timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
     seriesR.current=c.addCandlestickSeries({
-      upColor:'#22C759',downColor:'#FF3B30',
-      borderUpColor:'#22C759',borderDownColor:'#FF3B30',
+      upColor:'var(--tm-profit)',downColor:'var(--tm-loss)',
+      borderUpColor:'var(--tm-profit)',borderDownColor:'var(--tm-loss)',
       wickUpColor:'#22C75990',wickDownColor:'#FF3B3090',
       priceLineVisible:false,
     })
@@ -412,7 +412,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     const ser=seriesR.current;if(!ser)return
     mpLinesRef.current.forEach(l=>{try{ser.removePriceLine(l)}catch{}});mpLinesRef.current=[]
     if(indOn.mp&&mpResult){
-      [[mpResult.poc,'#FF9500','POC',LineStyle.Solid,2],[mpResult.vah,'#22C759','VAH',LineStyle.Dashed,1],[mpResult.val,'#22C759','VAL',LineStyle.Dashed,1]].forEach(([price,color,title,lineStyle,lineWidth])=>{
+      [[mpResult.poc,'var(--tm-warning)','POC',LineStyle.Solid,2],[mpResult.vah,'var(--tm-profit)','VAH',LineStyle.Dashed,1],[mpResult.val,'var(--tm-profit)','VAL',LineStyle.Dashed,1]].forEach(([price,color,title,lineStyle,lineWidth])=>{
         try{const pl=ser.createPriceLine({price:price as number,color:color as string,lineWidth:lineWidth as any,lineStyle:lineStyle as any,axisLabelVisible:true,title:title as string});mpLinesRef.current.push(pl)}catch{}
       })
     }
@@ -454,7 +454,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         ctx.font='bold 10px JetBrains Mono, monospace';const tw=ctx.measureText(lbl).width+16
         ctx.fillStyle=d.color+'28';ctx.beginPath();ctx.roundRect?.(cw-tw-4,y-11,tw,18,4);ctx.fill()
         ctx.fillStyle=d.color;ctx.fillText(lbl,cw-tw+4,y+4)
-        if(isSelected){ctx.fillStyle='#F0F3FF';ctx.beginPath();ctx.arc(cw/2,y,4,0,Math.PI*2);ctx.fill()}
+        if(isSelected){ctx.fillStyle='var(--tm-text-primary)';ctx.beginPath();ctx.arc(cw/2,y,4,0,Math.PI*2);ctx.fill()}
       }
 
       else if(d.type==='trendline'&&d.p2){
@@ -495,7 +495,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         ctx.fillStyle=d.color+'18';ctx.fillRect(rx,ry,rw,rh)
         ctx.strokeRect(rx,ry,rw,rh)
         // Corner handles when selected
-        if(isSelected){for(const [hx,hy] of[[rx,ry],[rx+rw,ry],[rx,ry+rh],[rx+rw,ry+rh]]){ctx.fillStyle='#F0F3FF';ctx.beginPath();ctx.arc(hx,hy,4,0,Math.PI*2);ctx.fill()}}
+        if(isSelected){for(const [hx,hy] of[[rx,ry],[rx+rw,ry],[rx,ry+rh],[rx+rw,ry+rh]]){ctx.fillStyle='var(--tm-text-primary)';ctx.beginPath();ctx.arc(hx,hy,4,0,Math.PI*2);ctx.fill()}}
       }
 
       else if(d.type==='note'){
@@ -514,8 +514,8 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         const delY=toY(d.p1.price)
         if(delY!=null){
           ctx.shadowBlur=0
-          ctx.fillStyle='#FF3B30';ctx.beginPath();ctx.arc(delX,delY-18,9,0,Math.PI*2);ctx.fill()
-          ctx.strokeStyle='#F0F3FF';ctx.lineWidth=1.5
+          ctx.fillStyle='var(--tm-loss)';ctx.beginPath();ctx.arc(delX,delY-18,9,0,Math.PI*2);ctx.fill()
+          ctx.strokeStyle='var(--tm-text-primary)';ctx.lineWidth=1.5
           ctx.beginPath();ctx.moveTo(delX-4,delY-22);ctx.lineTo(delX+4,delY-14);ctx.stroke()
           ctx.beginPath();ctx.moveTo(delX+4,delY-22);ctx.lineTo(delX-4,delY-14);ctx.stroke()
         }
@@ -555,12 +555,12 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=border;ctx.fillText(lbl,x+4,Math.min(y1,y2)+12)
       }
       if(smcS.showOB){
-        smcResult.bullOBs.slice(0,smcS.obCount).forEach(ob=>drawZone(ob.top,ob.btm,ob.idx,'rgba(10,133,255,0.10)','rgba(10,133,255,0.75)','Bull OB'))
-        smcResult.bearOBs.slice(0,smcS.obCount).forEach(ob=>drawZone(ob.top,ob.btm,ob.idx,'rgba(255,59,48,0.10)','rgba(255,59,48,0.75)','Bear OB'))
+        smcResult.bullOBs.slice(0,smcS.obCount).forEach(ob=>drawZone(ob.top,ob.btm,ob.idx,'rgba(var(--tm-blue-rgb,10,133,255),0.10)','rgba(var(--tm-blue-rgb,10,133,255),0.75)','Bull OB'))
+        smcResult.bearOBs.slice(0,smcS.obCount).forEach(ob=>drawZone(ob.top,ob.btm,ob.idx,'rgba(var(--tm-loss-rgb,255,59,48),0.10)','rgba(var(--tm-loss-rgb,255,59,48),0.75)','Bear OB'))
       }
       if(smcS.showFVG){
-        smcResult.bullFVGs.forEach(fvg=>{const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return;ctx.fillStyle='rgba(34,199,89,0.07)';ctx.strokeStyle='rgba(34,199,89,0.5)';ctx.setLineDash([4,3]);ctx.fillRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.setLineDash([]);ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle='#22C759';ctx.fillText('FVG ↑',x+4,Math.min(y1,y2)+12)})
-        smcResult.bearFVGs.forEach(fvg=>{const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return;ctx.fillStyle='rgba(255,149,0,0.07)';ctx.strokeStyle='rgba(255,149,0,0.5)';ctx.setLineDash([4,3]);ctx.fillRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.setLineDash([]);ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle='#FF9500';ctx.fillText('FVG ↓',x+4,Math.min(y1,y2)+12)})
+        smcResult.bullFVGs.forEach(fvg=>{const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return;ctx.fillStyle='rgba(var(--tm-profit-rgb,34,199,89),0.07)';ctx.strokeStyle='rgba(var(--tm-profit-rgb,34,199,89),0.5)';ctx.setLineDash([4,3]);ctx.fillRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.setLineDash([]);ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle='var(--tm-profit)';ctx.fillText('FVG ↑',x+4,Math.min(y1,y2)+12)})
+        smcResult.bearFVGs.forEach(fvg=>{const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return;ctx.fillStyle='rgba(var(--tm-warning-rgb,255,149,0),0.07)';ctx.strokeStyle='rgba(var(--tm-warning-rgb,255,149,0),0.5)';ctx.setLineDash([4,3]);ctx.fillRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.setLineDash([]);ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle='var(--tm-warning)';ctx.fillText('FVG ↓',x+4,Math.min(y1,y2)+12)})
       }
     }
 
@@ -568,15 +568,15 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     if(indOn.msd&&msdResult){
       ctx.font='bold 10px JetBrains Mono, monospace'
       if(msdS.showSwings){
-        msdResult.swingHighs.forEach(sh=>{const t=candles[sh.idx]?.time;const x=t?toX(t):null;const y=toY(sh.price);if(x==null||y==null)return;ctx.fillStyle=sh.type==='HH'?'#FF3B30':'#FF9500';ctx.fillText(sh.type,x-10,y-8)})
-        msdResult.swingLows.forEach(sl=>{const t=candles[sl.idx]?.time;const x=t?toX(t):null;const y=toY(sl.price);if(x==null||y==null)return;ctx.fillStyle=sl.type==='LL'?'#22C759':'#00E5FF';ctx.fillText(sl.type,x-10,y+16)})
+        msdResult.swingHighs.forEach(sh=>{const t=candles[sh.idx]?.time;const x=t?toX(t):null;const y=toY(sh.price);if(x==null||y==null)return;ctx.fillStyle=sh.type==='HH'?'var(--tm-loss)':'var(--tm-warning)';ctx.fillText(sh.type,x-10,y-8)})
+        msdResult.swingLows.forEach(sl=>{const t=candles[sl.idx]?.time;const x=t?toX(t):null;const y=toY(sl.price);if(x==null||y==null)return;ctx.fillStyle=sl.type==='LL'?'var(--tm-profit)':'var(--tm-accent)';ctx.fillText(sl.type,x-10,y+16)})
       }
       if(msdS.showBOS){
         msdResult.bosLines.forEach(bos=>{
           const t1=candles[bos.from]?.time,t2=candles[bos.to]?.time;const x1=t1?toX(t1):null,x2=t2?toX(t2):null;const y=toY(bos.price);if(x1==null||x2==null||y==null)return
-          ctx.strokeStyle=bos.type==='BOS'?(bos.dir==='bull'?'#22C759':'#FF3B30'):'#FFD60A';ctx.lineWidth=1;ctx.setLineDash([5,3])
+          ctx.strokeStyle=bos.type==='BOS'?(bos.dir==='bull'?'var(--tm-profit)':'var(--tm-loss)'):'#FFD60A';ctx.lineWidth=1;ctx.setLineDash([5,3])
           ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();ctx.setLineDash([])
-          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=bos.type==='BOS'?(bos.dir==='bull'?'#22C759':'#FF3B30'):'#FFD60A';ctx.fillText(bos.type,(x1+x2)/2-10,y-4)
+          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=bos.type==='BOS'?(bos.dir==='bull'?'var(--tm-profit)':'var(--tm-loss)'):'#FFD60A';ctx.fillText(bos.type,(x1+x2)/2-10,y-4)
         })
       }
     }
@@ -584,11 +584,11 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
     // ── VMC ribbon indicator ──────────────────────────────────────────
     if(indOn.vmc&&vmcResult){
       const bull=vmcResult.isBull[vmcResult.isBull.length-1],bear=vmcResult.isBear[vmcResult.isBear.length-1]
-      ctx.fillStyle=bull?'rgba(34,199,89,0.10)':bear?'rgba(255,59,48,0.10)':'rgba(255,255,255,0.03)';ctx.fillRect(0,ch-10,cw,10)
-      ctx.font='bold 8px JetBrains Mono, monospace';ctx.fillStyle=bull?'#22C759':bear?'#FF3B30':'#555C70';ctx.fillText(bull?'▲ BULL RIBBON':bear?'▼ BEAR RIBBON':'— NEUTRE',6,ch-2)
+      ctx.fillStyle=bull?'rgba(var(--tm-profit-rgb,34,199,89),0.10)':bear?'rgba(var(--tm-loss-rgb,255,59,48),0.10)':'rgba(255,255,255,0.03)';ctx.fillRect(0,ch-10,cw,10)
+      ctx.font='bold 8px JetBrains Mono, monospace';ctx.fillStyle=bull?'var(--tm-profit)':bear?'var(--tm-loss)':'var(--tm-text-muted)';ctx.fillText(bull?'▲ BULL RIBBON':bear?'▼ BEAR RIBBON':'— NEUTRE',6,ch-2)
       const off=candles.length-vmcResult.sig.length
-      vmcResult.buySignals.forEach(idx=>{const c=candles[idx+off];if(!c)return;const x=toX(c.time),y=toY(c.low);if(x==null||y==null)return;ctx.fillStyle='#22C759';ctx.beginPath();ctx.moveTo(x,y+24);ctx.lineTo(x-6,y+14);ctx.lineTo(x+6,y+14);ctx.closePath();ctx.fill()})
-      vmcResult.sellSignals.forEach(idx=>{const c=candles[idx+off];if(!c)return;const x=toX(c.time),y=toY(c.high);if(x==null||y==null)return;ctx.fillStyle='#FF3B30';ctx.beginPath();ctx.moveTo(x,y-24);ctx.lineTo(x-6,y-14);ctx.lineTo(x+6,y-14);ctx.closePath();ctx.fill()})
+      vmcResult.buySignals.forEach(idx=>{const c=candles[idx+off];if(!c)return;const x=toX(c.time),y=toY(c.low);if(x==null||y==null)return;ctx.fillStyle='var(--tm-profit)';ctx.beginPath();ctx.moveTo(x,y+24);ctx.lineTo(x-6,y+14);ctx.lineTo(x+6,y+14);ctx.closePath();ctx.fill()})
+      vmcResult.sellSignals.forEach(idx=>{const c=candles[idx+off];if(!c)return;const x=toX(c.time),y=toY(c.high);if(x==null||y==null)return;ctx.fillStyle='var(--tm-loss)';ctx.beginPath();ctx.moveTo(x,y-24);ctx.lineTo(x-6,y-14);ctx.lineTo(x+6,y-14);ctx.closePath();ctx.fill()})
     }
 
     // ── Market Profile histogram ──────────────────────────────────────
@@ -599,7 +599,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
         const y=toY(b.price);if(y==null)return
         const bw=(b.vol/maxV)*barMaxW
         const isMid=Math.abs(b.price-mpResult!.poc)<(mpResult!.vah-mpResult!.val)*0.08
-        ctx.fillStyle=isMid?'rgba(255,149,0,0.4)':`rgba(${b.price>mpResult!.poc?'34,199,89':'100,120,200'},0.25)`
+        ctx.fillStyle=isMid?'rgba(var(--tm-warning-rgb,255,149,0),0.4)':`rgba(${b.price>mpResult!.poc?'34,199,89':'100,120,200'},0.25)`
         ctx.fillRect(cw-bw-2,y-2,bw,4)
       })
     }
@@ -715,10 +715,10 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   }
 
   const INDS=[
-    {id:'smc',icon:'🏦',label:'SMC',color:'#0A85FF'},
-    {id:'msd',icon:'📊',label:'Structure',color:'#22C759'},
-    {id:'vmc',icon:'〜',label:'VMC',color:'#BF5AF2'},
-    {id:'mp', icon:'📈',label:'Mkt Profile',color:'#FF9500'},
+    {id:'smc',icon:'🏦',label:'SMC',color:'var(--tm-blue)'},
+    {id:'msd',icon:'📊',label:'Structure',color:'var(--tm-profit)'},
+    {id:'vmc',icon:'〜',label:'VMC',color:'var(--tm-purple)'},
+    {id:'mp', icon:'📈',label:'Mkt Profile',color:'var(--tm-warning)'},
   ]
   const TOOLS=[
     {id:'cursor',icon:'↖',label:'Sélection'},
@@ -730,67 +730,67 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   ]
 
   return(
-    <div style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:16,position:'relative'}}>
+    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:16,position:'relative'}}>
 
       {/* Header */}
       <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <div style={{width:26,height:26,borderRadius:7,background:'linear-gradient(135deg,#22C759,#00E5FF)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>⚡</div>
-          <div><div style={{fontSize:11,fontWeight:700,color:'#F0F3FF'}}>Lightweight Charts</div><div style={{fontSize:9,color:'#555C70'}}>Sauvegarde Firestore · {symbol}</div></div>
+          <div><div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)'}}>Lightweight Charts</div><div style={{fontSize:9,color:'var(--tm-text-muted)'}}>Sauvegarde Firestore · {symbol}</div></div>
         </div>
         {liveP&&<div style={{display:'flex',alignItems:'baseline',gap:5,marginLeft:4}}>
-          <span style={{fontSize:15,fontWeight:700,color:'#F0F3FF',fontFamily:'JetBrains Mono, monospace'}}>{fmtP(liveP)}</span>
-          <span style={{fontSize:10,fontWeight:700,color:change>=0?'#22C759':'#FF3B30'}}>{change>=0?'+':''}{change.toFixed(2)}%</span>
+          <span style={{fontSize:15,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{fmtP(liveP)}</span>
+          <span style={{fontSize:10,fontWeight:700,color:change>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{change>=0?'+':''}{change.toFixed(2)}%</span>
           <span style={{fontSize:8,color:'#22C75990'}}>● LIVE</span>
         </div>}
         <div style={{display:'flex',gap:3,marginLeft:4,flexWrap:'wrap'}}>
-          {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'#00E5FF':'#2A2F3E'}`,background:tf.label===t.label?'rgba(0,229,255,0.12)':'transparent',color:tf.label===t.label?'#00E5FF':'#555C70'}}>{t.label}</button>)}
+          {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===t.label?'rgba(var(--tm-accent-rgb,0,229,255),0.12)':'transparent',color:tf.label===t.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{t.label}</button>)}
         </div>
-        <button onClick={()=>setShowHist(x=>!x)} style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'#22C759':'#2A2F3E'}`,background:showHist?'rgba(34,199,89,0.1)':'transparent',color:showHist?'#22C759':'#555C70',flexShrink:0}}>
+        <button onClick={()=>setShowHist(x=>!x)} style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
           💾 {drawings.length>0?`${drawings.length} dessin${drawings.length>1?'s':''}`:' Dessins'}
         </button>
       </div>
 
       {/* Indicateurs + settings */}
       <div style={{padding:'6px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
-        <span style={{fontSize:9,color:'#3D4254',fontWeight:700,flexShrink:0}}>INDICATEURS :</span>
+        <span style={{fontSize:9,color:'var(--tm-text-muted)',fontWeight:700,flexShrink:0}}>INDICATEURS :</span>
         {INDS.map(ind=>(
           <div key={ind.id} style={{display:'flex',alignItems:'center',gap:0}}>
             <button onClick={()=>toggleInd(ind.id)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:'6px 0 0 6px',fontSize:10,fontWeight:600,cursor:'pointer',
-              border:`1px solid ${indOn[ind.id]?ind.color:'#2A2F3E'}`,borderRight:'none',
+              border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,borderRight:'none',
               background:indOn[ind.id]?`${ind.color}18`:'transparent',
-              color:indOn[ind.id]?ind.color:'#555C70'}}>
+              color:indOn[ind.id]?ind.color:'var(--tm-text-muted)'}}>
               {ind.icon} {ind.label}
               {indOn[ind.id]&&<span style={{width:5,height:5,borderRadius:'50%',background:ind.color,display:'inline-block'}}/>}
             </button>
             <button onClick={()=>setSettingsOpen(settingsOpen===ind.id?null:ind.id)} style={{padding:'3px 6px',borderRadius:'0 6px 6px 0',fontSize:10,cursor:'pointer',
-              border:`1px solid ${indOn[ind.id]?ind.color:'#2A2F3E'}`,
+              border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,
               background:settingsOpen===ind.id?`${ind.color}28`:'transparent',
-              color:settingsOpen===ind.id?ind.color:'#555C70'}}>⚙</button>
+              color:settingsOpen===ind.id?ind.color:'var(--tm-text-muted)'}}>⚙</button>
           </div>
         ))}
       </div>
 
       {/* Outils dessin */}
       <div style={{padding:'5px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
-        {TOOLS.map(t=><button key={t.id} onClick={()=>{setTool(t.id as ToolId);phase.current='idle';firstPt.current=null;setSelectedId(null)}} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tool===t.id?'#FF9500':'#2A2F3E'}`,background:tool===t.id?'rgba(255,149,0,0.12)':'transparent',color:tool===t.id?'#FF9500':'#555C70'}}>{t.icon} {t.label}</button>)}
-        <div style={{width:1,height:14,background:'#2A2F3E',margin:'0 4px'}}/>
+        {TOOLS.map(t=><button key={t.id} onClick={()=>{setTool(t.id as ToolId);phase.current='idle';firstPt.current=null;setSelectedId(null)}} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tool===t.id?'var(--tm-warning)':'var(--tm-border)'}`,background:tool===t.id?'rgba(var(--tm-warning-rgb,255,149,0),0.12)':'transparent',color:tool===t.id?'var(--tm-warning)':'var(--tm-text-muted)'}}>{t.icon} {t.label}</button>)}
+        <div style={{width:1,height:14,background:'var(--tm-border)',margin:'0 4px'}}/>
         {/* Magnet */}
-        <button onClick={()=>setMagnet(m=>!m)} title="Aimant — colle aux OHLC" style={{padding:'3px 9px',borderRadius:6,fontSize:12,cursor:'pointer',border:`1px solid ${magnet?'#FFD60A':'#2A2F3E'}`,background:magnet?'rgba(255,214,10,0.12)':'transparent',color:magnet?'#FFD60A':'#555C70'}}>🧲</button>
-        <div style={{width:1,height:14,background:'#2A2F3E',margin:'0 4px'}}/>
+        <button onClick={()=>setMagnet(m=>!m)} title="Aimant — colle aux OHLC" style={{padding:'3px 9px',borderRadius:6,fontSize:12,cursor:'pointer',border:`1px solid ${magnet?'#FFD60A':'var(--tm-border)'}`,background:magnet?'rgba(255,214,10,0.12)':'transparent',color:magnet?'#FFD60A':'var(--tm-text-muted)'}}>🧲</button>
+        <div style={{width:1,height:14,background:'var(--tm-border)',margin:'0 4px'}}/>
         {COLORS.map(c=><div key={c} onClick={()=>setColor(c)} style={{width:14,height:14,borderRadius:'50%',background:c,cursor:'pointer',flexShrink:0,outline:color===c?'2px solid #F0F3FF':'none',outlineOffset:1}}/>)}
-        {selectedId&&<span style={{marginLeft:8,fontSize:9,color:'#FF3B30'}}>← Clic sur ✕ pour supprimer · Suppr. pour effacer</span>}
-        {!selectedId&&tool!=='cursor'&&phase.current==='first'&&<span style={{fontSize:10,color:'#FF9500',fontWeight:700,marginLeft:4}}>← 2ème point</span>}
+        {selectedId&&<span style={{marginLeft:8,fontSize:9,color:'var(--tm-loss)'}}>← Clic sur ✕ pour supprimer · Suppr. pour effacer</span>}
+        {!selectedId&&tool!=='cursor'&&phase.current==='first'&&<span style={{fontSize:10,color:'var(--tm-warning)',fontWeight:700,marginLeft:4}}>← 2ème point</span>}
       </div>
 
       {/* Chart */}
-      <div style={{position:'relative',background:'#0D1117'}} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} onClick={handleClick}>
-        {loading&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'#0D111790',zIndex:4}}><div style={{width:24,height:24,border:'2px solid #1E2330',borderTopColor:'#22C759',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>}
-        {!loading&&fetchError&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#0D1117',zIndex:4,gap:10}}>
+      <div style={{position:'relative',background:'var(--tm-bg)'}} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} onClick={handleClick}>
+        {loading&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'#0D111790',zIndex:4}}><div style={{width:24,height:24,border:'2px solid #1E2330',borderTopColor:'var(--tm-profit)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>}
+        {!loading&&fetchError&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--tm-bg)',zIndex:4,gap:10}}>
           <span style={{fontSize:28}}>📊</span>
-          <span style={{fontSize:12,color:'#FF3B30',fontWeight:600,textAlign:'center',maxWidth:280,padding:'0 20px'}}>{fetchError}</span>
-          <span style={{fontSize:11,color:'#555C70',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Essayez: AAPL · TSLA · MSFT · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40) · BTC-USD</span>
-          <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:'rgba(0,229,255,0.1)',border:'1px solid #00E5FF',color:'#00E5FF',cursor:'pointer',fontSize:11}}>Réessayer</button>
+          <span style={{fontSize:12,color:'var(--tm-loss)',fontWeight:600,textAlign:'center',maxWidth:280,padding:'0 20px'}}>{fetchError}</span>
+          <span style={{fontSize:11,color:'var(--tm-text-muted)',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Essayez: AAPL · TSLA · MSFT · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40) · BTC-USD</span>
+          <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',border:'1px solid #00E5FF',color:'var(--tm-accent)',cursor:'pointer',fontSize:11}}>Réessayer</button>
         </div>}
         <div ref={chartEl} style={{width:'100%',height:430}}/>
         <canvas ref={overlayEl} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2,pointerEvents:'none'}}/>
@@ -802,32 +802,32 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       {indOn.vmc&&vmcResult&&<VMCPanel vmcResult={vmcResult} settings={vmcS}/>}
 
       {/* Confirm */}
-      {confirm&&<div style={{padding:'10px 14px',background:'rgba(255,149,0,0.06)',borderTop:'1px solid rgba(255,149,0,0.2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <span style={{fontSize:11,fontWeight:700,color:'#FF9500',flexShrink:0}}>
+      {confirm&&<div style={{padding:'10px 14px',background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',borderTop:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span style={{fontSize:11,fontWeight:700,color:'var(--tm-warning)',flexShrink:0}}>
           {confirm.type==='hline'?`─ @ ${fmtP(confirm.p1.price)}`:confirm.type==='trendline'?'↗ Tendance':confirm.type==='fibo'?'◎ Fibo':confirm.type==='rect'?'▭ Zone':'✎ Note'}
         </span>
-        <input autoFocus value={labelInput} onChange={e=>setLabelInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} placeholder={confirm.type==='note'?'Texte…':'Label optionnel…'} style={{flex:1,background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'5px 10px',color:'#F0F3FF',fontSize:11,minWidth:120}}/>
-        <button onClick={handleSave} disabled={saving} style={{padding:'5px 14px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',background:'rgba(34,199,89,0.15)',border:'1px solid #22C759',color:'#22C759'}}>{saving?'…':'💾 Sauvegarder'}</button>
-        <button onClick={()=>{setConfirm(null);phase.current='idle'}} style={{padding:'5px 10px',borderRadius:8,fontSize:11,cursor:'pointer',background:'transparent',border:'1px solid #2A2F3E',color:'#555C70'}}>✕</button>
+        <input autoFocus value={labelInput} onChange={e=>setLabelInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} placeholder={confirm.type==='note'?'Texte…':'Label optionnel…'} style={{flex:1,background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:8,padding:'5px 10px',color:'var(--tm-text-primary)',fontSize:11,minWidth:120}}/>
+        <button onClick={handleSave} disabled={saving} style={{padding:'5px 14px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',background:'rgba(var(--tm-profit-rgb,34,199,89),0.15)',border:'1px solid #22C759',color:'var(--tm-profit)'}}>{saving?'…':'💾 Sauvegarder'}</button>
+        <button onClick={()=>{setConfirm(null);phase.current='idle'}} style={{padding:'5px 10px',borderRadius:8,fontSize:11,cursor:'pointer',background:'transparent',border:'1px solid #2A2F3E',color:'var(--tm-text-muted)'}}>✕</button>
       </div>}
 
       {/* History */}
       {showHist&&<div style={{borderTop:'1px solid #1E2330',maxHeight:200,overflowY:'auto'}}>
-        {drawings.length===0?<div style={{padding:'14px',textAlign:'center',color:'#3D4254',fontSize:12}}>Aucun dessin pour {symbol} · {tf.label}</div>
-        :drawings.map(d=><div key={d.id} onClick={()=>setSelectedId(d.id===selectedId?null:d.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 14px',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',background:d.id===selectedId?'rgba(255,149,0,0.05)':'transparent'}}>
+        {drawings.length===0?<div style={{padding:'14px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun dessin pour {symbol} · {tf.label}</div>
+        :drawings.map(d=><div key={d.id} onClick={()=>setSelectedId(d.id===selectedId?null:d.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 14px',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',background:d.id===selectedId?'rgba(var(--tm-warning-rgb,255,149,0),0.05)':'transparent'}}>
           <div style={{width:3,height:26,borderRadius:2,background:d.color,flexShrink:0}}/>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:11,fontWeight:600,color:'#F0F3FF'}}>
+            <div style={{fontSize:11,fontWeight:600,color:'var(--tm-text-primary)'}}>
               {d.type==='hline'?`─ @ ${fmtP(d.p1.price)}`:d.type==='trendline'?'↗ Tendance':d.type==='fibo'?'◎ Fibo':d.type==='rect'?'▭ Zone':`✎ ${d.label||'Note'}`}
             </div>
-            <div style={{fontSize:9,color:'#3D4254'}}>{new Date(d.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+            <div style={{fontSize:9,color:'var(--tm-text-muted)'}}>{new Date(d.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
           </div>
           <button onClick={async(e)=>{e.stopPropagation();await dbDelete(d.id);setDrawings(p=>p.filter(x=>x.id!==d.id));if(selectedId===d.id)setSelectedId(null);toast$('Supprimé')}}
-            style={{background:'rgba(255,59,48,0.1)',border:'1px solid rgba(255,59,48,0.2)',borderRadius:6,color:'#FF3B30',cursor:'pointer',fontSize:10,padding:'3px 8px'}}>✕</button>
+            style={{background:'rgba(var(--tm-loss-rgb,255,59,48),0.1)',border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.2)',borderRadius:6,color:'var(--tm-loss)',cursor:'pointer',fontSize:10,padding:'3px 8px'}}>✕</button>
         </div>)}
       </div>}
 
-      {toast&&<div style={{position:'absolute',bottom:16,left:'50%',transform:'translateX(-50%)',background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:10,padding:'8px 16px',fontSize:12,color:'#F0F3FF',zIndex:10,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 20px rgba(0,0,0,0.6)'}}>{toast}</div>}
+      {toast&&<div style={{position:'absolute',bottom:16,left:'50%',transform:'translateX(-50%)',background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:10,padding:'8px 16px',fontSize:12,color:'var(--tm-text-primary)',zIndex:10,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 20px rgba(0,0,0,0.6)'}}>{toast}</div>}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )

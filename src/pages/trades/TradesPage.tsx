@@ -69,7 +69,7 @@ export default function TradesPage() {
   const [showStats, setShowStats] = useState(false)
 
   const systemName  = (id: string) => systems.find(s => s.id === id)?.name  ?? '—'
-  const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? '#00E5FF'
+  const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? 'var(--tm-accent)'
 
   const [showImport, setShowImport] = useState(false)
 
@@ -78,16 +78,16 @@ export default function TradesPage() {
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#F0F3FF', margin:0 }}>Trades</h1>
-          <p style={{ fontSize:13, color:'#8F94A3', margin:'3px 0 0' }}>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0 }}>Trades</h1>
+          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'3px 0 0' }}>
             {loading ? 'Connexion à Firestore...' : `${filtered.length} trade${filtered.length > 1?'s':''}`}
           </p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={() => setShowImport(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid #2A2F3E', background:'#161B22', color:'#FF9500', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+          <button onClick={() => setShowImport(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-warning)', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
             📄 Importer CSV
           </button>
-          <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+          <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
             + Nouveau trade
           </button>
         </div>
@@ -96,20 +96,20 @@ export default function TradesPage() {
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:12 }}>
         {[
-          { l:'P&L Total',  v:fmtPnL(totalPnL), c: totalPnL >= 0 ? '#22C759' : '#FF3B30' },
-          { l:'Win Rate',   v:`${wr}%`,          c:'#F0F3FF' },
-          { l:'Gains',      v:wins,              c:'#22C759' },
-          { l:'Pertes',     v:losses,            c:'#FF3B30' },
+          { l:'P&L Total',  v:fmtPnL(totalPnL), c: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
+          { l:'Win Rate',   v:`${wr}%`,          c:'var(--tm-text-primary)' },
+          { l:'Gains',      v:wins,              c:'var(--tm-profit)' },
+          { l:'Pertes',     v:losses,            c:'var(--tm-loss)' },
         ].map(({ l, v, c }) => (
-          <div key={l} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
-            <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{l}</div>
+          <div key={l} style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{l}</div>
             <div style={{ fontSize:18, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
           </div>
         ))}
       </div>
 
       {/* Toggle advanced stats */}
-      <button onClick={() => setShowStats(x => !x)} style={{ width:'100%', padding:'8px', marginBottom:14, borderRadius:10, border:'1px solid #2A2F3E', background:showStats?'rgba(10,133,255,0.06)':'#161B22', color:showStats?'#0A85FF':'#555C70', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+      <button onClick={() => setShowStats(x => !x)} style={{ width:'100%', padding:'8px', marginBottom:14, borderRadius:10, border:'1px solid #2A2F3E', background:showStats?'rgba(var(--tm-blue-rgb,10,133,255),0.06)':'var(--tm-bg-secondary)', color:showStats?'var(--tm-blue)':'var(--tm-text-muted)', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
         {showStats ? '▲ Masquer les statistiques avancées' : '▼ Statistiques avancées'}
       </button>
 
@@ -119,13 +119,13 @@ export default function TradesPage() {
           {/* Row 2: Advanced metrics */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:10 }}>
             {[
-              { l:'Payoff Ratio',   v:payoff,                    c:'#00E5FF' },
-              { l:'Profit Factor',  v:profitFactor,              c: Number(profitFactor) >= 1.5 ? '#22C759' : '#FF9500' },
-              { l:'Expectancy',     v:fmtPnL(expectancy),        c: expectancy >= 0 ? '#22C759' : '#FF3B30' },
-              { l:'Trades fermés',  v:closed.length,             c:'#8F94A3' },
+              { l:'Payoff Ratio',   v:payoff,                    c:'var(--tm-accent)' },
+              { l:'Profit Factor',  v:profitFactor,              c: Number(profitFactor) >= 1.5 ? 'var(--tm-profit)' : 'var(--tm-warning)' },
+              { l:'Expectancy',     v:fmtPnL(expectancy),        c: expectancy >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
+              { l:'Trades fermés',  v:closed.length,             c:'var(--tm-text-secondary)' },
             ].map(({ l, v, c }) => (
-              <div key={l} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
-                <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{l}</div>
+              <div key={l} style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+                <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{l}</div>
                 <div style={{ fontSize:16, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
               </div>
             ))}
@@ -133,13 +133,13 @@ export default function TradesPage() {
           {/* Row 3: Gains/losses details */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:10 }}>
             {[
-              { l:'Moy. gain',       v:fmtPnL(avgWin),            c:'#22C759' },
-              { l:'Moy. perte',      v:fmtPnL(-avgLoss),          c:'#FF3B30' },
-              { l:'Meilleur trade',  v:fmtPnL(bestTrade),         c:'#22C759' },
-              { l:'Pire trade',      v:fmtPnL(worstTrade),        c:'#FF3B30' },
+              { l:'Moy. gain',       v:fmtPnL(avgWin),            c:'var(--tm-profit)' },
+              { l:'Moy. perte',      v:fmtPnL(-avgLoss),          c:'var(--tm-loss)' },
+              { l:'Meilleur trade',  v:fmtPnL(bestTrade),         c:'var(--tm-profit)' },
+              { l:'Pire trade',      v:fmtPnL(worstTrade),        c:'var(--tm-loss)' },
             ].map(({ l, v, c }) => (
-              <div key={l} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
-                <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{l}</div>
+              <div key={l} style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
+                <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{l}</div>
                 <div style={{ fontSize:16, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
               </div>
             ))}
@@ -147,37 +147,37 @@ export default function TradesPage() {
           {/* Row 4: Streaks + top symbols */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             {/* Streaks */}
-            <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
-              <div style={{ fontSize:12, fontWeight:700, color:'#F0F3FF', marginBottom:10 }}>Séries</div>
+            <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:10 }}>Séries</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {[
-                  { l:'Meilleure série', v:`${bestStreak} wins`, c:'#22C759' },
-                  { l:'Pire série',      v:`${Math.abs(worstStreak)} losses`, c:'#FF3B30' },
-                  { l:'Profit brut',     v:fmtPnL(grossProfit), c:'#22C759' },
-                  { l:'Perte brute',     v:fmtPnL(-grossLoss), c:'#FF3B30' },
+                  { l:'Meilleure série', v:`${bestStreak} wins`, c:'var(--tm-profit)' },
+                  { l:'Pire série',      v:`${Math.abs(worstStreak)} losses`, c:'var(--tm-loss)' },
+                  { l:'Profit brut',     v:fmtPnL(grossProfit), c:'var(--tm-profit)' },
+                  { l:'Perte brute',     v:fmtPnL(-grossLoss), c:'var(--tm-loss)' },
                 ].map(({ l, v, c }) => (
                   <div key={l} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <span style={{ fontSize:11, color:'#8F94A3' }}>{l}</span>
+                    <span style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{l}</span>
                     <span style={{ fontSize:12, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</span>
                   </div>
                 ))}
               </div>
             </div>
             {/* Top symbols */}
-            <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
-              <div style={{ fontSize:12, fontWeight:700, color:'#F0F3FF', marginBottom:10 }}>Top Symboles</div>
+            <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:10 }}>Top Symboles</div>
               {topSymbols.length === 0 ? (
-                <div style={{ fontSize:11, color:'#3D4254' }}>Pas de données</div>
+                <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Pas de données</div>
               ) : (
                 <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                   {topSymbols.map(([sym, data]) => (
                     <div key={sym} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontSize:12, fontWeight:700, color:'#F0F3FF', minWidth:80, fontFamily:'monospace' }}>{sym}</span>
-                      <div style={{ flex:1, height:6, background:'#1C2130', borderRadius:3, overflow:'hidden' }}>
-                        <div style={{ width:`${Math.min(100, data.wins/Math.max(data.count,1)*100)}%`, height:'100%', background:'#22C759', borderRadius:3 }} />
+                      <span style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', minWidth:80, fontFamily:'monospace' }}>{sym}</span>
+                      <div style={{ flex:1, height:6, background:'var(--tm-bg-tertiary)', borderRadius:3, overflow:'hidden' }}>
+                        <div style={{ width:`${Math.min(100, data.wins/Math.max(data.count,1)*100)}%`, height:'100%', background:'var(--tm-profit)', borderRadius:3 }} />
                       </div>
-                      <span style={{ fontSize:11, fontWeight:600, color:data.pnl>=0?'#22C759':'#FF3B30', fontFamily:'monospace', minWidth:70, textAlign:'right' }}>{fmtPnL(data.pnl)}</span>
-                      <span style={{ fontSize:9, color:'#555C70' }}>{data.count}t</span>
+                      <span style={{ fontSize:11, fontWeight:600, color:data.pnl>=0?'var(--tm-profit)':'var(--tm-loss)', fontFamily:'monospace', minWidth:70, textAlign:'right' }}>{fmtPnL(data.pnl)}</span>
+                      <span style={{ fontSize:9, color:'var(--tm-text-muted)' }}>{data.count}t</span>
                     </div>
                   ))}
                 </div>
@@ -189,46 +189,46 @@ export default function TradesPage() {
 
       {/* Filters */}
       <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap' }}>
-        <div style={{ display:'flex', background:'#161B22', borderRadius:8, padding:3, gap:2 }}>
+        <div style={{ display:'flex', background:'var(--tm-bg-secondary)', borderRadius:8, padding:3, gap:2 }}>
           {(['all','open','closed'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={{ padding:'5px 12px', borderRadius:6, border:'none', cursor:'pointer', fontSize:12, fontWeight:500, background: filter===f?'#00E5FF':'transparent', color: filter===f?'#0D1117':'#8F94A3' }}>
+            <button key={f} onClick={() => setFilter(f)} style={{ padding:'5px 12px', borderRadius:6, border:'none', cursor:'pointer', fontSize:12, fontWeight:500, background: filter===f?'var(--tm-accent)':'transparent', color: filter===f?'var(--tm-bg)':'var(--tm-text-secondary)' }}>
               {f==='all'?'Tous':f==='open'?'Ouverts':'Fermés'}
             </button>
           ))}
         </div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Symbole..." style={{ flex:1, minWidth:180, padding:'6px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'#161B22', color:'#F0F3FF', fontSize:13, outline:'none' }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Symbole..." style={{ flex:1, minWidth:180, padding:'6px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none' }} />
       </div>
 
       {/* List */}
       {loading ? (
-        <div style={{ textAlign:'center', padding:48, color:'#555C70' }}>
-          <div style={{ width:24, height:24, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
+        <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)' }}>
+          <div style={{ width:24, height:24, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
           Chargement depuis Firestore...
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ textAlign:'center', padding:48, color:'#555C70', fontSize:14 }}>
+        <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)', fontSize:14 }}>
           Aucun trade{filter !== 'all' ? ` ${filter==='open'?'ouvert':'fermé'}` : ''}
         </div>
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
           {filtered.map(trade => {
             const pnl = tradePnL(trade)
-            const pnlColor = pnl >= 0 ? '#22C759' : '#FF3B30'
+            const pnlColor = pnl >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)'
             const isOpen = trade.status === 'open'
             return (
               <div key={trade.id} onClick={() => setSelectedTrade(trade)} style={{ background:'var(--tm-bg-card, #161B22)', border:'1px solid var(--tm-border, #2A2F3E)', borderRadius:12, padding:'12px 14px', display:'grid', gridTemplateColumns:'auto 1fr auto auto auto', alignItems:'center', gap:14, cursor:'pointer', transition:'border-color 0.15s' }} onMouseOver={e => (e.currentTarget.style.borderColor='var(--tm-accent,#00E5FF)')} onMouseOut={e => (e.currentTarget.style.borderColor='var(--tm-border,#2A2F3E)')}>
-                <div style={{ width:36, height:36, borderRadius:8, background: trade.type==='Long'?'rgba(34,199,89,0.15)':'rgba(255,59,48,0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>
+                <div style={{ width:36, height:36, borderRadius:8, background: trade.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.15)':'rgba(var(--tm-loss-rgb,255,59,48),0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>
                   {trade.type==='Long'?'📈':'📉'}
                 </div>
                 <div>
                   <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3, flexWrap:'wrap' }}>
-                    <span style={{ fontSize:14, fontWeight:700, color:'#F0F3FF' }}>{trade.symbol}</span>
-                    <span style={{ fontSize:10, fontWeight:600, color: trade.type==='Long'?'#22C759':'#FF3B30', background: trade.type==='Long'?'rgba(34,199,89,0.1)':'rgba(255,59,48,0.1)', padding:'1px 6px', borderRadius:4 }}>{trade.type}</span>
-                    {isOpen && <span style={{ fontSize:9, fontWeight:700, color:'#00E5FF', background:'rgba(0,229,255,0.1)', padding:'1px 6px', borderRadius:4 }}>● OUVERT</span>}
+                    <span style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)' }}>{trade.symbol}</span>
+                    <span style={{ fontSize:10, fontWeight:600, color: trade.type==='Long'?'var(--tm-profit)':'var(--tm-loss)', background: trade.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)', padding:'1px 6px', borderRadius:4 }}>{trade.type}</span>
+                    {isOpen && <span style={{ fontSize:9, fontWeight:700, color:'var(--tm-accent)', background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)', padding:'1px 6px', borderRadius:4 }}>● OUVERT</span>}
                     <span style={{ fontSize:10, color:systemColor(trade.systemId), background:`${systemColor(trade.systemId)}18`, padding:'1px 6px', borderRadius:4 }}>{systemName(trade.systemId)}</span>
                   </div>
-                  <div style={{ fontSize:11, color:'#555C70' }}>
+                  <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>
                     {fmtDate(trade.date)} · {trade.leverage}x · {trade.orderRole} · {trade.session}
                     {trade.entryPrice && ` · E: ${fmtPrice(trade.entryPrice)}`}
                     {trade.exitPrice  && ` → S: ${fmtPrice(trade.exitPrice)}`}
@@ -236,12 +236,12 @@ export default function TradesPage() {
                 </div>
                 {trade.quantity && (
                   <div style={{ textAlign:'right' }}>
-                    <div style={{ fontSize:10, color:'#555C70' }}>Qté</div>
-                    <div style={{ fontSize:12, color:'#8F94A3', fontFamily:'monospace' }}>{trade.quantity.toFixed(4)}</div>
+                    <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>Qté</div>
+                    <div style={{ fontSize:12, color:'var(--tm-text-secondary)', fontFamily:'monospace' }}>{trade.quantity.toFixed(4)}</div>
                   </div>
                 )}
                 <div style={{ textAlign:'right', minWidth:80 }}>
-                  <div style={{ fontSize:10, color:'#555C70' }}>{isOpen?'Non réalisé':'P&L'}</div>
+                  <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{isOpen?'Non réalisé':'P&L'}</div>
                   <div style={{ fontSize:14, fontWeight:700, color:pnlColor, fontFamily:'monospace' }}>{fmtPnL(pnl)}</div>
                 </div>
                 <button onClick={e => { e.stopPropagation(); setSelectedTrade(trade) }} style={{ width:28, height:28, borderRadius:6, border:'1px solid var(--tm-border,#2A2F3E)', background:'none', cursor:'pointer', color:'var(--tm-text-muted,#555C70)', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center' }} title="Voir détails">→</button>
@@ -296,14 +296,14 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
     finally { setSaving(false) }
   }
 
-  const inp = { background:'#1C2130', border:'1px solid #2A2F3E', borderRadius:8, padding:'8px 10px', color:'#F0F3FF', fontSize:13, outline:'none', width:'100%', boxSizing:'border-box' as const }
+  const inp = { background:'var(--tm-bg-tertiary)', border:'1px solid #2A2F3E', borderRadius:8, padding:'8px 10px', color:'var(--tm-text-primary)', fontSize:13, outline:'none', width:'100%', boxSizing:'border-box' as const }
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-      <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:480, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
+      <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:480, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'#F0F3FF' }}>Nouveau Trade</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:18 }}>✕</button>
+          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>Nouveau Trade</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
           {[
@@ -315,7 +315,7 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
             { label:'P&L net (optionnel)', key:'flashPnLNet', placeholder:'150.00' },
           ].map(({ label, key, placeholder }) => (
             <div key={key}>
-              <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{label}</div>
+              <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{label}</div>
               <input value={(form as Record<string,string>)[key]} onChange={e => setForm(p => ({...p,[key]:e.target.value}))} placeholder={placeholder} style={inp} />
             </div>
           ))}
@@ -326,7 +326,7 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
             { label:'Rôle', key:'orderRole', options:['Taker','Maker'] },
           ].map(({ label, key, options }) => (
             <div key={key}>
-              <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>{label}</div>
+              <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{label}</div>
               <select value={(form as Record<string,string>)[key]} onChange={e => setForm(p => ({...p,[key]:e.target.value}))} style={{...inp,cursor:'pointer'}}>
                 {options.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -334,18 +334,18 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
           ))}
           {systems.length > 0 && (
             <div style={{ gridColumn:'span 2' }}>
-              <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>Système</div>
+              <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>Système</div>
               <select value={form.systemId} onChange={e => setForm(p => ({...p,systemId:e.target.value}))} style={{...inp,cursor:'pointer'}}>
                 {systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
           )}
           <div style={{ gridColumn:'span 2' }}>
-            <div style={{ fontSize:10, color:'#555C70', marginBottom:4 }}>Notes</div>
+            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>Notes</div>
             <textarea value={form.notes} onChange={e => setForm(p => ({...p,notes:e.target.value}))} placeholder="Notes..." rows={2} style={{...inp,resize:'vertical'}} />
           </div>
         </div>
-        <button onClick={save} disabled={saving || !form.symbol} style={{ width:'100%', marginTop:16, padding:10, borderRadius:10, border:'none', background:form.symbol?'#00E5FF':'#1C2130', color:form.symbol?'#0D1117':'#555C70', fontSize:14, fontWeight:600, cursor:form.symbol?'pointer':'not-allowed' }}>
+        <button onClick={save} disabled={saving || !form.symbol} style={{ width:'100%', marginTop:16, padding:10, borderRadius:10, border:'none', background:form.symbol?'var(--tm-accent)':'var(--tm-bg-tertiary)', color:form.symbol?'var(--tm-bg)':'var(--tm-text-muted)', fontSize:14, fontWeight:600, cursor:form.symbol?'pointer':'not-allowed' }}>
           {saving ? 'Enregistrement...' : 'Créer le trade'}
         </button>
       </div>
@@ -508,28 +508,28 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-      <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:560, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
+      <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:560, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'#F0F3FF' }}>📄 Importer des trades (CSV Propfirm)</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'#555C70', cursor:'pointer', fontSize:18 }}>✕</button>
+          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>📄 Importer des trades (CSV Propfirm)</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
         </div>
 
         {/* File input */}
         {!done && (
           <label style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'20px', border:'2px dashed #2A2F3E', borderRadius:12, cursor:'pointer', marginBottom:16, transition:'border-color 0.2s' }}
-            onMouseOver={e => (e.currentTarget.style.borderColor = '#FF9500')}
-            onMouseOut={e => (e.currentTarget.style.borderColor = '#2A2F3E')}>
+            onMouseOver={e => (e.currentTarget.style.borderColor = 'var(--tm-warning)')}
+            onMouseOut={e => (e.currentTarget.style.borderColor = 'var(--tm-border)')}>
             <input type="file" accept=".csv" onChange={handleFile} style={{ display:'none' }} />
             <div style={{ textAlign:'center' }}>
               <div style={{ fontSize:28, marginBottom:6 }}>📁</div>
-              <div style={{ fontSize:13, color:'#8F94A3', fontWeight:600 }}>{fileName || 'Cliquez pour sélectionner un fichier .csv'}</div>
-              <div style={{ fontSize:11, color:'#3D4254', marginTop:4 }}>Format supporté : CSV de propfirm (Topstep, FTMO, etc.)</div>
+              <div style={{ fontSize:13, color:'var(--tm-text-secondary)', fontWeight:600 }}>{fileName || 'Cliquez pour sélectionner un fichier .csv'}</div>
+              <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginTop:4 }}>Format supporté : CSV de propfirm (Topstep, FTMO, etc.)</div>
             </div>
           </label>
         )}
 
         {error && (
-          <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(255,59,48,0.1)', border:'1px solid rgba(255,59,48,0.3)', color:'#FF3B30', fontSize:12, marginBottom:14 }}>
+          <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(var(--tm-loss-rgb,255,59,48),0.1)', border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)', color:'var(--tm-loss)', fontSize:12, marginBottom:14 }}>
             {error}
           </div>
         )}
@@ -539,13 +539,13 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
           <>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:14 }}>
               {[
-                { l: 'Trades détectés', v: parsed.length, c: '#00E5FF' },
-                { l: 'Gains', v: wins, c: '#22C759' },
-                { l: 'Pertes', v: losses, c: '#FF3B30' },
-                { l: 'P&L Total', v: `${totalPnL >= 0 ? '+' : ''}$${Math.abs(totalPnL).toFixed(2)}`, c: totalPnL >= 0 ? '#22C759' : '#FF3B30' },
+                { l: 'Trades détectés', v: parsed.length, c: 'var(--tm-accent)' },
+                { l: 'Gains', v: wins, c: 'var(--tm-profit)' },
+                { l: 'Pertes', v: losses, c: 'var(--tm-loss)' },
+                { l: 'P&L Total', v: `${totalPnL >= 0 ? '+' : ''}$${Math.abs(totalPnL).toFixed(2)}`, c: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
               ].map(({ l, v, c }) => (
-                <div key={l} style={{ background:'#1C2130', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
-                  <div style={{ fontSize:9, color:'#555C70', marginBottom:3 }}>{l}</div>
+                <div key={l} style={{ background:'var(--tm-bg-tertiary)', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
+                  <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginBottom:3 }}>{l}</div>
                   <div style={{ fontSize:15, fontWeight:700, color:c, fontFamily:'monospace' }}>{v}</div>
                 </div>
               ))}
@@ -555,22 +555,22 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
             <div style={{ maxHeight:220, overflowY:'auto', marginBottom:14, borderRadius:10, border:'1px solid #2A2F3E' }}>
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
                 <thead>
-                  <tr style={{ background:'#1C2130' }}>
+                  <tr style={{ background:'var(--tm-bg-tertiary)' }}>
                     {['Symbole','Dir','Qté','Entrée','Sortie','P&L','Date'].map(h => (
-                      <th key={h} style={{ padding:'6px 8px', textAlign:'left', color:'#555C70', fontWeight:600, fontSize:10, borderBottom:'1px solid #2A2F3E' }}>{h}</th>
+                      <th key={h} style={{ padding:'6px 8px', textAlign:'left', color:'var(--tm-text-muted)', fontWeight:600, fontSize:10, borderBottom:'1px solid #2A2F3E' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {parsed.map((t, i) => (
                     <tr key={i} style={{ borderBottom:'1px solid #1C2130' }}>
-                      <td style={{ padding:'5px 8px', color:'#F0F3FF', fontWeight:600 }}>{t.symbol}</td>
-                      <td style={{ padding:'5px 8px', color: t.direction === 'Long' ? '#22C759' : '#FF3B30', fontWeight:600 }}>{t.direction}</td>
-                      <td style={{ padding:'5px 8px', color:'#8F94A3', fontFamily:'monospace' }}>{t.qty}</td>
-                      <td style={{ padding:'5px 8px', color:'#8F94A3', fontFamily:'monospace' }}>${t.buyPrice.toFixed(2)}</td>
-                      <td style={{ padding:'5px 8px', color:'#8F94A3', fontFamily:'monospace' }}>${t.sellPrice.toFixed(2)}</td>
-                      <td style={{ padding:'5px 8px', color: t.pnl >= 0 ? '#22C759' : '#FF3B30', fontWeight:600, fontFamily:'monospace' }}>{t.pnl >= 0 ? '+' : ''}${Math.abs(t.pnl).toFixed(2)}</td>
-                      <td style={{ padding:'5px 8px', color:'#555C70' }}>{t.boughtTimestamp.split(' ')[0]}</td>
+                      <td style={{ padding:'5px 8px', color:'var(--tm-text-primary)', fontWeight:600 }}>{t.symbol}</td>
+                      <td style={{ padding:'5px 8px', color: t.direction === 'Long' ? 'var(--tm-profit)' : 'var(--tm-loss)', fontWeight:600 }}>{t.direction}</td>
+                      <td style={{ padding:'5px 8px', color:'var(--tm-text-secondary)', fontFamily:'monospace' }}>{t.qty}</td>
+                      <td style={{ padding:'5px 8px', color:'var(--tm-text-secondary)', fontFamily:'monospace' }}>${t.buyPrice.toFixed(2)}</td>
+                      <td style={{ padding:'5px 8px', color:'var(--tm-text-secondary)', fontFamily:'monospace' }}>${t.sellPrice.toFixed(2)}</td>
+                      <td style={{ padding:'5px 8px', color: t.pnl >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)', fontWeight:600, fontFamily:'monospace' }}>{t.pnl >= 0 ? '+' : ''}${Math.abs(t.pnl).toFixed(2)}</td>
+                      <td style={{ padding:'5px 8px', color:'var(--tm-text-muted)' }}>{t.boughtTimestamp.split(' ')[0]}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -578,13 +578,13 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
             </div>
 
             {/* Import button */}
-            <button onClick={doImport} disabled={importing} style={{ width:'100%', padding:12, borderRadius:10, border:'none', background: importing ? '#1C2130' : '#FF9500', color: importing ? '#555C70' : '#0D1117', fontSize:14, fontWeight:700, cursor: importing ? 'not-allowed' : 'pointer' }}>
+            <button onClick={doImport} disabled={importing} style={{ width:'100%', padding:12, borderRadius:10, border:'none', background: importing ? 'var(--tm-bg-tertiary)' : 'var(--tm-warning)', color: importing ? 'var(--tm-text-muted)' : 'var(--tm-bg)', fontSize:14, fontWeight:700, cursor: importing ? 'not-allowed' : 'pointer' }}>
               {importing ? `Import en cours... ${progress}/${parsed.length}` : `Importer ${parsed.length} trades dans Firebase`}
             </button>
 
             {importing && (
-              <div style={{ marginTop:8, height:4, borderRadius:4, background:'#1C2130', overflow:'hidden' }}>
-                <div style={{ height:'100%', width:`${(progress / parsed.length) * 100}%`, background:'#FF9500', borderRadius:4, transition:'width 0.3s' }} />
+              <div style={{ marginTop:8, height:4, borderRadius:4, background:'var(--tm-bg-tertiary)', overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${(progress / parsed.length) * 100}%`, background:'var(--tm-warning)', borderRadius:4, transition:'width 0.3s' }} />
               </div>
             )}
           </>
@@ -594,9 +594,9 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
         {done && (
           <div style={{ textAlign:'center', padding:'20px 0' }}>
             <div style={{ fontSize:48, marginBottom:12 }}>✅</div>
-            <div style={{ fontSize:16, fontWeight:700, color:'#22C759', marginBottom:6 }}>{parsed.length} trades importés avec succès !</div>
-            <div style={{ fontSize:12, color:'#555C70', marginBottom:16 }}>P&L total : <span style={{ color: totalPnL >= 0 ? '#22C759' : '#FF3B30', fontWeight:700, fontFamily:'monospace' }}>{totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toFixed(2)}</span></div>
-            <button onClick={onClose} style={{ padding:'10px 32px', borderRadius:10, border:'none', background:'#00E5FF', color:'#0D1117', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+            <div style={{ fontSize:16, fontWeight:700, color:'var(--tm-profit)', marginBottom:6 }}>{parsed.length} trades importés avec succès !</div>
+            <div style={{ fontSize:12, color:'var(--tm-text-muted)', marginBottom:16 }}>P&L total : <span style={{ color: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)', fontWeight:700, fontFamily:'monospace' }}>{totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toFixed(2)}</span></div>
+            <button onClick={onClose} style={{ padding:'10px 32px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:14, fontWeight:600, cursor:'pointer' }}>
               Fermer
             </button>
           </div>

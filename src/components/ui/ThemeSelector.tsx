@@ -13,8 +13,8 @@ export function ThemeSelector() {
     if (isPremiumTheme && !isPremium) {
       toast.custom((t) => (
         <div style={{
-          background: '#1C2133',
-          border: '1px solid rgba(191,90,242,0.4)',
+          background: 'var(--tm-bg-card)',
+          border: '1px solid rgba(var(--tm-purple-rgb,191,90,242),0.4)',
           borderRadius: 12,
           padding: '12px 16px',
           display: 'flex',
@@ -24,8 +24,8 @@ export function ThemeSelector() {
         }}>
           <span style={{ fontSize: 18 }}>🔒</span>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#F0F3FF' }}>Fonctionnalité Pro</div>
-            <div style={{ fontSize: 11, color: '#8F94A3', marginTop: 2 }}>Passe à Pro pour débloquer ce thème</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tm-text-primary)' }}>Fonctionnalité Pro</div>
+            <div style={{ fontSize: 11, color: 'var(--tm-text-secondary)', marginTop: 2 }}>Passe à Pro pour débloquer ce thème</div>
           </div>
         </div>
       ), { duration: 3000 })
@@ -117,9 +117,9 @@ export function ThemeSelector() {
                 {isLocked && (
                   <span style={{
                     fontSize: 9, fontWeight: 700,
-                    background: 'rgba(191,90,242,0.15)',
-                    color: '#BF5AF2',
-                    border: '1px solid rgba(191,90,242,0.3)',
+                    background: 'rgba(var(--tm-purple-rgb,191,90,242),0.15)',
+                    color: 'var(--tm-purple)',
+                    border: '1px solid rgba(var(--tm-purple-rgb,191,90,242),0.3)',
                     padding: '1px 5px',
                     borderRadius: 4,
                     letterSpacing: '0.05em',
@@ -156,7 +156,7 @@ export function ThemeSelector() {
                   borderRadius: 12,
                 }}>
                   <span style={{ fontSize: 20 }}>🔒</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: '#BF5AF2' }}>Pro requis</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-purple)' }}>Pro requis</span>
                 </div>
               )}
             </button>

@@ -104,14 +104,14 @@ function computeStats(data: DataPoint[]) {
 // ── Canvas Chart ───────────────────────────────────────────────────────────
 
 const COLORS = {
-  profit:    '#22C759',
-  loss:      '#FF3B30',
-  drawdown:  'rgba(255,59,48,0.15)',
+  profit:    'var(--tm-profit)',
+  loss:      'var(--tm-loss)',
+  drawdown:  'rgba(var(--tm-loss-rgb,255,59,48),0.15)',
   grid:      'rgba(255,255,255,0.04)',
   zeroline:  'rgba(255,255,255,0.1)',
   crosshair: 'rgba(255,255,255,0.25)',
-  text:      '#555C70',
-  bg:        '#0D1117',
+  text:      'var(--tm-text-muted)',
+  bg:        'var(--tm-bg)',
 }
 
 interface TooltipData {
@@ -285,9 +285,9 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
 
   if (data.length < 2) {
     return (
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:220, color:'#3D4254', gap:8 }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:220, color:'var(--tm-text-muted)', gap:8 }}>
         <div style={{ fontSize:32 }}>📈</div>
-        <div style={{ fontSize:13, color:'#555C70' }}>Pas encore assez de trades fermés</div>
+        <div style={{ fontSize:13, color:'var(--tm-text-muted)' }}>Pas encore assez de trades fermés</div>
       </div>
     )
   }
@@ -298,8 +298,8 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
       {/* Header — stats inline */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div style={{ fontSize:11, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>P&L Cumulé</div>
-          <div style={{ fontSize:28, fontWeight:700, fontFamily:'JetBrains Mono,monospace', color: isPositive?'#22C759':'#FF3B30', lineHeight:1 }}>
+          <div style={{ fontSize:11, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>P&L Cumulé</div>
+          <div style={{ fontSize:28, fontWeight:700, fontFamily:'JetBrains Mono,monospace', color: isPositive?'var(--tm-profit)':'var(--tm-loss)', lineHeight:1 }}>
             {stats ? fmtPnL(stats.totalPnL) : '—'}
           </div>
         </div>
@@ -308,13 +308,13 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
         {stats && (
           <div style={{ display:'flex', gap:20, alignItems:'flex-start', flexWrap:'wrap' }}>
             {[
-              { label:'Win Rate', value:`${(stats.winRate*100).toFixed(0)}%`, color: stats.winRate>=0.5?'#22C759':'#FF3B30' },
-              { label:'Payoff', value:stats.payoff.toFixed(2), color: stats.payoff>=1.5?'#22C759':'#FF9500' },
-              { label:'Max DD', value:`${stats.maxDrawdown.toFixed(1)}%`, color: stats.maxDrawdown>15?'#FF3B30':'#FF9500' },
-              { label:'Trades', value:String(stats.count), color:'#8F94A3' },
+              { label:'Win Rate', value:`${(stats.winRate*100).toFixed(0)}%`, color: stats.winRate>=0.5?'var(--tm-profit)':'var(--tm-loss)' },
+              { label:'Payoff', value:stats.payoff.toFixed(2), color: stats.payoff>=1.5?'var(--tm-profit)':'var(--tm-warning)' },
+              { label:'Max DD', value:`${stats.maxDrawdown.toFixed(1)}%`, color: stats.maxDrawdown>15?'var(--tm-loss)':'var(--tm-warning)' },
+              { label:'Trades', value:String(stats.count), color:'var(--tm-text-secondary)' },
             ].map(({ label, value, color }) => (
               <div key={label} style={{ textAlign:'right' }}>
-                <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>{label}</div>
+                <div style={{ fontSize:9, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>{label}</div>
                 <div style={{ fontSize:14, fontWeight:700, color, fontFamily:'JetBrains Mono,monospace' }}>{value}</div>
               </div>
             ))}
@@ -325,12 +325,12 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
       {/* Controls */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
         {/* Period selector */}
-        <div style={{ display:'flex', background:'#0D1117', borderRadius:8, padding:2, gap:1, border:'1px solid #1E2330' }}>
+        <div style={{ display:'flex', background:'var(--tm-bg)', borderRadius:8, padding:2, gap:1, border:'1px solid #1E2330' }}>
           {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
             <button key={p} onClick={() => setPeriod(p)} style={{
               padding:'3px 10px', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', border:'none', fontFamily:'JetBrains Mono,monospace',
-              background: period===p ? '#1C2130' : 'transparent',
-              color: period===p ? '#F0F3FF' : '#555C70',
+              background: period===p ? 'var(--tm-bg-tertiary)' : 'transparent',
+              color: period===p ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)',
               outline: period===p ? '1px solid #2A2F3E' : 'none',
             }}>
               {PERIOD_LABELS[p]}
@@ -339,8 +339,8 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
         </div>
 
         {/* Toggle drawdown */}
-        <button onClick={() => setShowDD(x=>!x)} style={{ display:'flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:6, fontSize:10, fontWeight:500, cursor:'pointer', border:`1px solid ${showDD?'rgba(255,59,48,0.4)':'#2A2F3E'}`, background: showDD?'rgba(255,59,48,0.08)':'transparent', color: showDD?'#FF3B30':'#555C70', transition:'all 0.15s' }}>
-          <div style={{ width:8, height:8, borderRadius:1, background: showDD?'#FF3B30':'#555C70' }}/>
+        <button onClick={() => setShowDD(x=>!x)} style={{ display:'flex', alignItems:'center', gap:5, padding:'3px 10px', borderRadius:6, fontSize:10, fontWeight:500, cursor:'pointer', border:`1px solid ${showDD?'rgba(var(--tm-loss-rgb,255,59,48),0.4)':'var(--tm-border)'}`, background: showDD?'rgba(var(--tm-loss-rgb,255,59,48),0.08)':'transparent', color: showDD?'var(--tm-loss)':'var(--tm-text-muted)', transition:'all 0.15s' }}>
+          <div style={{ width:8, height:8, borderRadius:1, background: showDD?'var(--tm-loss)':'var(--tm-text-muted)' }}/>
           Drawdown
         </button>
       </div>
@@ -363,27 +363,27 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
           const left = Math.min(tooltip.x + 12, dims.w - tW - 16)
           const top  = Math.max(8, Math.min(tooltip.y - tH/2, dims.h - tH - 8))
           return (
-            <div style={{ position:'absolute', left, top, width:tW, background:'#161B22', border:'1px solid #2A2F3E', borderRadius:10, padding:'10px 12px', pointerEvents:'none', boxShadow:'0 8px 24px rgba(0,0,0,0.5)' }}>
+            <div style={{ position:'absolute', left, top, width:tW, background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'10px 12px', pointerEvents:'none', boxShadow:'0 8px 24px rgba(0,0,0,0.5)' }}>
               {/* Date + symbol */}
-              <div style={{ fontSize:10, color:'#555C70', marginBottom:8, display:'flex', justifyContent:'space-between' }}>
+              <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8, display:'flex', justifyContent:'space-between' }}>
                 <span>{pt.dateLabel}</span>
-                <span style={{ color: isWin?'#22C759':'#FF3B30', fontWeight:700 }}>
+                <span style={{ color: isWin?'var(--tm-profit)':'var(--tm-loss)', fontWeight:700 }}>
                   {pt.direction === 'long' ? '▲' : '▼'} {pt.symbol}
                 </span>
               </div>
 
               {/* Trade P&L */}
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6 }}>
-                <span style={{ fontSize:10, color:'#555C70' }}>Ce trade</span>
-                <span style={{ fontSize:14, fontWeight:700, fontFamily:'JetBrains Mono,monospace', color: isWin?'#22C759':'#FF3B30' }}>
+                <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>Ce trade</span>
+                <span style={{ fontSize:14, fontWeight:700, fontFamily:'JetBrains Mono,monospace', color: isWin?'var(--tm-profit)':'var(--tm-loss)' }}>
                   {fmtPnL(pt.tradePnL)}
                 </span>
               </div>
 
               {/* Cumulative */}
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:8, paddingBottom:8, borderBottom:'1px solid #2A2F3E' }}>
-                <span style={{ fontSize:10, color:'#555C70' }}>Cumulé</span>
-                <span style={{ fontSize:12, fontWeight:600, fontFamily:'JetBrains Mono,monospace', color:'#F0F3FF' }}>
+                <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>Cumulé</span>
+                <span style={{ fontSize:12, fontWeight:600, fontFamily:'JetBrains Mono,monospace', color:'var(--tm-text-primary)' }}>
                   {fmtPnL(pt.cumPnL)}
                 </span>
               </div>
@@ -391,8 +391,8 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
               {/* Drawdown */}
               {pt.drawdown > 0 && (
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
-                  <span style={{ fontSize:10, color:'#555C70' }}>Drawdown</span>
-                  <span style={{ fontSize:11, fontWeight:600, fontFamily:'JetBrains Mono,monospace', color:'#FF9500' }}>
+                  <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>Drawdown</span>
+                  <span style={{ fontSize:11, fontWeight:600, fontFamily:'JetBrains Mono,monospace', color:'var(--tm-warning)' }}>
                     -{pt.drawdown.toFixed(1)}%
                   </span>
                 </div>
@@ -405,20 +405,20 @@ export default function PnLChart({ trades }: { trades: Trade[] }) {
       {/* Best / Worst trade footer */}
       {stats && (
         <div style={{ display:'flex', gap:12, marginTop:12, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.05)' }}>
-          <div style={{ flex:1, padding:'8px 12px', borderRadius:8, background:'rgba(34,199,89,0.06)', border:'1px solid rgba(34,199,89,0.15)' }}>
-            <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Meilleur trade</div>
-            <div style={{ fontSize:13, fontWeight:700, color:'#22C759', fontFamily:'JetBrains Mono,monospace' }}>{fmtPnL(stats.bestTrade)}</div>
+          <div style={{ flex:1, padding:'8px 12px', borderRadius:8, background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)', border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.15)' }}>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Meilleur trade</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-profit)', fontFamily:'JetBrains Mono,monospace' }}>{fmtPnL(stats.bestTrade)}</div>
           </div>
-          <div style={{ flex:1, padding:'8px 12px', borderRadius:8, background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.15)' }}>
-            <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Pire trade</div>
-            <div style={{ fontSize:13, fontWeight:700, color:'#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>{fmtPnL(stats.worstTrade)}</div>
+          <div style={{ flex:1, padding:'8px 12px', borderRadius:8, background:'rgba(var(--tm-loss-rgb,255,59,48),0.06)', border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.15)' }}>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Pire trade</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-loss)', fontFamily:'JetBrains Mono,monospace' }}>{fmtPnL(stats.worstTrade)}</div>
           </div>
           <div style={{ flex:1, padding:'8px 12px', borderRadius:8, background:'rgba(255,255,255,0.03)', border:'1px solid #1E2330' }}>
-            <div style={{ fontSize:9, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Moy. gain/perte</div>
-            <div style={{ fontSize:11, fontWeight:600, fontFamily:'JetBrains Mono,monospace', color:'#8F94A3' }}>
-              <span style={{ color:'#22C759' }}>{fmtPnL(stats.avgWin)}</span>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Moy. gain/perte</div>
+            <div style={{ fontSize:11, fontWeight:600, fontFamily:'JetBrains Mono,monospace', color:'var(--tm-text-secondary)' }}>
+              <span style={{ color:'var(--tm-profit)' }}>{fmtPnL(stats.avgWin)}</span>
               {' / '}
-              <span style={{ color:'#FF3B30' }}>{fmtPnL(stats.avgLoss)}</span>
+              <span style={{ color:'var(--tm-loss)' }}>{fmtPnL(stats.avgLoss)}</span>
             </div>
           </div>
         </div>

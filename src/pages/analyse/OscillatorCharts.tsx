@@ -172,9 +172,9 @@ function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:
   ctx.beginPath()
   for (let i = 0; i < n; i++) { i === 0 ? ctx.moveTo(xp(i), toY(i, 0)) : ctx.lineTo(xp(i), toY(i, 0)) }
   for (let i = n - 1; i >= 0; i--) ctx.lineTo(xp(i), toY(i, 7))
-  ctx.closePath(); ctx.fillStyle = isBull ? 'rgba(34,199,89,0.10)' : 'rgba(255,59,48,0.10)'; ctx.fill()
-  const bullC = ['#22C759','#36D174','#4ADC8F','#5EE7AA','#F59714','#FF6060','#FF3B30','#FF1818']
-  const bearC = ['#FF1818','#FF3B30','#FF6060','#F59714','#5EE7AA','#4ADC8F','#36D174','#22C759']
+  ctx.closePath(); ctx.fillStyle = isBull ? 'rgba(var(--tm-profit-rgb,34,199,89),0.10)' : 'rgba(var(--tm-loss-rgb,255,59,48),0.10)'; ctx.fill()
+  const bullC = ['var(--tm-profit)','#36D174','#4ADC8F','#5EE7AA','#F59714','#FF6060','var(--tm-loss)','#FF1818']
+  const bearC = ['#FF1818','var(--tm-loss)','#FF6060','#F59714','#5EE7AA','#4ADC8F','#36D174','var(--tm-profit)']
   const cols = isBull ? bullC : bearC
   for (let ei = 0; ei < 8; ei++) {
     ctx.beginPath(); ctx.strokeStyle = cols[ei]; ctx.lineWidth = 1; ctx.globalAlpha = 0.9
@@ -197,16 +197,16 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   const xp=(i:number)=>(i/(m.length-1))*W
 
   // Background zones
-  ctx.fillStyle='rgba(255,59,48,0.06)';ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
-  ctx.fillStyle='rgba(34,199,89,0.06)';ctx.fillRect(0,yp(osLevel),W,yp(minV)-yp(osLevel))
+  ctx.fillStyle='rgba(var(--tm-loss-rgb,255,59,48),0.06)';ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
+  ctx.fillStyle='rgba(var(--tm-profit-rgb,34,199,89),0.06)';ctx.fillRect(0,yp(osLevel),W,yp(minV)-yp(osLevel))
 
   // Grid lines
-  ctx.setLineDash([3,3]);ctx.strokeStyle='#2A2F3E';ctx.lineWidth=0.8
+  ctx.setLineDash([3,3]);ctx.strokeStyle='var(--tm-border)';ctx.lineWidth=0.8
   ;[0,obLevel,osLevel].forEach(l=>{ctx.beginPath();ctx.moveTo(0,yp(l));ctx.lineTo(W,yp(l));ctx.stroke()})
   ctx.setLineDash([])
 
   // Level labels on right
-  ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle='#3D4254';ctx.textAlign='right'
+  ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle='var(--tm-text-muted)';ctx.textAlign='right'
   ctx.fillText(String(obLevel),W-4,yp(obLevel)-3)
   ctx.fillText(String(osLevel),W-4,yp(osLevel)+11)
   ctx.fillText('0',W-4,yp(0)-3)
@@ -220,7 +220,7 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   ctx.beginPath();ctx.strokeStyle=mainColor;ctx.lineWidth=2;m.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
 
   // Signal dots
-  if(dots){const offset=main.length-tail;dots.filter(d=>d.i>=offset).forEach(d=>{const i=d.i-offset;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'#00E5FF':'#FF3B30';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
+  if(dots){const offset=main.length-tail;dots.filter(d=>d.i>=offset).forEach(d=>{const i=d.i-offset;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'var(--tm-accent)':'var(--tm-loss)';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
 
   // ── Interactive crosshair ───────────────────────────────────────────
   if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < m.length) {
@@ -241,7 +241,7 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
     // Y-axis value label
     ctx.fillStyle = mainColor
     ctx.fillRect(W-52, hy-9, 52, 18)
-    ctx.fillStyle = '#0D1117'; ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+    ctx.fillStyle = 'var(--tm-bg)'; ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
     ctx.fillText(m[hoverIdx].toFixed(1), W-26, hy+3)
   }
 
@@ -264,24 +264,24 @@ function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW,
   const left = xp > canvasW / 2 ? 12 : canvasW - 200
 
   return (
-    <div style={{ position:'absolute', top:4, left, background:'rgba(22,27,34,0.96)', border:'1px solid #2A2F3E', borderRadius:10, padding:'10px 14px', minWidth:175, pointerEvents:'none', boxShadow:'0 8px 24px rgba(0,0,0,0.6)', zIndex:20, backdropFilter:'blur(8px)' }}>
-      <div style={{fontSize:10,color:'#8F94A3',fontWeight:600,marginBottom:6,fontFamily:'JetBrains Mono,monospace'}}>{timeStr}</div>
+    <div style={{ position:'absolute', top:4, left, background:'rgba(var(--tm-bg-secondary-rgb,22,27,34),0.96)', border:'1px solid #2A2F3E', borderRadius:10, padding:'10px 14px', minWidth:175, pointerEvents:'none', boxShadow:'0 8px 24px rgba(0,0,0,0.6)', zIndex:20, backdropFilter:'blur(8px)' }}>
+      <div style={{fontSize:10,color:'var(--tm-text-secondary)',fontWeight:600,marginBottom:6,fontFamily:'JetBrains Mono,monospace'}}>{timeStr}</div>
       <div style={{display:'flex',flexDirection:'column',gap:4}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <span style={{fontSize:10,color:'#555C70'}}>{type==='wt'?'WT1':'Signal'}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>{type==='wt'?'WT1':'Signal'}</span>
           <span style={{fontSize:12,fontWeight:700,color:'#37D7FF',fontFamily:'JetBrains Mono,monospace'}}>{mainVal?.toFixed(1)}</span>
         </div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <span style={{fontSize:10,color:'#555C70'}}>{type==='wt'?'WT2':'Sig. Signal'}</span>
-          <span style={{fontSize:12,fontWeight:700,color:'#FF9500',fontFamily:'JetBrains Mono,monospace'}}>{sigVal?.toFixed(1)}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>{type==='wt'?'WT2':'Sig. Signal'}</span>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--tm-warning)',fontFamily:'JetBrains Mono,monospace'}}>{sigVal?.toFixed(1)}</span>
         </div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <span style={{fontSize:10,color:'#555C70'}}>Momentum</span>
-          <span style={{fontSize:12,fontWeight:700,color:histVal>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono,monospace'}}>{histVal>=0?'+':''}{histVal?.toFixed(1)}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Momentum</span>
+          <span style={{fontSize:12,fontWeight:700,color:histVal>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono,monospace'}}>{histVal>=0?'+':''}{histVal?.toFixed(1)}</span>
         </div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderTop:'1px solid #2A2F3E',paddingTop:4,marginTop:2}}>
-          <span style={{fontSize:10,color:'#555C70'}}>Close</span>
-          <span style={{fontSize:11,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono,monospace'}}>{candle.c.toFixed(candle.c<10?4:2)}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Close</span>
+          <span style={{fontSize:11,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{candle.c.toFixed(candle.c<10?4:2)}</span>
         </div>
       </div>
     </div>
@@ -355,38 +355,38 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
   const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi)
+      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','var(--tm-warning)','rgba(var(--tm-profit-rgb,34,199,89),0.5)','rgba(var(--tm-loss-rgb,255,59,48),0.5)',dots,undefined,hi)
     }, [result], result?.wt1.length ?? 0
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
-  const badge = !result?null:wt1Last>obLevel?{label:'Overbought',color:'#FF3B30'}:wt1Last<osLevel?{label:'Oversold',color:'#22C759'}:result.signals[result.signals.length-1]==='smartBull'?{label:'Smart Bullish',color:'#00E5FF'}:result.signals[result.signals.length-1]==='bull'?{label:'Bullish Reversal',color:'#22C759'}:result.signals[result.signals.length-1]==='smartBear'?{label:'Smart Bearish',color:'#FF3B30'}:result.signals[result.signals.length-1]==='bear'?{label:'Bearish Reversal',color:'#FF3B30'}:{label:'Neutral',color:'#8F94A3'}
+  const badge = !result?null:wt1Last>obLevel?{label:'Overbought',color:'var(--tm-loss)'}:wt1Last<osLevel?{label:'Oversold',color:'var(--tm-profit)'}:result.signals[result.signals.length-1]==='smartBull'?{label:'Smart Bullish',color:'var(--tm-accent)'}:result.signals[result.signals.length-1]==='bull'?{label:'Bullish Reversal',color:'var(--tm-profit)'}:result.signals[result.signals.length-1]==='smartBear'?{label:'Smart Bearish',color:'var(--tm-loss)'}:result.signals[result.signals.length-1]==='bear'?{label:'Bearish Reversal',color:'var(--tm-loss)'}:{label:'Neutral',color:'var(--tm-text-secondary)'}
 
   return (
-    <div style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
+    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>〜</div>
-        <div><div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
-        <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
-          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
-          <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
+        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
+        <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(var(--tm-profit-rgb,34,199,89),0.1)',border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
+          <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
+          <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
         </div>
         {badge&&<div style={{fontSize:10,fontWeight:700,color:badge.color,background:`${badge.color}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${badge.color}50`}}>{badge.label}</div>}
         <div style={{marginLeft:'auto',display:'flex',gap:10,alignItems:'center'}}>
-          {result&&<div style={{display:'flex',gap:10,fontSize:11,fontFamily:'monospace'}}><span style={{color:'#37D7FF'}}>WT1: {wt1Last.toFixed(1)}</span><span style={{color:'#FF9500'}}>WT2: {wt2Last.toFixed(1)}</span></div>}
-          <button onClick={loadCandles} style={{background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'#8F94A3'}}>↻</button>
+          {result&&<div style={{display:'flex',gap:10,fontSize:11,fontFamily:'monospace'}}><span style={{color:'#37D7FF'}}>WT1: {wt1Last.toFixed(1)}</span><span style={{color:'var(--tm-warning)'}}>WT2: {wt2Last.toFixed(1)}</span></div>}
+          <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
       <div style={{display:'flex',gap:4,padding:'0 16px 10px',overflowX:'auto',scrollbarWidth:'none'}}>
-        {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'#FF9500':'#2A2F3E'}`,background:t.label===tf.label?'rgba(255,149,0,0.15)':'#1C2130',color:t.label===tf.label?'#FF9500':'#555C70',whiteSpace:'nowrap'}}>{t.label}</button>)}
+        {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?'rgba(var(--tm-warning-rgb,255,149,0),0.15)':'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8,flexDirection:'column'}}>
-          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
+          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
         </div>}
         {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
-          <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
-          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
+          <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
         <canvas ref={canvasRef} width={800} height={180} onMouseMove={onMove} onMouseLeave={onLeave}
           style={{width:'100%',height:180,display:'block',borderRadius:8,cursor:'crosshair'}}/>
@@ -394,8 +394,8 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
           <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt"/>
         )}
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
-          {[{color:'#37D7FF',label:'WT1'},{color:'#FF9500',label:'WT2'},{color:'#22C759',label:'Momentum +'},{color:'#FF3B30',label:'Momentum −'},{color:'#00E5FF',label:'● Smart'}].map(({color,label})=>(
-            <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'#555C70'}}>{label}</span></div>
+          {[{color:'#37D7FF',label:'WT1'},{color:'var(--tm-warning)',label:'WT2'},{color:'var(--tm-profit)',label:'Momentum +'},{color:'var(--tm-loss)',label:'Momentum −'},{color:'var(--tm-accent)',label:'● Smart'}].map(({color,label})=>(
+            <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{label}</span></div>
           ))}
         </div>
       </div>
@@ -431,43 +431,43 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
   }, [candles, symbol, tf.label])
 
   const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
-  const statusColor=result?.status==='BUY'?'#22C759':result?.status==='SELL'?'#FF3B30':result?.status==='OVERBOUGHT'?'#FF3B30':result?.status==='OVERSOLD'?'#22C759':'#8F94A3'
+  const statusColor=result?.status==='BUY'?'var(--tm-profit)':result?.status==='SELL'?'var(--tm-loss)':result?.status==='OVERBOUGHT'?'var(--tm-loss)':result?.status==='OVERSOLD'?'var(--tm-profit)':'var(--tm-text-secondary)'
 
   const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#FF9500','rgba(34,199,89,0.55)','rgba(255,59,48,0.55)',undefined,result.emas,hi)
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','var(--tm-warning)','rgba(var(--tm-profit-rgb,34,199,89),0.55)','rgba(var(--tm-loss-rgb,255,59,48),0.55)',undefined,result.emas,hi)
     }, [result], result?.sig.length ?? 0
   )
 
   return (
-    <div style={{background:'#161B22',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
+    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'white'}}>V</div>
-        <div><div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
-        <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(34,199,89,0.1)',border:'1px solid rgba(34,199,89,0.25)',borderRadius:6}}>
-          <div style={{width:5,height:5,borderRadius:'50%',background:'#22C759',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'#22C759',fontFamily:'monospace'}}>LIVE</span>
-          <span style={{fontSize:9,color:'#555C70',fontFamily:'monospace'}}>{Math.floor(nextRefreshVMC/60)}:{String(nextRefreshVMC%60).padStart(2,'0')}</span>
+        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
+        <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:'rgba(var(--tm-profit-rgb,34,199,89),0.1)',border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
+          <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
+          <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefreshVMC/60)}:{String(nextRefreshVMC%60).padStart(2,'0')}</span>
         </div>
         {result&&<div style={{fontSize:10,fontWeight:700,color:statusColor,background:`${statusColor}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${statusColor}50`}}>{result.status}</div>}
-        {result?.ribbonBull&&<div style={{fontSize:9,fontWeight:700,color:'#22C759',background:'rgba(34,199,89,0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(34,199,89,0.3)'}}>BULL</div>}
-        {result?.ribbonBear&&<div style={{fontSize:9,fontWeight:700,color:'#FF3B30',background:'rgba(255,59,48,0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(255,59,48,0.3)'}}>BEAR</div>}
-        {result?.compression&&<div style={{fontSize:9,fontWeight:700,color:'#FF9500',background:'rgba(255,149,0,0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(255,149,0,0.3)'}}>⟳ COMP</div>}
+        {result?.ribbonBull&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',background:'rgba(var(--tm-profit-rgb,34,199,89),0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.3)'}}>BULL</div>}
+        {result?.ribbonBear&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-loss)',background:'rgba(var(--tm-loss-rgb,255,59,48),0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)'}}>BEAR</div>}
+        {result?.compression&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.3)'}}>⟳ COMP</div>}
         <div style={{marginLeft:'auto',display:'flex',gap:10,alignItems:'center'}}>
-          {result&&<div style={{display:'flex',gap:10,fontSize:11,fontFamily:'monospace'}}><span style={{color:'#37D7FF'}}>sig: {lastSig.toFixed(1)}</span><span style={{color:lastMom>=0?'#22C759':'#FF3B30'}}>mom: {lastMom>=0?'+':''}{lastMom.toFixed(1)}</span></div>}
-          <button onClick={loadCandles} style={{background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'#8F94A3'}}>↻</button>
+          {result&&<div style={{display:'flex',gap:10,fontSize:11,fontFamily:'monospace'}}><span style={{color:'#37D7FF'}}>sig: {lastSig.toFixed(1)}</span><span style={{color:lastMom>=0?'var(--tm-profit)':'var(--tm-loss)'}}>mom: {lastMom>=0?'+':''}{lastMom.toFixed(1)}</span></div>}
+          <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
       <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none'}}>
-          {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'#FF9500':'#2A2F3E'}`,background:t.label===tf.label?'rgba(255,149,0,0.15)':'#1C2130',color:t.label===tf.label?'#FF9500':'#555C70',whiteSpace:'nowrap'}}>{t.label}</button>)}
+          {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?'rgba(var(--tm-warning-rgb,255,149,0),0.15)':'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>
-          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'#FF9500',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'#555C70'}}>Chargement {symbol}...</span>
+          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
         </div>}
         {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
-          <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'#FF3B30'}}>{errorMsg}</span>
-          <span style={{fontSize:10,color:'#555C70',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
+          <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
         <canvas ref={canvasRef} width={800} height={230} onMouseMove={onMove} onMouseLeave={onLeave}
           style={{width:'100%',height:230,display:'block',borderRadius:8,cursor:'crosshair'}}/>
@@ -475,8 +475,8 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
           <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc"/>
         )}
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
-          {[{color:'#37D7FF',label:'VMC Sig'},{color:'#FF9500',label:'Signal'},{color:'#22C759',label:'Mom +'},{color:'#FF3B30',label:'Mom −'},{color:'#FF9500',label:`OB:${obLevel}`},{color:'#22C759',label:`OS:${osLevel}`}].map(({color,label})=>(
-            <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'#555C70'}}>{label}</span></div>
+          {[{color:'#37D7FF',label:'VMC Sig'},{color:'var(--tm-warning)',label:'Signal'},{color:'var(--tm-profit)',label:'Mom +'},{color:'var(--tm-loss)',label:'Mom −'},{color:'var(--tm-warning)',label:`OB:${obLevel}`},{color:'var(--tm-profit)',label:`OS:${osLevel}`}].map(({color,label})=>(
+            <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{label}</span></div>
           ))}
         </div>
       </div>

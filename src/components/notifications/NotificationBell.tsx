@@ -51,7 +51,7 @@ const DEFAULT_PREFS: NotifPrefs = {
 const SIGNAL_GROUPS = [
   {
     group: 'WaveTrend',
-    color: '#FF9500',
+    color: 'var(--tm-warning)',
     items: [
       { key: 'WT_SMART_BULL', label: '⭐ Smart Bullish Reversal', urgency: 'premium' },
       { key: 'WT_SMART_BEAR', label: '⭐ Smart Bearish Reversal', urgency: 'premium' },
@@ -61,7 +61,7 @@ const SIGNAL_GROUPS = [
   },
   {
     group: 'VMC Oscillator',
-    color: '#00E5FF',
+    color: 'var(--tm-accent)',
     items: [
       { key: 'VMC_BUY',         label: '▲ Signal BUY',       urgency: 'high'   },
       { key: 'VMC_SELL',        label: '▼ Signal SELL',      urgency: 'high'   },
@@ -70,7 +70,7 @@ const SIGNAL_GROUPS = [
   },
   {
     group: 'MTF Dashboard',
-    color: '#BF5AF2',
+    color: 'var(--tm-purple)',
     items: [
       { key: 'MTF_BUY',        label: '▲ Confluence Bull ≥70%', urgency: 'high'   },
       { key: 'MTF_SELL',       label: '▼ Confluence Bear ≥70%', urgency: 'high'   },
@@ -79,7 +79,7 @@ const SIGNAL_GROUPS = [
   },
 ]
 
-const URGENCY_COLOR: Record<string,string> = { premium:'#FFD700', high:'#FF3B30', medium:'#FF9500', low:'#8F94A3' }
+const URGENCY_COLOR: Record<string,string> = { premium:'#FFD700', high:'var(--tm-loss)', medium:'var(--tm-warning)', low:'var(--tm-text-secondary)' }
 
 function timeAgo(d: Date) {
   const s = Math.floor((Date.now() - (d instanceof Date && !isNaN(d.getTime()) ? d.getTime() : Date.now())) / 1000)
@@ -138,11 +138,11 @@ export function ToastContainer() {
   return (
     <div style={{ position:'fixed', top:20, right:20, zIndex:9999, display:'flex', flexDirection:'column', gap:10, pointerEvents:'none' }}>
       {toasts.map(t => {
-        const c = URGENCY_COLOR[t.urgency] || '#8F94A3'
+        const c = URGENCY_COLOR[t.urgency] || 'var(--tm-text-secondary)'
         const isPremium = t.urgency === 'premium'
         return (
           <div key={t.id} onMouseEnter={()=>setHovered(t.id)} onMouseLeave={()=>setHovered(null)}
-            style={{ pointerEvents:'all', background:'#161B22', border:`1px solid ${c}40`,
+            style={{ pointerEvents:'all', background:'var(--tm-bg-secondary)', border:`1px solid ${c}40`,
               borderLeft:`3px solid ${c}`, borderRadius:12, padding:'12px 16px', minWidth:260, maxWidth:320,
               boxShadow:`0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)`,
               animation:'slideIn 0.25s ease', cursor:'default',
@@ -152,13 +152,13 @@ export function ToastContainer() {
               <span style={{ fontSize:10, fontWeight:700, color:c, textTransform:'uppercase', letterSpacing:'0.08em' }}>
                 {isPremium ? '⭐ ' : ''}{t.signal.type.replace(/_/g,' ')}
               </span>
-              <span style={{ fontSize:9, color:'#555C70' }}>{timeAgo(t.signal.timestamp)}</span>
+              <span style={{ fontSize:9, color:'var(--tm-text-muted)' }}>{timeAgo(t.signal.timestamp)}</span>
             </div>
-            <div style={{ fontSize:14, fontWeight:700, color:'#F0F3FF', marginBottom:3 }}>{t.signal.symbol} · {t.signal.timeframe}</div>
-            <div style={{ fontSize:11, color:'#8F94A3' }}>{t.signal.message}</div>
+            <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:3 }}>{t.signal.symbol} · {t.signal.timeframe}</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{t.signal.message}</div>
             {t.signal.score != null && (
               <div style={{ marginTop:8, display:'flex', alignItems:'center', gap:6 }}>
-                <div style={{ flex:1, height:3, background:'#1C2130', borderRadius:2 }}>
+                <div style={{ flex:1, height:3, background:'var(--tm-bg-tertiary)', borderRadius:2 }}>
                   <div style={{ height:'100%', width:`${t.signal.score}%`, background:c, borderRadius:2 }}/>
                 </div>
                 <span style={{ fontSize:9, color:c, fontFamily:'JetBrains Mono, monospace', fontWeight:700 }}>{t.signal.score}%</span>
@@ -176,7 +176,7 @@ export function ToastContainer() {
 function Toggle({ value, onChange, size = 'md' }: { value: boolean; onChange: (v: boolean) => void; size?: 'sm' | 'md' }) {
   const w = size === 'sm' ? 28 : 36, h = size === 'sm' ? 16 : 20, r = size === 'sm' ? 5 : 7
   return (
-    <div onClick={() => onChange(!value)} style={{ width:w, height:h, borderRadius:h/2, background:value?'#22C759':'#2A2F3E',
+    <div onClick={() => onChange(!value)} style={{ width:w, height:h, borderRadius:h/2, background:value?'var(--tm-profit)':'var(--tm-border)',
       cursor:'pointer', position:'relative', transition:'background 0.2s', flexShrink:0 }}>
       <div style={{ position:'absolute', top:2, left: value ? w-h+2 : 2, width:h-4, height:h-4, borderRadius:'50%',
         background:'#fff', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' }}/>
@@ -247,8 +247,8 @@ export default function NotificationBell() {
   const Row = ({ label, sub, right }: { label: string; sub?: string; right: React.ReactNode }) => (
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
       <div>
-        <div style={{ fontSize:12, fontWeight:600, color:'#F0F3FF' }}>{label}</div>
-        {sub && <div style={{ fontSize:10, color:'#555C70', marginTop:2 }}>{sub}</div>}
+        <div style={{ fontSize:12, fontWeight:600, color:'var(--tm-text-primary)' }}>{label}</div>
+        {sub && <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginTop:2 }}>{sub}</div>}
       </div>
       {right}
     </div>
@@ -259,17 +259,17 @@ export default function NotificationBell() {
       {/* Bell button */}
       <button onClick={() => { setOpen(x => !x); setHasNew(false) }}
         style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:'6px', borderRadius:8,
-          color: open ? '#F0F3FF' : '#8F94A3', fontSize:18, transition:'color 0.2s' }}>
+          color: open ? 'var(--tm-text-primary)' : 'var(--tm-text-secondary)', fontSize:18, transition:'color 0.2s' }}>
         🔔
         {hasNew && recent > 0 && (
-          <div style={{ position:'absolute', top:2, right:2, width:16, height:16, borderRadius:'50%', background:'#FF3B30',
+          <div style={{ position:'absolute', top:2, right:2, width:16, height:16, borderRadius:'50%', background:'var(--tm-loss)',
             fontSize:9, fontWeight:700, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center' }}>
             {recent > 9 ? '9+' : recent}
           </div>
         )}
         {/* Master off indicator */}
         {!prefs.masterEnabled && (
-          <div style={{ position:'absolute', bottom:2, right:2, width:8, height:8, borderRadius:'50%', background:'#555C70', border:'1px solid #161B22' }}/>
+          <div style={{ position:'absolute', bottom:2, right:2, width:8, height:8, borderRadius:'50%', background:'var(--tm-text-muted)', border:'1px solid #161B22' }}/>
         )}
       </button>
 
@@ -278,23 +278,23 @@ export default function NotificationBell() {
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:99999,
           display:'flex', alignItems:'center', justifyContent:'center' }}
           onMouseDown={()=>setOpen(false)}>
-        <div style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:20, width:400, maxHeight:'85vh',
+        <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:20, width:400, maxHeight:'85vh',
           boxShadow:'0 32px 80px rgba(0,0,0,0.8)', zIndex:100000, display:'flex', flexDirection:'column', overflow:'hidden' }}
           onMouseDown={e=>e.stopPropagation()}>
 
           {/* Header */}
           <div style={{ padding:'14px 16px 0', borderBottom:'1px solid #1E2330' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:'#F0F3FF' }}>Notifications</div>
+              <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>Notifications</div>
               <Toggle value={prefs.masterEnabled} onChange={v => updatePref('masterEnabled', v)}/>
             </div>
             {/* Tabs */}
             <div style={{ display:'flex', gap:4 }}>
               {(['history','settings'] as const).map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{ flex:1, padding:'7px 0', borderRadius:'8px 8px 0 0',
-                  background: tab===t ? '#0D1117' : 'transparent',
+                  background: tab===t ? 'var(--tm-bg)' : 'transparent',
                   border:'none', cursor:'pointer', fontSize:11, fontWeight:600,
-                  color: tab===t ? '#F0F3FF' : '#555C70', borderBottom: tab===t ? 'none' : undefined }}>
+                  color: tab===t ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)', borderBottom: tab===t ? 'none' : undefined }}>
                   {t === 'history' ? `🕐 Historique${recent > 0 ? ` (${recent})` : ''}` : '⚙ Réglages'}
                 </button>
               ))}
@@ -308,7 +308,7 @@ export default function NotificationBell() {
             {tab === 'history' && (
               <div style={{ padding:'8px 0' }}>
                 {signals.length === 0 ? (
-                  <div style={{ padding:'32px 16px', textAlign:'center', color:'#3D4254', fontSize:12 }}>
+                  <div style={{ padding:'32px 16px', textAlign:'center', color:'var(--tm-text-muted)', fontSize:12 }}>
                     <div style={{ fontSize:24, marginBottom:8 }}>🔕</div>
                     Aucun signal récent
                   </div>
@@ -324,9 +324,9 @@ export default function NotificationBell() {
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:2 }}>
                           <span style={{ fontSize:11, fontWeight:700, color:c }}>{sig.symbol} · {sig.timeframe}</span>
-                          <span style={{ fontSize:10, color:'#3D4254' }}>{timeAgo(sig.timestamp)}</span>
+                          <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{timeAgo(sig.timestamp)}</span>
                         </div>
-                        <div style={{ fontSize:11, color:'#8F94A3' }}>{sig.message}</div>
+                        <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{sig.message}</div>
                       </div>
                     </div>
                   )
@@ -340,12 +340,12 @@ export default function NotificationBell() {
 
                 {/* Global */}
                 <div style={{ marginTop:16, marginBottom:4 }}>
-                  <div style={{ fontSize:10, fontWeight:700, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>Global</div>
+                  <div style={{ fontSize:10, fontWeight:700, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>Global</div>
                   <Row label="Toasts visuels" sub="Popup en haut à droite" right={<Toggle value={prefs.toastEnabled} onChange={v=>updatePref('toastEnabled',v)}/>}/>
                   <Row label="Notifications browser" sub={granted ? 'Autorisé ✓' : 'Cliquer pour autoriser'}
                     right={granted
                       ? <Toggle value={prefs.browserEnabled} onChange={v=>updatePref('browserEnabled',v)}/>
-                      : <button onClick={requestPerm} style={{fontSize:10,padding:'4px 10px',borderRadius:8,background:'rgba(10,133,255,0.15)',border:'1px solid #0A85FF',color:'#0A85FF',cursor:'pointer',fontWeight:600}}>Autoriser</button>
+                      : <button onClick={requestPerm} style={{fontSize:10,padding:'4px 10px',borderRadius:8,background:'rgba(var(--tm-blue-rgb,10,133,255),0.15)',border:'1px solid #0A85FF',color:'var(--tm-blue)',cursor:'pointer',fontWeight:600}}>Autoriser</button>
                     }/>
                   <Row label="Son activé" sub="Synthèse audio" right={<Toggle value={prefs.soundEnabled} onChange={v=>updatePref('soundEnabled',v)}/>}/>
                 </div>
@@ -354,16 +354,16 @@ export default function NotificationBell() {
                 {prefs.soundEnabled && (
                   <div style={{ padding:'10px 12px', background:'rgba(255,255,255,0.02)', borderRadius:10, marginBottom:12, border:'1px solid #1E2330' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                      <span style={{ fontSize:11, color:'#8F94A3' }}>Volume</span>
-                      <span style={{ fontSize:11, fontWeight:700, color:'#F0F3FF', fontFamily:'JetBrains Mono, monospace' }}>{prefs.soundVolume}%</span>
+                      <span style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>Volume</span>
+                      <span style={{ fontSize:11, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'JetBrains Mono, monospace' }}>{prefs.soundVolume}%</span>
                     </div>
                     <input type="range" min={0} max={100} value={prefs.soundVolume}
                       onChange={e=>updatePref('soundVolume',+e.target.value)}
-                      style={{width:'100%',accentColor:'#22C759',marginBottom:10}}/>
+                      style={{width:'100%',accentColor:'var(--tm-profit)',marginBottom:10}}/>
                     <div style={{ display:'flex', gap:6 }}>
                       {(['ping','chime','premium'] as const).map(t => (
                         <button key={t} onClick={()=>playSound(t,prefs.soundVolume)}
-                          style={{flex:1,padding:'5px 0',borderRadius:8,background:'rgba(255,255,255,0.04)',border:'1px solid #2A2F3E',color:'#8F94A3',cursor:'pointer',fontSize:10}}>
+                          style={{flex:1,padding:'5px 0',borderRadius:8,background:'rgba(255,255,255,0.04)',border:'1px solid #2A2F3E',color:'var(--tm-text-secondary)',cursor:'pointer',fontSize:10}}>
                           ▶ {t}
                         </button>
                       ))}
@@ -374,21 +374,21 @@ export default function NotificationBell() {
                 {/* Seuils */}
                 <div style={{ padding:'10px 12px', background:'rgba(255,255,255,0.02)', borderRadius:10, marginBottom:12, border:'1px solid #1E2330' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                    <span style={{ fontSize:11, color:'#8F94A3' }}>Score minimum</span>
-                    <span style={{ fontSize:11, fontWeight:700, color:'#F0F3FF', fontFamily:'JetBrains Mono, monospace' }}>{prefs.minScore}%</span>
+                    <span style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>Score minimum</span>
+                    <span style={{ fontSize:11, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'JetBrains Mono, monospace' }}>{prefs.minScore}%</span>
                   </div>
                   <input type="range" min={0} max={100} value={prefs.minScore}
                     onChange={e=>updatePref('minScore',+e.target.value)}
-                    style={{width:'100%',accentColor:'#0A85FF',marginBottom:10}}/>
+                    style={{width:'100%',accentColor:'var(--tm-blue)',marginBottom:10}}/>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <span style={{ fontSize:11, color:'#8F94A3' }}>Cooldown anti-spam</span>
+                    <span style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>Cooldown anti-spam</span>
                     <div style={{ display:'flex', gap:4 }}>
                       {[2,5,10,15].map(m=>(
                         <button key={m} onClick={()=>updatePref('cooldownMinutes',m)}
                           style={{padding:'3px 8px',borderRadius:6,fontSize:10,cursor:'pointer',fontWeight:600,
-                            background:prefs.cooldownMinutes===m?'rgba(10,133,255,0.2)':'rgba(255,255,255,0.04)',
-                            border:`1px solid ${prefs.cooldownMinutes===m?'#0A85FF':'#2A2F3E'}`,
-                            color:prefs.cooldownMinutes===m?'#0A85FF':'#555C70'}}>
+                            background:prefs.cooldownMinutes===m?'rgba(var(--tm-blue-rgb,10,133,255),0.2)':'rgba(255,255,255,0.04)',
+                            border:`1px solid ${prefs.cooldownMinutes===m?'var(--tm-blue)':'var(--tm-border)'}`,
+                            color:prefs.cooldownMinutes===m?'var(--tm-blue)':'var(--tm-text-muted)'}}>
                           {m}m
                         </button>
                       ))}
@@ -397,13 +397,13 @@ export default function NotificationBell() {
                 </div>
 
                 {/* Par signal */}
-                <div style={{ fontSize:10, fontWeight:700, color:'#555C70', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>Par signal</div>
+                <div style={{ fontSize:10, fontWeight:700, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>Par signal</div>
                 {/* Headers */}
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 32px 32px 32px', gap:4, marginBottom:6, paddingRight:2 }}>
                   <span/>
-                  <span style={{fontSize:8,color:'#3D4254',textAlign:'center',fontWeight:700}}>ON</span>
-                  <span style={{fontSize:8,color:'#3D4254',textAlign:'center',fontWeight:700}}>🔔</span>
-                  <span style={{fontSize:8,color:'#3D4254',textAlign:'center',fontWeight:700}}>🔊</span>
+                  <span style={{fontSize:8,color:'var(--tm-text-muted)',textAlign:'center',fontWeight:700}}>ON</span>
+                  <span style={{fontSize:8,color:'var(--tm-text-muted)',textAlign:'center',fontWeight:700}}>🔔</span>
+                  <span style={{fontSize:8,color:'var(--tm-text-muted)',textAlign:'center',fontWeight:700}}>🔊</span>
                 </div>
 
                 {SIGNAL_GROUPS.map(g => (
@@ -418,7 +418,7 @@ export default function NotificationBell() {
                         <div key={item.key} style={{ display:'grid', gridTemplateColumns:'1fr 32px 32px 32px', gap:4, alignItems:'center',
                           padding:'6px 0', borderBottom:'1px solid rgba(255,255,255,0.03)' }}>
                           <div>
-                            <div style={{ fontSize:11, color: sp.enabled ? '#F0F3FF' : '#3D4254', transition:'color 0.2s' }}>{item.label}</div>
+                            <div style={{ fontSize:11, color: sp.enabled ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)', transition:'color 0.2s' }}>{item.label}</div>
                           </div>
                           {/* Enabled */}
                           <div style={{ display:'flex', justifyContent:'center' }}>
@@ -441,7 +441,7 @@ export default function NotificationBell() {
                 {/* Reset */}
                 <button onClick={()=>setPrefs(DEFAULT_PREFS)}
                   style={{width:'100%',marginTop:8,padding:'8px',borderRadius:8,background:'transparent',
-                    border:'1px solid #2A2F3E',color:'#555C70',cursor:'pointer',fontSize:11}}>
+                    border:'1px solid #2A2F3E',color:'var(--tm-text-muted)',cursor:'pointer',fontSize:11}}>
                   Réinitialiser les réglages
                 </button>
               </div>

@@ -58,15 +58,15 @@ export default function Sidebar() {
       {/* Logo */}
       <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" strokeWidth="2.5" strokeLinecap="round">
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(var(--tm-accent-rgb,0,229,255),0.1)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--tm-accent)" strokeWidth="2.5" strokeLinecap="round">
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
               <polyline points="16 7 22 7 22 13" />
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F3FF', fontFamily: 'Syne, sans-serif', letterSpacing: '-0.01em' }}>TradeMindset</div>
-            <div style={{ fontSize: 9, color: '#00E5FF', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 1 }}>Pro</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'Syne, sans-serif', letterSpacing: '-0.01em' }}>TradeMindset</div>
+            <div style={{ fontSize: 9, color: 'var(--tm-accent)', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 1 }}>Pro</div>
           </div>
         </div>
       </div>
@@ -80,12 +80,12 @@ export default function Sidebar() {
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
                 fontSize: 13, fontWeight: isActive ? 500 : 400,
-                color: isActive ? '#00E5FF' : '#8F94A3',
-                background: isActive ? 'rgba(0,229,255,0.08)' : 'transparent',
+                color: isActive ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
+                background: isActive ? 'rgba(var(--tm-accent-rgb,0,229,255),0.08)' : 'transparent',
                 position: 'relative',
                 transition: 'all 0.15s',
               }}>
-                {isActive && <div style={{ position: 'absolute', left: 0, top: '25%', bottom: '25%', width: 2, borderRadius: 99, background: '#00E5FF' }} />}
+                {isActive && <div style={{ position: 'absolute', left: 0, top: '25%', bottom: '25%', width: 2, borderRadius: 99, background: 'var(--tm-accent)' }} />}
                 <Icon size={16} />
                 {label}
               </div>
@@ -99,7 +99,7 @@ export default function Sidebar() {
         {NAV_BOTTOM.map(({ to, label, Icon }) => (
           <NavLink key={to} to={to} style={{ textDecoration: 'none' }}>
             {({ isActive }) => (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: isActive ? '#00E5FF' : '#8F94A3', background: isActive ? 'rgba(0,229,255,0.08)' : 'transparent', transition: 'all 0.15s' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: isActive ? 'var(--tm-accent)' : 'var(--tm-text-secondary)', background: isActive ? 'rgba(var(--tm-accent-rgb,0,229,255),0.08)' : 'transparent', transition: 'all 0.15s' }}>
                 <Icon size={16} />
                 {label}
               </div>
@@ -109,7 +109,7 @@ export default function Sidebar() {
 
         {/* User row */}
         <div style={{ marginTop: 6, padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #0A85FF33, #00E5FF33)', border: '1px solid rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#00E5FF', flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #0A85FF33, #00E5FF33)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', flexShrink: 0, overflow: 'hidden' }}>
             {profilePhoto ? (
               <img src={profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
@@ -117,15 +117,15 @@ export default function Sidebar() {
             )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: '#F0F3FF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--tm-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {profileName || user?.displayName || 'Trader'}
             </div>
-            <div style={{ fontSize: 10, color: '#555C70', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user?.email}
             </div>
           </div>
           <NotificationBell />
-          <button onClick={handleLogout} title="Déconnexion" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, color: '#555C70', display: 'flex', alignItems: 'center' }}>
+          <button onClick={handleLogout} title="Déconnexion" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, color: 'var(--tm-text-muted)', display: 'flex', alignItems: 'center' }}>
             <IconLogout size={14} />
           </button>
         </div>

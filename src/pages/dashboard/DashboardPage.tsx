@@ -23,7 +23,7 @@ function fmtK(n: number) {
 }
 function fmtDate(d: Date) { return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) }
 function card(extra?: object) {
-  return { background:'#161B22', border:'1px solid #1E2330', borderRadius:16, padding:'18px 20px', position:'relative' as const, overflow:'hidden', ...extra }
+  return { background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, padding:'18px 20px', position:'relative' as const, overflow:'hidden', ...extra }
 }
 function hl() {
   return { position:'absolute' as const, top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)' }
@@ -145,7 +145,7 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
           {/* Day labels */}
           <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap,marginBottom:4}}>
             {['D','L','M','M','J','V','S'].map((l,i)=>(
-              <div key={i} style={{fontSize:fs-1,color:'#555C70',textAlign:'center',fontWeight:600,lineHeight:`${cellSize}px`}}>{l}</div>
+              <div key={i} style={{fontSize:fs-1,color:'var(--tm-text-muted)',textAlign:'center',fontWeight:600,lineHeight:`${cellSize}px`}}>{l}</div>
             ))}
           </div>
           {/* Grid */}
@@ -167,7 +167,7 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
                     setTooltip(t=>t?.key===key?null:{key,pnl:data.pnl,date,count:data.count,symbols:data.symbols,left:rect.left+rect.width/2,top:rect.top})
                   }}
                   style={{width:cellSize,height:cellSize,borderRadius:Math.max(2,cellSize/5),background:bg,cursor:inRange&&data?'pointer':'default',
-                    border:isToday?'1.5px solid rgba(255,255,255,0.3)':isBest?'1.5px solid rgba(34,199,89,0.7)':isWorst?'1.5px solid rgba(255,59,48,0.5)':'1px solid transparent',
+                    border:isToday?'1.5px solid rgba(255,255,255,0.3)':isBest?'1.5px solid rgba(var(--tm-profit-rgb,34,199,89),0.7)':isWorst?'1.5px solid rgba(var(--tm-loss-rgb,255,59,48),0.5)':'1px solid transparent',
                     transition:'transform 0.1s',boxSizing:'border-box' as const}}
                   title={inRange&&data?`${key}: ${fmtK(pnl!)}`:undefined}
                 />
@@ -184,18 +184,18 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
             position:'fixed',
             left:Math.min(tooltip.left-90,window.innerWidth-200),
             top:tooltip.top-120,
-            background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:12,padding:'12px 16px',
+            background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:12,padding:'12px 16px',
             minWidth:180,zIndex:50,boxShadow:'0 8px 32px rgba(0,0,0,0.6)',pointerEvents:'none',
           }}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-              <div style={{fontSize:11,color:'#8F94A3',fontWeight:600}}>
+              <div style={{fontSize:11,color:'var(--tm-text-secondary)',fontWeight:600}}>
                 {tooltip.date.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})}
               </div>
-              {tooltip.key===bestKey&&<div style={{fontSize:9,fontWeight:700,color:'#22C759',background:'rgba(34,199,89,0.15)',padding:'2px 7px',borderRadius:10}}>Best</div>}
-              {tooltip.key===worstKey&&<div style={{fontSize:9,fontWeight:700,color:'#FF3B30',background:'rgba(255,59,48,0.15)',padding:'2px 7px',borderRadius:10}}>Worst</div>}
+              {tooltip.key===bestKey&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',background:'rgba(var(--tm-profit-rgb,34,199,89),0.15)',padding:'2px 7px',borderRadius:10}}>Best</div>}
+              {tooltip.key===worstKey&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-loss)',background:'rgba(var(--tm-loss-rgb,255,59,48),0.15)',padding:'2px 7px',borderRadius:10}}>Worst</div>}
             </div>
-            <div style={{fontSize:22,fontWeight:800,color:tooltip.pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace',marginBottom:4}}>{fmtK(tooltip.pnl)}</div>
-            <div style={{fontSize:11,color:'#555C70'}}>{tooltip.count} trade{tooltip.count!==1?'s':''}{tooltip.symbols.length>0?' · '+tooltip.symbols.slice(0,3).join(', '):''}</div>
+            <div style={{fontSize:22,fontWeight:800,color:tooltip.pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace',marginBottom:4}}>{fmtK(tooltip.pnl)}</div>
+            <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>{tooltip.count} trade{tooltip.count!==1?'s':''}{tooltip.symbols.length>0?' · '+tooltip.symbols.slice(0,3).join(', '):''}</div>
           </div>
         </>
       )}
@@ -248,13 +248,13 @@ function MonthGrid({ byDay, since, today, maxAbs, bestKey, worstKey, setTooltip,
 
         return (
           <div key={mi} style={{ flexShrink:0 }}>
-            <div style={{ fontSize:10, fontWeight:700, color:'#8F94A3', textAlign:'center', marginBottom:6, textTransform:'capitalize' }}>
+            <div style={{ fontSize:10, fontWeight:700, color:'var(--tm-text-secondary)', textAlign:'center', marginBottom:6, textTransform:'capitalize' }}>
               {month.label} {months.length > 6 ? '' : month.year}
             </div>
             {mi === 0 && (
               <div style={{ display:'grid', gridTemplateColumns:`repeat(7,${cellSz}px)`, gap, marginBottom:2 }}>
                 {['D','L','M','M','J','V','S'].map((l,i)=>(
-                  <div key={i} style={{ fontSize:7, color:'#3D4254', textAlign:'center' }}>{l}</div>
+                  <div key={i} style={{ fontSize:7, color:'var(--tm-text-muted)', textAlign:'center' }}>{l}</div>
                 ))}
               </div>
             )}
@@ -278,7 +278,7 @@ function MonthGrid({ byDay, since, today, maxAbs, bestKey, worstKey, setTooltip,
                   }} style={{
                     width:cellSz, height:cellSz, borderRadius:2, background:bg,
                     cursor: cell.data ? 'pointer' : 'default',
-                    border: isToday ? '1px solid rgba(255,255,255,0.4)' : isBest ? '1px solid rgba(34,199,89,0.7)' : isWorst ? '1px solid rgba(255,59,48,0.6)' : '1px solid transparent',
+                    border: isToday ? '1px solid rgba(255,255,255,0.4)' : isBest ? '1px solid rgba(var(--tm-profit-rgb,34,199,89),0.7)' : isWorst ? '1px solid rgba(var(--tm-loss-rgb,255,59,48),0.6)' : '1px solid transparent',
                   }} title={cell.data ? `${cell.key}: ${fmtK(pnl!)}` : undefined} />
                 )
               })}
@@ -347,26 +347,26 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
   function TabBtn({id,label}:{id:typeof tab,label:string}) {
     const active=tab===id
     return<button onClick={()=>setTab(id)} style={{padding:'8px 16px',borderRadius:20,fontSize:12,fontWeight:600,cursor:'pointer',
-      border:`1px solid ${active?'transparent':'#2A2F3E'}`,
+      border:`1px solid ${active?'transparent':'var(--tm-border)'}`,
       background:active?'linear-gradient(135deg,#6B3FE7,#BF5AF2)':'transparent',
-      color:active?'#fff':'#555C70'}}>{label}</button>
+      color:active?'#fff':'var(--tm-text-muted)'}}>{label}</button>
   }
 
   function MetricsTabBtn({id,label}:{id:typeof metricsTab,label:string}) {
     const active=metricsTab===id
     return<button onClick={()=>setMetricsTab(id)} style={{padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',
-      border:`1px solid ${active?'#0A85FF':'#2A2F3E'}`,
-      background:active?'rgba(10,133,255,0.15)':'transparent',
-      color:active?'#0A85FF':'#555C70'}}>{label}</button>
+      border:`1px solid ${active?'var(--tm-blue)':'var(--tm-border)'}`,
+      background:active?'rgba(var(--tm-blue-rgb,10,133,255),0.15)':'transparent',
+      color:active?'var(--tm-blue)':'var(--tm-text-muted)'}}>{label}</button>
   }
 
   function RangeCard({r}:{r:{name:string,pnl:number,count:number,startHour?:number,endHour?:number}}) {
     return(
-      <div style={{background:'rgba(255,255,255,0.02)',border:`1px solid ${r.pnl>=0?'rgba(34,199,89,0.2)':'rgba(255,59,48,0.1)'}`,borderRadius:12,padding:'12px 14px'}}>
-        <div style={{fontSize:11,color:'#8F94A3',marginBottom:4,fontWeight:600}}>{r.name}</div>
-        {r.startHour!=null&&<div style={{fontSize:9,color:'#3D4254',marginBottom:8}}>{String(r.startHour).padStart(2,'0')}h–{String(r.endHour).padStart(2,'0')}h</div>}
-        <div style={{fontSize:18,fontWeight:800,color:r.pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(r.pnl)}</div>
-        {r.count>0&&<div style={{fontSize:10,color:'#555C70',marginTop:4}}>{r.count} trade{r.count!==1?'s':''}</div>}
+      <div style={{background:'rgba(255,255,255,0.02)',border:`1px solid ${r.pnl>=0?'rgba(var(--tm-profit-rgb,34,199,89),0.2)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)'}`,borderRadius:12,padding:'12px 14px'}}>
+        <div style={{fontSize:11,color:'var(--tm-text-secondary)',marginBottom:4,fontWeight:600}}>{r.name}</div>
+        {r.startHour!=null&&<div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:8}}>{String(r.startHour).padStart(2,'0')}h–{String(r.endHour).padStart(2,'0')}h</div>}
+        <div style={{fontSize:18,fontWeight:800,color:r.pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(r.pnl)}</div>
+        {r.count>0&&<div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:4}}>{r.count} trade{r.count!==1?'s':''}</div>}
       </div>
     )
   }
@@ -374,32 +374,32 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
   function EditModal({type}:{type:'session'|'hour'}) {
     return(
       <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setEditing(null)}>
-        <div onClick={e=>e.stopPropagation()} style={{background:'#161B22',border:'1px solid #2A2F3E',borderRadius:16,padding:'20px',minWidth:320,maxWidth:400}}>
-          <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF',marginBottom:16}}>Modifier les plages</div>
+        <div onClick={e=>e.stopPropagation()} style={{background:'var(--tm-bg-secondary)',border:'1px solid #2A2F3E',borderRadius:16,padding:'20px',minWidth:320,maxWidth:400}}>
+          <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:16}}>Modifier les plages</div>
           <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
             {editDraft.map((r,i)=>(
               <div key={r.id} style={{display:'flex',gap:8,alignItems:'center'}}>
                 <input value={r.name} onChange={e=>{const d=[...editDraft];d[i]={...d[i],name:e.target.value};setEditDraft(d)}}
-                  style={{flex:1,background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 10px',color:'#F0F3FF',fontSize:12}}/>
+                  style={{flex:1,background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 10px',color:'var(--tm-text-primary)',fontSize:12}}/>
                 <input type="number" min="0" max="23" value={r.startHour} onChange={e=>{const d=[...editDraft];d[i]={...d[i],startHour:+e.target.value};setEditDraft(d)}}
-                  style={{width:50,background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 8px',color:'#F0F3FF',fontSize:12,textAlign:'center'}}/>
-                <span style={{color:'#555C70',fontSize:11}}>→</span>
+                  style={{width:50,background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 8px',color:'var(--tm-text-primary)',fontSize:12,textAlign:'center'}}/>
+                <span style={{color:'var(--tm-text-muted)',fontSize:11}}>→</span>
                 <input type="number" min="0" max="24" value={r.endHour} onChange={e=>{const d=[...editDraft];d[i]={...d[i],endHour:+e.target.value};setEditDraft(d)}}
-                  style={{width:50,background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 8px',color:'#F0F3FF',fontSize:12,textAlign:'center'}}/>
+                  style={{width:50,background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:8,padding:'6px 8px',color:'var(--tm-text-primary)',fontSize:12,textAlign:'center'}}/>
                 <button onClick={()=>setEditDraft(editDraft.filter((_,j)=>j!==i))}
-                  style={{background:'rgba(255,59,48,0.1)',border:'none',borderRadius:6,color:'#FF3B30',cursor:'pointer',padding:'4px 8px',fontSize:12}}>✕</button>
+                  style={{background:'rgba(var(--tm-loss-rgb,255,59,48),0.1)',border:'none',borderRadius:6,color:'var(--tm-loss)',cursor:'pointer',padding:'4px 8px',fontSize:12}}>✕</button>
               </div>
             ))}
           </div>
           <button onClick={()=>setEditDraft([...editDraft,{id:Date.now().toString(),name:'',startHour:0,endHour:4}])}
-            style={{width:'100%',padding:'8px',background:'rgba(10,133,255,0.1)',border:'1px dashed #2A2F3E',borderRadius:8,color:'#0A85FF',cursor:'pointer',fontSize:12,marginBottom:12}}>+ Ajouter</button>
+            style={{width:'100%',padding:'8px',background:'rgba(var(--tm-blue-rgb,10,133,255),0.1)',border:'1px dashed #2A2F3E',borderRadius:8,color:'var(--tm-blue)',cursor:'pointer',fontSize:12,marginBottom:12}}>+ Ajouter</button>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>setEditing(null)} style={{flex:1,padding:'8px',background:'transparent',border:'1px solid #2A2F3E',borderRadius:8,color:'#555C70',cursor:'pointer',fontSize:12}}>Annuler</button>
+            <button onClick={()=>setEditing(null)} style={{flex:1,padding:'8px',background:'transparent',border:'1px solid #2A2F3E',borderRadius:8,color:'var(--tm-text-muted)',cursor:'pointer',fontSize:12}}>Annuler</button>
             <button onClick={()=>{
               if(type==='session')setSessionRanges(editDraft)
               else setHourRanges(editDraft)
               setEditing(null)
-            }} style={{flex:1,padding:'8px',background:'rgba(10,133,255,0.15)',border:'1px solid #0A85FF',borderRadius:8,color:'#0A85FF',cursor:'pointer',fontSize:12,fontWeight:600}}>Sauvegarder</button>
+            }} style={{flex:1,padding:'8px',background:'rgba(var(--tm-blue-rgb,10,133,255),0.15)',border:'1px solid #0A85FF',borderRadius:8,color:'var(--tm-blue)',cursor:'pointer',fontSize:12,fontWeight:600}}>Sauvegarder</button>
           </div>
         </div>
       </div>
@@ -411,8 +411,8 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
       <div style={hl()}/>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
         <div>
-          <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF'}}>Advanced Analytics</div>
-          <div style={{fontSize:11,color:'#555C70'}}>Analyse de performance en détail</div>
+          <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)'}}>Advanced Analytics</div>
+          <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>Analyse de performance en détail</div>
         </div>
       </div>
       {/* Main tabs */}
@@ -424,27 +424,27 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 
       {tab==='analytics'&&(
         <div>
-          <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF',marginBottom:12}}>Performance par Mois</div>
-          {months.length===0?<div style={{textAlign:'center',color:'#3D4254',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
+          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:12}}>Performance par Mois</div>
+          {months.length===0?<div style={{textAlign:'center',color:'var(--tm-text-muted)',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
             <>
               <div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:10,padding:'0 4px'}}>
                 {months.map((m,i)=>{
-                  const h=Math.max((Math.abs(m.value)/maxAbsM)*100,4),c=m.value>=0?'#22C759':'#FF3B30'
+                  const h=Math.max((Math.abs(m.value)/maxAbsM)*100,4),c=m.value>=0?'var(--tm-profit)':'var(--tm-loss)'
                   return(<div key={i} title={`${m.full}: ${fmtK(m.value)}`} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',position:'relative'}}
                     onMouseEnter={e=>{const el=e.currentTarget.querySelector('[data-val]') as HTMLElement;if(el)el.style.opacity='1'}}
                     onMouseLeave={e=>{const el=e.currentTarget.querySelector('[data-val]') as HTMLElement;if(el)el.style.opacity='0'}}>
                     <div data-val="" style={{fontSize:10,fontWeight:700,color:c,fontFamily:'JetBrains Mono,monospace',opacity:0,transition:'opacity 0.15s',whiteSpace:'nowrap'}}>{fmtK(m.value)}</div>
                     <div style={{width:'100%',maxWidth:36,height:h,background:`linear-gradient(${m.value>=0?'0deg':'180deg'},${c},${c}88)`,borderRadius:m.value>=0?'4px 4px 0 0':'0 0 4px 4px',transition:'height 0.3s'}}/>
-                    <div style={{fontSize:9,color:'#8F94A3',fontWeight:600,textTransform:'capitalize'}}>{m.full.slice(0,3)}</div>
+                    <div style={{fontSize:9,color:'var(--tm-text-secondary)',fontWeight:600,textTransform:'capitalize'}}>{m.full.slice(0,3)}</div>
                   </div>)
                 })}
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-                {[{l:'Meilleur mois',v:fmtK(bestM),c:'#22C759',bg:'rgba(34,199,89,0.06)',bdr:'rgba(34,199,89,0.15)'},
-                  {l:'Pire mois',v:fmtK(worstM),c:'#FF3B30',bg:'rgba(255,59,48,0.06)',bdr:'rgba(255,59,48,0.15)'},
-                  {l:'Moyenne/mois',v:fmtK(avgM),c:'#8F94A3',bg:'rgba(255,255,255,0.02)',bdr:'#1E2330'}].map(({l,v,c,bg,bdr})=>(
+                {[{l:'Meilleur mois',v:fmtK(bestM),c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)'},
+                  {l:'Pire mois',v:fmtK(worstM),c:'var(--tm-loss)',bg:'rgba(var(--tm-loss-rgb,255,59,48),0.06)',bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.15)'},
+                  {l:'Moyenne/mois',v:fmtK(avgM),c:'var(--tm-text-secondary)',bg:'rgba(255,255,255,0.02)',bdr:'var(--tm-border-sub)'}].map(({l,v,c,bg,bdr})=>(
                   <div key={l} style={{background:bg,border:`1px solid ${bdr}`,borderRadius:10,padding:'10px 12px',textAlign:'center'}}>
-                    <div style={{fontSize:9,color:'#555C70',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.06em'}}>{l}</div>
+                    <div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.06em'}}>{l}</div>
                     <div style={{fontSize:14,fontWeight:700,color:c,fontFamily:'JetBrains Mono, monospace'}}>{v}</div>
                   </div>
                 ))}
@@ -465,16 +465,16 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 
           {metricsTab==='month'&&(
             <div>
-              {months.length===0?<div style={{textAlign:'center',color:'#3D4254',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
+              {months.length===0?<div style={{textAlign:'center',color:'var(--tm-text-muted)',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {months.map((m,i)=>{
                     const pct=Math.abs(m.value)/maxAbsM*100
                     return(<div key={i} style={{display:'flex',alignItems:'center',gap:10}}>
-                      <div style={{width:28,fontSize:11,color:'#8F94A3',textAlign:'right'}}>{m.full.slice(0,3)}</div>
-                      <div style={{flex:1,height:8,background:'#1C2130',borderRadius:4,overflow:'hidden'}}>
-                        <div style={{height:'100%',width:`${pct}%`,background:m.value>=0?'#22C759':'#FF3B30',borderRadius:4}}/>
+                      <div style={{width:28,fontSize:11,color:'var(--tm-text-secondary)',textAlign:'right'}}>{m.full.slice(0,3)}</div>
+                      <div style={{flex:1,height:8,background:'var(--tm-bg-tertiary)',borderRadius:4,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:`${pct}%`,background:m.value>=0?'var(--tm-profit)':'var(--tm-loss)',borderRadius:4}}/>
                       </div>
-                      <div style={{width:80,fontSize:11,fontWeight:700,color:m.value>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace',textAlign:'right'}}>{fmtK(m.value)}</div>
+                      <div style={{width:80,fontSize:11,fontWeight:700,color:m.value>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace',textAlign:'right'}}>{fmtK(m.value)}</div>
                     </div>)
                   })}
                 </div>
@@ -486,11 +486,11 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
             <div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
                 <div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>Performance par Session</div>
-                  <div style={{fontSize:10,color:'#555C70'}}>Asie / Londres / New York • Personnalisable</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>Performance par Session</div>
+                  <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>Asie / Londres / New York • Personnalisable</div>
                 </div>
                 <button onClick={()=>{setEditDraft([...sessionRanges]);setEditing('session')}}
-                  style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:8,background:'rgba(10,133,255,0.1)',border:'1px solid rgba(10,133,255,0.3)',color:'#0A85FF',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                  style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:8,background:'rgba(var(--tm-blue-rgb,10,133,255),0.1)',border:'1px solid rgba(var(--tm-blue-rgb,10,133,255),0.3)',color:'var(--tm-blue)',cursor:'pointer',fontSize:11,fontWeight:600}}>
                   ⚙ Modifier
                 </button>
               </div>
@@ -498,8 +498,8 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
                 {sessionData.map(r=><RangeCard key={r.id} r={r}/>)}
                 <div onClick={()=>{setEditDraft([...sessionRanges,{id:Date.now().toString(),name:'',startHour:0,endHour:4}]);setEditing('session')}}
                   style={{background:'transparent',border:'1px dashed #2A2F3E',borderRadius:12,padding:'12px 14px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,minHeight:80}}>
-                  <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(10,133,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',color:'#0A85FF',fontSize:16}}>+</div>
-                  <div style={{fontSize:11,color:'#555C70',fontWeight:600}}>Add Session</div>
+                  <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(var(--tm-blue-rgb,10,133,255),0.15)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-blue)',fontSize:16}}>+</div>
+                  <div style={{fontSize:11,color:'var(--tm-text-muted)',fontWeight:600}}>Add Session</div>
                 </div>
               </div>
             </div>
@@ -509,11 +509,11 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
             <div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
                 <div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF'}}>Performance by Hour</div>
-                  <div style={{fontSize:10,color:'#555C70'}}>Customizable ranges • Add your time slots</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>Performance by Hour</div>
+                  <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>Customizable ranges • Add your time slots</div>
                 </div>
                 <button onClick={()=>{setEditDraft([...hourRanges]);setEditing('hour')}}
-                  style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:8,background:'rgba(10,133,255,0.1)',border:'1px solid rgba(10,133,255,0.3)',color:'#0A85FF',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                  style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',borderRadius:8,background:'rgba(var(--tm-blue-rgb,10,133,255),0.1)',border:'1px solid rgba(var(--tm-blue-rgb,10,133,255),0.3)',color:'var(--tm-blue)',cursor:'pointer',fontSize:11,fontWeight:600}}>
                   ⚙ Modify
                 </button>
               </div>
@@ -521,8 +521,8 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
                 {hourData.map(r=><RangeCard key={r.id} r={r}/>)}
                 <div onClick={()=>{setEditDraft([...hourRanges,{id:Date.now().toString(),name:'',startHour:0,endHour:4}]);setEditing('hour')}}
                   style={{background:'transparent',border:'1px dashed #2A2F3E',borderRadius:12,padding:'12px 14px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,minHeight:80}}>
-                  <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(10,133,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',color:'#0A85FF',fontSize:16}}>+</div>
-                  <div style={{fontSize:11,color:'#555C70',fontWeight:600}}>Add Hour range</div>
+                  <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(var(--tm-blue-rgb,10,133,255),0.15)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-blue)',fontSize:16}}>+</div>
+                  <div style={{fontSize:11,color:'var(--tm-text-muted)',fontWeight:600}}>Add Hour range</div>
                 </div>
               </div>
             </div>
@@ -530,8 +530,8 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 
           {metricsTab==='day'&&(
             <div>
-              <div style={{fontSize:13,fontWeight:700,color:'#F0F3FF',marginBottom:4}}>Performance by Day</div>
-              <div style={{fontSize:10,color:'#555C70',marginBottom:12}}>Lundi → Dimanche</div>
+              <div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:4}}>Performance by Day</div>
+              <div style={{fontSize:10,color:'var(--tm-text-muted)',marginBottom:12}}>Lundi → Dimanche</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
                 {dayData.map(r=><RangeCard key={r.name} r={r}/>)}
               </div>
@@ -542,7 +542,7 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 
       {tab==='calendar'&&(
         <div>
-          <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF',marginBottom:12}}>Calendrier de Performance</div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:12}}>Calendrier de Performance</div>
           <CalendarHeatmap trades={trades} period="1M"/>
         </div>
       )}
@@ -579,7 +579,7 @@ export default function DashboardPage() {
   const open  =trades.filter(t=>t.status==='open')
   const recent=[...trades].sort((a,b)=>safeTime(b.date)-safeTime(a.date)).slice(0,6)
   const systemName =(id:string)=>systems.find(s=>s.id===id)?.name??'—'
-  const systemColor=(id:string)=>systems.find(s=>s.id===id)?.color??'#00E5FF'
+  const systemColor=(id:string)=>systems.find(s=>s.id===id)?.color??'var(--tm-accent)'
 
   return(
     <div style={{padding:'28px 28px 60px',maxWidth:1600,margin:'0 auto'}}>
@@ -587,41 +587,41 @@ export default function DashboardPage() {
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,gap:16,flexWrap:'wrap'}}>
         <div>
           <div>
-            <h1 style={{fontSize:24,fontWeight:700,color:'#F0F3FF',margin:0,fontFamily:'Syne, sans-serif',letterSpacing:'-0.02em'}}>Dashboard</h1>
-            <p style={{fontSize:13,color:'#555C70',margin:'4px 0 0'}}>{loading?'…':`${trades.length} trades · ${open.length} ouvert${open.length!==1?'s':''}`}</p>
+            <h1 style={{fontSize:24,fontWeight:700,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne, sans-serif',letterSpacing:'-0.02em'}}>Dashboard</h1>
+            <p style={{fontSize:13,color:'var(--tm-text-muted)',margin:'4px 0 0'}}>{loading?'…':`${trades.length} trades · ${open.length} ouvert${open.length!==1?'s':''}`}</p>
           </div>
 
         </div>
         {/* Info banner */}
-        <div style={{display:'flex',gap:8,alignItems:'center',padding:'8px 14px',background:'#161B22',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',padding:'8px 14px',background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
           <button onClick={()=>setActiveTab(activeTab==='modular'?'journal':'modular')} style={{
             display:'flex',alignItems:'center',gap:6,padding:'4px 12px',
-            background:activeTab==='modular'?'rgba(0,229,255,0.12)':'rgba(0,229,255,0.04)',
-            border:`1px solid ${activeTab==='modular'?'rgba(0,229,255,0.4)':'rgba(0,229,255,0.15)'}`,
+            background:activeTab==='modular'?'rgba(var(--tm-accent-rgb,0,229,255),0.12)':'rgba(var(--tm-accent-rgb,0,229,255),0.04)',
+            border:`1px solid ${activeTab==='modular'?'rgba(var(--tm-accent-rgb,0,229,255),0.4)':'rgba(var(--tm-accent-rgb,0,229,255),0.15)'}`,
             borderRadius:8,cursor:'pointer',fontSize:10,fontWeight:700,
-            color:activeTab==='modular'?'#00E5FF':'#555C70',
+            color:activeTab==='modular'?'var(--tm-accent)':'var(--tm-text-muted)',
             transition:'all 0.2s',letterSpacing:'0.04em',
           }}>
             <span style={{fontSize:12}}>⚡</span>
             {activeTab==='modular'?'← Journal':'Widgets'}
           </button>
-          <div style={{width:1,height:16,background:'#2A2F3E'}}/>
+          <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
           <a href="https://discord.gg/SqfMCVtEhV" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(88,101,242,0.1)',border:'1px solid rgba(88,101,242,0.25)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'#5865F2'}}>
             Discord
           </a>
-          <a href="https://trademindsetapp.com" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(0,229,255,0.06)',border:'1px solid rgba(0,229,255,0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'#00E5FF'}}>
+          <a href="https://trademindsetapp.com" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-accent-rgb,0,229,255),0.06)',border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'var(--tm-accent)'}}>
             Site web
           </a>
-          <a href="mailto:trademindsetapp@gmail.com" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(34,199,89,0.06)',border:'1px solid rgba(34,199,89,0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'#22C759'}}>
+          <a href="mailto:trademindsetapp@gmail.com" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'var(--tm-profit)'}}>
             Contact
           </a>
-          <div style={{width:1,height:16,background:'#2A2F3E'}}/>
-          <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(255,149,0,0.06)',border:'1px solid rgba(255,149,0,0.2)',borderRadius:8,fontSize:10,fontWeight:600,color:'#FF9500'}}>
-            <span style={{width:6,height:6,borderRadius:'50%',background:'#FF9500',display:'inline-block',boxShadow:'0 0 6px rgba(255,149,0,0.4)'}}/>
+          <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
+          <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',borderRadius:8,fontSize:10,fontWeight:600,color:'var(--tm-warning)'}}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:'var(--tm-warning)',display:'inline-block',boxShadow:'0 0 6px rgba(var(--tm-warning-rgb,255,149,0),0.4)'}}/>
             {userCount !== null ? `${userCount} utilisateur${userCount !== 1 ? 's' : ''}` : '…'}
           </div>
-          <div style={{width:1,height:16,background:'#2A2F3E'}}/>
-          <div style={{fontSize:10,color:'#3D4254',fontFamily:'JetBrains Mono,monospace'}}>TradeMindset v1.1</div>
+          <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
+          <div style={{fontSize:10,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono,monospace'}}>TradeMindset v1.1</div>
         </div>
       </div>
 
@@ -629,16 +629,16 @@ export default function DashboardPage() {
       {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
         {[
-          {label:'P&L Total', value:loading?null:fmtK(s.totalPnL), color:s.totalPnL>=0?'#22C759':'#FF3B30', sub:`${closed.length} trades fermés`},
-          {label:'Win Rate',  value:loading?null:`${s.winRate.toFixed(1)}%`, color:'#F0F3FF', sub:`${s.wins}W / ${s.losses}L`},
-          {label:'Ratio R/R', value:loading?null:s.payoffRatio.toFixed(2), color:'#00E5FF', sub:'Rendement/Risque'},
-          {label:'Ouverts',   value:loading?null:String(open.length), color:open.length>0?'#FF9500':'#8F94A3', sub:'Positions actives'},
+          {label:'P&L Total', value:loading?null:fmtK(s.totalPnL), color:s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} trades fermés`},
+          {label:'Win Rate',  value:loading?null:`${s.winRate.toFixed(1)}%`, color:'var(--tm-text-primary)', sub:`${s.wins}W / ${s.losses}L`},
+          {label:'Ratio R/R', value:loading?null:s.payoffRatio.toFixed(2), color:'var(--tm-accent)', sub:'Rendement/Risque'},
+          {label:'Ouverts',   value:loading?null:String(open.length), color:open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives'},
         ].map(({label,value,color,sub})=>(
           <div key={label} style={card()}>
             <div style={hl()}/>
-            <div style={{fontSize:11,color:'#555C70',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:500}}>{label}</div>
+            <div style={{fontSize:11,color:'var(--tm-text-muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:500}}>{label}</div>
             {value===null?<Skel h={28}/>:<div style={{fontSize:22,fontWeight:700,color,fontFamily:'JetBrains Mono, monospace',letterSpacing:'-0.02em',marginBottom:4}}>{value}</div>}
-            <div style={{fontSize:11,color:'#3D4254'}}>{sub}</div>
+            <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>{sub}</div>
           </div>
         ))}
       </div>
@@ -652,25 +652,25 @@ export default function DashboardPage() {
       {/* Long / Short */}
       <div style={{...card(),marginBottom:16}}>
         <div style={hl()}/>
-        <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF',marginBottom:4}}>Long / Short Performance</div>
-        <div style={{fontSize:11,color:'#555C70',marginBottom:16}}>Win rate & P&L par direction</div>
+        <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:4}}>Long / Short Performance</div>
+        <div style={{fontSize:11,color:'var(--tm-text-muted)',marginBottom:16}}>Win rate & P&L par direction</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           {[
-            {label:'LONG', icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'#22C759', bdr:'rgba(34,199,89,0.2)'},
-            {label:'SHORT',icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'#FF3B30', bdr:'rgba(255,59,48,0.2)'},
+            {label:'LONG', icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)', bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.2)'},
+            {label:'SHORT',icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)', bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.2)'},
           ].map(({label,icon,wr,pnl,count,c,bdr})=>(
             <div key={label} style={{background:'rgba(255,255,255,0.02)',border:`1px solid ${bdr}`,borderRadius:12,padding:'14px 16px'}}>
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
                 <div style={{width:28,height:28,borderRadius:'50%',background:`${c}20`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:c}}>{icon}</div>
-                <div style={{fontSize:12,fontWeight:700,color:'#F0F3FF'}}>{label} Performance</div>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)'}}>{label} Performance</div>
               </div>
               <div style={{borderTop:`1px solid ${bdr}`,marginBottom:12}}/>
               {loading?<Skel h={40}/>:<>
                 <div style={{fontSize:36,fontWeight:800,color:c,fontFamily:'JetBrains Mono, monospace',lineHeight:1}}>{wr.toFixed(1)}<span style={{fontSize:14}}>%</span></div>
-                <div style={{fontSize:10,color:'#555C70',marginBottom:8}}>Win Rate · {count} trades</div>
+                <div style={{fontSize:10,color:'var(--tm-text-muted)',marginBottom:8}}>Win Rate · {count} trades</div>
                 <div style={{display:'inline-flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:10,color:'#3D4254',background:'rgba(255,255,255,0.04)',padding:'2px 7px',borderRadius:5}}>P&L</span>
-                  <span style={{fontSize:12,fontWeight:700,color:pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</span>
+                  <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'rgba(255,255,255,0.04)',padding:'2px 7px',borderRadius:5}}>P&L</span>
+                  <span style={{fontSize:12,fontWeight:700,color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</span>
                 </div>
               </>}
             </div>
@@ -682,18 +682,18 @@ export default function DashboardPage() {
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF',marginBottom:16}}>Main Metrics</div>
+          <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:16}}>Main Metrics</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
-              {icon:'📈',value:`${s.winRate.toFixed(1)}%`,label:'Win Rate',sub:`${s.wins}W / ${s.losses}L`,c:'#22C759',bg:'rgba(34,199,89,0.08)'},
-              {icon:'💲',value:fmtK(s.totalPnL),label:'Total P&L',sub:`${closed.length} trades`,c:'#00E5FF',bg:'rgba(0,229,255,0.08)'},
-              {icon:'⇄',value:s.payoffRatio.toFixed(2),label:'Payoff Ratio',sub:'Gain/Perte',c:'#0A85FF',bg:'rgba(10,133,255,0.08)'},
-              {icon:'💳',value:fmtK(-s.fees),label:'Fees',sub:'Total',c:'#BF5AF2',bg:'rgba(191,90,242,0.08)'},
+              {icon:'📈',value:`${s.winRate.toFixed(1)}%`,label:'Win Rate',sub:`${s.wins}W / ${s.losses}L`,c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.08)'},
+              {icon:'💲',value:fmtK(s.totalPnL),label:'Total P&L',sub:`${closed.length} trades`,c:'var(--tm-accent)',bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)'},
+              {icon:'⇄',value:s.payoffRatio.toFixed(2),label:'Payoff Ratio',sub:'Gain/Perte',c:'var(--tm-blue)',bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)'},
+              {icon:'💳',value:fmtK(-s.fees),label:'Fees',sub:'Total',c:'var(--tm-purple)',bg:'rgba(var(--tm-purple-rgb,191,90,242),0.08)'},
             ].map(({icon,value,label,sub,c,bg})=>(
               <div key={label} style={{background:bg,borderRadius:10,padding:'12px 14px'}}>
                 <div style={{fontSize:18,marginBottom:6}}>{icon}</div>
-                <div style={{fontSize:18,fontWeight:800,color:'#F0F3FF',fontFamily:'JetBrains Mono, monospace'}}>{value}</div>
-                <div style={{fontSize:11,color:'#8F94A3',marginTop:2}}>{label}</div>
+                <div style={{fontSize:18,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{value}</div>
+                <div style={{fontSize:11,color:'var(--tm-text-secondary)',marginTop:2}}>{label}</div>
                 <div style={{fontSize:10,color:c,marginTop:2}}>{sub}</div>
               </div>
             ))}
@@ -701,19 +701,19 @@ export default function DashboardPage() {
         </div>
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF',marginBottom:4}}>Advanced Metrics</div>
-          <div style={{fontSize:11,color:'#555C70',marginBottom:16}}>Drawdown, Sharpe, expectancy, streaks</div>
+          <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:4}}>Advanced Metrics</div>
+          <div style={{fontSize:11,color:'var(--tm-text-muted)',marginBottom:16}}>Drawdown, Sharpe, expectancy, streaks</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
-              {icon:'📉',value:fmtK(-s.maxDD),label:'Max Drawdown',sub:'Max loss',c:'#FF3B30',bg:'rgba(255,59,48,0.08)'},
-              {icon:'📊',value:s.sharpe.toFixed(2),label:'Sharpe Ratio',sub:'Return/Risk',c:'#0A85FF',bg:'rgba(10,133,255,0.08)'},
-              {icon:'🎯',value:fmtK(s.expectancy),label:'Expectancy',sub:'Avg gain/trade',c:'#00E5FF',bg:'rgba(0,229,255,0.08)'},
-              {icon:'🔥',value:String(s.bestStreak),label:'Best Streak',sub:`${s.worstStreak} max losses`,c:'#FF9500',bg:'rgba(255,149,0,0.08)'},
+              {icon:'📉',value:fmtK(-s.maxDD),label:'Max Drawdown',sub:'Max loss',c:'var(--tm-loss)',bg:'rgba(var(--tm-loss-rgb,255,59,48),0.08)'},
+              {icon:'📊',value:s.sharpe.toFixed(2),label:'Sharpe Ratio',sub:'Return/Risk',c:'var(--tm-blue)',bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)'},
+              {icon:'🎯',value:fmtK(s.expectancy),label:'Expectancy',sub:'Avg gain/trade',c:'var(--tm-accent)',bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)'},
+              {icon:'🔥',value:String(s.bestStreak),label:'Best Streak',sub:`${s.worstStreak} max losses`,c:'var(--tm-warning)',bg:'rgba(var(--tm-warning-rgb,255,149,0),0.08)'},
             ].map(({icon,value,label,sub,c,bg})=>(
               <div key={label} style={{background:bg,borderRadius:10,padding:'12px 14px'}}>
                 <div style={{fontSize:18,marginBottom:6}}>{icon}</div>
-                <div style={{fontSize:18,fontWeight:800,color:'#F0F3FF',fontFamily:'JetBrains Mono, monospace'}}>{value}</div>
-                <div style={{fontSize:11,color:'#8F94A3',marginTop:2}}>{label}</div>
+                <div style={{fontSize:18,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{value}</div>
+                <div style={{fontSize:11,color:'var(--tm-text-secondary)',marginTop:2}}>{label}</div>
                 <div style={{fontSize:10,color:c,marginTop:2}}>{sub}</div>
               </div>
             ))}
@@ -726,15 +726,15 @@ export default function DashboardPage() {
         <div style={hl()}/>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
           <div>
-            <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF'}}>Heatmap</div>
-            <div style={{fontSize:11,color:'#555C70'}}>Résultat (P&L) · Cliquez sur un jour</div>
+            <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)'}}>Heatmap</div>
+            <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>Résultat (P&L) · Cliquez sur un jour</div>
           </div>
           <div style={{display:'flex',gap:5}}>
             {['7j','1M','3M','6M','1A'].map(p=>(
               <button key={p} onClick={()=>setPeriod(p)} style={{padding:'4px 10px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',
-                border:`1px solid ${period===p?'#0A85FF':'#2A2F3E'}`,
-                background:period===p?'rgba(10,133,255,0.15)':'transparent',
-                color:period===p?'#0A85FF':'#555C70'}}>{p}</button>
+                border:`1px solid ${period===p?'var(--tm-blue)':'var(--tm-border)'}`,
+                background:period===p?'rgba(var(--tm-blue-rgb,10,133,255),0.15)':'transparent',
+                color:period===p?'var(--tm-blue)':'var(--tm-text-muted)'}}>{p}</button>
             ))}
           </div>
         </div>
@@ -742,8 +742,8 @@ export default function DashboardPage() {
           {loading?<Skel h={80}/>:<CalendarHeatmap trades={trades} period={period}/>}
         </div>
         {!loading&&<div style={{display:'flex',gap:8,marginTop:10,alignItems:'center',justifyContent:'flex-end'}}>
-          <div style={{width:8,height:8,borderRadius:2,background:'#22C759'}}/><span style={{fontSize:10,color:'#555C70'}}>Gains</span>
-          <div style={{width:8,height:8,borderRadius:2,background:'#FF3B30',marginLeft:8}}/><span style={{fontSize:10,color:'#555C70'}}>Pertes</span>
+          <div style={{width:8,height:8,borderRadius:2,background:'var(--tm-profit)'}}/><span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Gains</span>
+          <div style={{width:8,height:8,borderRadius:2,background:'var(--tm-loss)',marginLeft:8}}/><span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Pertes</span>
         </div>}
       </div>
 
@@ -757,23 +757,23 @@ export default function DashboardPage() {
         <div style={{...card(),marginBottom:16}}>
           <div style={hl()}/>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
-            <div style={{width:32,height:32,borderRadius:'50%',background:'rgba(191,90,242,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>💜</div>
-            <div style={{fontSize:14,fontWeight:700,color:'#F0F3FF'}}>Emotional Summary</div>
+            <div style={{width:32,height:32,borderRadius:'50%',background:'rgba(var(--tm-purple-rgb,191,90,242),0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>💜</div>
+            <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)'}}>Emotional Summary</div>
           </div>
           {loading?<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>{[1,2,3,4].map(i=><Skel key={i} h={80}/>)}</div>:emo&&(
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
               {[
-                {tag:'AVERAGE STATE',  icon:'✅',value:emo.avgState,sub:`${emo.entries} entries`,     c:'#22C759',bg:'rgba(34,199,89,0.06)',  bdr:'rgba(34,199,89,0.15)'},
-                {tag:'EMOTION IMPACT', icon:'⊜', value:emo.impact,  sub:'Correlation P&L',            c:'#8F94A3',bg:'rgba(255,255,255,0.02)',bdr:'#1E2330'},
-                {tag:'EMOTIONAL RISK', icon:'⚠️',value:emo.risk,    sub:emo.consec>0?`${emo.consec} pertes consécutives`:'Aucune série',c:'#FF9500',bg:'rgba(255,149,0,0.06)',bdr:'rgba(255,149,0,0.15)'},
-                {tag:'AI ADVICE',      icon:'▶', value:emo.advice,  sub:'Recommandation',             c:'#22C759',bg:'rgba(34,199,89,0.06)',  bdr:'rgba(34,199,89,0.15)'},
+                {tag:'AVERAGE STATE',  icon:'✅',value:emo.avgState,sub:`${emo.entries} entries`,     c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',  bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)'},
+                {tag:'EMOTION IMPACT', icon:'⊜', value:emo.impact,  sub:'Correlation P&L',            c:'var(--tm-text-secondary)',bg:'rgba(255,255,255,0.02)',bdr:'var(--tm-border-sub)'},
+                {tag:'EMOTIONAL RISK', icon:'⚠️',value:emo.risk,    sub:emo.consec>0?`${emo.consec} pertes consécutives`:'Aucune série',c:'var(--tm-warning)',bg:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',bdr:'rgba(var(--tm-warning-rgb,255,149,0),0.15)'},
+                {tag:'AI ADVICE',      icon:'▶', value:emo.advice,  sub:'Recommandation',             c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',  bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)'},
               ].map(({tag,icon,value,sub,c,bg,bdr})=>(
                 <div key={tag} style={{background:bg,border:`1px solid ${bdr}`,borderRadius:12,padding:'12px 14px'}}>
                   <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
                     <span style={{fontSize:12}}>{icon}</span>
-                    <span style={{fontSize:9,fontWeight:700,color:'#555C70',letterSpacing:'0.08em'}}>{tag}</span>
+                    <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',letterSpacing:'0.08em'}}>{tag}</span>
                   </div>
-                  <div style={{fontSize:16,fontWeight:700,color:'#F0F3FF',marginBottom:4}}>{value}</div>
+                  <div style={{fontSize:16,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:4}}>{value}</div>
                   <div style={{fontSize:10,color:c}}>{sub}</div>
                 </div>
               ))}
@@ -786,20 +786,20 @@ export default function DashboardPage() {
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF',marginBottom:14}}>Trades récents</div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:14}}>Trades récents</div>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:8}}>{[1,2,3].map(i=><Skel key={i} h={44}/>)}</div>:recent.length===0?(
-            <div style={{textAlign:'center',padding:'24px 0',color:'#3D4254',fontSize:13}}>Aucun trade</div>
+            <div style={{textAlign:'center',padding:'24px 0',color:'var(--tm-text-muted)',fontSize:13}}>Aucun trade</div>
           ):(
             <div style={{display:'flex',flexDirection:'column',gap:4}}>
               {recent.map(t=>{
                 const pnl=tradePnL(t)
                 return(<div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:10,background:'rgba(255,255,255,0.02)'}}>
-                  <div style={{width:28,height:28,borderRadius:8,background:t.type==='Long'?'rgba(34,199,89,0.1)':'rgba(255,59,48,0.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>{t.type==='Long'?'↑':'↓'}</div>
+                  <div style={{width:28,height:28,borderRadius:8,background:t.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>{t.type==='Long'?'↑':'↓'}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:600,color:'#F0F3FF',fontFamily:'JetBrains Mono, monospace'}}>{t.symbol}</div>
-                    <div style={{fontSize:10,color:'#555C70'}}>{fmtDate(t.date)} · <span style={{color:systemColor(t.systemId)}}>{systemName(t.systemId)}</span></div>
+                    <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{t.symbol}</div>
+                    <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{fmtDate(t.date)} · <span style={{color:systemColor(t.systemId)}}>{systemName(t.systemId)}</span></div>
                   </div>
-                  {t.status==='open'?(<div style={{fontSize:10,fontWeight:600,color:'#FF9500',background:'rgba(255,149,0,0.1)',padding:'2px 7px',borderRadius:5}}>OUVERT</div>):(<div style={{fontSize:12,fontWeight:700,color:pnl>=0?'#22C759':'#FF3B30',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</div>)}
+                  {t.status==='open'?(<div style={{fontSize:10,fontWeight:600,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)',padding:'2px 7px',borderRadius:5}}>OUVERT</div>):(<div style={{fontSize:12,fontWeight:700,color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</div>)}
                 </div>)
               })}
             </div>
@@ -807,19 +807,19 @@ export default function DashboardPage() {
         </div>
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:13,fontWeight:600,color:'#F0F3FF',marginBottom:14}}>Statistiques</div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:14}}>Statistiques</div>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:10}}>{[1,2,3,4,5].map(i=><Skel key={i}/>)}</div>:(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               {[
-                {label:'Trades fermés',  value:closed.length,              c:'#F0F3FF'},
-                {label:'Gain moyen',     value:`+$${fmt(s.avgWin)}`,       c:'#22C759'},
-                {label:'Perte moyenne',  value:`-$${fmt(s.avgLoss)}`,      c:'#FF3B30'},
-                {label:'Série gagnante', value:`${s.bestStreak} trades`,   c:'#FF9500'},
-                {label:'Série perdante', value:`${s.worstStreak} trades`,  c:'#FF3B30'},
-                {label:'Streak actuel',  value:s.currentStreak>0?`+${s.currentStreak} wins`:`${Math.abs(s.currentStreak)} losses`, c:s.currentStreak>0?'#22C759':'#FF3B30'},
+                {label:'Trades fermés',  value:closed.length,              c:'var(--tm-text-primary)'},
+                {label:'Gain moyen',     value:`+$${fmt(s.avgWin)}`,       c:'var(--tm-profit)'},
+                {label:'Perte moyenne',  value:`-$${fmt(s.avgLoss)}`,      c:'var(--tm-loss)'},
+                {label:'Série gagnante', value:`${s.bestStreak} trades`,   c:'var(--tm-warning)'},
+                {label:'Série perdante', value:`${s.worstStreak} trades`,  c:'var(--tm-loss)'},
+                {label:'Streak actuel',  value:s.currentStreak>0?`+${s.currentStreak} wins`:`${Math.abs(s.currentStreak)} losses`, c:s.currentStreak>0?'var(--tm-profit)':'var(--tm-loss)'},
               ].map(({label,value,c})=>(
                 <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span style={{fontSize:12,color:'#8F94A3'}}>{label}</span>
+                  <span style={{fontSize:12,color:'var(--tm-text-secondary)'}}>{label}</span>
                   <span style={{fontSize:13,fontWeight:600,color:c,fontFamily:'JetBrains Mono, monospace'}}>{value}</span>
                 </div>
               ))}

@@ -17,10 +17,10 @@ interface NewsItem {
 }
 
 const CAT_COLOR: Record<Category,string> = {
-  MACRO:'#FF9500',CRYPTO:'#00E5FF',MARKETS:'#0A85FF',FOREX:'#BF5AF2',
-  ENERGY:'#FFD60A',EARNINGS:'#22C759',GEO:'#FF3B30',TECH:'#64D2FF',
+  MACRO:'var(--tm-warning)',CRYPTO:'var(--tm-accent)',MARKETS:'var(--tm-blue)',FOREX:'var(--tm-purple)',
+  ENERGY:'#FFD60A',EARNINGS:'var(--tm-profit)',GEO:'var(--tm-loss)',TECH:'#64D2FF',
 }
-const SENT_COLOR: Record<Sentiment,string> = {bullish:'#22C759',bearish:'#FF3B30',neutral:'rgba(255,255,255,0.25)'}
+const SENT_COLOR: Record<Sentiment,string> = {bullish:'var(--tm-profit)',bearish:'var(--tm-loss)',neutral:'rgba(255,255,255,0.25)'}
 const SENT_ICON:  Record<Sentiment,string> = {bullish:'▲',bearish:'▼',neutral:'◆'}
 const CATS = Object.keys(CAT_COLOR) as Category[]
 
@@ -170,12 +170,12 @@ export default function NewsTickerBanner(){
 
   return(
     <>
-      <div style={{background:'#0D1117',borderBottom:'1px solid rgba(255,255,255,0.06)',height:52,display:'flex',alignItems:'stretch',overflow:'hidden',flexShrink:0}}>
+      <div style={{background:'var(--tm-bg)',borderBottom:'1px solid rgba(255,255,255,0.06)',height:52,display:'flex',alignItems:'stretch',overflow:'hidden',flexShrink:0}}>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
         {/* LIVE */}
         <button onClick={()=>setPaused(x=>!x)} style={{width:68,flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,background:'none',border:'none',borderRight:'1px solid rgba(255,255,255,0.06)',cursor:'pointer'}}>
-          <div style={{width:7,height:7,borderRadius:'50%',background:paused?'rgba(255,255,255,0.15)':'#FF3B30',opacity:paused?1:dot?1:0.25,transition:'opacity 0.3s'}}/>
+          <div style={{width:7,height:7,borderRadius:'50%',background:paused?'rgba(255,255,255,0.15)':'var(--tm-loss)',opacity:paused?1:dot?1:0.25,transition:'opacity 0.3s'}}/>
           <span style={{fontSize:8,fontWeight:700,letterSpacing:'0.1em',color:paused?'rgba(255,255,255,0.3)':'rgba(255,255,255,0.75)',fontFamily:'monospace'}}>{paused?'PAUSED':'LIVE'}</span>
         </button>
 
@@ -185,11 +185,11 @@ export default function NewsTickerBanner(){
           <div style={{position:'absolute',right:0,top:0,bottom:0,width:28,background:'linear-gradient(to left,#0D1117,transparent)',zIndex:2,pointerEvents:'none'}}/>
           {loading&&items.length===0?(
             <div style={{display:'flex',alignItems:'center',gap:8,paddingLeft:20}}>
-              <div style={{width:11,height:11,border:'2px solid #2A2F3E',borderTopColor:'#00E5FF',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>
-              <span style={{fontSize:12,color:'#555C70'}}>Chargement des actualités...</span>
+              <div style={{width:11,height:11,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>
+              <span style={{fontSize:12,color:'var(--tm-text-muted)'}}>Chargement des actualités...</span>
             </div>
           ):items.length===0?(
-            <span style={{fontSize:12,color:'#555C70',paddingLeft:20}}>Aucune actualité</span>
+            <span style={{fontSize:12,color:'var(--tm-text-muted)',paddingLeft:20}}>Aucune actualité</span>
           ):(
             <div ref={tickerRef} style={{display:'flex',alignItems:'center',whiteSpace:'nowrap',willChange:'transform'}}>
               {double.map((item,i)=>(
@@ -198,7 +198,7 @@ export default function NewsTickerBanner(){
                   <span style={{fontSize:10,color:SENT_COLOR[item.sentiment]}}>{SENT_ICON[item.sentiment]}</span>
                   <span style={{fontSize:9,fontWeight:700,color:CAT_COLOR[item.category],background:`${CAT_COLOR[item.category]}18`,padding:'1px 5px',borderRadius:3}}>{item.category}</span>
                   <span style={{fontSize:12,color:'#C5C8D6'}}>{item.title}</span>
-                  <span style={{fontSize:9,color:'#3D4254'}}>{item.source}</span>
+                  <span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{item.source}</span>
                 </div>
               ))}
             </div>
@@ -214,18 +214,18 @@ export default function NewsTickerBanner(){
       {/* Panel */}
       {showPanel&&(
         <div style={{position:'fixed',inset:0,zIndex:300,background:'rgba(0,0,0,0.5)'}} onClick={()=>setShowPanel(false)}>
-          <div style={{position:'absolute',right:0,top:0,bottom:0,width:480,maxWidth:'100vw',background:'#161B22',borderLeft:'1px solid #2A2F3E',display:'flex',flexDirection:'column',boxShadow:'-8px 0 40px rgba(0,0,0,0.6)'}}
+          <div style={{position:'absolute',right:0,top:0,bottom:0,width:480,maxWidth:'100vw',background:'var(--tm-bg-secondary)',borderLeft:'1px solid #2A2F3E',display:'flex',flexDirection:'column',boxShadow:'-8px 0 40px rgba(0,0,0,0.6)'}}
             onClick={e=>e.stopPropagation()}>
 
             {/* Header */}
             <div style={{padding:'16px 20px',borderBottom:'1px solid #2A2F3E',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div>
-                <div style={{fontSize:15,fontWeight:700,color:'#F0F3FF',fontFamily:'Syne,sans-serif'}}>Actualités Marchés</div>
-                <div style={{fontSize:11,color:'#555C70',marginTop:2}}>{lastRefresh?`Mis à jour ${lastRefresh.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'...'}</div>
+                <div style={{fontSize:15,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>Actualités Marchés</div>
+                <div style={{fontSize:11,color:'var(--tm-text-muted)',marginTop:2}}>{lastRefresh?`Mis à jour ${lastRefresh.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'...'}</div>
               </div>
               <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>fetchNews(true)} disabled={loading} style={{fontSize:11,color:'#555C70',background:'#1C2130',border:'1px solid #2A2F3E',borderRadius:8,padding:'5px 10px',cursor:'pointer'}}>{loading?'...':'↻'}</button>
-                <button onClick={()=>setShowPanel(false)} style={{fontSize:18,color:'#555C70',background:'none',border:'none',cursor:'pointer'}}>✕</button>
+                <button onClick={()=>fetchNews(true)} disabled={loading} style={{fontSize:11,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:8,padding:'5px 10px',cursor:'pointer'}}>{loading?'...':'↻'}</button>
+                <button onClick={()=>setShowPanel(false)} style={{fontSize:18,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer'}}>✕</button>
               </div>
             </div>
 
@@ -233,8 +233,8 @@ export default function NewsTickerBanner(){
             <div style={{padding:'10px 16px',borderBottom:'1px solid #2A2F3E',display:'flex',gap:5,flexWrap:'wrap',flexShrink:0}}>
               {(['ALL',...CATS] as (Category|'ALL')[]).map(cat=>(
                 <button key={cat} onClick={()=>setFilter(cat)} style={{padding:'3px 9px',borderRadius:5,fontSize:10,fontWeight:600,cursor:'pointer',border:'none',
-                  background:filter===cat?(cat==='ALL'?'#2A2F3E':CAT_COLOR[cat as Category]):'#1C2130',
-                  color:filter===cat?(cat==='ALL'?'#F0F3FF':'#0D1117'):'#555C70'}}>
+                  background:filter===cat?(cat==='ALL'?'var(--tm-border)':CAT_COLOR[cat as Category]):'var(--tm-bg-tertiary)',
+                  color:filter===cat?(cat==='ALL'?'var(--tm-text-primary)':'var(--tm-bg)'):'var(--tm-text-muted)'}}>
                   {cat}
                 </button>
               ))}
@@ -244,13 +244,13 @@ export default function NewsTickerBanner(){
             <div style={{padding:'10px 16px',borderBottom:'1px solid #2A2F3E',flexShrink:0}}>
               {aiText?(
                 <div>
-                  <div style={{fontSize:10,color:'#BF5AF2',marginBottom:5,display:'flex',alignItems:'center',gap:4}}>✨ Analyse IA</div>
+                  <div style={{fontSize:10,color:'var(--tm-purple)',marginBottom:5,display:'flex',alignItems:'center',gap:4}}>✨ Analyse IA</div>
                   <div style={{fontSize:12,color:'#C5C8D6',lineHeight:1.7}}>{aiText}</div>
-                  <button onClick={()=>setAiText('')} style={{marginTop:6,fontSize:10,color:'#555C70',background:'none',border:'none',cursor:'pointer'}}>↻ Relancer</button>
+                  <button onClick={()=>setAiText('')} style={{marginTop:6,fontSize:10,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer'}}>↻ Relancer</button>
                 </div>
               ):(
-                <button onClick={loadAI} disabled={aiLoading||items.length===0} style={{width:'100%',padding:'9px',borderRadius:9,border:'1px solid rgba(191,90,242,0.25)',background:aiLoading?'#1C2130':'rgba(191,90,242,0.1)',color:aiLoading?'#555C70':'#BF5AF2',cursor:aiLoading?'not-allowed':'pointer',fontSize:12,fontWeight:600,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                  {aiLoading?<><div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'#BF5AF2',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>Analyse...</>:'✨ Analyser les news avec l\'IA'}
+                <button onClick={loadAI} disabled={aiLoading||items.length===0} style={{width:'100%',padding:'9px',borderRadius:9,border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.25)',background:aiLoading?'var(--tm-bg-tertiary)':'rgba(var(--tm-purple-rgb,191,90,242),0.1)',color:aiLoading?'var(--tm-text-muted)':'var(--tm-purple)',cursor:aiLoading?'not-allowed':'pointer',fontSize:12,fontWeight:600,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                  {aiLoading?<><div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-purple)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>Analyse...</>:'✨ Analyser les news avec l\'IA'}
                 </button>
               )}
             </div>
@@ -265,17 +265,17 @@ export default function NewsTickerBanner(){
                   <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
                     <div style={{width:7,height:7,borderRadius:'50%',background:SENT_COLOR[item.sentiment],flexShrink:0,marginTop:5}}/>
                     <div style={{flex:1}}>
-                      <div style={{fontSize:13,color:'#F0F3FF',lineHeight:1.5,marginBottom:5}}>{item.title}</div>
+                      <div style={{fontSize:13,color:'var(--tm-text-primary)',lineHeight:1.5,marginBottom:5}}>{item.title}</div>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
                         <span style={{fontSize:9,fontWeight:700,color:CAT_COLOR[item.category],background:`${CAT_COLOR[item.category]}18`,padding:'1px 6px',borderRadius:4}}>{item.category}</span>
-                        <span style={{fontSize:10,color:'#3D4254'}}>{item.source}</span>
-                        {item.url&&<span style={{fontSize:9,color:'#3D4254',marginLeft:'auto'}}>↗ Ouvrir</span>}
+                        <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>{item.source}</span>
+                        {item.url&&<span style={{fontSize:9,color:'var(--tm-text-muted)',marginLeft:'auto'}}>↗ Ouvrir</span>}
                       </div>
                     </div>
                   </div>
                 </div>
               ))}
-              {filtered.length===0&&<div style={{textAlign:'center',padding:'40px',color:'#3D4254',fontSize:13}}>Aucune actualité</div>}
+              {filtered.length===0&&<div style={{textAlign:'center',padding:'40px',color:'var(--tm-text-muted)',fontSize:13}}>Aucune actualité</div>}
             </div>
           </div>
         </div>

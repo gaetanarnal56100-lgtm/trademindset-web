@@ -204,7 +204,7 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
         {/* Avatar */}
         <div style={{
           width:42, height:42, borderRadius:'50%', flexShrink:0,
-          background:'rgba(0,229,255,0.1)',
+          background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',
           border:'1px solid var(--tm-accent)',
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:16, fontWeight:800, color:'var(--tm-accent)', fontFamily:'Syne',
@@ -471,7 +471,7 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
               disabled={!name.trim() || saving}
               style={{ flex:2, padding:'10px', borderRadius:9, border:'none', cursor: !name.trim() ? 'not-allowed' : 'pointer', fontSize:13, fontWeight:700,
                 background: !name.trim() ? 'var(--tm-bg-tertiary)' : 'var(--tm-accent)',
-                color: !name.trim() ? 'var(--tm-text-muted)' : '#0D1117',
+                color: !name.trim() ? 'var(--tm-text-muted)' : 'var(--tm-bg)',
                 opacity: saving ? 0.7 : 1,
               }}
             >
@@ -589,7 +589,7 @@ function EmptyState({ onAdd, search }: { onAdd: () => void; search: string }) {
       {!search && (
         <button onClick={onAdd} style={{
           padding:'10px 24px', borderRadius:10, border:'none',
-          background:'var(--tm-accent)', color:'#0D1117', cursor:'pointer', fontSize:13, fontWeight:700,
+          background:'var(--tm-accent)', color:'var(--tm-bg)', cursor:'pointer', fontSize:13, fontWeight:700,
         }}>
           Ajouter un exchange
         </button>

@@ -82,7 +82,7 @@ export default function LazyAdvancedAnalytics() {
                 <div className="flex items-end gap-1 h-24">
                   {months.map((m, i) => {
                     const h = Math.max((Math.abs(m.value)/maxAbsM)*100, 4)
-                    const c = m.value>=0 ? '#22C759' : '#FF3B30'
+                    const c = m.value>=0 ? 'var(--tm-profit)' : 'var(--tm-loss)'
                     return (
                       <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${m.full}: ${fmtK(m.value)}`}>
                         <div className="w-full rounded-t-sm transition-all" style={{ height:`${h}%`, background:c, opacity:0.8 }} />
@@ -114,9 +114,9 @@ export default function LazyAdvancedAnalytics() {
                 <div key={i} className="flex items-center gap-2">
                   <span className="text-[10px] text-text-muted w-8">{m.label}</span>
                   <div className="flex-1 h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width:`${Math.abs(m.value)/maxAbsM*100}%`, background:m.value>=0?'#22C759':'#FF3B30' }} />
+                    <div className="h-full rounded-full" style={{ width:`${Math.abs(m.value)/maxAbsM*100}%`, background:m.value>=0?'var(--tm-profit)':'var(--tm-loss)' }} />
                   </div>
-                  <span className="text-[10px] font-mono font-semibold w-20 text-right" style={{ color:m.value>=0?'#22C759':'#FF3B30' }}>{fmtK(m.value)}</span>
+                  <span className="text-[10px] font-mono font-semibold w-20 text-right" style={{ color:m.value>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(m.value)}</span>
                 </div>
               ))}
             </div>
@@ -127,7 +127,7 @@ export default function LazyAdvancedAnalytics() {
               {sessions.map(s => (
                 <div key={s.name} className="bg-bg-tertiary rounded-xl p-3">
                   <div className="text-[10px] font-semibold text-text-secondary mb-1">{s.name}</div>
-                  <div className="text-sm font-bold font-mono" style={{ color:s.pnl>=0?'#22C759':'#FF3B30' }}>{fmtK(s.pnl)}</div>
+                  <div className="text-sm font-bold font-mono" style={{ color:s.pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(s.pnl)}</div>
                   <div className="text-[9px] text-text-muted mt-1">{s.count} trades</div>
                 </div>
               ))}
@@ -139,7 +139,7 @@ export default function LazyAdvancedAnalytics() {
               {dayData.map(d => (
                 <div key={d.name} className="bg-bg-tertiary rounded-xl p-3">
                   <div className="text-[10px] font-semibold text-text-secondary mb-1">{d.name}</div>
-                  <div className="text-sm font-bold font-mono" style={{ color:d.pnl>=0?'#22C759':'#FF3B30' }}>{fmtK(d.pnl)}</div>
+                  <div className="text-sm font-bold font-mono" style={{ color:d.pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(d.pnl)}</div>
                   <div className="text-[9px] text-text-muted mt-1">{d.count} trades</div>
                 </div>
               ))}

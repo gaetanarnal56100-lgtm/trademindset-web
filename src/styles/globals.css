@@ -12,7 +12,9 @@
   }
 
   body {
-    @apply bg-bg-primary text-text-primary font-sans;
+    @apply font-sans;
+    background-color: var(--tm-bg) !important;
+    color: var(--tm-text-primary) !important;
     min-height: 100dvh;
     background-image:
       radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,229,255,0.04) 0%, transparent 70%),
@@ -304,3 +306,35 @@
 *, *::before, *::after {
   transition: background-color 0.25s ease, border-color 0.25s ease, color 0.15s ease;
 }
+
+/* ── RGB channels for rgba() usage ──────────────────────────────────────── */
+:root, [data-theme="terminal"] {
+  --tm-profit-rgb:     34,199,89;
+  --tm-loss-rgb:       255,59,48;
+  --tm-accent-rgb:     0,229,255;
+  --tm-warning-rgb:    255,149,0;
+  --tm-blue-rgb:       10,133,255;
+  --tm-purple-rgb:     191,90,242;
+  --tm-bg-secondary-rgb: 22,27,34;
+}
+[data-theme="neon"] {
+  --tm-profit-rgb:     57,255,144;
+  --tm-loss-rgb:       255,45,107;
+  --tm-accent-rgb:     199,125,255;
+  --tm-warning-rgb:    255,184,0;
+  --tm-blue-rgb:       68,138,255;
+  --tm-purple-rgb:     224,64,251;
+  --tm-bg-secondary-rgb: 13,5,22;
+}
+[data-theme="midnight"] {
+  --tm-profit-rgb:     52,211,153;
+  --tm-loss-rgb:       248,113,113;
+  --tm-accent-rgb:     96,165,250;
+  --tm-warning-rgb:    251,191,36;
+  --tm-blue-rgb:       59,130,246;
+  --tm-purple-rgb:     167,139,250;
+  --tm-bg-secondary-rgb: 15,22,35;
+}
+
+/* ── Force body background on theme change ───────────────────────────────── */
+html { background-color: var(--tm-bg) !important; }
