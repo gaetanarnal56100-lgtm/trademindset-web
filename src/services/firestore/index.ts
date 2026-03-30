@@ -263,3 +263,31 @@ export function subscribeExchanges(cb: (e: Exchange[]) => void): Unsubscribe {
     }))
   })
 }
+
+// ── Exchange CRUD ─────────────────────────────────────────────────────────────
+
+export async function createExchange(data: Omit<Exchange, 'id'>): Promise<void> {
+  const uid = getUid()
+  const id = crypto.randomUUID()
+  await setDoc(doc(db, 'users', uid, 'exchanges', id), { id, ...data })
+}
+
+export async function updateExchange(ex: Exchange): Promise<void> {
+  const uid = getUid()
+  await setDoc(doc(db, 'users', uid, 'exchanges', ex.id), ex, { merge: true })
+}
+
+export async function deleteExchange(id: string): Promise<void> {
+  const uid = getUid()
+  await deleteDoc(doc(db, 'users', uid, 'exchanges', id))
+}
+
+export async function setDefaultExchange(id: string, allExchanges: Exchange[]): Promise<void> {
+  const uid = getUid()
+  // Remove default from all others, set on target
+  const batch = (await import('firebase/firestore')).writeBatch(db)
+  for (const ex of allExchanges) {
+    batch.update(doc(db, 'users', uid, 'exchanges', ex.id), { isDefault: ex.id === id })
+  }
+  await batch.commit()
+}

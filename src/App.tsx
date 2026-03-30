@@ -14,15 +14,21 @@ import CalendrierPage from '@/pages/calendrier/CalendrierPage'
 import SystemesPage   from '@/pages/systemes/SystemesPage'
 import ProfilPage     from '@/pages/profil/ProfilPage'
 import SettingsPage   from '@/pages/settings/SettingsPage'
+import ExchangesPage  from '@/pages/exchanges/ExchangesPage'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
+import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
+import { useAppStore } from '@/store/appStore'
 
 export default function App() {
   useAuthInit()
   const { isAuthenticated, isAuthLoading } = useIsAuthenticated()
+  const user = useAppStore(s => s.user)
+  const isPremium = user?.isPremium ?? false
 
   if (isAuthLoading) return <LoadingScreen />
 
   return (
+    <ThemeProvider isPremium={isPremium}>
     <Routes>
       {/* ── Auth (non connecté) ── */}
       <Route element={<AuthLayout />}>
@@ -45,10 +51,12 @@ export default function App() {
         <Route path="systemes"         element={<SystemesPage />} />
         <Route path="profil"           element={<ProfilPage />} />
         <Route path="settings"         element={<SettingsPage />} />
+        <Route path="exchanges"        element={<ExchangesPage />} />
       </Route>
 
       {/* ── Fallback ── */}
       <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
     </Routes>
+    </ThemeProvider>
   )
 }

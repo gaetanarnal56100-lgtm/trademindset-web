@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/store/appStore'
 import {
-  subscribeTrades, subscribeSystems, createTrade, deleteTrade,
-  tradePnL, type Trade, type TradingSystem
+  subscribeTrades, subscribeSystems, subscribeExchanges, createTrade, deleteTrade, updateTrade,
+  tradePnL, type Trade, type TradingSystem, type Exchange
 } from '@/services/firestore'
+import { TradeDetailModal } from '@/components/trades/TradeDetailModal'
 
 function fmtDate(d: Date) {
   return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
@@ -26,12 +27,15 @@ export default function TradesPage() {
   const [filter,  setFilter]  = useState<'all'|'open'|'closed'>('all')
   const [search,  setSearch]  = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [exchanges, setExchanges] = useState<Exchange[]>([])
+  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null)
 
   useEffect(() => {
     if (!user) return
     const unsubT = subscribeTrades(t => { setTrades(t); setLoading(false) })
     const unsubS = subscribeSystems(setSystems)
-    return () => { unsubT(); unsubS() }
+    const unsubE = subscribeExchanges(setExchanges)
+    return () => { unsubT(); unsubS(); unsubE() }
   }, [user])
 
   const filtered = trades
@@ -213,7 +217,7 @@ export default function TradesPage() {
             const pnlColor = pnl >= 0 ? '#22C759' : '#FF3B30'
             const isOpen = trade.status === 'open'
             return (
-              <div key={trade.id} style={{ background:'#161B22', border:'1px solid #2A2F3E', borderRadius:12, padding:'12px 14px', display:'grid', gridTemplateColumns:'auto 1fr auto auto auto', alignItems:'center', gap:14 }}>
+              <div key={trade.id} onClick={() => setSelectedTrade(trade)} style={{ background:'var(--tm-bg-card, #161B22)', border:'1px solid var(--tm-border, #2A2F3E)', borderRadius:12, padding:'12px 14px', display:'grid', gridTemplateColumns:'auto 1fr auto auto auto', alignItems:'center', gap:14, cursor:'pointer', transition:'border-color 0.15s' }} onMouseOver={e => (e.currentTarget.style.borderColor='var(--tm-accent,#00E5FF)')} onMouseOut={e => (e.currentTarget.style.borderColor='var(--tm-border,#2A2F3E)')}>
                 <div style={{ width:36, height:36, borderRadius:8, background: trade.type==='Long'?'rgba(34,199,89,0.15)':'rgba(255,59,48,0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>
                   {trade.type==='Long'?'📈':'📉'}
                 </div>
@@ -240,7 +244,7 @@ export default function TradesPage() {
                   <div style={{ fontSize:10, color:'#555C70' }}>{isOpen?'Non réalisé':'P&L'}</div>
                   <div style={{ fontSize:14, fontWeight:700, color:pnlColor, fontFamily:'monospace' }}>{fmtPnL(pnl)}</div>
                 </div>
-                <button onClick={() => { if(confirm('Supprimer ?')) deleteTrade(trade.id) }} style={{ width:28, height:28, borderRadius:6, border:'1px solid #2A2F3E', background:'none', cursor:'pointer', color:'#555C70', fontSize:12 }}>✕</button>
+                <button onClick={e => { e.stopPropagation(); setSelectedTrade(trade) }} style={{ width:28, height:28, borderRadius:6, border:'1px solid var(--tm-border,#2A2F3E)', background:'none', cursor:'pointer', color:'var(--tm-text-muted,#555C70)', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center' }} title="Voir détails">→</button>
               </div>
             )
           })}
@@ -249,6 +253,15 @@ export default function TradesPage() {
 
       {showAdd && <AddTradeModal systems={systems} onClose={() => setShowAdd(false)} />}
       {showImport && <ImportCSVModal onClose={() => setShowImport(false)} />}
+      {selectedTrade && (
+        <TradeDetailModal
+          trade={selectedTrade}
+          systems={systems}
+          exchanges={exchanges}
+          onClose={() => setSelectedTrade(null)}
+          onDeleted={() => setSelectedTrade(null)}
+        />
+      )}
     </div>
   )
 }

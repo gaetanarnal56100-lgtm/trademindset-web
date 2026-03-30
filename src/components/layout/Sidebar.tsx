@@ -8,7 +8,7 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
-  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier,
+  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconExchange,
 } from '@/components/ui/Icons'
 
 const NAV = [
@@ -18,7 +18,8 @@ const NAV = [
   { to: '/journal',  label: 'Journal',    Icon: IconJournal },
   { to: '/alertes',  label: 'Alertes',    Icon: IconAlertes },
   { to: '/calendrier', label: 'Calendrier', Icon: IconCalendrier },
-  { to: '/systemes', label: 'Systèmes',   Icon: IconSystemes },
+  { to: '/systemes',  label: 'Systèmes',   Icon: IconSystemes },
+  { to: '/exchanges', label: 'Exchanges',  Icon: IconExchange },
 ]
 const NAV_BOTTOM = [
   { to: '/profil',   label: 'Profil',     Icon: IconProfil },
@@ -51,8 +52,8 @@ export default function Sidebar() {
     <aside style={{
       width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column',
       height: '100vh', position: 'sticky', top: 0,
-      background: '#0D1117',
-      borderRight: '1px solid rgba(255,255,255,0.06)',
+      background: 'var(--tm-bg)',
+      borderRight: '1px solid var(--tm-border)',
     }}>
       {/* Logo */}
       <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>

@@ -1,5 +1,6 @@
 // SettingsPage.tsx — Paramètres v2 : export/import, suppression données, suppression compte
 import { useState, useRef, useEffect } from 'react'
+import { ThemeSelector } from '@/components/ui/ThemeSelector'
 import { getAuth, signOut, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth'
 import { collection, getDocs, doc, deleteDoc, writeBatch, Timestamp, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
@@ -341,6 +342,10 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Account ──────────────────────────────────────────────────── */}
+      <Section title="Thème" subtitle="Apparence de l'interface" icon="🎨">
+        <ThemeSelector />
+      </Section>
+
       <Section title="Compte" subtitle="Informations de connexion" icon="👤">
         <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:16 }}>
           <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'#0D1117', flexShrink:0, overflow:'hidden' }}>
