@@ -103,15 +103,24 @@ function computeStats(data: DataPoint[]) {
 
 // ── Canvas Chart ───────────────────────────────────────────────────────────
 
+// Canvas cannot use CSS variables directly — resolve them at draw time
+function getCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
 const COLORS = {
-  profit:    'var(--tm-profit)',
-  loss:      'var(--tm-loss)',
-  drawdown:  'rgba(var(--tm-loss-rgb,255,59,48),0.15)',
+  get profit()    { return getCSSColor('--tm-profit',   '#22C759') },
+  get loss()      { return getCSSColor('--tm-loss',     '#FF3B30') },
+  get drawdown()  {
+    const rgb = getCSSColor('--tm-loss-rgb', '255,59,48')
+    return `rgba(${rgb},0.15)`
+  },
   grid:      'rgba(255,255,255,0.04)',
   zeroline:  'rgba(255,255,255,0.1)',
   crosshair: 'rgba(255,255,255,0.25)',
-  text:      'var(--tm-text-muted)',
-  bg:        'var(--tm-bg)',
+  get text()      { return getCSSColor('--tm-text-muted', '#555C70') },
+  get bg()        { return getCSSColor('--tm-bg',         '#0D1117') },
 }
 
 interface TooltipData {

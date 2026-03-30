@@ -25,6 +25,14 @@ function fmtD(d: Date, s = false) {
     : { day:'2-digit', month:'short', year:'2-digit' })
 }
 
+// Canvas cannot use CSS vars — resolve at draw time
+function getCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
+
+
 // ── Periods & Timeframes ───────────────────────────────────────────────────
 type Period = '1J'|'2J'|'3J'|'5J'|'1S'|'2S'|'3S'|'1M'|'2M'|'3M'|'6M'|'YTD'|'1A'|'2A'|'ALL'
 type TF     = 'TRADE'|'DAY'|'WEEK'|'MONTH'
@@ -155,7 +163,7 @@ function renderChart(
   }
 
   const isPos=(pts[pts.length-1]?.cum??0)>=0
-  const lc=isPos?'var(--tm-profit)':'var(--tm-loss)'
+  const lc=isPos?getCSSColor('--tm-profit','#22C759'):getCSSColor('--tm-loss','#FF3B30')
 
   // Fill
   const g=ctx.createLinearGradient(0,PAD.t,0,PAD.t+cH)

@@ -66,7 +66,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     // Fill gradient
     const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
     const finalPnL = pts[pts.length - 1]
-    const fillColor = finalPnL >= 0 ? color : 'var(--tm-loss)'
+    const fillColor = finalPnL >= 0 ? color : resolveCSSColor('--tm-loss','#FF3B30')
     grad.addColorStop(0, fillColor + '40')
     grad.addColorStop(1, fillColor + '05')
 
@@ -372,6 +372,12 @@ function SystemsComparisonChart({ systemStats, trades }: {
 }
 
 // ── Page principale ────────────────────────────────────────────────────────────
+
+function resolveCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
 export default function SystemesPage() {
   const [systems, setSystems] = useState<TradingSystem[]>([])
   const [trades,  setTrades]  = useState<Trade[]>([])

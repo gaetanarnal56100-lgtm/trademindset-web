@@ -31,6 +31,15 @@ function emotionInfo(v: EmotionalState) {
   return EMOTIONS.find(e => e.v === v) ?? EMOTIONS[1]
 }
 
+function getCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+function getCSSPurpleColor(alpha: number): string {
+  const rgb = getCSSColor('--tm-purple-rgb', '191,90,242')
+  return `rgba(${rgb},${alpha})`
+}
+
 export default function JournalPage() {
   const [moods,   setMoods]   = useState<MoodEntry[]>([])
   const [trades,  setTrades]  = useState<Trade[]>([])
@@ -261,7 +270,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
 
     // Moving average fill
     const maG = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + cH)
-    maG.addColorStop(0, 'rgba(var(--tm-purple-rgb,191,90,242),0.15)'); maG.addColorStop(1, 'rgba(var(--tm-purple-rgb,191,90,242),0.00)')
+    maG.addColorStop(0, getCSSPurpleColor(0.15)); maG.addColorStop(1, getCSSPurpleColor(0))
     ctx.beginPath()
     ma.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)))
     ctx.lineTo(toX(points.length - 1), PAD.t + cH); ctx.lineTo(toX(0), PAD.t + cH)

@@ -84,6 +84,13 @@ interface WhaleSummary { trend: string; trendColor: string; netCVD: number; mome
 interface ContextData  { lsRatio: number|null; lsLongPct: number|null; oiUSD: number|null; oiChange1h: number|null; cvdDelta: number|null; cvdBias: CVDBias; overallBias: CVDBias; fetchedAt: Date }
 interface SearchResult { symbol: string; name: string; type: 'crypto'|'stock'|'forex'; exchange?: string; icon: string }
 
+// Canvas cannot use CSS vars — resolve at draw time
+function resolveCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
+
 const SEG_CFG: Record<Seg,{label:string;color:string;range:string}> = {
   small:         {label:'Small',         color:'#607D8B',range:'$100–1k'},
   medium:        {label:'Medium',        color:'#42A5F5',range:'$1k–10k'},
@@ -641,7 +648,8 @@ function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
     const zY=H-((-minV)/range)*H
     ctx.setLineDash([3,3]);ctx.strokeStyle='var(--tm-border)';ctx.lineWidth=1
     ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
-    const last=cvd[cvd.length-1],color=last>=0?'var(--tm-profit)':'var(--tm-loss)'
+    const last=cvd[cvd.length-1]
+    const color=last>=0?resolveCSSColor('--tm-profit','#22C759'):resolveCSSColor('--tm-loss','#FF3B30')
     ctx.beginPath();pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.cum-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
     ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
     const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,color+'35');grad.addColorStop(1,color+'03')
