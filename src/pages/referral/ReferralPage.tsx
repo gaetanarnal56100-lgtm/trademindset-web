@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
-import { getAuth } from 'firebase/auth'
 import app from '@/services/firebase/config'
+import { useIsAuthenticated } from '@/hooks/useAuth'
 import toast from 'react-hot-toast'
 
 const fbFn = getFunctions(app, 'europe-west1')
@@ -35,23 +35,34 @@ export default function ReferralPage() {
   const [data, setData]       = useState<ReferralData | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied]   = useState<'code' | 'link' | null>(null)
+  const { isAuthenticated, isAuthLoading } = useIsAuthenticated()
 
+  // Attendre que l'authentification soit chargée
   useEffect(() => {
-    loadStats()
-  }, [])
+    if (!isAuthLoading && isAuthenticated) {
+      loadStats()
+    } else if (!isAuthLoading && !isAuthenticated) {
+      setLoading(false)
+      toast.error('Tu dois être connecté')
+    }
+  }, [isAuthLoading, isAuthenticated])
 
   async function loadStats() {
     setLoading(true)
     try {
+      console.log("Calling generateUserReferralCode...")
       // Ensure user has a referral code first
       const genFn = httpsCallable<void, { code: string }>(fbFn, 'generateUserReferralCode')
       await genFn()
+      console.log("Code generated, now getting stats...")
+      
       // Then get full stats
       const statsFn = httpsCallable<void, ReferralData>(fbFn, 'getReferralStats')
       const res = await statsFn()
+      console.log("Stats loaded:", res.data)
       setData(res.data)
     } catch (err) {
-      console.error(err)
+      console.error("Error:", err)
       toast.error('Erreur lors du chargement')
     } finally {
       setLoading(false)
@@ -108,13 +119,24 @@ export default function ReferralPage() {
     return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
   }
 
-  if (loading) {
+  if (loading || isAuthLoading) {
     return (
       <div style={{ padding: '28px', maxWidth: 900, margin: '0 auto' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[1,2,3].map(i => (
             <div key={i} style={{ height: 80, background: 'var(--tm-bg-secondary)', borderRadius: 16, animation: 'pulse 1.5s infinite' }} />
           ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div style={{ padding: '28px', maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 16 }}>🔐</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 8 }}>
+          Connecte-toi pour accéder au parrainage
         </div>
       </div>
     )
