@@ -44,7 +44,7 @@ export function ThemeSelector() {
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
         {THEMES.map((t) => {
           const isActive = theme === t.id
           const isLocked = t.isPremium && !isPremium
@@ -112,7 +112,7 @@ export function ThemeSelector() {
                 justifyContent: 'space-between',
               }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? t.preview.accent : t.preview.text }}>
-                  {t.label}
+                  {t.id === 'default' ? '✦ Default' : t.label}
                 </span>
                 {isLocked && (
                   <span style={{

@@ -1,40 +1,39 @@
 // ─── ThemeContext ─────────────────────────────────────────────────────────────
-// Système de thèmes avec :
-//  • Application instantanée via data-theme sur <html>
-//  • Cache localStorage (pas de flicker)
-//  • Persistance Firestore dans users/{uid}/profile
-//  • Verrouillage premium pour neon et midnight
+// 4 thèmes :
+//  • default   → couleurs originales du projet (aucune variable CSS, 100% safe)
+//  • terminal  → même palette que default via CSS vars
+//  • neon      → violet électrique
+//  • midnight  → bleu profond
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
 import { getAuth } from 'firebase/auth'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export type ThemeName = 'terminal' | 'neon' | 'midnight'
+export type ThemeName = 'default' | 'terminal' | 'neon' | 'midnight'
 
 export interface ThemeConfig {
   id: ThemeName
   label: string
   description: string
   isPremium: boolean
-  preview: {
-    bg: string
-    card: string
-    accent: string
-    profit: string
-    loss: string
-    text: string
-  }
+  preview: { bg: string; card: string; accent: string; profit: string; loss: string; text: string }
 }
 
 export const THEMES: ThemeConfig[] = [
   {
+    id: 'default',
+    label: 'Default',
+    description: 'Couleurs originales du projet, aucune variable CSS',
+    isPremium: false,
+    preview: { bg:'#0D1117', card:'#1C2133', accent:'#00E5FF', profit:'#22C759', loss:'#FF3B30', text:'#F0F3FF' },
+  },
+  {
     id: 'terminal',
     label: 'Terminal',
-    description: 'Thème sombre classique, focus maximum',
+    description: 'Même palette via variables CSS (theming actif)',
     isPremium: false,
-    preview: { bg:'var(--tm-bg)', card:'var(--tm-bg-card)', accent:'var(--tm-accent)', profit:'var(--tm-profit)', loss:'var(--tm-loss)', text:'var(--tm-text-primary)' },
+    preview: { bg:'#0D1117', card:'#1C2133', accent:'#00E5FF', profit:'#22C759', loss:'#FF3B30', text:'#F0F3FF' },
   },
   {
     id: 'neon',
@@ -53,9 +52,8 @@ export const THEMES: ThemeConfig[] = [
 ]
 
 const STORAGE_KEY = 'trademindset:theme'
-const DEFAULT_THEME: ThemeName = 'terminal'
+const DEFAULT_THEME: ThemeName = 'default'
 
-// ─── Context ──────────────────────────────────────────────────────────────────
 interface ThemeContextType {
   theme: ThemeName
   setTheme: (name: ThemeName) => void
@@ -72,20 +70,19 @@ export function useTheme() {
   return useContext(ThemeContext)
 }
 
-// ─── Apply theme immediately to DOM ──────────────────────────────────────────
 function applyThemeToDom(theme: ThemeName) {
   document.documentElement.setAttribute('data-theme', theme)
   localStorage.setItem(STORAGE_KEY, theme)
 }
 
-// ─── Read from localStorage synchronously (called before render) ──────────────
 export function getStoredTheme(): ThemeName {
   const stored = localStorage.getItem(STORAGE_KEY)
-  if (stored === 'terminal' || stored === 'neon' || stored === 'midnight') return stored
+  if (stored === 'default' || stored === 'terminal' || stored === 'neon' || stored === 'midnight') {
+    return stored
+  }
   return DEFAULT_THEME
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
 interface ThemeProviderProps {
   children: ReactNode
   isPremium?: boolean
@@ -94,42 +91,21 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children, isPremium = false }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<ThemeName>(getStoredTheme)
 
-  // Apply on mount (handles SSR-style flicker prevention)
   useEffect(() => {
     applyThemeToDom(theme)
   }, []) // eslint-disable-line
 
-  // If user logs out and was on premium theme → downgrade to terminal
-  useEffect(() => {
-    if (!isPremium) {
-      const cfg = THEMES.find(t => t.id === theme)
-      if (cfg?.isPremium) {
-        applyThemeToDom('terminal')
-        setThemeState('terminal')
-      }
-    }
-  }, [isPremium]) // eslint-disable-line
-
   const setTheme = useCallback((name: ThemeName) => {
-    const cfg = THEMES.find(t => t.id === name)
-    if (!cfg) return
-
-    // Premium guard
-    if (cfg.isPremium && !isPremium) return
-
+    if (!THEMES.find(t => t.id === name)) return
     applyThemeToDom(name)
     setThemeState(name)
 
-    // Persist to Firestore
     const uid = getAuth().currentUser?.uid
     if (uid) {
       updateDoc(doc(db, 'users', uid, 'profile', 'main'), { theme: name })
-        .catch(() => {
-          // Fallback: try top-level user doc
-          updateDoc(doc(db, 'users', uid), { theme: name }).catch(() => {})
-        })
+        .catch(() => updateDoc(doc(db, 'users', uid), { theme: name }).catch(() => {}))
     }
-  }, [isPremium])
+  }, [])
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, isPremium }}>

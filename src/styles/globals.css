@@ -211,6 +211,38 @@
    ═══════════════════════════════════════════════════════════════ */
 
 :root,
+
+/* ── Default theme — original hardcoded colors, bypasses all CSS var theming ── */
+[data-theme="default"] {
+  --tm-bg:            #0D1117;
+  --tm-bg-secondary:  #161B22;
+  --tm-bg-tertiary:   #1C2130;
+  --tm-bg-card:       #1C2133;
+  --tm-border:        #2A2F3E;
+  --tm-border-sub:    #1E2330;
+  --tm-text-primary:  #F0F3FF;
+  --tm-text-secondary:#8F94A3;
+  --tm-text-muted:    #555C70;
+  --tm-accent:        #00E5FF;
+  --tm-accent-dim:    rgba(0,229,255,0.12);
+  --tm-profit:        #22C759;
+  --tm-loss:          #FF3B30;
+  --tm-warning:       #FF9500;
+  --tm-purple:        #BF5AF2;
+  --tm-blue:          #0A85FF;
+  --tm-profit-rgb:    34,199,89;
+  --tm-loss-rgb:      255,59,48;
+  --tm-accent-rgb:    0,229,255;
+  --tm-warning-rgb:   255,149,0;
+  --tm-blue-rgb:      10,133,255;
+  --tm-purple-rgb:    191,90,242;
+  --tm-bg-secondary-rgb: 22,27,34;
+  --tm-glow:          0 0 20px rgba(0,229,255,0.15);
+  --tm-bg-gradient:   radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,229,255,0.04) 0%, transparent 70%),
+                      radial-gradient(ellipse 50% 30% at 90% 80%, rgba(10,133,255,0.03) 0%, transparent 60%);
+}
+
+
 [data-theme="terminal"] {
   --tm-bg:           #0D1117;
   --tm-bg-secondary: #161B22;
