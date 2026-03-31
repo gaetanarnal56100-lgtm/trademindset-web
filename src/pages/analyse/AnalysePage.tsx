@@ -620,7 +620,7 @@ function CVDChart({ pts, segs }: { pts: CVDPt[]; segs: Seg[] }) {
     for(const s of segs)for(const p of pts){if(p[s]<minV)minV=p[s];if(p[s]>maxV)maxV=p[s]}
     const range=maxV-minV||1
     const zY=H-((-minV)/range)*H
-    ctx.setLineDash([3,3]);ctx.strokeStyle='var(--tm-border)';ctx.lineWidth=1
+    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
     ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
     for(const seg of segs){
       const cfg=SEG_CFG[seg]
@@ -646,7 +646,7 @@ function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
     const cvd=pts.map(p=>p.cum),ema=pts.map(p=>p.ema)
     const minV=Math.min(...cvd,...ema),maxV=Math.max(...cvd,...ema),range=maxV-minV||1
     const zY=H-((-minV)/range)*H
-    ctx.setLineDash([3,3]);ctx.strokeStyle='var(--tm-border)';ctx.lineWidth=1
+    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
     ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
     const last=cvd[cvd.length-1]
     const color=last>=0?resolveCSSColor('--tm-profit','#22C759'):resolveCSSColor('--tm-loss','#FF3B30')
@@ -684,7 +684,7 @@ function PressureBar({score}:{score:number}){
   const color=score>0.4?'var(--tm-profit)':score>0.1?'#66BB6A':score<-0.4?'var(--tm-loss)':score<-0.1?'#EF5350':'var(--tm-text-secondary)'
   return(
     <div style={{position:'relative',height:10,background:'linear-gradient(to right,#FF3B30,#2A2F3E 50%,#22C759)',borderRadius:5}}>
-      <div style={{position:'absolute',left:`${pct}%`,top:'50%',transform:'translate(-50%,-50%)',width:14,height:14,borderRadius:'50%',background:color,border:'2px solid #0D1117',boxShadow:`0 0 6px ${color}80`}}/>
+      <div style={{position:'absolute',left:`${pct}%`,top:'50%',transform:'translate(-50%,-50%)',width:14,height:14,borderRadius:'50%',background:color,border:'2px solid #0D1117',boxShadow:`0 0 6px ${'color'}`}}/>
     </div>
   )
 }
@@ -1053,7 +1053,7 @@ export default function AnalysePage() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
             <div><div style={{fontSize:14,fontWeight:700,color:biasColor}}>{biasLabel}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{bullConf+bearConf>0?`${Math.max(bullConf,bearConf)} confirmation${Math.max(bullConf,bearConf)>1?'s':''} active${Math.max(bullConf,bearConf)>1?'s':''}`:'En attente de données'}</div></div>
             <div style={{display:'flex',gap:6}}>
-              {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:pressure.score>0?'var(--tm-profit)':'var(--tm-loss)',background:`${pressure.score>0?'var(--tm-profit)':'var(--tm-loss)'}18`,padding:'2px 8px',borderRadius:5}}>CVD {pressure.score>0?'↑':'↓'}</span>}
+              {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:pressure.score>0?'var(--tm-profit)':'var(--tm-loss)',background:`${pressure.score>0?'var(--tm-profit)':'var(--tm-loss)'}`,padding:'2px 8px',borderRadius:5}}>CVD {pressure.score>0?'↑':'↓'}</span>}
               {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:'var(--tm-accent)',background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',padding:'2px 8px',borderRadius:5}}>Whales</span>}
               {traps.filter(t=>t.conf>=0.55).length>0&&<span style={{fontSize:10,fontWeight:700,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)',padding:'2px 8px',borderRadius:5}}>Trap ×{traps.filter(t=>t.conf>=0.55).length}</span>}
             </div>
@@ -1075,7 +1075,7 @@ export default function AnalysePage() {
               {price>0&&<span style={{fontSize:13,fontWeight:700,color:'var(--tm-accent)',fontFamily:'JetBrains Mono,monospace'}}>{fmtP(price)}</span>}
             </div>
             {/* Whale Flow banner */}
-            <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:`${isNeutral?'var(--tm-text-secondary)':isWhaleB?'var(--tm-profit)':'var(--tm-loss)'}10`,borderRadius:8,marginBottom:10,border:`1px solid ${isNeutral?'var(--tm-text-secondary)':isWhaleB?'var(--tm-profit)':'var(--tm-loss)'}20`}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:`${isNeutral?'var(--tm-text-secondary)':isWhaleB?'var(--tm-profit)':'var(--tm-loss)'}`,borderRadius:8,marginBottom:10,border:`1px solid ${isNeutral?'var(--tm-text-secondary)':isWhaleB?'var(--tm-profit)':'var(--tm-loss)'}`}}>
               <span style={{fontSize:16}}>{isNeutral?'🔄':isWhaleB?'🐋':'🦈'}</span>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:700,color:isNeutral?'var(--tm-text-secondary)':isWhaleB?'var(--tm-profit)':'var(--tm-loss)'}}>{isNeutral?'Neutral Flow':isWhaleB?`Whales Buying +${fmtU(wFlowDelta)}`:`Whales Selling ${fmtU(wFlowDelta)}`}</div>
@@ -1089,7 +1089,7 @@ export default function AnalysePage() {
             {/* Segment toggles */}
             <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
               {(Object.keys(SEG_CFG) as Seg[]).map(seg=>{const cfg=SEG_CFG[seg],on=segs.includes(seg),val=cvdAcc.current[seg]
-                return<button key={seg} onClick={()=>setSegs(prev=>on?prev.filter(s=>s!==seg):[...prev,seg])} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'5px 10px',borderRadius:8,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${on?cfg.color:'var(--tm-border)'}`,background:on?`${cfg.color}15`:'var(--tm-bg-tertiary)',color:on?cfg.color:'var(--tm-text-muted)',transition:'all 0.15s'}}>
+                return<button key={seg} onClick={()=>setSegs(prev=>on?prev.filter(s=>s!==seg):[...prev,seg])} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'5px 10px',borderRadius:8,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${on?cfg.color:'var(--tm-border)'}`,background:on?`${cfg.color}`:'var(--tm-bg-tertiary)',color:on?cfg.color:'var(--tm-text-muted)',transition:'all 0.15s'}}>
                   <span>{cfg.label}</span>
                   <span style={{fontSize:9,fontFamily:'monospace',color:val>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{val>=0?'+':''}{fmtU(val)}</span>
                 </button>
@@ -1224,7 +1224,7 @@ export default function AnalysePage() {
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12}}>
               <span>📊</span><span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>Open Interest</span>
-              <span style={{marginLeft:'auto',fontSize:9,fontWeight:700,color:oi.bullish===true?'var(--tm-profit)':oi.bullish===false?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${oi.bullish===true?'var(--tm-profit)':oi.bullish===false?'var(--tm-loss)':'var(--tm-text-secondary)'}15`,padding:'1px 7px',borderRadius:4}}>{oi.signal}</span>
+              <span style={{marginLeft:'auto',fontSize:9,fontWeight:700,color:oi.bullish===true?'var(--tm-profit)':oi.bullish===false?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${oi.bullish===true?'var(--tm-profit)':oi.bullish===false?'var(--tm-loss)':'var(--tm-text-secondary)'}`,padding:'1px 7px',borderRadius:4}}>{oi.signal}</span>
             </div>
             <div style={{fontSize:28,fontWeight:700,color:'white',fontFamily:'JetBrains Mono,monospace',letterSpacing:'-0.02em',marginBottom:4}}>{fmtU(oi.usd)}</div>
             <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',marginBottom:10}}>{oi.btc.toFixed(1)} BTC</div>
@@ -1249,7 +1249,7 @@ export default function AnalysePage() {
                 <div style={{fontSize:26,fontWeight:700,fontFamily:'JetBrains Mono,monospace',color:funding.rate>0?'var(--tm-warning)':funding.rate<0?'var(--tm-profit)':'var(--tm-text-secondary)'}}>{funding.rate>0?'+':''}{funding.rate.toFixed(4)}%<span style={{fontSize:11,color:'var(--tm-text-muted)',marginLeft:4}}>/8h</span></div>
                 <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>Taux de financement</div>
               </div>
-              <div style={{fontSize:12,fontWeight:700,color:funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)'}12`,padding:'5px 12px',borderRadius:8,border:`1px solid ${funding.isWarning?'rgba(var(--tm-loss-rgb,255,59,48),0.3)':'var(--tm-border)'}`}}>{funding.bias}</div>
+              <div style={{fontSize:12,fontWeight:700,color:funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)'}`,padding:'5px 12px',borderRadius:8,border:`1px solid ${funding.isWarning?'rgba(var(--tm-loss-rgb,255,59,48),0.3)':'var(--tm-border)'}`}}>{funding.bias}</div>
             </div>
             <div style={{height:8,background:'linear-gradient(to right,#22C759,#2A2F3E 40%,#2A2F3E 60%,#FF9500)',borderRadius:4,position:'relative',marginBottom:6}}>
               <div style={{position:'absolute',left:`${Math.min(Math.max((funding.rate+0.1)/0.2*100,0),100)}%`,top:'50%',transform:'translate(-50%,-50%)',width:14,height:14,borderRadius:'50%',background:funding.rate>0.05?'var(--tm-loss)':funding.rate>0.01?'var(--tm-warning)':funding.rate<-0.01?'var(--tm-profit)':'var(--tm-text-secondary)',border:'2px solid #0D1117'}}/>

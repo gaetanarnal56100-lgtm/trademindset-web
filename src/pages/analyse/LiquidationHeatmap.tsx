@@ -28,6 +28,12 @@ const PERIODS = [
 ]
 
 // Palette Coinglass exacte
+function resolveCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
+
 function cgRGB(i: number): [number,number,number] {
   i = Math.max(0, Math.min(1,i))
   if(i<0.05) return [20,8,45]
@@ -179,7 +185,7 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, t
     ctx.restore()
     const label=fmtP(price)
     const bw=Math.max(label.length*7+14,68)
-    ctx.fillStyle='var(--tm-accent)'
+    ctx.fillStyle=resolveCSSColor('--tm-accent','#00E5FF')
     rr(ctx,chartW+1,py-11,bw,22,4); ctx.fill()
     ctx.fillStyle='#071018'; ctx.font='bold 10px monospace'
     ctx.textAlign='center'; ctx.textBaseline='middle'
@@ -223,7 +229,7 @@ function drawOverlay(canvas: HTMLCanvasElement, tip: Tip|null, data: HeatmapData
   ctx.fillStyle='rgba(6,3,18,0.96)'
   rr(ctx,tx,ty,TW,TH,10); ctx.fill()
   ctx.shadowBlur=0
-  ctx.strokeStyle='rgba(var(--tm-accent-rgb,0,229,255),0.5)'; ctx.lineWidth=1
+  ctx.strokeStyle=`rgba(${resolveCSSColor('--tm-accent-rgb','0,229,255')},0.5)`; ctx.lineWidth=1
   rr(ctx,tx,ty,TW,TH,10); ctx.stroke()
 
   ctx.font='bold 10px monospace'; ctx.fillStyle='rgba(255,255,255,0.85)'

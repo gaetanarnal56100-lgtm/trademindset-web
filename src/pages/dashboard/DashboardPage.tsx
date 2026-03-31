@@ -434,7 +434,7 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
                     onMouseEnter={e=>{const el=e.currentTarget.querySelector('[data-val]') as HTMLElement;if(el)el.style.opacity='1'}}
                     onMouseLeave={e=>{const el=e.currentTarget.querySelector('[data-val]') as HTMLElement;if(el)el.style.opacity='0'}}>
                     <div data-val="" style={{fontSize:10,fontWeight:700,color:c,fontFamily:'JetBrains Mono,monospace',opacity:0,transition:'opacity 0.15s',whiteSpace:'nowrap'}}>{fmtK(m.value)}</div>
-                    <div style={{width:'100%',maxWidth:36,height:h,background:`linear-gradient(${m.value>=0?'0deg':'180deg'},${c},${c}88)`,borderRadius:m.value>=0?'4px 4px 0 0':'0 0 4px 4px',transition:'height 0.3s'}}/>
+                    <div style={{width:'100%',maxWidth:36,height:h,background:c,borderRadius:m.value>=0?'4px 4px 0 0':'0 0 4px 4px',transition:'height 0.3s'}}/>
                     <div style={{fontSize:9,color:'var(--tm-text-secondary)',fontWeight:600,textTransform:'capitalize'}}>{m.full.slice(0,3)}</div>
                   </div>)
                 })}

@@ -142,7 +142,7 @@ function renderChart(
     const v=minV+rng*i/steps, y=toY(v)
     ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1; ctx.setLineDash([])
     ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke()
-    ctx.fillStyle='var(--tm-text-muted)'; ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='right'
+    ctx.fillStyle=resolveCSSColor('--tm-text-muted','#555C70'); ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='right'
     ctx.fillText(fmtK(v,0), PAD.l-6, y+4)
   }
 
@@ -155,7 +155,7 @@ function renderChart(
 
   // Drawdown zone
   if(showDD){
-    ctx.fillStyle='rgba(var(--tm-loss-rgb,255,59,48),0.1)'
+    ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.1)`
     ctx.beginPath()
     pts.forEach((p,i)=>i===0?ctx.moveTo(toX(i),toY(p.peak)):ctx.lineTo(toX(i),toY(p.peak)))
     for(let i=pts.length-1;i>=0;i--)ctx.lineTo(toX(i),toY(pts[i].cum))
@@ -192,7 +192,7 @@ function renderChart(
 
   // X labels
   const maxL=Math.min(isModal?12:8,pts.length), step=Math.max(1,Math.ceil(pts.length/maxL))
-  ctx.fillStyle='var(--tm-text-muted)'; ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='center'
+  ctx.fillStyle=resolveCSSColor('--tm-text-muted','#555C70'); ctx.font=`${isModal?11:10}px JetBrains Mono,monospace`; ctx.textAlign='center'
   pts.forEach((p,i)=>{
     if(i%step===0||i===pts.length-1)
       ctx.fillText(fmtD(p.date,true),toX(i),H-(isModal?12:8))
@@ -228,7 +228,7 @@ function renderChart(
       const emoToY = (score: number) => PAD.t + cH - ((score - 0.5) / 5) * cH
       // Emotion line
       ctx.beginPath()
-      ctx.strokeStyle = 'rgba(var(--tm-purple-rgb,191,90,242),0.7)'
+      ctx.strokeStyle = `rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.7)`
       ctx.lineWidth = 1.5; ctx.setLineDash([4, 3])
       sortedEmo.forEach((p, i) => {
         const x = toX(p.idx), y = emoToY(p.score)
@@ -242,7 +242,7 @@ function renderChart(
         ctx.fillStyle = p.color + 'CC'; ctx.fill()
       })
       // Right axis label for emotion
-      ctx.fillStyle = 'var(--tm-purple)'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'left'
+      ctx.fillStyle = resolveCSSColor('--tm-purple','#BF5AF2'); ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'left'
       ctx.fillText('😎5', W - PAD.r + 3, emoToY(5) + 3)
       ctx.fillText('😰1', W - PAD.r + 3, emoToY(1) + 3)
     }
@@ -310,7 +310,7 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
         {(Object.keys(TF_LBL) as TF[]).map(t=>(
           <button key={t} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:5,fontSize:10,
             fontWeight:600,cursor:'pointer',border:'none',
-            background:tf===t?'rgba(var(--tm-accent-rgb,0,229,255),0.12)':'transparent',
+            background:tf===t?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.12)`:'transparent',
             color:tf===t?'var(--tm-accent)':'var(--tm-text-muted)',
             outline:tf===t?'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.3)':'none'}}>
             {TF_LBL[t]}
@@ -335,7 +335,7 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
       {hasMoods && setShowEmotion && (
         <button onClick={()=>setShowEmotion((x:boolean)=>!x)} style={{display:'flex',alignItems:'center',gap:5,
           padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',
-          border:`1px solid ${showEmotion?'#BF5AF250':'var(--tm-border)'}`,background:showEmotion?'rgba(var(--tm-purple-rgb,191,90,242),0.1)':'transparent',color:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}>
+          border:`1px solid ${showEmotion?'#BF5AF250':'var(--tm-border)'}`,background:showEmotion?`rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.1)`:'transparent',color:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}>
           <div style={{width:7,height:7,borderRadius:1,background:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}/>Émotion
         </button>
       )}
@@ -343,7 +343,7 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
       {isZoomed&&(
         <button onClick={resetZoom} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 9px',
           borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',
-          border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.4)',background:'rgba(var(--tm-accent-rgb,0,229,255),0.08)',color:'var(--tm-accent)'}}>
+          border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.4)',background:`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.08)`,color:'var(--tm-accent)'}}>
           ↺ Dézoom
         </button>
       )}
@@ -537,7 +537,7 @@ function TradesTable({ pts }: { pts:Pt[] }) {
               <td style={{padding:'7px 12px',fontWeight:600,color:'var(--tm-text-primary)'}}>{p.sym}</td>
               <td style={{padding:'7px 12px'}}>
                 <span style={{fontSize:10,fontWeight:700,color:p.dir==='Long'?'var(--tm-profit)':'var(--tm-loss)',
-                  background:p.dir==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',
+                  background:p.dir==='Long'?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.1)`,
                   padding:'1px 8px',borderRadius:4}}>
                   {p.dir==='Long'?'▲ Long':'▼ Short'}
                 </span>
@@ -668,6 +668,11 @@ const EMOTION_COLORS: Record<string,string> = {
 }
 
 // ── Dashboard inline component ─────────────────────────────────────────────
+function resolveCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
 export default function PnLCurve({ trades, moods = [] }: { trades: Trade[]; moods?: MoodLike[] }) {
   const [period, setPeriod] = useState<Period>('ALL')
   const [tf,     setTf]     = useState<TF>('TRADE')

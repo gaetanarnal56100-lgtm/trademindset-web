@@ -31,14 +31,16 @@ function emotionInfo(v: EmotionalState) {
   return EMOTIONS.find(e => e.v === v) ?? EMOTIONS[1]
 }
 
-function getCSSColor(varName: string, fallback: string): string {
+// Canvas cannot use CSS vars — resolve at draw time
+function resolveCSSColor(varName: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 function getCSSPurpleColor(alpha: number): string {
-  const rgb = getCSSColor('--tm-purple-rgb', '191,90,242')
+  const rgb = resolveCSSColor('--tm-purple-rgb', '191,90,242')
   return `rgba(${rgb},${alpha})`
 }
+
 
 export default function JournalPage() {
   const [moods,   setMoods]   = useState<MoodEntry[]>([])
@@ -92,7 +94,7 @@ export default function JournalPage() {
           <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
             {emotionCounts.filter(e => e.count > 0).map(e => (
               <button key={e.v} onClick={() => setFilter(filter === e.v ? 'all' : e.v)}
-                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:20, border:`1px solid ${filter === e.v ? e.color : 'var(--tm-border)'}`, background: filter === e.v ? `${e.color}20` : 'var(--tm-bg-tertiary)', cursor:'pointer' }}>
+                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:20, border:`1px solid ${filter === e.v ? e.color : 'var(--tm-border)'}`, background: filter === e.v ? `${e.color}` : 'var(--tm-bg-tertiary)', cursor:'pointer' }}>
                 <span>{e.emoji}</span>
                 <span style={{ fontSize:11, color: filter === e.v ? e.color : 'var(--tm-text-secondary)' }}>{e.label}</span>
                 <span style={{ fontSize:10, fontWeight:700, color: filter === e.v ? e.color : 'var(--tm-text-muted)', background:'var(--tm-border)', padding:'1px 5px', borderRadius:10 }}>{e.count}</span>
@@ -151,7 +153,7 @@ export default function JournalPage() {
                     </div>
                     {mood.notes && <div style={{ fontSize:12, color:'#C5C8D6', lineHeight:1.6, marginBottom:4 }}>{mood.notes}</div>}
                     {mood.aiSummary && (
-                      <div style={{ fontSize:11, color:'var(--tm-text-secondary)', background:'rgba(var(--tm-accent-rgb,0,229,255),0.05)', border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.1)', borderRadius:6, padding:'5px 8px', marginTop:4 }}>
+                      <div style={{ fontSize:11, color:'var(--tm-text-secondary)', background:`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.05)`, border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.1)', borderRadius:6, padding:'5px 8px', marginTop:4 }}>
                         ✨ {mood.aiSummary}
                       </div>
                     )}
@@ -242,9 +244,9 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
 
     // Colored zone backgrounds
     const zones = [
-      { y1:5, y2:3.5, color:'rgba(var(--tm-profit-rgb,34,199,89),0.04)', label:'Zone optimale' },
-      { y1:3.5, y2:2.5, color:'rgba(var(--tm-warning-rgb,255,149,0),0.03)', label:'Zone neutre' },
-      { y1:2.5, y2:0.5, color:'rgba(var(--tm-loss-rgb,255,59,48),0.04)', label:'Zone à risque' },
+      { y1:5, y2:3.5, color:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.04)`, label:'Zone optimale' },
+      { y1:3.5, y2:2.5, color:`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.03)`, label:'Zone neutre' },
+      { y1:2.5, y2:0.5, color:`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.04)`, label:'Zone à risque' },
     ]
     zones.forEach(z => {
       ctx.fillStyle = z.color
@@ -264,9 +266,9 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
 
     // Y labels
     ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'right'
-    ctx.fillStyle = 'var(--tm-profit)'; ctx.fillText('😎 5', PAD.l - 4, toY(5) + 4)
-    ctx.fillStyle = 'var(--tm-text-secondary)'; ctx.fillText('😐 3', PAD.l - 4, toY(3) + 4)
-    ctx.fillStyle = 'var(--tm-loss)'; ctx.fillText('😰 1', PAD.l - 4, toY(1) + 4)
+    ctx.fillStyle = resolveCSSColor('--tm-profit','#22C759'); ctx.fillText('😎 5', PAD.l - 4, toY(5) + 4)
+    ctx.fillStyle = resolveCSSColor('--tm-text-secondary','#8F94A3'); ctx.fillText('😐 3', PAD.l - 4, toY(3) + 4)
+    ctx.fillStyle = resolveCSSColor('--tm-loss','#FF3B30'); ctx.fillText('😰 1', PAD.l - 4, toY(1) + 4)
 
     // Moving average fill
     const maG = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + cH)
@@ -277,7 +279,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
     ctx.closePath(); ctx.fillStyle = maG; ctx.fill()
 
     // Moving average line
-    ctx.beginPath(); ctx.strokeStyle = 'rgba(var(--tm-purple-rgb,191,90,242),0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3])
+    ctx.beginPath(); ctx.strokeStyle = `rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.5)`; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3])
     ma.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)))
     ctx.stroke(); ctx.setLineDash([])
 
@@ -302,7 +304,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
 
     // X labels
     const step = Math.max(1, Math.ceil(points.length / 8))
-    ctx.fillStyle = 'var(--tm-text-muted)'; ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+    ctx.fillStyle = resolveCSSColor('--tm-text-muted','#555C70'); ctx.font = '9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
     points.forEach((p, i) => {
       if (i % step === 0 || i === points.length - 1)
         ctx.fillText(p.date.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }), toX(i), cssH - 6)
@@ -334,7 +336,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
     <div ref={wrapRef} style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:12, padding:'14px 16px', marginBottom:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{ width:28, height:28, borderRadius:8, background:'rgba(var(--tm-purple-rgb,191,90,242),0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 }}>📈</div>
+          <div style={{ width:28, height:28, borderRadius:8, background:`rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.15)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 }}>📈</div>
           <div>
             <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>Courbe émotionnelle</div>
             <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{points.length} entrées · moy. {avgScore.toFixed(1)}/5</div>
@@ -345,7 +347,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
             <button key={p} onClick={() => setPeriod(p)} style={{
               padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:600, cursor:'pointer',
               border:`1px solid ${period === p ? 'var(--tm-purple)' : 'var(--tm-border)'}`,
-              background: period === p ? 'rgba(var(--tm-purple-rgb,191,90,242),0.15)' : 'transparent',
+              background: period === p ? `rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.15)` : 'transparent',
               color: period === p ? 'var(--tm-purple)' : 'var(--tm-text-muted)',
             }}>{p === 'all' ? 'Tout' : p}</button>
           ))}
@@ -369,7 +371,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
 
       {/* Hover info */}
       {hoveredPt && (
-        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 10px', background:'rgba(var(--tm-purple-rgb,191,90,242),0.06)', border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.15)', borderRadius:8, marginBottom:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 10px', background:`rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.06)`, border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.15)', borderRadius:8, marginBottom:8 }}>
           <span style={{ fontSize:18 }}>{hoveredPt.emoji}</span>
           <div style={{ flex:1 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -396,7 +398,7 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
           { color:'var(--tm-profit)', label:'Zone optimale (3.5-5)' },
           { color:'var(--tm-warning)', label:'Zone neutre (2.5-3.5)' },
           { color:'var(--tm-loss)', label:'Zone à risque (1-2.5)' },
-          { color:'rgba(var(--tm-purple-rgb,191,90,242),0.5)', label:'Moyenne mobile', dash:true },
+          { color:`rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.5)`, label:'Moyenne mobile', dash:true },
         ].map(({ color, label, dash }) => (
           <div key={label} style={{ display:'flex', alignItems:'center', gap:4 }}>
             <div style={{ width:12, height:2, background:color, borderRadius:1, ...(dash ? { backgroundImage:`repeating-linear-gradient(90deg,${color} 0,${color} 4px,transparent 4px,transparent 7px)`, background:'none' } : {}) }} />
@@ -451,7 +453,7 @@ function AddMoodModal({ trades, onClose }: { trades: Trade[]; onClose: () => voi
         <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8 }}>ÉTAT ÉMOTIONNEL</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:6, marginBottom:14 }}>
           {EMOTIONS.map(e => (
-            <button key={e.v} onClick={() => setState(e.v)} style={{ padding:'8px 4px', borderRadius:8, border:`1px solid ${state===e.v?e.color:'var(--tm-border)'}`, background: state===e.v?`${e.color}20`:'var(--tm-bg-tertiary)', cursor:'pointer', textAlign:'center' }}>
+            <button key={e.v} onClick={() => setState(e.v)} style={{ padding:'8px 4px', borderRadius:8, border:`1px solid ${state===e.v?e.color:'var(--tm-border)'}`, background: state===e.v?`${e.color}`:'var(--tm-bg-tertiary)', cursor:'pointer', textAlign:'center' }}>
               <div style={{ fontSize:18 }}>{e.emoji}</div>
               <div style={{ fontSize:9, color: state===e.v?e.color:'var(--tm-text-muted)', marginTop:2 }}>{e.label}</div>
             </button>
@@ -467,7 +469,7 @@ function AddMoodModal({ trades, onClose }: { trades: Trade[]; onClose: () => voi
         <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>CONTEXTE</div>
         <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
           {CONTEXTS.map(c => (
-            <button key={c.v} onClick={() => setContext(c.v)} style={{ padding:'5px 10px', borderRadius:6, border:`1px solid ${context===c.v?'var(--tm-accent)':'var(--tm-border)'}`, background: context===c.v?'rgba(var(--tm-accent-rgb,0,229,255),0.1)':'var(--tm-bg-tertiary)', cursor:'pointer', fontSize:11, color: context===c.v?'var(--tm-accent)':'var(--tm-text-secondary)' }}>
+            <button key={c.v} onClick={() => setContext(c.v)} style={{ padding:'5px 10px', borderRadius:6, border:`1px solid ${context===c.v?'var(--tm-accent)':'var(--tm-border)'}`, background: context===c.v?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.1)`:'var(--tm-bg-tertiary)', cursor:'pointer', fontSize:11, color: context===c.v?'var(--tm-accent)':'var(--tm-text-secondary)' }}>
               {c.label}
             </button>
           ))}

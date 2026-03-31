@@ -29,7 +29,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
       .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
 
     if (closed.length === 0) {
-      ctx.fillStyle = 'var(--tm-text-muted)'
+      ctx.fillStyle = resolveCSSColor('--tm-text-muted','#555C70')
       ctx.font = '10px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('Aucun trade fermé', W / 2, H / 2)
@@ -54,7 +54,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
 
     // Zero line
     const zeroY = toY(0)
-    ctx.strokeStyle = 'var(--tm-border)'
+    ctx.strokeStyle = resolveCSSColor('--tm-border','#2A2F3E')
     ctx.lineWidth = 1
     ctx.setLineDash([3, 3])
     ctx.beginPath()
@@ -105,13 +105,13 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
       ctx.arc(x, y, 4, 0, Math.PI * 2)
       ctx.fillStyle = fillColor
       ctx.fill()
-      ctx.strokeStyle = 'var(--tm-bg)'
+      ctx.strokeStyle = resolveCSSColor('--tm-bg','#0D1117')
       ctx.lineWidth = 2
       ctx.stroke()
     }
 
     // X-axis labels (first + last)
-    ctx.fillStyle = 'var(--tm-text-muted)'
+    ctx.fillStyle = resolveCSSColor('--tm-text-muted','#555C70')
     ctx.font = '9px JetBrains Mono, monospace'
     ctx.textAlign = 'left'
     ctx.fillText(dates[0] ?? '', pad.l, H - 4)
@@ -225,7 +225,7 @@ function SystemsComparisonChart({ systemStats, trades }: {
     const toY = (v: number) => pad.t + (1 - (v - minV) / range) * cH
 
     // Zero line
-    ctx.strokeStyle = 'var(--tm-border)'
+    ctx.strokeStyle = resolveCSSColor('--tm-border','#2A2F3E')
     ctx.lineWidth = 1
     ctx.setLineDash([3, 3])
     ctx.beginPath()
