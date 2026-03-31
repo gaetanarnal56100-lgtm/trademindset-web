@@ -18,6 +18,12 @@ const TIMEFRAMES = [
   { label:'1j', tv:'D' }, { label:'1S', tv:'W' },
 ]
 
+function resolveCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
+
 export default function LiveChart({ symbol, isCrypto }: Props) {
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
   const [chartType,setChartType]= useState<1|2|3>(1) // 1=bougies, 2=ligne, 3=aire
@@ -52,7 +58,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
       theme:               'dark',
       style:               chartType,
       locale:              'fr',
-      toolbar_bg:          'var(--tm-bg-secondary)',
+      toolbar_bg:          resolveCSSColor('--tm-bg-secondary','#161B22'),
       width:               '100%',
       height:              expanded ? 620 : 440,
       autosize:            true,
@@ -92,35 +98,35 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
 
       // Couleurs custom pour matcher le design de l'app
       overrides: {
-        'paneProperties.background':                        'var(--tm-bg)',
+        'paneProperties.background':                        resolveCSSColor('--tm-bg','#0D1117'),
         'paneProperties.backgroundType':                    'solid',
         'paneProperties.vertGridProperties.color':          '#1E233060',
         'paneProperties.horzGridProperties.color':          '#1E233060',
-        'paneProperties.crossHairProperties.color':         'var(--tm-text-muted)',
-        'scalesProperties.textColor':                       'var(--tm-text-muted)',
-        'scalesProperties.lineColor':                       'var(--tm-border-sub)',
-        'scalesProperties.backgroundColor':                 'var(--tm-bg-secondary)',
+        'paneProperties.crossHairProperties.color':         resolveCSSColor('--tm-text-muted','#555C70'),
+        'scalesProperties.textColor':                       resolveCSSColor('--tm-text-muted','#555C70'),
+        'scalesProperties.lineColor':                       resolveCSSColor('--tm-border-sub','#1E2330'),
+        'scalesProperties.backgroundColor':                 resolveCSSColor('--tm-bg-secondary','#161B22'),
         // Bougies
-        'mainSeriesProperties.candleStyle.upColor':         'var(--tm-profit)',
-        'mainSeriesProperties.candleStyle.downColor':       'var(--tm-loss)',
-        'mainSeriesProperties.candleStyle.wickUpColor':     'var(--tm-profit)',
-        'mainSeriesProperties.candleStyle.wickDownColor':   'var(--tm-loss)',
-        'mainSeriesProperties.candleStyle.borderUpColor':   'var(--tm-profit)',
-        'mainSeriesProperties.candleStyle.borderDownColor': 'var(--tm-loss)',
+        'mainSeriesProperties.candleStyle.upColor':         resolveCSSColor('--tm-profit','#22C759'),
+        'mainSeriesProperties.candleStyle.downColor':       resolveCSSColor('--tm-loss','#FF3B30'),
+        'mainSeriesProperties.candleStyle.wickUpColor':     resolveCSSColor('--tm-profit','#22C759'),
+        'mainSeriesProperties.candleStyle.wickDownColor':   resolveCSSColor('--tm-loss','#FF3B30'),
+        'mainSeriesProperties.candleStyle.borderUpColor':   resolveCSSColor('--tm-profit','#22C759'),
+        'mainSeriesProperties.candleStyle.borderDownColor': resolveCSSColor('--tm-loss','#FF3B30'),
         // Ligne
-        'mainSeriesProperties.lineStyle.color':             'var(--tm-accent)',
+        'mainSeriesProperties.lineStyle.color':             resolveCSSColor('--tm-accent','#00E5FF'),
         'mainSeriesProperties.lineStyle.linewidth':         2,
         // Aire
         'mainSeriesProperties.areaStyle.color1':            '#00E5FF30',
         'mainSeriesProperties.areaStyle.color2':            '#00E5FF05',
-        'mainSeriesProperties.areaStyle.linecolor':         'var(--tm-accent)',
+        'mainSeriesProperties.areaStyle.linecolor':         resolveCSSColor('--tm-accent','#00E5FF'),
         'mainSeriesProperties.areaStyle.linewidth':         2,
       },
 
       // Indicateurs chargés par défaut
       studies: ['Volume@tv-basicstudies'],
 
-      loading_screen: { backgroundColor: 'var(--tm-bg)', foregroundColor: '#22C75940' },
+      loading_screen: { backgroundColor: resolveCSSColor('--tm-bg','#0D1117'), foregroundColor: '#22C75940' },
 
       // Callback quand le widget est prêt
       onready: () => setLoading(false),
@@ -144,7 +150,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
   const chartH = expanded ? 620 : 440
 
   return (
-    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:resolveCSSColor('--tm-bg-secondary','#161B22'), border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
 
       {/* Header */}
       <div style={{ padding:'10px 14px', display:'flex', alignItems:'center', gap:8, borderBottom:'1px solid #1E2330', flexWrap:'wrap' }}>
@@ -154,7 +160,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
           <div style={{ width:26, height:26, borderRadius:7, background:'linear-gradient(135deg,#0A85FF,#00E5FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>📈</div>
           <div>
             <div style={{ fontSize:11, fontWeight:700, color:'var(--tm-text-primary)', lineHeight:1.2 }}>Graphique Live</div>
-            <div style={{ fontSize:9, color:'var(--tm-text-muted)' }}>TradingView · {tvSymbol}</div>
+            <div style={{ fontSize:9, color:resolveCSSColor('--tm-text-muted','#555C70') }}>TradingView · {tvSymbol}</div>
           </div>
         </div>
 
@@ -163,15 +169,15 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
           {TIMEFRAMES.map(t => (
             <button key={t.label} onClick={() => setTf(t)} style={{
               padding:'3px 8px', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer',
-              border:`1px solid ${tf.label===t.label?'var(--tm-blue)':'var(--tm-border)'}`,
+              border:`1px solid ${tf.label===t.label?'var(--tm-blue)':resolveCSSColor('--tm-border','#2A2F3E')}`,
               background: tf.label===t.label?'rgba(var(--tm-blue-rgb,10,133,255),0.15)':'transparent',
-              color: tf.label===t.label?'var(--tm-blue)':'var(--tm-text-muted)',
+              color: tf.label===t.label?'var(--tm-blue)':resolveCSSColor('--tm-text-muted','#555C70'),
             }}>{t.label}</button>
           ))}
         </div>
 
         {/* Séparateur */}
-        <div style={{ width:1, height:14, background:'var(--tm-border)', flexShrink:0 }}/>
+        <div style={{ width:1, height:14, background:resolveCSSColor('--tm-border','#2A2F3E'), flexShrink:0 }}/>
 
         {/* Type de graphique */}
         {([
@@ -181,9 +187,9 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         ]).map(({ type, icon, label }) => (
           <button key={type} onClick={() => setChartType(type)} title={label} style={{
             padding:'3px 9px', borderRadius:6, fontSize:11, fontWeight:600, cursor:'pointer',
-            border:`1px solid ${chartType===type?'var(--tm-warning)':'var(--tm-border)'}`,
+            border:`1px solid ${chartType===type?'var(--tm-warning)':resolveCSSColor('--tm-border','#2A2F3E')}`,
             background: chartType===type?'rgba(var(--tm-warning-rgb,255,149,0),0.12)':'transparent',
-            color: chartType===type?'var(--tm-warning)':'var(--tm-text-muted)',
+            color: chartType===type?'var(--tm-warning)':resolveCSSColor('--tm-text-muted','#555C70'),
           }}>{icon}</button>
         ))}
 
@@ -191,7 +197,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         <button onClick={() => setExpanded(x => !x)} style={{
           marginLeft:'auto', padding:'3px 10px', borderRadius:6, fontSize:10,
           fontWeight:600, cursor:'pointer', border:'1px solid #2A2F3E',
-          background:'transparent', color:'var(--tm-text-muted)', flexShrink:0,
+          background:'transparent', color:resolveCSSColor('--tm-text-muted','#555C70'), flexShrink:0,
         }}>
           {expanded ? '⊡ Réduire' : '⊞ Agrandir'}
         </button>
@@ -201,23 +207,23 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
       <div style={{ borderBottom:'1px solid #1E2330' }}>
         <div style={{ padding:'5px 14px', background:'rgba(var(--tm-blue-rgb,10,133,255),0.03)',
           display:'flex', alignItems:'center', gap:6, overflowX:'auto', flexWrap:'nowrap' }}>
-          <span style={{ fontSize:9, color:'var(--tm-text-muted)', flexShrink:0 }}>Outils :</span>
+          <span style={{ fontSize:9, color:resolveCSSColor('--tm-text-muted','#555C70'), flexShrink:0 }}>Outils :</span>
           {['↗ Tendance','◎ Fibo','▭ Rectangle','⟨⟩ Pitchfork','∥ Canal','📐 Mesure R/R','✏ Texte','📊 Indicateurs','↩ Undo','↪ Redo'].map(tool => (
-            <span key={tool} style={{ fontSize:9, color:'var(--tm-text-muted)', background:'rgba(255,255,255,0.03)',
+            <span key={tool} style={{ fontSize:9, color:resolveCSSColor('--tm-text-muted','#555C70'), background:'rgba(255,255,255,0.03)',
               padding:'2px 6px', borderRadius:4, whiteSpace:'nowrap', flexShrink:0 }}>{tool}</span>
           ))}
-          <span style={{ fontSize:9, color:'var(--tm-text-muted)', marginLeft:4, flexShrink:0 }}>← barre gauche</span>
+          <span style={{ fontSize:9, color:resolveCSSColor('--tm-text-muted','#555C70'), marginLeft:4, flexShrink:0 }}>← barre gauche</span>
         </div>
       </div>
 
       {/* Chart */}
-      <div style={{ position:'relative', height:chartH, background:'var(--tm-bg)' }}>
+      <div style={{ position:'relative', height:chartH, background:resolveCSSColor('--tm-bg','#0D1117') }}>
         {loading && (
           <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center',
-            justifyContent:'center', background:'var(--tm-bg)', zIndex:2, gap:12 }}>
-            <div style={{ width:32, height:32, border:'3px solid #1E2330', borderTopColor:'var(--tm-profit)',
+            justifyContent:'center', background:resolveCSSColor('--tm-bg','#0D1117'), zIndex:2, gap:12 }}>
+            <div style={{ width:32, height:32, border:'3px solid #1E2330', borderTopColor:resolveCSSColor('--tm-profit','#22C759'),
               borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
-            <div style={{ fontSize:12, color:'var(--tm-text-muted)' }}>Chargement du graphique…</div>
+            <div style={{ fontSize:12, color:resolveCSSColor('--tm-text-muted','#555C70') }}>Chargement du graphique…</div>
           </div>
         )}
         <div id="tv-chart-container" ref={containerRef} style={{ width:'100%', height:'100%' }}/>

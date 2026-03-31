@@ -15,6 +15,7 @@ import SystemesPage   from '@/pages/systemes/SystemesPage'
 import ProfilPage     from '@/pages/profil/ProfilPage'
 import SettingsPage   from '@/pages/settings/SettingsPage'
 import ExchangesPage  from '@/pages/exchanges/ExchangesPage'
+import ReferralPage   from '@/pages/referral/ReferralPage'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
 import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
 import { useAppStore } from '@/store/appStore'
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="profil"           element={<ProfilPage />} />
         <Route path="settings"         element={<SettingsPage />} />
         <Route path="exchanges"        element={<ExchangesPage />} />
+        <Route path="referral"         element={<ReferralPage />} />
       </Route>
 
       {/* ── Fallback ── */}

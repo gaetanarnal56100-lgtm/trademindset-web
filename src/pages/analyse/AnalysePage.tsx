@@ -24,25 +24,48 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
   const [hover, setHover] = useState(false)
 
   const handleShare = async () => {
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-    // Try to capture canvas elements inside the wrapper
     const el = ref.current
     if (!el) return
     try {
-      const canvases = el.querySelectorAll('canvas')
-      if (canvases.length > 0) {
-        // Use the first visible canvas
-        const cv = canvases[0] as HTMLCanvasElement
-        const dataUrl = cv.toDataURL('image/png')
-        if (navigator.share && navigator.canShare) {
-          const blob = await (await fetch(dataUrl)).blob()
-          const file = new File([blob], `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`, { type:'image/png' })
-          if (navigator.canShare({ files:[file] })) { await navigator.share({ title:`TradeMindset — ${label}`, files:[file] }); return }
+      // Find the most relevant canvas (largest visible one)
+      const canvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
+      const cv = canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]
+      if (!cv) return
+
+      const dataUrl = cv.toDataURL('image/png')
+      const blob = await (await fetch(dataUrl)).blob()
+
+      // 1. Try Clipboard API (copy as image — paste anywhere)
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ])
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2500)
+        return
+      } catch { /* clipboard write failed, fallback below */ }
+
+      // 2. Fallback: Web Share API (mobile)
+      if (navigator.share && navigator.canShare) {
+        const file = new File([blob], `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`, { type:'image/png' })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: `TradeMindset — ${label}`, files: [file] })
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2500)
+          return
         }
-        const a = document.createElement('a'); a.href = dataUrl; a.download = `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`; a.click()
       }
-    } catch {/**/}
+
+      // 3. Last fallback: download file
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`
+      a.click()
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch (err) {
+      console.warn('Share failed:', err)
+    }
   }
 
   return (
@@ -57,7 +80,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
             background: copied ? 'rgba(var(--tm-profit-rgb,34,199,89),0.85)' : 'rgba(13,17,23,0.85)',
             border: copied ? '1px solid #22C759' : '1px solid #2A2F3E',
             cursor:'pointer', fontSize:10, fontWeight:600,
-            color: copied ? '#fff' : 'var(--tm-text-secondary)',
+            color: '#fff',
             backdropFilter:'blur(8px)', transition:'all 0.15s',
           }}>
           {copied ? '✓ Sauvé' : '↗ Partager'}
@@ -684,7 +707,7 @@ function PressureBar({score}:{score:number}){
   const color=score>0.4?'var(--tm-profit)':score>0.1?'#66BB6A':score<-0.4?'var(--tm-loss)':score<-0.1?'#EF5350':'var(--tm-text-secondary)'
   return(
     <div style={{position:'relative',height:10,background:'linear-gradient(to right,#FF3B30,#2A2F3E 50%,#22C759)',borderRadius:5}}>
-      <div style={{position:'absolute',left:`${pct}%`,top:'50%',transform:'translate(-50%,-50%)',width:14,height:14,borderRadius:'50%',background:color,border:'2px solid #0D1117',boxShadow:`0 0 6px ${'color'}`}}/>
+      <div style={{position:'absolute',left:`${pct}%`,top:'50%',transform:'translate(-50%,-50%)',width:14,height:14,borderRadius:'50%',background:color,border:'2px solid #0D1117',boxShadow:`0 0 6px ${color}`}}/>
     </div>
   )
 }

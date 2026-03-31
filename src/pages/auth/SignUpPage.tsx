@@ -1,12 +1,18 @@
 // src/pages/auth/SignUpPage.tsx
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { signUpWithEmail, signInWithGoogle } from '@/services/firebase/auth'
 import { IconEye, IconEyeOff, IconGoogle } from '@/components/ui/Icons'
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import app from '@/services/firebase/config'
+
+const fbFn = getFunctions(app, 'europe-west1')
 
 export default function SignUpPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const refCode = searchParams.get('ref') || ''
   const [name,    setName]    = useState('')
   const [email,   setEmail]   = useState('')
   const [password,setPassword]= useState('')
@@ -19,7 +25,19 @@ export default function SignUpPage() {
     setLoading(true)
     try {
       await signUpWithEmail(email, password, name)
-      toast.success('Compte créé ! Vérifiez votre email.')
+      // Process referral if code present in URL
+      if (refCode) {
+        try {
+          const fn = httpsCallable(fbFn, 'processReferral')
+          await fn({ code: refCode })
+        } catch { /* referral errors don't block signup */ }
+      }
+      // Generate referral code for new user
+      try {
+        const genFn = httpsCallable(fbFn, 'generateUserReferralCode')
+        await genFn()
+      } catch { /* non-blocking */ }
+      toast.success('Compte créé ! Bienvenue sur TradeMindset 🎉')
       navigate('/')
     } catch (err: unknown) {
       toast.error((err as Error).message ?? 'Erreur inscription')
@@ -32,6 +50,16 @@ export default function SignUpPage() {
     setLoading(true)
     try {
       await signInWithGoogle()
+      if (refCode) {
+        try {
+          const fn = httpsCallable(fbFn, 'processReferral')
+          await fn({ code: refCode })
+        } catch { /* non-blocking */ }
+      }
+      try {
+        const genFn = httpsCallable(fbFn, 'generateUserReferralCode')
+        await genFn()
+      } catch { /* non-blocking */ }
       navigate('/')
     } catch (err: unknown) {
       toast.error((err as Error).message ?? 'Erreur Google')
@@ -45,6 +73,12 @@ export default function SignUpPage() {
       <div>
         <h1 className="text-xl font-bold text-text-primary font-display">Créer un compte</h1>
         <p className="text-sm text-text-secondary mt-1">Commencez à tracker vos trades</p>
+        {refCode && (
+          <div style={{ marginTop: 8, padding: '6px 12px', background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>🎁</span>
+            <span style={{ fontSize: 12, color: '#00E5FF', fontWeight: 600 }}>Parrainage actif : <span style={{ fontFamily: 'monospace' }}>{refCode}</span></span>
+          </div>
+        )}
       </div>
 
       <button

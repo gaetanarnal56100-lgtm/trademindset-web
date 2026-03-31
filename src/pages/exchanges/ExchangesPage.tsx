@@ -69,6 +69,37 @@ export default function ExchangesPage() {
     margin: '0 auto',
   }
 
+  // Dedup: remove duplicate exchanges by name, keep the default one or first
+  const hasDuplicates = (() => {
+    const names = exchanges.map(e => e.name.toLowerCase())
+    return names.length !== new Set(names).size
+  })()
+
+  async function handleDedup() {
+    const seen = new Map<string, Exchange>()
+    const toDelete: string[] = []
+    for (const ex of exchanges) {
+      const key = ex.name.toLowerCase()
+      if (seen.has(key)) {
+        // Keep the default one, or the first seen
+        const existing = seen.get(key)!
+        if (ex.isDefault && !existing.isDefault) {
+          toDelete.push(existing.id)
+          seen.set(key, ex)
+        } else {
+          toDelete.push(ex.id)
+        }
+      } else {
+        seen.set(key, ex)
+      }
+    }
+    if (!toDelete.length) { toast.success('Aucun doublon trouvé'); return }
+    try {
+      await Promise.all(toDelete.map(id => deleteExchange(id)))
+      toast.success(`${toDelete.length} doublon${toDelete.length > 1 ? 's' : ''} supprimé${toDelete.length > 1 ? 's' : ''}`)
+    } catch { toast.error('Erreur lors du nettoyage') }
+  }
+
   return (
     <div style={s}>
       {/* Header */}
@@ -80,6 +111,11 @@ export default function ExchangesPage() {
           <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'4px 0 0' }}>
             {loading ? '…' : `${exchanges.length} exchange${exchanges.length !== 1 ? 's' : ''} configuré${exchanges.length !== 1 ? 's' : ''}`}
           </p>
+          {hasDuplicates && (
+            <button onClick={handleDedup} style={{ marginTop:6, padding:'4px 12px', borderRadius:8, border:'1px solid rgba(255,149,0,0.4)', background:'rgba(255,149,0,0.08)', color:'var(--tm-warning)', cursor:'pointer', fontSize:11, fontWeight:600 }}>
+              ⚠ Doublons détectés — Nettoyer
+            </button>
+          )}
         </div>
         <button
           onClick={() => setShowAdd(true)}
@@ -516,8 +552,8 @@ function QuickAddButton({ preset }: { preset: typeof PRESET_EXCHANGES[0] }) {
         isDefault: false,
       })
       toast.success(`${preset.name} ajouté`)
-    } catch {
-      toast.error('Erreur')
+    } catch (err) {
+      toast.error('Erreur lors de l\'ajout')
     } finally {
       setAdding(false)
     }
