@@ -69,8 +69,13 @@ export default function ReferralPage() {
       ])
 
       // ── Auto-fix : rattraper l'XP manquant si filleuls validés mais 0 XP ──
-      const rw = rewardsRes.data
-      if (rw.stats.validated > 0 && (rw.totalXP === 0 || rw.rewards.bonusXP === 0)) {
+      // On utilise statsRes.data.stats.validated (compte réel des docs referral)
+      // car rewardsRes.data.stats.validated lit le champ user doc qui peut être désync
+      const realValidated = statsRes.data.stats.validated
+      const currentXP = rewardsRes.data.totalXP ?? 0
+      const currentBonusXP = rewardsRes.data.rewards?.bonusXP ?? 0
+
+      if (realValidated > 0 && currentXP === 0 && currentBonusXP === 0) {
         try {
           const fixFn = httpsCallable<void, { fixed: number; xpAdded: number; newTotalXP: number }>(fbFn, 'fixMissingReferralXP')
           const fixRes = await fixFn()
