@@ -1,4 +1,5 @@
 // src/components/layout/Sidebar.tsx
+import XPBar from '@/components/gamification/XPBar'
 import { useState, useEffect } from 'react'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { NavLink, useNavigate } from 'react-router-dom'
@@ -22,6 +23,7 @@ const NAV = [
   { to: '/exchanges',  label: 'Exchanges',  Icon: IconExchange },
 ]
 const NAV_BOTTOM = [
+    { to: '/badges', label: 'Badges', Icon: IconStar },
   { to: '/referral', label: 'Parrainage', Icon: IconStar },
   { to: '/profil',   label: 'Profil',     Icon: IconProfil },
   { to: '/settings', label: 'Paramètres', Icon: IconSettings },
@@ -136,7 +138,8 @@ export default function Sidebar() {
           </NavLink>
         ))}
 
-        {/* User row */}
+          <XPBar />
+          {/* User row */}
         <div style={{ marginTop: 6, padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #0A85FF33, #00E5FF33)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', flexShrink: 0, overflow: 'hidden' }}>
             {profilePhoto ? (
