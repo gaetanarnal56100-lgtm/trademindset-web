@@ -67,6 +67,24 @@ export default function ReferralPage() {
         httpsCallable<void, ReferralData>(fbFn, 'getReferralStats')(),
         httpsCallable<void, RewardsData>(fbFn, 'getReferralRewards')(),
       ])
+
+      // ── Auto-fix : rattraper l'XP manquant si filleuls validés mais 0 XP ──
+      const rw = rewardsRes.data
+      if (rw.stats.validated > 0 && (rw.totalXP === 0 || rw.rewards.bonusXP === 0)) {
+        try {
+          const fixFn = httpsCallable<void, { fixed: number; xpAdded: number; newTotalXP: number }>(fbFn, 'fixMissingReferralXP')
+          const fixRes = await fixFn()
+          if (fixRes.data.xpAdded > 0) {
+            toast.success(`+${fixRes.data.xpAdded} XP rattrapés !`)
+            // Recharger les rewards après le fix
+            const freshRewards = await httpsCallable<void, RewardsData>(fbFn, 'getReferralRewards')()
+            setData(statsRes.data)
+            setRewards(freshRewards.data)
+            return
+          }
+        } catch (e) { console.warn('fixMissingReferralXP skipped:', e) }
+      }
+
       setData(statsRes.data)
       setRewards(rewardsRes.data)
     } catch { toast.error('Erreur lors du chargement') }
@@ -208,7 +226,7 @@ export default function ReferralPage() {
           { label: 'Total filleuls', value: data?.stats.total ?? 0, color: '#F0F3FF', icon: '👥' },
           { label: 'En attente', value: data?.stats.pending ?? 0, color: '#FF9500', icon: '⏳' },
           { label: 'Validés', value: data?.stats.validated ?? 0, color: '#22C759', icon: '✅' },
-          { label: 'XP Total', value: rewards?.rewards.bonusXP ?? 0, color: '#00E5FF', icon: '⚡' },
+          { label: 'XP Total', value: rewards?.totalXP ?? rewards?.rewards.bonusXP ?? 0, color: '#00E5FF', icon: '⚡' },
         ].map(({ label, value, color, icon }) => (
           <div key={label} style={card()}>
             <div style={hl()} />
