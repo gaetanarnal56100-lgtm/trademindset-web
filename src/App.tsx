@@ -16,6 +16,7 @@ import ProfilPage     from '@/pages/profil/ProfilPage'
 import SettingsPage   from '@/pages/settings/SettingsPage'
 import ExchangesPage  from '@/pages/exchanges/ExchangesPage'
 import ReferralPage   from '@/pages/referral/ReferralPage'
+import CoachIAPage    from '@/pages/coach/CoachIAPage'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
 import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
 import { useAppStore } from '@/store/appStore'
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="settings"         element={<SettingsPage />} />
         <Route path="exchanges"        element={<ExchangesPage />} />
         <Route path="referral"         element={<ReferralPage />} />
+        <Route path="coach"            element={<CoachIAPage />} />
       </Route>
 
       {/* ── Fallback ── */}

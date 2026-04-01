@@ -8,18 +8,18 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
-  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconExchange, IconStar,
+  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconExchange, IconStar, IconAI,
 } from '@/components/ui/Icons'
 
 const NAV = [
-  { to: '/',         label: 'Dashboard',  Icon: IconDashboard,  end: true },
-  { to: '/trades',   label: 'Trades',     Icon: IconTrades },
-  { to: '/analyse',  label: 'Analyse',    Icon: IconAnalyse },
-  { to: '/journal',  label: 'Journal',    Icon: IconJournal },
-  { to: '/alertes',  label: 'Alertes',    Icon: IconAlertes },
+  { to: '/',           label: 'Dashboard',  Icon: IconDashboard,  end: true },
+  { to: '/trades',     label: 'Trades',     Icon: IconTrades },
+  { to: '/analyse',    label: 'Analyse',    Icon: IconAnalyse },
+  { to: '/journal',    label: 'Journal',    Icon: IconJournal },
+  { to: '/alertes',    label: 'Alertes',    Icon: IconAlertes },
   { to: '/calendrier', label: 'Calendrier', Icon: IconCalendrier },
-  { to: '/systemes',  label: 'Systèmes',   Icon: IconSystemes },
-  { to: '/exchanges', label: 'Exchanges',  Icon: IconExchange },
+  { to: '/systemes',   label: 'Systèmes',   Icon: IconSystemes },
+  { to: '/exchanges',  label: 'Exchanges',  Icon: IconExchange },
 ]
 const NAV_BOTTOM = [
   { to: '/referral', label: 'Parrainage', Icon: IconStar },
@@ -93,6 +93,34 @@ export default function Sidebar() {
             )}
           </NavLink>
         ))}
+
+        {/* Coach IA — Coming Soon */}
+        <div
+          title="Bientôt disponible"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '9px 12px', borderRadius: 10, cursor: 'not-allowed',
+            fontSize: 13, fontWeight: 400,
+            color: 'var(--tm-text-muted)',
+            opacity: 0.7,
+            position: 'relative',
+          }}
+        >
+          <IconAI size={16} />
+          <span>Coach IA</span>
+          <span style={{
+            marginLeft: 'auto',
+            fontSize: 9, fontWeight: 700,
+            padding: '2px 6px', borderRadius: 99,
+            background: 'linear-gradient(135deg, #BF5AF222, #0A85FF22)',
+            border: '1px solid #BF5AF244',
+            color: '#BF5AF2',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+          }}>
+            Soon
+          </span>
+        </div>
       </nav>
 
       {/* Bottom */}
