@@ -11,6 +11,7 @@ import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
 import KeyLevelsCard from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
+import RsiHeatmap from './RsiHeatmap'
 
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
@@ -91,7 +92,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'micro' | 'structure' | 'derivees'
+type Mode = 'micro' | 'structure' | 'derivees' | 'rsi'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -1056,6 +1057,7 @@ export default function AnalysePage() {
             {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel'},
             {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine'},
             {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq'},
+            {id:'rsi',      icon:'🌡️',label:'RSI Map',   sub:'Heatmap marché'},
           ] as {id:Mode;icon:string;label:string;sub:string}[]).map(m=>(
             <button key={m.id} onClick={()=>setMode(m.id)} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 20px',borderRadius:10,border:'none',cursor:'pointer',background:mode===m.id?'var(--tm-accent)':'transparent',transition:'all 0.15s'}}>
               <span style={{fontSize:14}}>{m.icon}</span>
@@ -1285,6 +1287,21 @@ export default function AnalysePage() {
             </div>
           </div>
         </div>}
+      </div>}
+
+      {/* ── RSI MAP — crypto only ── */}
+      {isCrypto&&mode==='rsi'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+        <div style={{background:'var(--tm-bg-card)',borderRadius:14,border:'1px solid var(--tm-border-sub)',padding:16,position:'relative',overflow:'hidden'}}>
+          <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,var(--tm-accent),transparent)',opacity:0.3}}/>
+          <RsiHeatmap
+            onTokenClick={(sym) => {
+              // Switch to the token in the search bar
+              const full = sym.endsWith('USDT') ? sym : sym + 'USDT'
+              setSymbol(full)
+              setMode('micro')
+            }}
+          />
+        </div>
       </div>}
     </div>
   )
