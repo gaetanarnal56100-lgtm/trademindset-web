@@ -9,7 +9,7 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
-  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconAI, IconMarches,
+  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconAI, IconMarches, IconPredict,
 } from '@/components/ui/Icons'
 
 const NAV = [
@@ -17,6 +17,7 @@ const NAV = [
   { to: '/trades',     label: 'Trades',     Icon: IconTrades },
   { to: '/analyse',    label: 'Analyse',    Icon: IconAnalyse },
   { to: '/marches',    label: 'Marchés',    Icon: IconMarches },
+  { to: '/predict',    label: 'Prédictions',Icon: IconPredict },
   { to: '/journal',    label: 'Journal',    Icon: IconJournal },
   { to: '/alertes',    label: 'Alertes',    Icon: IconAlertes },
   { to: '/calendrier', label: 'Calendrier', Icon: IconCalendrier },

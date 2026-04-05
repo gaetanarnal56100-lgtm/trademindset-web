@@ -44,6 +44,7 @@ export const IconAI          = icon('M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z M1
 export const IconUpload      = icon('M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12')
 export const IconInfo        = icon('M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 8h.01 M12 12v4')
 export const IconStar        = icon('M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z')
+export const IconPredict     = icon('M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z')
 export const IconMenu        = icon('M3 12h18 M3 6h18 M3 18h18')
 export const IconX           = icon('M18 6L6 18 M6 6l12 12')
 export const IconEye         = icon('M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z')
