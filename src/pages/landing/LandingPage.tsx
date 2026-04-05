@@ -1,24 +1,5 @@
 // src/pages/landing/LandingPage.tsx
 import { Link } from 'react-router-dom'
-import { useEffect, useRef } from 'react'
-
-// ── Animated counter ──────────────────────────────────────────
-function AnimatedCounter({ to, suffix = '' }: { to: number; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    let start = 0
-    const duration = 1800
-    const step = (timestamp: number) => {
-      if (!ref.current) return
-      const progress = Math.min(timestamp / duration, 1)
-      const ease = 1 - Math.pow(1 - progress, 3)
-      ref.current.textContent = Math.floor(ease * to).toLocaleString('fr-FR') + suffix
-      if (progress < 1) requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
-  }, [to, suffix])
-  return <span ref={ref}>0{suffix}</span>
-}
 
 // ── Mock dashboard card ───────────────────────────────────────
 function MockDashboard() {
@@ -295,29 +276,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── STATS BANDEAU ────────────────────────────────────── */}
-      <section style={{
-        borderTop: '1px solid rgba(0,229,255,0.08)',
-        borderBottom: '1px solid rgba(0,229,255,0.08)',
-        padding: '40px 24px',
-        background: 'rgba(0,229,255,0.025)',
-      }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 32 }}>
-          {[
-            { num: 2000, suffix: '+', label: 'Traders actifs' },
-            { num: 150000, suffix: '+', label: 'Trades journalisés' },
-            { num: 37, suffix: '%', label: 'd\'amélioration du win rate' },
-            { num: 49, suffix: '/5', label: 'Note de satisfaction' },
-          ].map(({ num, suffix, label }) => (
-            <div key={label} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 36, fontWeight: 900, fontFamily: 'Syne, sans-serif', letterSpacing: '-0.03em', color: 'var(--tm-accent)' }}>
-                <AnimatedCounter to={num} suffix={suffix} />
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--tm-text-muted)', marginTop: 6 }}>{label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* ── HOW IT WORKS ─────────────────────────────────────── */}
       <section style={{ padding: '100px 24px' }}>
