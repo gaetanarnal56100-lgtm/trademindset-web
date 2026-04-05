@@ -1,6 +1,6 @@
 // src/pages/marches/MarchesPage.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Page Marchés — RSI Heatmap Crypto + Actions
+// Page Marchés — RSI + VMC Heatmap for Crypto & Stocks
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react'
@@ -8,18 +8,11 @@ import { useNavigate } from 'react-router-dom'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import RsiHeatmap from '@/pages/analyse/RsiHeatmap'
+import type { TokenRSI } from '@/pages/analyse/RsiHeatmap'
 
 const fbFunctions = getFunctions(app, 'europe-west1')
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-interface TokenRSI {
-  symbol: string
-  rsi: number
-  change24h: number
-  volume: number
-  price: number
-}
 
 interface YahooCandle { t: number; o: number; h: number; l: number; c: number; v: number }
 
@@ -29,32 +22,112 @@ function calcRSI(closes: number[], period = 14): number {
   if (closes.length <= period) return 50
   let gains = 0, losses = 0
   for (let i = closes.length - period; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1]
+    const curr = closes[i], prev = closes[i - 1]
+    if (typeof curr !== 'number' || typeof prev !== 'number' || isNaN(curr) || isNaN(prev)) continue
+    const d = curr - prev
     if (d > 0) gains += d; else losses -= d
   }
   const avgG = gains / period, avgL = losses / period
   if (avgL === 0) return 100
-  return +(100 - 100 / (1 + avgG / avgL)).toFixed(2)
+  const result = 100 - 100 / (1 + avgG / avgL)
+  return isNaN(result) ? 50 : +result.toFixed(2)
 }
 
-// ── Crypto symbols (top 30) ──────────────────────────────────────────────────
+// ── WaveTrend WT1 helper ─────────────────────────────────────────────────────
+// Standard WaveTrend oscillator (same as VMC Cipher B) using OHLC candles.
+// n1=10 (channel period), n2=21 (average period)
+
+function calcWT1(candles: { o: number; h: number; l: number; c: number }[], n1 = 10, n2 = 21): number {
+  try {
+    if (candles.length < n1 + n2 + 5) return 0
+
+    // EMA helper
+    function ema(src: number[], period: number): number[] {
+      if (src.length === 0) return []
+      const k = 2 / (period + 1)
+      const out: number[] = [src[0] ?? 0]
+      for (let i = 1; i < src.length; i++) {
+        out.push((src[i] ?? 0) * k + out[i - 1] * (1 - k))
+      }
+      return out
+    }
+
+    const hlc3 = candles.map(c => ((c.h ?? 0) + (c.l ?? 0) + (c.c ?? 0)) / 3)
+    const esa = ema(hlc3, n1)
+    const d = ema(hlc3.map((v, i) => Math.abs(v - (esa[i] ?? 0))), n1)
+    const ci = hlc3.map((v, i) => {
+      const di = d[i] ?? 0
+      return di === 0 ? 0 : (v - (esa[i] ?? 0)) / (0.015 * di)
+    })
+    const tci = ema(ci, n2)
+    if (!tci.length) return 0
+    const last = tci[tci.length - 1]
+    if (typeof last !== 'number' || isNaN(last)) return 0
+    return +last.toFixed(2)
+  } catch {
+    return 0
+  }
+}
+
+// ── Crypto symbols (~60) ──────────────────────────────────────────────────────
 
 const CRYPTO_SYMBOLS = [
+  // Majors
   'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','AVAXUSDT',
+  // Mid-cap DeFi / L1-L2
   'DOTUSDT','LINKUSDT','UNIUSDT','ATOMUSDT','APTUSDT','ARBUSDT','OPUSDT','SUIUSDT',
-  'INJUSDT','NEARUSDT','AAVEUSDT','MKRUSDT','CRVUSDT','LDOUSDT','RUNEUSDT','SHIBUSDT',
-  'PEPEUSDT','WIFUSDT','BONKUSDT','TAOUSDT','RENDERUSDT','FETUSDT',
+  'INJUSDT','NEARUSDT','AAVEUSDT','MKRUSDT','CRVUSDT','LDOUSDT','RUNEUSDT',
+  // Memes
+  'SHIBUSDT','PEPEUSDT','WIFUSDT','BONKUSDT','FLOKIUSDT','TRUMPUSDT',
+  // AI / Infra
+  'TAOUSDT','RENDERUSDT','FETUSDT','WLDUSDT','ARKMUSDT',
+  // Gaming / Metaverse
+  'AXSUSDT','SANDUSDT','MANAUSDT','ENJUSDT',
+  // Other top alts
+  'LTCUSDT','BCHUSDT','ETCUSDT','FILUSDT','ICPUSDT','HBARUSDT',
+  'ALGOUSDT','VETUSDT','XLMUSDT','TRXUSDT','TONUSDT',
+  'STXUSDT','TIAUSDT','SEIUSDT','JUPUSDT','PYTHUSDT',
+  'EIGENUSDT','MOODENGUSDT',
 ]
 
 // ── Stock groups ─────────────────────────────────────────────────────────────
 
 const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
-  { label: 'US Tech',       symbols: ['AAPL','MSFT','GOOGL','AMZN','META','NVDA','AMD','TSLA','NFLX','ORCL','CRM','ADBE','INTC','QCOM','UBER','PYPL'] },
-  { label: 'US Finance',    symbols: ['JPM','GS','MS','BAC','V','MA','COIN','WFC'] },
-  { label: 'US Healthcare', symbols: ['JNJ','UNH','PFE','LLY','ABBV','MRK'] },
-  { label: 'US Industrie',  symbols: ['XOM','CVX','BA','CAT','GE','HON'] },
-  { label: 'CAC 40',        symbols: ['TTE.PA','BNP.PA','SAN.PA','AIR.PA','MC.PA','AXA.PA','ORA.PA','SGO.PA','DG.PA','AI.PA'] },
-  { label: 'DAX',           symbols: ['SAP.DE','SIE.DE','ALV.DE','BMW.DE','MBG.DE','BAS.DE','BAYN.DE','DTE.DE','VOW3.DE'] },
+  {
+    label: 'US Tech',
+    symbols: ['AAPL','MSFT','GOOGL','AMZN','META','NVDA','AMD','TSLA','NFLX','ORCL',
+              'CRM','ADBE','INTC','QCOM','UBER','PYPL','SHOP','SNOW','PLTR','MSTR'],
+  },
+  {
+    label: 'US Finance',
+    symbols: ['JPM','GS','MS','BAC','V','MA','COIN','WFC','BLK','C','AXP','SCHW'],
+  },
+  {
+    label: 'US Healthcare',
+    symbols: ['JNJ','UNH','PFE','LLY','ABBV','MRK','AMGN','GILD','BMY','CVS'],
+  },
+  {
+    label: 'US Industrie & Énergie',
+    symbols: ['XOM','CVX','BA','CAT','GE','HON','RTX','LMT','DE','MMM'],
+  },
+  {
+    label: 'CAC 40',
+    symbols: ['TTE.PA','BNP.PA','SAN.PA','AIR.PA','MC.PA','AXA.PA','ORA.PA',
+              'SGO.PA','DG.PA','AI.PA','CAP.PA','KER.PA','RMS.PA','HO.PA'],
+  },
+  {
+    label: 'DAX',
+    symbols: ['SAP.DE','SIE.DE','ALV.DE','BMW.DE','MBG.DE','BAS.DE','BAYN.DE',
+              'DTE.DE','VOW3.DE','ADS.DE','DBK.DE','MUV2.DE'],
+  },
+  {
+    label: 'UK (FTSE)',
+    symbols: ['HSBA.L','BP.L','SHEL.L','AZN.L','ULVR.L','LLOY.L','GSK.L','RIO.L','BT-A.L'],
+  },
+  {
+    label: 'Commodités & ETF',
+    symbols: ['GLD','SLV','USO','UNG','GDX','IAU','PDBC','DBO'],
+  },
 ]
 
 // ── Crypto fetcher ────────────────────────────────────────────────────────────
@@ -62,18 +135,27 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
 async function fetchCryptoRSI(symbols: string[]): Promise<TokenRSI[]> {
   const results = await Promise.allSettled(
     symbols.map(async sym => {
-      const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=16`
+      const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=60`
       const r = await fetch(url)
       const rows: unknown[][] = await r.json()
       if (!Array.isArray(rows) || rows.length < 2) return null
-      const closes = rows.map(k => parseFloat(k[4] as string))
-      const volumes = rows.map(k => parseFloat(k[7] as string)) // quote volume
+      const candles = rows.map(k => ({
+        o: parseFloat(k[1] as string) || 0,
+        h: parseFloat(k[2] as string) || 0,
+        l: parseFloat(k[3] as string) || 0,
+        c: parseFloat(k[4] as string) || 0,
+      }))
+      const closes = candles.map(c => c.c).filter(v => v > 0)
+      const volumes = rows.map(k => parseFloat(k[7] as string) || 0) // quote volume
+      if (closes.length < 2) return null
       const last = closes[closes.length - 1]
       const prev = closes[closes.length - 2]
+      const change = prev !== 0 ? +((last - prev) / prev * 100).toFixed(2) : 0
       return {
         symbol: sym.replace('USDT', ''),
         rsi: calcRSI(closes),
-        change24h: +((last - prev) / prev * 100).toFixed(2),
+        wt1: calcWT1(candles),
+        change24h: isNaN(change) ? 0 : change,
         volume: volumes[volumes.length - 1],
         price: last,
       } satisfies TokenRSI
@@ -92,15 +174,19 @@ async function fetchStockRSI(symbol: string): Promise<TokenRSI | null> {
     const res = await fn({ symbol, interval: '1d', range: '1mo' })
     if (res.data.s !== 'ok' || !res.data.candles || res.data.candles.length < 3) return null
     const candles = res.data.candles
-    const closes = candles.map(c => c.c)
+    const closes = candles.map(c => c.c).filter((v): v is number => typeof v === 'number' && !isNaN(v))
+    if (closes.length < 2) return null
     const last = candles[candles.length - 1]
     const prev = candles[candles.length - 2]
+    if (!last || !prev || last.c == null || prev.c == null) return null
     const displaySym = symbol.replace(/\.(PA|DE|L|MI)$/, '')
+    const change = prev.c !== 0 ? +((last.c - prev.c) / prev.c * 100).toFixed(2) : 0
     return {
       symbol: displaySym,
       rsi: calcRSI(closes),
-      change24h: +((last.c - prev.c) / prev.c * 100).toFixed(2),
-      volume: last.v,
+      wt1: calcWT1(candles),
+      change24h: isNaN(change) ? 0 : change,
+      volume: last.v ?? 0,
       price: last.c,
     }
   } catch {
@@ -108,7 +194,7 @@ async function fetchStockRSI(symbol: string): Promise<TokenRSI | null> {
   }
 }
 
-// Fetch one group of stocks sequentially (to avoid rate limits)
+// Fetch one group sequentially to avoid rate limits
 async function fetchGroupRSI(symbols: string[]): Promise<TokenRSI[]> {
   const results: TokenRSI[] = []
   for (const sym of symbols) {
@@ -149,7 +235,6 @@ function StocksTab({ onTokenClick }: { onTokenClick: (sym: string) => void }) {
     if (started.current) return
     started.current = true
 
-    // Fetch groups one by one, updating state progressively
     ;(async () => {
       for (const group of STOCK_GROUPS) {
         const tokens = await fetchGroupRSI(group.symbols)
@@ -176,12 +261,10 @@ function StocksTab({ onTokenClick }: { onTokenClick: (sym: string) => void }) {
         </div>
       )}
 
-      {/* Show loading skeletons for groups not yet loaded */}
       {STOCK_GROUPS.filter(g => !loadedGroups.has(g.label)).map(g => (
         <LoadingGroup key={g.label} label={g.label} count={g.symbols.length} />
       ))}
 
-      {/* Use RsiHeatmap for all loaded tokens */}
       {allTokens.length > 0 && (
         <RsiHeatmap tokens={allTokens} defaultTimeframe="1d" onTokenClick={onTokenClick} />
       )}
@@ -232,8 +315,6 @@ export default function MarchesPage() {
   const navigate = useNavigate()
 
   const handleTokenClick = (symbol: string) => {
-    // For crypto: symbol is e.g. "BTC" → navigate to Analyse with "BTCUSDT"
-    // For stocks: symbol is e.g. "AAPL" → navigate to Analyse with "AAPL"
     const isCrypto = tab === 'crypto'
     const analyseSymbol = isCrypto ? symbol + 'USDT' : symbol
     localStorage.setItem('tm_analyse_symbol', analyseSymbol)
@@ -260,7 +341,7 @@ export default function MarchesPage() {
           </h1>
         </div>
         <p style={{ fontSize: 13, color: 'var(--tm-text-muted)', margin: 0 }}>
-          Vue globale RSI — identifiez les zones de surachat et survente en un coup d'œil
+          Vue globale RSI & VMC — identifiez les zones de surachat et survente en un coup d'œil
         </p>
       </div>
 

@@ -11,8 +11,6 @@ import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
 import KeyLevelsCard from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
-
-
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
@@ -728,51 +726,6 @@ function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
   return<canvas ref={ref} style={{width:'100%',height:180,borderRadius:8,display:'block'}}/>
 }
 
-function SegmentedCVDHistoryChart({pts,segs}:{pts:CVDPt[];segs:Seg[]}){
-  const ref=useRef<HTMLCanvasElement>(null)
-  useEffect(()=>{
-    const c=ref.current;if(!c||pts.length<2)return
-    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=200
-    c.width=W*dpr;c.height=H*dpr
-    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
-    ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
-    // Subtle horizontal grid
-    ctx.setLineDash([2,4]);ctx.strokeStyle='#ffffff08';ctx.lineWidth=1
-    for(let i=1;i<4;i++){const y=H*i/4;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
-    ctx.setLineDash([])
-    // Zero line
-    let minV=0,maxV=0
-    for(const s of segs)for(const p of pts){if(p[s]<minV)minV=p[s];if(p[s]>maxV)maxV=p[s]}
-    const range=maxV-minV||1
-    const zY=H-16-((-minV)/range)*(H-16)
-    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
-    ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
-    // Time labels
-    if(pts.length>=2){
-      const fmt=(t:number)=>{const d=new Date(t);return`${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`}
-      ctx.font='9px monospace';ctx.fillStyle='#ffffff30'
-      ;([0,0.5,1] as const).forEach(frac=>{
-        const idx=Math.floor(frac*(pts.length-1))
-        const x=frac===0?24:frac===1?W-24:W/2
-        ctx.textAlign=frac===0?'left':frac===1?'right':'center'
-        ctx.fillText(fmt(pts[idx].t),x,H-3)
-      })
-    }
-    // Draw lines + fill per segment
-    for(const seg of segs){
-      const cfg=SEG_CFG[seg]
-      ctx.beginPath();pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=(H-16)-((p[seg]-minV)/range)*(H-16);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
-      const last=pts[pts.length-1][seg];ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
-      const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,cfg.color+(last>=0?'35':'05'));grad.addColorStop(1,cfg.color+'02')
-      ctx.fillStyle=grad;ctx.fill()
-      ctx.beginPath();ctx.strokeStyle=seg==='all'?cfg.color:cfg.color+'CC';ctx.lineWidth=seg==='whales'||seg==='all'?2:1.5
-      pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=(H-16)-((p[seg]-minV)/range)*(H-16);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
-    }
-  },[pts,segs])
-  if(pts.length<2)return null
-  return<canvas ref={ref} style={{width:'100%',height:200,borderRadius:8,display:'block'}}/>
-}
-
 function OISparkline({vals}:{vals:number[]}){
   const ref=useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
@@ -790,6 +743,64 @@ function OISparkline({vals}:{vals:number[]}){
     vals.forEach((v,i)=>{const x=(i/(vals.length-1))*W,y=H-((v-mn)/rng)*(H-4);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
   },[vals])
   return<canvas ref={ref} style={{width:'100%',height:54,display:'block',borderRadius:6}}/>
+}
+
+// Segmented CVD History — multi-line par bucket de taille d'ordre (inspiré Material Indicators)
+interface SegHistPt { t: number; small: number; medium: number; large: number; institutional: number; whales: number }
+function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const SEG_LINES: { key: keyof SegHistPt; color: string; label: string; range: string; lw: number }[] = [
+    { key: 'whales',        color: '#EF5350', label: 'Whales',        range: '>$1M',       lw: 2.5 },
+    { key: 'institutional', color: '#FFA726', label: 'Institutional', range: '$100k–1M',   lw: 1.8 },
+    { key: 'large',         color: '#66BB6A', label: 'Large',         range: '$10k–100k',  lw: 1.5 },
+    { key: 'medium',        color: '#42A5F5', label: 'Medium',        range: '$1k–10k',    lw: 1.2 },
+    { key: 'small',         color: '#607D8B', label: 'Small',         range: '$100–1k',    lw: 1.0 },
+  ]
+  useEffect(() => {
+    const c = ref.current; if (!c || pts.length < 2) return
+    const dpr = window.devicePixelRatio || 1, W = c.offsetWidth || 700, H = 200
+    c.width = W * dpr; c.height = H * dpr
+    const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+    let minV = 0, maxV = 0
+    for (const ln of SEG_LINES) for (const p of pts) {
+      const v = p[ln.key] as number
+      if (v < minV) minV = v; if (v > maxV) maxV = v
+    }
+    const range = maxV - minV || 1
+    const zY = H - ((-minV) / range) * H
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = '#1E2330'; ctx.lineWidth = 0.8
+    ctx.beginPath(); ctx.moveTo(0, zY); ctx.lineTo(W, zY); ctx.stroke(); ctx.setLineDash([])
+    for (const ln of SEG_LINES) {
+      ctx.beginPath()
+      pts.forEach((p, i) => {
+        const x = (i / (pts.length - 1)) * W
+        const y = H - ((p[ln.key] as number - minV) / range) * H
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+      })
+      ctx.strokeStyle = ln.color; ctx.lineWidth = ln.lw; ctx.globalAlpha = 0.85
+      ctx.stroke(); ctx.globalAlpha = 1
+    }
+  }, [pts])
+  if (pts.length < 2) return (
+    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
+      En attente des données historiques…
+    </div>
+  )
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+        {SEG_LINES.map(ln => (
+          <div key={ln.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 16, height: 2, background: ln.color, borderRadius: 1 }} />
+            <span style={{ fontSize: 9, color: ln.color, fontFamily: 'JetBrains Mono,monospace' }}>{ln.label}</span>
+            <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>({ln.range})</span>
+          </div>
+        ))}
+      </div>
+      <canvas ref={ref} style={{ width: '100%', height: 200, borderRadius: 8, display: 'block' }} />
+    </div>
+  )
 }
 
 function PressureBar({score}:{score:number}){
@@ -877,13 +888,12 @@ function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }
 }
 
 export default function AnalysePage() {
-  // Pre-fill symbol from Marchés heatmap click if available
-  const initSymbol = () => {
-    const s = localStorage.getItem('tm_analyse_symbol')
-    if (s) { localStorage.removeItem('tm_analyse_symbol'); return s }
+  const [symbol, setSymbol] = useState(() => {
+    // Read symbol passed from Marchés page via localStorage
+    const stored = localStorage.getItem('tm_analyse_symbol')
+    if (stored) { localStorage.removeItem('tm_analyse_symbol'); return stored }
     return ''
-  }
-  const [symbol, setSymbol] = useState(initSymbol)
+  })
   const [mode,   setMode]   = useState<Mode>('micro')
 
   // CVD state
@@ -901,10 +911,9 @@ export default function AnalysePage() {
   const [wtSummary, setWtSummary] = useState<WhaleSummary|null>(null)
   const [wtTf,      setWtTf]      = useState('1h')
 
-  // Segmented CVD history state
-  const [segHistory,    setSegHistory]    = useState<CVDPt[]>([])
-  const [segHistLoading,setSegHistLoading]= useState(false)
-  const [segHistSegs,   setSegHistSegs]   = useState<Seg[]>(['all','large','institutional','whales'])
+  // Segmented CVD History state
+  const [segHistPts,  setSegHistPts]  = useState<SegHistPt[]>([])
+  const [segHistLoad, setSegHistLoad] = useState(false)
 
   // Dérivés state
   const [oi,        setOI]        = useState<OIData|null>(null)
@@ -984,34 +993,47 @@ export default function AnalysePage() {
       }).catch(()=>{})
   },[symbol,mode,wtTf])
 
-  // ── Segmented CVD History ──
-  useEffect(()=>{
-    if(mode!=='structure')return
-    setSegHistLoading(true);setSegHistory([])
-    const TF_MS:Record<string,number>={'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'12h':43200000,'24h':86400000}
-    const startTime=Date.now()-(TF_MS[wtTf]||3600000)
-    const base=`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=1000`
-    const trades:Array<{t:number;usd:number;isBuy:boolean}>=[]
-    ;(async()=>{
-      let url=`${base}&startTime=${startTime}`
-      for(let batch=0;batch<3;batch++){
-        const r=await fetch(url);const rows=await r.json()
-        if(!Array.isArray(rows)||!rows.length)break
-        for(const x of rows){const usd=parseFloat(x.p)*parseFloat(x.q);if(usd>=100)trades.push({t:x.T,usd,isBuy:!x.m})}
-        if(rows.length<1000)break
-        url=`${base}&fromId=${(rows[rows.length-1].a as number)+1}`
-      }
-      const acc:Record<Seg,number>={small:0,medium:0,large:0,institutional:0,whales:0,all:0}
-      const step=Math.max(1,Math.floor(trades.length/300))
-      const pts:CVDPt[]=[]
-      trades.forEach((tr,i)=>{
-        const delta=tr.isBuy?tr.usd:-tr.usd
-        ;(['small','medium','large','institutional','whales','all'] as Seg[]).forEach(s=>{if(inSeg(tr.usd,s))acc[s]+=delta})
-        if(i%step===0||i===trades.length-1)pts.push({t:tr.t,...acc})
+  // ── Segmented CVD History (Structure tab) ──
+  useEffect(() => {
+    if (mode !== 'structure') return
+    if (!symbol || !/USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)) return
+    setSegHistLoad(true)
+    // Fetch last 3000 aggTrades from Binance futures for segmented CVD history
+    fetch(`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=3000`)
+      .then(r => r.json())
+      .then((trades: { p: string; q: string; m: boolean; T: number }[]) => {
+        if (!Array.isArray(trades) || trades.length === 0) return
+        const bucketMs = 60 * 1000 // 1-minute buckets
+        const buckets = new Map<number, SegHistPt>()
+        for (const t of trades) {
+          const price = parseFloat(t.p), qty = parseFloat(t.q), vol = price * qty
+          if (vol < 100) continue
+          const bk = Math.floor(t.T / bucketMs) * bucketMs
+          if (!buckets.has(bk)) buckets.set(bk, { t: bk, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 })
+          const b = buckets.get(bk)!
+          const delta = t.m ? -vol : vol
+          if (vol >= 1e6)   b.whales        += delta
+          else if (vol >= 1e5) b.institutional += delta
+          else if (vol >= 1e4) b.large         += delta
+          else if (vol >= 1e3) b.medium         += delta
+          else if (vol >= 100) b.small          += delta
+        }
+        // Convert to cumulative per segment
+        const sorted = [...buckets.values()].sort((a, b) => a.t - b.t)
+        const cum: SegHistPt = { t: 0, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 }
+        const pts: SegHistPt[] = sorted.map(b => {
+          cum.small         += b.small
+          cum.medium        += b.medium
+          cum.large         += b.large
+          cum.institutional += b.institutional
+          cum.whales        += b.whales
+          return { t: b.t, small: cum.small, medium: cum.medium, large: cum.large, institutional: cum.institutional, whales: cum.whales }
+        })
+        setSegHistPts(pts)
       })
-      setSegHistory(pts);setSegHistLoading(false)
-    })().catch(()=>setSegHistLoading(false))
-  },[symbol,mode,wtTf])
+      .catch(() => {})
+      .finally(() => setSegHistLoad(false))
+  }, [symbol, mode])
 
   // ── Dérivés ──
   useEffect(()=>{
@@ -1354,26 +1376,24 @@ export default function AnalysePage() {
               <span style={{color:'rgba(255,255,255,0.2)'}}>── Retail</span>
             </div>
             <WhaleTrendChart pts={wtPts}/>
-            {/* Segmented CVD by order size */}
-            <div style={{marginTop:16}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
-                <span style={{fontSize:11,fontWeight:600,color:'var(--tm-text-secondary)'}}>CVD par Taille d'Ordre</span>
-                <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                  {(['all','small','medium','large','institutional','whales'] as Seg[]).map(s=>{
-                    const cfg=SEG_CFG[s];const active=segHistSegs.includes(s)
-                    return<button key={s} onClick={()=>setSegHistSegs(prev=>active&&prev.length>1?prev.filter(x=>x!==s):[...prev,s])} style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:500,cursor:'pointer',border:`1px solid ${active?cfg.color:'var(--tm-border)'}`,background:active?`${cfg.color}18`:'var(--tm-bg-tertiary)',color:active?cfg.color:'var(--tm-text-muted)'}}>{cfg.range}</button>
-                  })}
-                </div>
-              </div>
-              {segHistLoading&&<div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:12,background:'#080C14',borderRadius:8}}><div style={{width:16,height:16,border:'2px solid #2A2F3E',borderTopColor:'#FFA726',borderRadius:'50%',animation:'spin 0.8s linear infinite',marginRight:8}}/>Chargement trades...</div>}
-              {!segHistLoading&&<SegmentedCVDHistoryChart pts={segHistory} segs={segHistSegs}/>}
-              {!segHistLoading&&segHistory.length<2&&<div style={{height:50,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:11}}>Pas de données disponibles</div>}
-            </div>
             {wtSummary&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:10}}>
               {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:wtSummary.divergence,c:wtSummary.divergence.includes('Hauss')?'var(--tm-profit)':wtSummary.divergence.includes('Baiss')?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:'30%',c:'#FFA726'}].map(({l,v,c})=>(
                 <div key={l} style={{background:'var(--tm-bg-tertiary)',borderRadius:8,padding:'8px',textAlign:'center'}}><div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:2}}>{l}</div><div style={{fontSize:12,fontWeight:600,color:c}}>{v}</div></div>
               ))}
             </div>}
+          </div>
+        </div>
+
+        {/* Segmented CVD History */}
+        <div style={C.card}><div style={C.top}/>
+          <div style={{padding:C.p}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <span>📊</span>
+              <span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>CVD par Taille d'Ordre</span>
+              <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',padding:'1px 7px',borderRadius:4}}>Récent · Futures</span>
+              {segHistLoad&&<div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
+            </div>
+            <SegmentedCVDHistoryChart pts={segHistPts}/>
           </div>
         </div>
       </div>}
