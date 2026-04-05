@@ -17,12 +17,13 @@ export interface TokenRSI {
 }
 
 type View = 'rsi' | 'vmc'
-type Timeframe = '5m' | '15m' | '1h' | '4h' | '1d'
+export type Timeframe = '5m' | '15m' | '1h' | '4h' | '1d'
 
 interface RsiHeatmapProps {
   tokens?: TokenRSI[]
+  timeframe?: Timeframe          // controlled from parent (triggers re-fetch)
   defaultTimeframe?: Timeframe
-  onTimeframeChange?: (tf: string) => void
+  onTimeframeChange?: (tf: Timeframe) => void
   onTokenClick?: (symbol: string) => void
 }
 
@@ -329,11 +330,13 @@ function simulateData(seed: number): TokenRSI[] {
 
 export default function RsiHeatmap({
   tokens: externalTokens,
+  timeframe: controlledTf,
   defaultTimeframe = '4h',
   onTimeframeChange,
   onTokenClick,
 }: RsiHeatmapProps) {
-  const [timeframe, setTimeframe] = useState<Timeframe>(defaultTimeframe)
+  const [localTf, setLocalTf] = useState<Timeframe>(defaultTimeframe)
+  const timeframe = controlledTf ?? localTf   // controlled prop takes precedence
   const [view, setView] = useState<View>('rsi')
   const [search, setSearch] = useState('')
   const [hoveredToken, setHoveredToken] = useState<TokenRSI | null>(null)
@@ -344,6 +347,7 @@ export default function RsiHeatmap({
   const allTokens = useMemo(() => {
     if (externalTokens && externalTokens.length > 0) return externalTokens
     return simulateData(tfSeed[timeframe])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalTokens, timeframe])
 
   const filtered = useMemo(() => {
@@ -353,7 +357,7 @@ export default function RsiHeatmap({
   }, [allTokens, search])
 
   const handleTfChange = (tf: Timeframe) => {
-    setTimeframe(tf)
+    setLocalTf(tf)
     onTimeframeChange?.(tf)
   }
 

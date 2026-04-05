@@ -1,14 +1,14 @@
 // src/pages/marches/MarchesPage.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Page Marchés — RSI + VMC Heatmap · 200 crypto (dynamique) + ~200 actions
+// Page Marchés — RSI + VMC Heatmap · 200 crypto (dynamique) + ~215 actions
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import RsiHeatmap from '@/pages/analyse/RsiHeatmap'
-import type { TokenRSI } from '@/pages/analyse/RsiHeatmap'
+import type { TokenRSI, Timeframe } from '@/pages/analyse/RsiHeatmap'
 
 const fbFunctions = getFunctions(app, 'europe-west1')
 
@@ -16,6 +16,24 @@ const fbFunctions = getFunctions(app, 'europe-west1')
 
 interface YahooCandle { t: number; o: number; h: number; l: number; c: number; v: number }
 type YahooFn = { s: string; candles: YahooCandle[] }
+type CryptoFilter = 'all' | 'top10' | 'top50' | 'btceth' | 'alts'
+type StockFilter  = 'all' | 'us' | 'europe' | 'cac40' | 'dax' | 'ftse' | 'asia' | 'etf'
+
+// ── Timeframe mappings ───────────────────────────────────────────────────────
+
+const TF_TO_BINANCE: Record<Timeframe, string> = {
+  '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d',
+}
+const TF_LIMIT: Record<Timeframe, number> = {
+  '5m': 100, '15m': 100, '1h': 80, '4h': 60, '1d': 60,
+}
+const TF_TO_YAHOO: Record<Timeframe, { interval: string; range: string }> = {
+  '5m':  { interval: '5m',  range: '5d'  },
+  '15m': { interval: '15m', range: '5d'  },
+  '1h':  { interval: '1h',  range: '1mo' },
+  '4h':  { interval: '1h',  range: '3mo' }, // Yahoo has no 4h — use 1h with wider range
+  '1d':  { interval: '1d',  range: '1mo' },
+}
 
 // ── RSI helper ───────────────────────────────────────────────────────────────
 
@@ -58,7 +76,7 @@ function calcWT1(candles: { o: number; h: number; l: number; c: number }[], n1 =
   } catch { return 0 }
 }
 
-// ── Stock groups (~200 actions) ───────────────────────────────────────────────
+// ── Stock groups (~215 actions) ───────────────────────────────────────────────
 
 const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
   {
@@ -155,6 +173,38 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
   },
 ]
 
+// ── Index filter maps ─────────────────────────────────────────────────────────
+
+const STOCK_FILTER_GROUPS: Record<StockFilter, string[]> = {
+  all:    STOCK_GROUPS.map(g => g.label),
+  us:     ['🇺🇸 US Tech','🇺🇸 US Finance','🇺🇸 US Santé','🇺🇸 US Industrie & Énergie','🇺🇸 US Consommation & Médias'],
+  europe: ['🇫🇷 CAC 40','🇩🇪 DAX','🇬🇧 FTSE 100','🇪🇺 Europe (Autres)'],
+  cac40:  ['🇫🇷 CAC 40'],
+  dax:    ['🇩🇪 DAX'],
+  ftse:   ['🇬🇧 FTSE 100'],
+  asia:   ['🌏 Asie & International'],
+  etf:    ['📊 ETF & Matières premières'],
+}
+
+const CRYPTO_FILTER_OPTIONS: { value: CryptoFilter; label: string }[] = [
+  { value: 'all',    label: 'Tous' },
+  { value: 'top10',  label: 'Top 10' },
+  { value: 'top50',  label: 'Top 50' },
+  { value: 'btceth', label: 'BTC · ETH' },
+  { value: 'alts',   label: 'Alts' },
+]
+
+const STOCK_FILTER_OPTIONS: { value: StockFilter; label: string }[] = [
+  { value: 'all',    label: 'Tous' },
+  { value: 'us',     label: '🇺🇸 US' },
+  { value: 'europe', label: '🇪🇺 Europe' },
+  { value: 'cac40',  label: '🇫🇷 CAC 40' },
+  { value: 'dax',    label: '🇩🇪 DAX' },
+  { value: 'ftse',   label: '🇬🇧 FTSE' },
+  { value: 'asia',   label: '🌏 Asie' },
+  { value: 'etf',    label: '📊 ETF' },
+]
+
 // ── Share button ──────────────────────────────────────────────────────────────
 
 function ShareButton({ targetRef, label }: { targetRef: React.RefObject<HTMLDivElement>; label: string }) {
@@ -214,28 +264,64 @@ function ShareButton({ targetRef, label }: { targetRef: React.RefObject<HTMLDivE
   )
 }
 
+// ── Filter pills ──────────────────────────────────────────────────────────────
+
+function FilterPills<T extends string>({
+  options, value, onChange,
+}: {
+  options: { value: T; label: string }[]
+  value: T
+  onChange: (v: T) => void
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
+      {options.map(o => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          style={{
+            padding: '3px 11px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+            cursor: 'pointer', transition: 'all 0.12s',
+            border: `1px solid ${value === o.value ? 'var(--tm-accent)' : 'var(--tm-border-sub)'}`,
+            background: value === o.value ? 'var(--tm-accent, #5B5EF4)22' : 'transparent',
+            color: value === o.value ? 'var(--tm-accent, #5B5EF4)' : 'var(--tm-text-muted)',
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── Crypto fetcher (top 200 dynamique via Binance ticker) ─────────────────────
 
 interface BinanceTicker { symbol: string; quoteVolume: string }
 
-async function fetchTopCryptoSymbols(n = 200): Promise<string[]> {
+// Module-level cache so the ticker list isn't re-fetched on each TF change
+let _cachedCryptoSymbols: string[] | null = null
+
+async function getTopCryptoSymbols(n = 200): Promise<string[]> {
+  if (_cachedCryptoSymbols) return _cachedCryptoSymbols
   const r = await fetch('https://api.binance.com/api/v3/ticker/24hr')
   const tickers: BinanceTicker[] = await r.json()
-  return tickers
+  _cachedCryptoSymbols = tickers
     .filter(t => t.symbol.endsWith('USDT') && parseFloat(t.quoteVolume) > 500_000)
     .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
     .slice(0, n)
     .map(t => t.symbol)
+  return _cachedCryptoSymbols
 }
 
-async function fetchCryptoRSI(symbols: string[]): Promise<TokenRSI[]> {
-  // Batch par 50 pour éviter le rate-limit Binance
+async function fetchCryptoRSI(symbols: string[], tf: Timeframe = '1d'): Promise<TokenRSI[]> {
+  const interval = TF_TO_BINANCE[tf]
+  const limit    = TF_LIMIT[tf]
   const BATCH = 50
   const results: TokenRSI[] = []
   for (let i = 0; i < symbols.length; i += BATCH) {
     const batch = symbols.slice(i, i + BATCH)
     const settled = await Promise.allSettled(batch.map(async sym => {
-      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=60`)
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`)
       const rows: unknown[][] = await r.json()
       if (!Array.isArray(rows) || rows.length < 2) return null
       const candles = rows.map(k => ({
@@ -266,10 +352,11 @@ async function fetchCryptoRSI(symbols: string[]): Promise<TokenRSI[]> {
 
 // ── Stock fetcher ─────────────────────────────────────────────────────────────
 
-async function fetchStockRSI(symbol: string): Promise<TokenRSI | null> {
+async function fetchStockRSI(symbol: string, tf: Timeframe = '1d'): Promise<TokenRSI | null> {
   try {
+    const { interval, range } = TF_TO_YAHOO[tf]
     const fn = httpsCallable<Record<string, unknown>, YahooFn>(fbFunctions, 'fetchYahooCandles')
-    const res = await fn({ symbol, interval: '1d', range: '1mo' })
+    const res = await fn({ symbol, interval, range })
     if (res.data.s !== 'ok' || !res.data.candles || res.data.candles.length < 3) return null
     const candles = res.data.candles
     const closes = candles.map(c => c.c).filter((v): v is number => typeof v === 'number' && !isNaN(v))
@@ -290,16 +377,16 @@ async function fetchStockRSI(symbol: string): Promise<TokenRSI | null> {
   } catch { return null }
 }
 
-// Groupe en parallèle par lots de 10 pour ne pas saturer Firebase
 async function fetchGroupParallel(
   symbols: string[],
+  tf: Timeframe = '1d',
   onProgress?: (done: number, total: number) => void
 ): Promise<TokenRSI[]> {
   const BATCH = 10
   const results: TokenRSI[] = []
   for (let i = 0; i < symbols.length; i += BATCH) {
     const batch = symbols.slice(i, i + BATCH)
-    const settled = await Promise.allSettled(batch.map(s => fetchStockRSI(s)))
+    const settled = await Promise.allSettled(batch.map(s => fetchStockRSI(s, tf)))
     results.push(...settled.flatMap(r => r.status === 'fulfilled' && r.value ? [r.value] : []))
     onProgress?.(Math.min(i + BATCH, symbols.length), symbols.length)
   }
@@ -321,34 +408,68 @@ function SkeletonGroup({ label, count }: { label: string; count: number }) {
   )
 }
 
+// ── Refetch indicator ─────────────────────────────────────────────────────────
+
+function RefetchBadge() {
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      fontSize: 10, color: 'var(--tm-text-muted)',
+      padding: '3px 10px', background: 'var(--tm-bg-secondary)',
+      borderRadius: 99, border: '1px solid var(--tm-border-sub)',
+      marginBottom: 8,
+    }}>
+      <div style={{ width: 10, height: 10, border: '1.5px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      Mise à jour…
+    </div>
+  )
+}
+
 // ── Stocks tab ────────────────────────────────────────────────────────────────
 
 function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
-  const [groupData, setGroupData] = useState<Record<string, TokenRSI[]>>({})
+  const [groupData,     setGroupData]     = useState<Record<string, TokenRSI[]>>({})
   const [groupProgress, setGroupProgress] = useState<Record<string, { done: number; total: number }>>({})
-  const [loadedGroups, setLoadedGroups] = useState<Set<string>>(new Set())
-  const started = useRef(false)
+  const [loadedGroups,  setLoadedGroups]  = useState<Set<string>>(new Set())
+  const [timeframe,     setTimeframe]     = useState<Timeframe>('1d')
+  const [filter,        setFilter]        = useState<StockFilter>('all')
 
   useEffect(() => {
-    if (started.current) return
-    started.current = true
+    let cancelled = false
+    // Reset loading state for new TF
+    setGroupData({})
+    setLoadedGroups(new Set())
+    setGroupProgress({})
     ;(async () => {
       for (const group of STOCK_GROUPS) {
+        if (cancelled) break
         const total = group.symbols.length
         setGroupProgress(prev => ({ ...prev, [group.label]: { done: 0, total } }))
-        const tokens = await fetchGroupParallel(group.symbols, (done) => {
-          setGroupProgress(prev => ({ ...prev, [group.label]: { done, total } }))
+        const tokens = await fetchGroupParallel(group.symbols, timeframe, (done) => {
+          if (!cancelled) setGroupProgress(prev => ({ ...prev, [group.label]: { done, total } }))
         })
-        setGroupData(prev => ({ ...prev, [group.label]: tokens }))
-        setLoadedGroups(prev => new Set([...prev, group.label]))
+        if (!cancelled) {
+          setGroupData(prev => ({ ...prev, [group.label]: tokens }))
+          setLoadedGroups(prev => new Set([...prev, group.label]))
+        }
       }
     })()
-  }, [])
+    return () => { cancelled = true }
+  }, [timeframe])
 
-  const allTokens = Object.values(groupData).flat()
-  const allLoaded = loadedGroups.size === STOCK_GROUPS.length
-  const totalLoaded = allTokens.length
+  const allowedGroups = STOCK_FILTER_GROUPS[filter]
+
+  // All loaded tokens filtered by index
+  const filteredTokens = useMemo(() => {
+    return STOCK_GROUPS
+      .filter(g => allowedGroups.includes(g.label))
+      .flatMap(g => groupData[g.label] ?? [])
+  }, [groupData, allowedGroups])
+
+  const allLoaded   = loadedGroups.size === STOCK_GROUPS.length
+  const totalLoaded = Object.values(groupData).flat().length
   const totalSymbols = STOCK_GROUPS.reduce((s, g) => s + g.symbols.length, 0)
+  const isFirstLoad = !allLoaded && totalLoaded === 0
 
   return (
     <div>
@@ -367,15 +488,24 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         </div>
       )}
 
-      {/* Skeletons for pending groups */}
-      {STOCK_GROUPS.filter(g => !loadedGroups.has(g.label)).map(g => {
+      {/* Index filter pills */}
+      <FilterPills options={STOCK_FILTER_OPTIONS} value={filter} onChange={setFilter} />
+
+      {/* Skeletons for pending groups (only on first load) */}
+      {isFirstLoad && STOCK_GROUPS.filter(g => !loadedGroups.has(g.label)).map(g => {
         const prog = groupProgress[g.label]
         return <SkeletonGroup key={g.label} label={`${g.label} ${prog ? `(${prog.done}/${prog.total})` : ''}`} count={g.symbols.length} />
       })}
 
-      {allTokens.length > 0 && (
+      {filteredTokens.length > 0 && (
         <div ref={shareRef}>
-          <RsiHeatmap tokens={allTokens} defaultTimeframe="1d" onTokenClick={onTokenClick} />
+          <RsiHeatmap
+            tokens={filteredTokens}
+            timeframe={timeframe}
+            defaultTimeframe="1d"
+            onTimeframeChange={setTimeframe}
+            onTokenClick={onTokenClick}
+          />
         </div>
       )}
     </div>
@@ -385,22 +515,23 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 // ── Crypto tab ────────────────────────────────────────────────────────────────
 
 function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
-  const [tokens, setTokens] = useState<TokenRSI[]>([])
-  const [loading, setLoading] = useState(true)
-  const [status, setStatus] = useState('Récupération du top 200 Binance…')
+  const [tokens,    setTokens]    = useState<TokenRSI[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [timeframe, setTimeframe] = useState<Timeframe>('1d')
+  const [filter,    setFilter]    = useState<CryptoFilter>('all')
+  const [status,    setStatus]    = useState('Récupération du top 200 Binance…')
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     ;(async () => {
-      setLoading(true)
       try {
         setStatus('Récupération du top 200 Binance par volume…')
-        const symbols = await fetchTopCryptoSymbols(200)
+        const symbols = await getTopCryptoSymbols(200)
         if (cancelled) return
-        setStatus(`Calcul RSI + VMC pour ${symbols.length} crypto…`)
-        const data = await fetchCryptoRSI(symbols)
-        if (cancelled) return
-        setTokens(data)
+        setStatus(`Calcul RSI + VMC (${timeframe.toUpperCase()}) pour ${symbols.length} crypto…`)
+        const data = await fetchCryptoRSI(symbols, timeframe)
+        if (!cancelled) setTokens(data)
       } catch (e) {
         console.warn('Crypto fetch error:', e)
       } finally {
@@ -408,9 +539,23 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
       }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [timeframe])
 
-  if (loading) return (
+  // Apply index/category filter client-side (no re-fetch needed)
+  const filteredTokens = useMemo(() => {
+    switch (filter) {
+      case 'top10':  return tokens.slice(0, 10)
+      case 'top50':  return tokens.slice(0, 50)
+      case 'btceth': return tokens.filter(t => t.symbol === 'BTC' || t.symbol === 'ETH')
+      case 'alts':   return tokens.filter(t => t.symbol !== 'BTC' && t.symbol !== 'ETH')
+      default:       return tokens
+    }
+  }, [tokens, filter])
+
+  const isFirstLoad  = loading && tokens.length === 0
+  const isRefetching = loading && tokens.length > 0
+
+  if (isFirstLoad) return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--tm-text-muted)', padding: '8px 12px', background: 'var(--tm-bg-secondary)', borderRadius: 8, border: '1px solid var(--tm-border-sub)' }}>
         <div style={{ width: 16, height: 16, border: '2px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
@@ -425,8 +570,21 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   )
 
   return (
-    <div ref={shareRef}>
-      <RsiHeatmap tokens={tokens} defaultTimeframe="1d" onTokenClick={onTokenClick} />
+    <div>
+      {isRefetching && <RefetchBadge />}
+
+      {/* Category filter pills */}
+      <FilterPills options={CRYPTO_FILTER_OPTIONS} value={filter} onChange={setFilter} />
+
+      <div ref={shareRef}>
+        <RsiHeatmap
+          tokens={filteredTokens}
+          timeframe={timeframe}
+          defaultTimeframe="1d"
+          onTimeframeChange={setTimeframe}
+          onTokenClick={onTokenClick}
+        />
+      </div>
     </div>
   )
 }
@@ -458,7 +616,7 @@ export default function MarchesPage() {
     transition: 'all 0.15s',
   })
 
-  const activeRef = tab === 'crypto' ? cryptoShareRef : stocksShareRef
+  const activeRef   = tab === 'crypto' ? cryptoShareRef : stocksShareRef
   const activeLabel = tab === 'crypto' ? 'marches-crypto' : 'marches-actions'
 
   return (
@@ -490,7 +648,7 @@ export default function MarchesPage() {
         position: 'relative', overflow: 'hidden',
       }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,var(--tm-accent),transparent)', opacity: 0.3 }} />
-        {tab === 'crypto' && <CryptoTab onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
+        {tab === 'crypto'  && <CryptoTab onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
         {tab === 'actions' && <StocksTab onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
       </div>
     </div>
