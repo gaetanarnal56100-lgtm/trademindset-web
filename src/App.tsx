@@ -8,6 +8,7 @@ import SignUpPage     from '@/pages/auth/SignUpPage'
 import DashboardPage  from '@/pages/dashboard/DashboardPage'
 import TradesPage     from '@/pages/trades/TradesPage'
 import AnalysePage    from '@/pages/analyse/AnalysePage'
+import MarchesPage    from '@/pages/marches/MarchesPage'
 import JournalPage    from '@/pages/journal/JournalPage'
 import AlertesPage    from '@/pages/alertes/AlertesPage'
 import CalendrierPage from '@/pages/calendrier/CalendrierPage'
@@ -48,6 +49,7 @@ export default function App() {
         <Route index                   element={<DashboardPage />} />
         <Route path="trades"           element={<TradesPage />} />
         <Route path="analyse"          element={<AnalysePage />} />
+        <Route path="marches"          element={<MarchesPage />} />
         <Route path="journal"          element={<JournalPage />} />
         <Route path="alertes"          element={<AlertesPage />} />
         <Route path="calendrier"       element={<CalendrierPage />} />

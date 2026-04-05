@@ -1,50 +1,44 @@
 // src/pages/analyse/RsiHeatmap.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Carte Thermique RSI — Scatter plot interactif inspiré de Coinglass
-// Compatible thèmes TradeMindset (CSS vars --tm-*)
+// Carte Thermique RSI / VMC — Tile grid par zone, filtrable, avec tooltip
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface TokenRSI {
+export interface TokenRSI {
   symbol: string
   rsi: number
+  wt1: number       // WaveTrend WT1 (VMC proxy)
   change24h: number
   volume: number
   price: number
 }
 
-type RsiZone = 'overbought' | 'strong' | 'neutral' | 'weak' | 'oversold'
+type View = 'rsi' | 'vmc'
 type Timeframe = '5m' | '15m' | '1h' | '4h' | '1d'
-type FilterZone = 'all' | RsiZone
 
 interface RsiHeatmapProps {
   tokens?: TokenRSI[]
   defaultTimeframe?: Timeframe
-  onTimeframeChange?: (tf: Timeframe) => void
+  onTimeframeChange?: (tf: string) => void
   onTokenClick?: (symbol: string) => void
 }
 
-// ── Resolve CSS var for canvas ───────────────────────────────────────────────
+// ── RSI Zone config ──────────────────────────────────────────────────────────
 
-function resolveCSSColor(varName: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback
-  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
-}
+type RsiZone = 'overbought' | 'strong' | 'neutral' | 'weak' | 'oversold'
 
-// ── Zone config ──────────────────────────────────────────────────────────────
+const RSI_ZONES: { id: RsiZone; label: string; range: string; color: string; bg: string }[] = [
+  { id: 'overbought', label: 'Suracheté',  range: '≥ 75', color: '#ff3b5c', bg: 'rgba(255,59,92,0.10)' },
+  { id: 'strong',     label: 'Fort',       range: '60–74', color: '#ff8c61', bg: 'rgba(255,140,97,0.08)' },
+  { id: 'neutral',    label: 'Neutre',     range: '40–59', color: '#6b7280', bg: 'rgba(107,114,128,0.06)' },
+  { id: 'weak',       label: 'Faible',     range: '30–39', color: '#4ecdc4', bg: 'rgba(78,205,196,0.08)' },
+  { id: 'oversold',   label: 'Survendu',   range: '< 30',  color: '#00d4aa', bg: 'rgba(0,212,170,0.10)' },
+]
 
-const ZONE_META: Record<RsiZone, { label: string; range: string }> = {
-  overbought: { label: 'Suracheté',  range: '≥ 75' },
-  strong:     { label: 'Fort',       range: '60–74' },
-  neutral:    { label: 'Neutre',     range: '40–59' },
-  weak:       { label: 'Faible',     range: '30–39' },
-  oversold:   { label: 'Survendu',   range: '< 30' },
-}
-
-function getZone(rsi: number): RsiZone {
+function getRsiZone(rsi: number): RsiZone {
   if (rsi >= 75) return 'overbought'
   if (rsi >= 60) return 'strong'
   if (rsi >= 40) return 'neutral'
@@ -52,269 +46,252 @@ function getZone(rsi: number): RsiZone {
   return 'oversold'
 }
 
-function zoneColor(rsi: number): string {
-  if (rsi >= 75) return '#ff3b5c'
-  if (rsi >= 60) return '#ff6b8a'
-  if (rsi >= 40) return '#6b7280'
-  if (rsi >= 30) return '#4ecdc4'
-  return '#00d4aa'
-}
+// ── VMC Zone config ──────────────────────────────────────────────────────────
 
-function zoneBg(zone: RsiZone): string {
-  return {
-    overbought: 'rgba(255,59,92,0.055)',
-    strong: 'rgba(255,107,138,0.03)',
-    neutral: 'transparent',
-    weak: 'rgba(78,205,196,0.03)',
-    oversold: 'rgba(0,212,170,0.055)',
-  }[zone]
-}
+type VmcZone = 'vOverbought' | 'vBullish' | 'vNeutral' | 'vBearish' | 'vOversold'
 
-// ── Simulated data ───────────────────────────────────────────────────────────
-
-const SYMBOLS = [
-  'BTC','ETH','SOL','BNB','XRP','ADA','DOGE','AVAX','DOT','MATIC','LINK','UNI',
-  'ATOM','FIL','APT','ARB','OP','SUI','SEI','INJ','TIA','NEAR','FTM','ALGO',
-  'AAVE','MKR','CRV','LDO','RUNE','SNX','COMP','SAND','MANA','AXS','IMX','GALA',
-  'ENJ','FLOW','ICP','HBAR','VET','EOS','XLM','TRX','SHIB','PEPE','WIF','BONK',
-  'FLOKI','MEME','STX','ORDI','KAS','TAO','RENDER','FET','AGIX','OCEAN','AR','GRT',
-  'THETA','ROSE','ZIL','ONE','CELO','KAVA','OSMO','WLD','BLUR','MAGIC','GMX',
-  'RDNT','PENDLE','JOE','DYDX','TWT','MASK','BAL','SUSHI','1INCH','ANKR','SKL',
-  'STORJ','GNO','LRC','ZRX','KNC','JASMY','CHZ','ENS','ACH','PERP','HIGH',
-  'LEVER','BICO','RARE','REQ','PROM','SLP','PYR','SUPER','GODS','ILV','YGG',
-  'RONIN','PRIME','PIXEL','PORTAL','XAI','MANTA','DYM','STRK','MODE','ETHFI',
-  'NOT','IO','ZK','ZRO','LISTA','BLAST','EIGEN','HMSTR','NEIRO','TURBO','BRETT',
-  'PEOPLE','BOME','MEW','POPCAT','JTO','PYTH','JUP','ONDO','ENA','AEVO','ALT',
-  'NEO','ONT','QTUM','ICX','ZEN','BTG','DASH','IOTA','NANO','WAVES','COTI',
-  'HIVE','WAX','WIN','SUN','BTT','RSR','CKB','FLUX','MOVR','GLMR','APE','CAKE',
-  'GMT','MINA','CSPR','POWR','MTL','FUN','ATA','DIA','SAFE','KAITO','BSV','MON',
-  'INIT','KAIA','DEEP','HFT','TAIKO','GTC','FRAX','MBOX','COS','FLUID',
+const VMC_ZONES: { id: VmcZone; label: string; range: string; color: string; bg: string }[] = [
+  { id: 'vOverbought', label: 'Suracheté',  range: '≥ 53',    color: '#ff3b5c', bg: 'rgba(255,59,92,0.10)' },
+  { id: 'vBullish',    label: 'Haussier',   range: '20–52',   color: '#22c759', bg: 'rgba(34,199,89,0.08)' },
+  { id: 'vNeutral',    label: 'Neutre',     range: '-19–19',  color: '#6b7280', bg: 'rgba(107,114,128,0.06)' },
+  { id: 'vBearish',    label: 'Baissier',   range: '-52– -20',color: '#ff8c61', bg: 'rgba(255,140,97,0.08)' },
+  { id: 'vOversold',   label: 'Survendu',   range: '≤ -53',   color: '#00d4aa', bg: 'rgba(0,212,170,0.10)' },
 ]
 
-function simulateData(seed: number): TokenRSI[] {
-  return SYMBOLS.map((symbol, i) => {
-    const r = Math.abs(Math.sin(i * 1337.7 + seed * 7919.3))
-    const r2 = Math.abs(Math.sin(i * 997.1 + seed * 3571.9))
-    return {
-      symbol,
-      rsi: +(r * 82 + 8).toFixed(2),
-      change24h: +((r2 - 0.5) * 28).toFixed(2),
-      volume: r2 * 400_000_000 + 500_000,
-      price: r * 60000 + 0.001,
-    }
-  })
+function getVmcZone(wt1: number): VmcZone {
+  if (wt1 >= 53) return 'vOverbought'
+  if (wt1 >= 20) return 'vBullish'
+  if (wt1 > -20) return 'vNeutral'
+  if (wt1 > -53) return 'vBearish'
+  return 'vOversold'
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function resolveCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+}
+
+function fmtPrice(p: number | undefined | null): string {
+  if (p == null || isNaN(p) || !isFinite(p)) return '—'
+  if (p < 0.001) return p.toFixed(6)
+  if (p < 1) return p.toFixed(4)
+  if (p < 100) return p.toFixed(2)
+  return p.toFixed(0)
+}
+
+// ── View Toggle ──────────────────────────────────────────────────────────────
+
+function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  const active: React.CSSProperties = {
+    padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+    fontSize: 11, fontWeight: 700, background: 'var(--tm-bg-tertiary)',
+    color: 'var(--tm-text-primary)', transition: 'all 0.15s',
+  }
+  const inactive: React.CSSProperties = {
+    ...active, background: 'transparent',
+    color: 'var(--tm-text-muted)', fontWeight: 400,
+  }
+  return (
+    <div style={{ display: 'flex', gap: 1, background: 'var(--tm-bg-secondary)', borderRadius: 7, padding: 2, border: '1px solid var(--tm-border-sub)' }}>
+      <button onClick={() => onChange('rsi')} style={view === 'rsi' ? active : inactive}>RSI</button>
+      <button onClick={() => onChange('vmc')} style={view === 'vmc' ? { ...active, color: '#BF5AF2' } : inactive}>VMC</button>
+    </div>
+  )
+}
+
+// ── Token Tile ───────────────────────────────────────────────────────────────
+
+function TokenTile({ token, view, onClick, onHover, hovered }: {
+  token: TokenRSI; view: View
+  onClick?: (sym: string) => void
+  onHover: (t: TokenRSI | null, el: HTMLElement | null) => void
+  hovered: boolean
+}) {
+  const rsiZ = RSI_ZONES.find(z => z.id === getRsiZone(token.rsi ?? 50))!
+  const vmcZ = VMC_ZONES.find(z => z.id === getVmcZone(token.wt1 ?? 0))!
+  const z = view === 'rsi' ? rsiZ : vmcZ
+  const val = view === 'rsi' ? (token.rsi ?? 50) : (token.wt1 ?? 0)
+
+  return (
+    <div
+      onClick={() => onClick?.(token.symbol)}
+      onMouseEnter={e => onHover(token, e.currentTarget)}
+      onMouseLeave={() => onHover(null, null)}
+      style={{
+        width: 76, minHeight: 58, borderRadius: 8,
+        background: hovered ? z.bg.replace(/[\d.]+\)$/, '0.18)') : z.bg,
+        border: `1px solid ${hovered ? z.color + '88' : z.color + '30'}`,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 2, cursor: onClick ? 'pointer' : 'default',
+        padding: '6px 4px',
+        transition: 'all 0.12s',
+        transform: hovered ? 'scale(1.06)' : 'scale(1)',
+        boxShadow: hovered ? `0 4px 12px ${z.color}22` : 'none',
+      }}
+    >
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-primary)', letterSpacing: 0.3, fontFamily: "'JetBrains Mono',monospace" }}>
+        {token.symbol}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: z.color, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>
+        {val > 0 && view === 'vmc' ? '+' : ''}{val}
+      </div>
+      <div style={{
+        fontSize: 9, fontWeight: 600,
+        color: token.change24h >= 0 ? '#22c759' : '#ff3b5c',
+        fontFamily: "'JetBrains Mono',monospace",
+      }}>
+        {token.change24h >= 0 ? '▲' : '▼'} {Math.abs(token.change24h).toFixed(1)}%
+      </div>
+    </div>
+  )
 }
 
 // ── Tooltip ──────────────────────────────────────────────────────────────────
 
-function Tooltip({ token, x, y, bounds }: {
-  token: TokenRSI | null; x: number; y: number; bounds: DOMRect | null
-}) {
-  if (!token || !bounds) return null
-  const zone = getZone(token.rsi)
-  const color = zoneColor(token.rsi)
+function Tooltip({ token, anchor }: { token: TokenRSI | null; anchor: HTMLElement | null }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  useEffect(() => {
+    if (!token || !anchor || !ref.current) return
+    const ar = anchor.getBoundingClientRect()
+    const tr = ref.current.getBoundingClientRect()
+    const sr = document.documentElement
+    let left = ar.right + 10
+    let top = ar.top + ar.height / 2 - tr.height / 2
+    if (left + tr.width > sr.clientWidth - 10) left = ar.left - tr.width - 10
+    if (top < 10) top = 10
+    if (top + tr.height > sr.clientHeight - 10) top = sr.clientHeight - tr.height - 10
+    setPos({ top, left })
+  }, [token, anchor])
+
+  if (!token) return null
+  const rsiZ = RSI_ZONES.find(z => z.id === getRsiZone(token.rsi ?? 50))!
+  const vmcZ = VMC_ZONES.find(z => z.id === getVmcZone(token.wt1 ?? 0))!
   const profit = resolveCSSColor('--tm-profit', '#22C759')
   const loss = resolveCSSColor('--tm-loss', '#FF3B30')
-  const w = 215, h = 160
-  let left = x + 16, top = y - h / 2
-  if (left + w > bounds.width) left = x - w - 16
-  if (top < 4) top = 4
-  if (top + h > bounds.height) top = bounds.height - h - 4
 
   return (
-    <div style={{
-      position: 'absolute', left, top, width: w, zIndex: 50, pointerEvents: 'none',
-      background: resolveCSSColor('--tm-bg', '#0D1117') + 'F2',
-      border: `1px solid ${color}40`, borderRadius: 10, padding: '13px 15px',
-      backdropFilter: 'blur(14px)',
-      boxShadow: `0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 ${color}10`,
+    <div ref={ref} style={{
+      position: 'fixed', ...pos, zIndex: 9999, pointerEvents: 'none',
+      width: 220,
+      background: 'var(--tm-bg, #0D1117)',
+      border: `1px solid ${rsiZ.color}44`,
+      borderRadius: 10, padding: '12px 14px',
+      backdropFilter: 'blur(16px)',
+      boxShadow: `0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 ${rsiZ.color}10`,
       fontFamily: "'JetBrains Mono','Fira Code',monospace",
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 }}>
-        <span style={{ color: resolveCSSColor('--tm-text-primary', '#F0F3FF'), fontSize: 15, fontWeight: 700, letterSpacing: 0.6 }}>{token.symbol}</span>
-        <span style={{ color, fontSize: 10, fontWeight: 700, padding: '2px 8px', background: `${color}18`, borderRadius: 4 }}>
-          {ZONE_META[zone].label}
-        </span>
+      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--tm-text-primary)', marginBottom: 10, letterSpacing: 0.4 }}>
+        {token.symbol}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 10px', fontSize: 11.5 }}>
-        <span style={{ color: resolveCSSColor('--tm-text-muted', '#555C70') }}>RSI</span>
-        <span style={{ color, fontWeight: 700, textAlign: 'right' }}>{token.rsi}</span>
-        <span style={{ color: resolveCSSColor('--tm-text-muted', '#555C70') }}>24h</span>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px', fontSize: 11.5 }}>
+        <span style={{ color: 'var(--tm-text-muted)' }}>RSI</span>
+        <span style={{ color: rsiZ.color, fontWeight: 700, textAlign: 'right' }}>
+          {token.rsi} <span style={{ fontSize: 9, opacity: 0.7 }}>({rsiZ.label})</span>
+        </span>
+
+        <span style={{ color: 'var(--tm-text-muted)' }}>VMC WT1</span>
+        <span style={{ color: vmcZ.color, fontWeight: 700, textAlign: 'right' }}>
+          {(token.wt1 ?? 0) > 0 ? '+' : ''}{token.wt1 ?? 0} <span style={{ fontSize: 9, opacity: 0.7 }}>({vmcZ.label})</span>
+        </span>
+
+        <span style={{ color: 'var(--tm-text-muted)' }}>24h</span>
         <span style={{ color: token.change24h >= 0 ? profit : loss, fontWeight: 700, textAlign: 'right' }}>
           {token.change24h >= 0 ? '+' : ''}{token.change24h}%
         </span>
-        <span style={{ color: resolveCSSColor('--tm-text-muted', '#555C70') }}>Prix</span>
-        <span style={{ color: resolveCSSColor('--tm-text-secondary', '#8F94A3'), fontWeight: 600, textAlign: 'right' }}>
-          ${token.price < 1 ? token.price.toFixed(6) : token.price < 100 ? token.price.toFixed(2) : token.price.toFixed(0)}
+
+        <span style={{ color: 'var(--tm-text-muted)' }}>Prix</span>
+        <span style={{ color: 'var(--tm-text-secondary)', fontWeight: 600, textAlign: 'right' }}>
+          ${fmtPrice(token.price)}
         </span>
-        <span style={{ color: resolveCSSColor('--tm-text-muted', '#555C70') }}>Vol.</span>
-        <span style={{ color: resolveCSSColor('--tm-text-secondary', '#8F94A3'), fontWeight: 600, textAlign: 'right' }}>
-          ${(token.volume / 1e6).toFixed(1)}M
+
+        <span style={{ color: 'var(--tm-text-muted)' }}>Vol.</span>
+        <span style={{ color: 'var(--tm-text-secondary)', fontWeight: 600, textAlign: 'right' }}>
+          {token.volume ? `$${((token.volume) / 1e6).toFixed(1)}M` : '—'}
         </span>
       </div>
     </div>
   )
 }
 
-// ── SVG Scatter Chart ────────────────────────────────────────────────────────
+// ── Zone Section ─────────────────────────────────────────────────────────────
 
-function ScatterChart({ tokens, hoveredToken, setHoveredToken, setMousePos, onTokenClick }: {
+function ZoneSection({ zone, tokens, view, onTokenClick, onHover, hoveredSym }: {
+  zone: { id: string; label: string; range: string; color: string; bg: string }
   tokens: TokenRSI[]
-  hoveredToken: TokenRSI | null
-  setHoveredToken: (t: TokenRSI | null) => void
-  setMousePos: (p: { x: number; y: number }) => void
-  onTokenClick?: (symbol: string) => void
+  view: View
+  onTokenClick?: (sym: string) => void
+  onHover: (t: TokenRSI | null, el: HTMLElement | null) => void
+  hoveredSym: string | null
 }) {
-  const svgRef = useRef<SVGSVGElement>(null)
-  const pad = { top: 18, right: 56, bottom: 26, left: 44 }
-  const W = 1200, H = 560
-  const iW = W - pad.left - pad.right, iH = H - pad.top - pad.bottom
-  const rsiMin = 5, rsiMax = 95
-
-  const yScale = (rsi: number) => pad.top + iH - ((rsi - rsiMin) / (rsiMax - rsiMin)) * iH
-  const xScale = (i: number) => pad.left + (i / (tokens.length - 1 || 1)) * iW
-
-  const avgRsi = tokens.length ? +(tokens.reduce((s, t) => s + t.rsi, 0) / tokens.length).toFixed(2) : 50
-
-  const handleMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return
-    const rect = svgRef.current.getBoundingClientRect()
-    const sx = W / rect.width, sy = H / rect.height
-    const mx = (e.clientX - rect.left) * sx
-    const my = (e.clientY - rect.top) * sy
-    let best: TokenRSI | null = null, bestD = 30
-    tokens.forEach((t, i) => {
-      const d = Math.hypot(mx - xScale(i), my - yScale(t.rsi))
-      if (d < bestD) { bestD = d; best = t }
-    })
-    setHoveredToken(best)
-    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
-  }, [tokens, setHoveredToken, setMousePos])
-
-  const handleClick = useCallback(() => {
-    if (hoveredToken && onTokenClick) onTokenClick(hoveredToken.symbol)
-  }, [hoveredToken, onTokenClick])
-
-  const zones: { yStart: number; yEnd: number; zone: RsiZone }[] = [
-    { yStart: 75, yEnd: 95, zone: 'overbought' },
-    { yStart: 60, yEnd: 75, zone: 'strong' },
-    { yStart: 40, yEnd: 60, zone: 'neutral' },
-    { yStart: 30, yEnd: 40, zone: 'weak' },
-    { yStart: 5, yEnd: 30, zone: 'oversold' },
-  ]
-
-  const ticks = [10, 20, 30, 40, 50, 60, 70, 80, 90]
-
-  // Decide which labels to show: always extremes + hovered, random ~30% for mid
-  const showLabel = useCallback((t: TokenRSI, i: number) => {
-    if (hoveredToken?.symbol === t.symbol) return true
-    if (t.rsi >= 78 || t.rsi <= 25) return true
-    // Stable pseudo-random based on symbol to avoid flickering
-    const hash = t.symbol.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-    return hash % 4 === 0
-  }, [hoveredToken])
+  const [collapsed, setCollapsed] = useState(false)
+  if (tokens.length === 0) return null
 
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
-      style={{ width: '100%', height: 'auto', display: 'block', cursor: 'crosshair' }}
-      onMouseMove={handleMove}
-      onMouseLeave={() => setHoveredToken(null)}
-      onClick={handleClick}
-    >
-      {/* Zone backgrounds */}
-      {zones.map(z => (
-        <g key={z.zone}>
-          <rect x={pad.left} y={yScale(z.yEnd)} width={iW} height={yScale(z.yStart) - yScale(z.yEnd)} fill={zoneBg(z.zone)} />
-          <text x={W - 8} y={(yScale(z.yStart) + yScale(z.yEnd)) / 2 + 4}
-            textAnchor="end" fontSize={10} fontWeight={600} fill={zoneColor(z.zone === 'neutral' ? 50 : z.zone === 'overbought' ? 80 : z.zone === 'strong' ? 65 : z.zone === 'weak' ? 35 : 20)} opacity={0.35}
-            fontFamily="'JetBrains Mono',monospace">{ZONE_META[z.zone].label}</text>
-        </g>
-      ))}
+    <div style={{ marginBottom: 8 }}>
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'none', border: 'none', cursor: 'pointer',
+          padding: '4px 2px', marginBottom: collapsed ? 0 : 6,
+          width: '100%', textAlign: 'left',
+        }}
+      >
+        <div style={{ width: 8, height: 8, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: zone.color }}>{zone.label}</span>
+        <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{zone.range}</span>
+        <span style={{
+          marginLeft: 4, fontSize: 10, fontWeight: 700,
+          background: zone.color + '22', color: zone.color,
+          padding: '1px 6px', borderRadius: 99,
+        }}>{tokens.length}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--tm-text-muted)', opacity: 0.5 }}>{collapsed ? '▶' : '▼'}</span>
+      </button>
 
-      {/* Grid */}
-      {ticks.map(t => (
-        <g key={t}>
-          <line x1={pad.left} x2={pad.left + iW} y1={yScale(t)} y2={yScale(t)}
-            stroke={resolveCSSColor('--tm-border-sub', '#1E2330')} strokeWidth={1}
-            strokeDasharray={t === 50 ? 'none' : '2,5'} />
-          <text x={pad.left - 8} y={yScale(t) + 4} textAnchor="end" fontSize={10}
-            fill={resolveCSSColor('--tm-text-muted', '#555C70')} fontFamily="'JetBrains Mono',monospace">{t}</text>
-        </g>
-      ))}
-
-      {/* Average RSI */}
-      <line x1={pad.left} x2={pad.left + iW} y1={yScale(avgRsi)} y2={yScale(avgRsi)}
-        stroke={resolveCSSColor('--tm-warning', '#FF9500')} strokeWidth={1.5} strokeDasharray="6,4" opacity={0.55} />
-      <rect x={pad.left + iW - 135} y={yScale(avgRsi) - 11} width={130} height={19} rx={4}
-        fill="rgba(255,149,0,0.12)" />
-      <text x={pad.left + iW - 70} y={yScale(avgRsi) + 3} textAnchor="middle" fontSize={10.5} fontWeight={700}
-        fill={resolveCSSColor('--tm-warning', '#FF9500')} fontFamily="'JetBrains Mono',monospace">
-        RSI Moy : {avgRsi}
-      </text>
-
-      {/* Decorative vertical dashes */}
-      {[0.18, 0.36, 0.54, 0.72].map((p, i) => (
-        <line key={i} x1={pad.left + p * iW} x2={pad.left + p * iW}
-          y1={pad.top} y2={pad.top + iH}
-          stroke="#ff3b5c" strokeWidth={0.4} strokeDasharray="3,7" opacity={0.15} />
-      ))}
-
-      {/* Token dots */}
-      {tokens.map((t, i) => {
-        const cx = xScale(i), cy = yScale(t.rsi)
-        const c = zoneColor(t.rsi)
-        const hovered = hoveredToken?.symbol === t.symbol
-        return (
-          <g key={t.symbol} style={{ cursor: 'pointer' }}>
-            {hovered && <circle cx={cx} cy={cy} r={15} fill={`${c}18`} stroke={c} strokeWidth={1} opacity={0.5}>
-              <animate attributeName="r" from="12" to="18" dur="0.8s" repeatCount="indefinite" />
-              <animate attributeName="opacity" from="0.5" to="0" dur="0.8s" repeatCount="indefinite" />
-            </circle>}
-            <circle cx={cx} cy={cy} r={hovered ? 6.5 : 4} fill={c} opacity={hovered ? 1 : 0.75}
-              style={{ transition: 'r 0.12s, opacity 0.12s' }} />
-            {showLabel(t, i) && (
-              <text x={cx} y={cy - (hovered ? 12 : 8)} textAnchor="middle"
-                fontSize={hovered ? 11 : 8.5} fontWeight={hovered ? 700 : 500}
-                fill={hovered ? resolveCSSColor('--tm-text-primary', '#F0F3FF') : resolveCSSColor('--tm-text-muted', '#555C70')}
-                fontFamily="'JetBrains Mono',monospace" opacity={hovered ? 1 : 0.65}>
-                {t.symbol}
-              </text>
-            )}
-          </g>
-        )
-      })}
-
-      {/* Axis borders */}
-      <line x1={pad.left} x2={pad.left} y1={pad.top} y2={pad.top + iH}
-        stroke={resolveCSSColor('--tm-border-sub', '#1E2330')} strokeWidth={1} />
-      <line x1={pad.left} x2={pad.left + iW} y1={pad.top + iH} y2={pad.top + iH}
-        stroke={resolveCSSColor('--tm-border-sub', '#1E2330')} strokeWidth={1} />
-    </svg>
+      {!collapsed && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {tokens.map(t => (
+            <TokenTile
+              key={t.symbol}
+              token={t}
+              view={view}
+              onClick={onTokenClick}
+              onHover={onHover}
+              hovered={hoveredSym === t.symbol}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
 // ── Distribution Bar ─────────────────────────────────────────────────────────
 
-function DistributionBar({ tokens }: { tokens: TokenRSI[] }) {
+function DistributionBar({ tokens, view }: { tokens: TokenRSI[]; view: View }) {
   const total = tokens.length || 1
-  const segments = [
-    { zone: 'overbought' as RsiZone, color: '#ff3b5c', count: tokens.filter(t => t.rsi >= 75).length },
-    { zone: 'strong' as RsiZone, color: '#ff6b8a', count: tokens.filter(t => t.rsi >= 60 && t.rsi < 75).length },
-    { zone: 'neutral' as RsiZone, color: '#6b7280', count: tokens.filter(t => t.rsi >= 40 && t.rsi < 60).length },
-    { zone: 'weak' as RsiZone, color: '#4ecdc4', count: tokens.filter(t => t.rsi >= 30 && t.rsi < 40).length },
-    { zone: 'oversold' as RsiZone, color: '#00d4aa', count: tokens.filter(t => t.rsi < 30).length },
-  ]
+  const zones = view === 'rsi' ? RSI_ZONES : VMC_ZONES
+  const counts = zones.map(z => ({
+    ...z,
+    count: view === 'rsi'
+      ? tokens.filter(t => getRsiZone(t.rsi ?? 50) === z.id).length
+      : tokens.filter(t => getVmcZone(t.wt1 ?? 0) === z.id).length,
+  }))
   return (
     <div style={{ padding: '0 2px' }}>
       <div style={{ display: 'flex', height: 5, borderRadius: 3, overflow: 'hidden', background: 'var(--tm-bg-secondary)' }}>
-        {segments.map((s, i) => (
-          <div key={i} style={{ width: `${(s.count / total) * 100}%`, background: s.color, transition: 'width 0.4s ease' }} />
+        {counts.map((z, i) => (
+          <div key={i} style={{ width: `${(z.count / total) * 100}%`, background: z.color, transition: 'width 0.4s ease' }} />
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-        {segments.map((s, i) => (
-          <span key={i} style={{ fontSize: 10, fontWeight: 600, color: s.color, fontFamily: "'JetBrains Mono',monospace" }}>
-            {s.count} <span style={{ color: 'var(--tm-text-muted)', fontWeight: 400, fontSize: 9 }}>{ZONE_META[s.zone].label}</span>
+        {counts.map((z, i) => (
+          <span key={i} style={{ fontSize: 10, fontWeight: 600, color: z.color, fontFamily: "'JetBrains Mono',monospace" }}>
+            {z.count} <span style={{ color: 'var(--tm-text-muted)', fontWeight: 400, fontSize: 9 }}>{z.label}</span>
           </span>
         ))}
       </div>
@@ -322,19 +299,46 @@ function DistributionBar({ tokens }: { tokens: TokenRSI[] }) {
   )
 }
 
+// ── Simulated data (fallback when no external tokens) ────────────────────────
+
+const SYMBOLS_DEMO = [
+  'BTC','ETH','SOL','BNB','XRP','ADA','DOGE','AVAX','DOT','LINK','UNI','ATOM',
+  'APT','ARB','OP','SUI','INJ','NEAR','AAVE','MKR','CRV','LDO','RUNE','SHIB',
+  'PEPE','WIF','BONK','TAO','RENDER','FET',
+]
+
+function simulateData(seed: number): TokenRSI[] {
+  return SYMBOLS_DEMO.map((symbol, i) => {
+    const r = Math.abs(Math.sin(i * 1337.7 + seed * 7919.3))
+    const r2 = Math.abs(Math.sin(i * 997.1 + seed * 3571.9))
+    const r3 = Math.abs(Math.sin(i * 541.3 + seed * 2311.7))
+    return {
+      symbol,
+      rsi: +(r * 82 + 8).toFixed(2),
+      wt1: +((r3 - 0.5) * 130).toFixed(2),
+      change24h: +((r2 - 0.5) * 28).toFixed(2),
+      volume: r2 * 400_000_000 + 500_000,
+      price: r * 60000 + 0.001,
+    }
+  })
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN EXPORT
 // ══════════════════════════════════════════════════════════════════════════════
 
-export default function RsiHeatmap({ tokens: externalTokens, defaultTimeframe = '4h', onTimeframeChange, onTokenClick }: RsiHeatmapProps) {
+export default function RsiHeatmap({
+  tokens: externalTokens,
+  defaultTimeframe = '4h',
+  onTimeframeChange,
+  onTokenClick,
+}: RsiHeatmapProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>(defaultTimeframe)
-  const [filter, setFilter] = useState<FilterZone>('all')
+  const [view, setView] = useState<View>('rsi')
+  const [search, setSearch] = useState('')
   const [hoveredToken, setHoveredToken] = useState<TokenRSI | null>(null)
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [containerRect, setContainerRect] = useState<DOMRect | null>(null)
+  const [hoveredAnchor, setHoveredAnchor] = useState<HTMLElement | null>(null)
 
-  // Seed changes on timeframe to simulate different data per TF
   const tfSeed: Record<Timeframe, number> = { '5m': 1, '15m': 2, '1h': 3, '4h': 4, '1d': 5 }
 
   const allTokens = useMemo(() => {
@@ -343,35 +347,22 @@ export default function RsiHeatmap({ tokens: externalTokens, defaultTimeframe = 
   }, [externalTokens, timeframe])
 
   const filtered = useMemo(() => {
-    if (filter === 'all') return allTokens
-    return allTokens.filter(t => getZone(t.rsi) === filter)
-  }, [allTokens, filter])
-
-  const sorted = useMemo(() => [...filtered].sort((a, b) => b.rsi - a.rsi), [filtered])
+    if (!search) return allTokens
+    const q = search.toUpperCase()
+    return allTokens.filter(t => t.symbol.toUpperCase().includes(q))
+  }, [allTokens, search])
 
   const handleTfChange = (tf: Timeframe) => {
     setTimeframe(tf)
     onTimeframeChange?.(tf)
   }
 
-  useEffect(() => {
-    const upd = () => {
-      if (containerRef.current) setContainerRect(containerRef.current.getBoundingClientRect())
-    }
-    upd()
-    window.addEventListener('resize', upd)
-    return () => window.removeEventListener('resize', upd)
-  }, [])
+  const handleHover = (t: TokenRSI | null, el: HTMLElement | null) => {
+    setHoveredToken(t)
+    setHoveredAnchor(el)
+  }
 
   const timeframes: Timeframe[] = ['5m', '15m', '1h', '4h', '1d']
-  const filters: { value: FilterZone; label: string }[] = [
-    { value: 'all', label: 'Tous' },
-    { value: 'overbought', label: 'Suracheté' },
-    { value: 'strong', label: 'Fort' },
-    { value: 'neutral', label: 'Neutre' },
-    { value: 'weak', label: 'Faible' },
-    { value: 'oversold', label: 'Survendu' },
-  ]
 
   const btnStyle = (active: boolean): React.CSSProperties => ({
     padding: '5px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
@@ -381,77 +372,82 @@ export default function RsiHeatmap({ tokens: externalTokens, defaultTimeframe = 
     transition: 'all 0.15s',
   })
 
+  // Group tokens by zone
+  const zones = view === 'rsi' ? RSI_ZONES : VMC_ZONES
+  const grouped = useMemo(() => {
+    return zones.map(z => ({
+      zone: z,
+      tokens: view === 'rsi'
+        ? [...filtered].filter(t => getRsiZone(t.rsi ?? 50) === z.id).sort((a, b) => (b.rsi ?? 50) - (a.rsi ?? 50))
+        : [...filtered].filter(t => getVmcZone(t.wt1 ?? 0) === z.id).sort((a, b) => (b.wt1 ?? 0) - (a.wt1 ?? 0)),
+    }))
+  }, [filtered, view, zones])
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {/* Header + controls */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 14 }}>🌡️</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Carte Thermique RSI</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>
+            Carte Thermique {view === 'rsi' ? 'RSI' : 'VMC'}
+          </span>
           <span style={{
             fontSize: 10, color: 'var(--tm-text-muted)', background: 'var(--tm-bg-secondary)',
             padding: '2px 8px', borderRadius: 4, border: '1px solid var(--tm-border-sub)',
           }}>
-            {sorted.length} tokens
+            {filtered.length} tokens
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* View toggle (RSI / VMC) */}
+          <ViewToggle view={view} onChange={setView} />
+
           {/* Timeframe */}
           <div style={{ display: 'flex', gap: 1, background: 'var(--tm-bg-secondary)', borderRadius: 7, padding: 2, border: '1px solid var(--tm-border-sub)' }}>
             {timeframes.map(tf => (
               <button key={tf} onClick={() => handleTfChange(tf)} style={btnStyle(timeframe === tf)}>{tf.toUpperCase()}</button>
             ))}
           </div>
-          {/* Filter */}
-          <div style={{ display: 'flex', gap: 1, background: 'var(--tm-bg-secondary)', borderRadius: 7, padding: 2, border: '1px solid var(--tm-border-sub)' }}>
-            {filters.map(f => (
-              <button key={f.value} onClick={() => setFilter(f.value)} style={btnStyle(filter === f.value)}>{f.label}</button>
-            ))}
-          </div>
+
+          {/* Search */}
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher…"
+            style={{
+              background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border-sub)',
+              borderRadius: 7, padding: '5px 10px', fontSize: 11,
+              color: 'var(--tm-text-primary)', fontFamily: "'JetBrains Mono',monospace",
+              outline: 'none', width: 130,
+            }}
+          />
         </div>
       </div>
 
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        {(['overbought', 'strong', 'neutral', 'weak', 'oversold'] as RsiZone[]).map(z => {
-          const c = zoneColor(z === 'neutral' ? 50 : z === 'overbought' ? 80 : z === 'strong' ? 65 : z === 'weak' ? 35 : 20)
-          return (
-            <div key={z} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${c}50` }} />
-              <span style={{ color: 'var(--tm-text-muted)', fontSize: 10.5, fontFamily: "'JetBrains Mono',monospace" }}>
-                {ZONE_META[z].label} <span style={{ opacity: 0.5 }}>({ZONE_META[z].range})</span>
-              </span>
-            </div>
-          )
-        })}
+      {/* Zone groups */}
+      <div>
+        {grouped.map(({ zone, tokens }) => (
+          <ZoneSection
+            key={zone.id}
+            zone={zone}
+            tokens={tokens}
+            view={view}
+            onTokenClick={onTokenClick}
+            onHover={handleHover}
+            hoveredSym={hoveredToken?.symbol ?? null}
+          />
+        ))}
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--tm-text-muted)', fontSize: 13 }}>
+            Aucun token trouvé
+          </div>
+        )}
       </div>
 
-      {/* Chart */}
-      <div ref={containerRef} style={{
-        position: 'relative',
-        background: 'var(--tm-bg)',
-        border: '1px solid var(--tm-border-sub)',
-        borderRadius: 10,
-        overflow: 'hidden',
-      }}>
-        <ScatterChart
-          tokens={sorted}
-          hoveredToken={hoveredToken}
-          setHoveredToken={setHoveredToken}
-          setMousePos={setMousePos}
-          onTokenClick={onTokenClick}
-        />
-        <Tooltip
-          token={hoveredToken}
-          x={mousePos.x}
-          y={mousePos.y}
-          bounds={containerRect}
-        />
-      </div>
-
-      {/* Distribution */}
-      <DistributionBar tokens={sorted} />
+      {/* Distribution bar */}
+      <DistributionBar tokens={filtered} view={view} />
 
       {/* Footer */}
       <div style={{
@@ -459,9 +455,12 @@ export default function RsiHeatmap({ tokens: externalTokens, defaultTimeframe = 
         fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: "'JetBrains Mono',monospace",
         opacity: 0.5,
       }}>
-        <span>RSI {timeframe.toUpperCase()} · {externalTokens ? 'Données live' : 'Données simulées'}</span>
+        <span>{view === 'rsi' ? 'RSI' : 'VMC WT1'} {timeframe.toUpperCase()} · {externalTokens ? 'Données live' : 'Données simulées'}</span>
         <span>TradeMindset</span>
       </div>
+
+      {/* Tooltip (fixed position) */}
+      <Tooltip token={hoveredToken} anchor={hoveredAnchor} />
     </div>
   )
 }
