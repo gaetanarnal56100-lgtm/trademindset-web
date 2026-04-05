@@ -22,6 +22,79 @@ const TF_LABEL: Record<PredictionTimeframe, string> = {
   '1h': '1 heure', '4h': '4 heures', '24h': '24 heures', '3d': '3 jours', '7d': '7 jours',
 }
 
+/** Période de verrouillage avant la résolution (10 min) — impossible de parier */
+const LOCK_MS = 10 * 60 * 1000
+
+/**
+ * Calcule la prochaine heure de résolution FIXE pour un timeframe donné.
+ * Tous les utilisateurs pariant sur le même timeframe ont exactement le même resolveAt.
+ *
+ * 1h  → prochaine heure pleine (ex: si 14h23 → 15h00)
+ * 4h  → prochain multiple de 4h UTC: 00h, 04h, 08h, 12h, 16h, 20h
+ * 24h → prochain minuit UTC
+ * 3d  → dans 3 jours à minuit UTC
+ * 7d  → dans 7 jours à minuit UTC
+ */
+function nextResolveAt(tf: PredictionTimeframe): Date {
+  const now = new Date()
+  switch (tf) {
+    case '1h': {
+      const d = new Date(now)
+      d.setUTCMinutes(0, 0, 0)
+      d.setUTCHours(d.getUTCHours() + 1)
+      return d
+    }
+    case '4h': {
+      const d = new Date(now)
+      const h = d.getUTCHours()
+      const nextH = Math.ceil((h + 1) / 4) * 4
+      if (nextH >= 24) {
+        d.setUTCDate(d.getUTCDate() + 1)
+        d.setUTCHours(0, 0, 0, 0)
+      } else {
+        d.setUTCHours(nextH, 0, 0, 0)
+      }
+      return d
+    }
+    case '24h': {
+      const d = new Date(now)
+      d.setUTCDate(d.getUTCDate() + 1)
+      d.setUTCHours(0, 0, 0, 0)
+      return d
+    }
+    case '3d': {
+      const d = new Date(now)
+      d.setUTCDate(d.getUTCDate() + 3)
+      d.setUTCHours(0, 0, 0, 0)
+      return d
+    }
+    case '7d': {
+      const d = new Date(now)
+      d.setUTCDate(d.getUTCDate() + 7)
+      d.setUTCHours(0, 0, 0, 0)
+      return d
+    }
+  }
+}
+
+/** Formate un diff en ms en chaîne lisible (avec secondes) */
+function fmtDiff(diff: number): string {
+  if (diff <= 0) return 'En cours de résolution…'
+  const d = Math.floor(diff / 86_400_000)
+  const h = Math.floor((diff % 86_400_000) / 3_600_000)
+  const m = Math.floor((diff % 3_600_000) / 60_000)
+  const s = Math.floor((diff % 60_000) / 1000)
+  if (d > 0) return `${d}j ${h}h ${m}m`
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+/** Formate une Date en heure locale lisible */
+function fmtTime(d: Date): string {
+  return d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+}
+
 // Top 10 crypto disponibles maintenant
 const CRYPTO_SYMBOLS = ['BTC','ETH','BNB','SOL','XRP','ADA','AVAX','DOT','MATIC','LINK']
 
@@ -46,13 +119,7 @@ function fmtPrice(n: number): string {
 }
 
 function fmtCountdown(resolveAt: Timestamp): string {
-  const diff = resolveAt.toMillis() - Date.now()
-  if (diff <= 0) return 'En cours de résolution…'
-  const h = Math.floor(diff / 3_600_000)
-  const m = Math.floor((diff % 3_600_000) / 60_000)
-  if (h > 24) return `${Math.floor(h / 24)}j ${h % 24}h`
-  if (h > 0)  return `${h}h ${m}m`
-  return `${m}m`
+  return fmtDiff(resolveAt.toMillis() - Date.now())
 }
 
 function anonymize(name?: string): string {
@@ -182,6 +249,28 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
   const [communityPreds, setCommunityPreds] = useState<Prediction[]>([])
   const [commLoading, setCommLoading] = useState(false)
 
+  // ── Fixed resolve time + lock period ────────────────────────
+  const [resolveDate, setResolveDate] = useState<Date>(() => nextResolveAt('24h'))
+  const [countdown, setCountdown]     = useState('')
+  const [isLocked, setIsLocked]       = useState(false)
+
+  // Recalcule la résolution quand le timeframe change
+  useEffect(() => {
+    setResolveDate(nextResolveAt(timeframe))
+  }, [timeframe])
+
+  // Ticker live (toutes les secondes)
+  useEffect(() => {
+    const tick = () => {
+      const diff = resolveDate.getTime() - Date.now()
+      setIsLocked(diff <= LOCK_MS && diff > 0)
+      setCountdown(fmtDiff(diff))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [resolveDate])
+
   // Seul le crypto top 10 est disponible ; actions = coming soon
   const activeSymbols = assetType === 'crypto' ? CRYPTO_SYMBOLS : []
   const comingSoonSymbols = assetType === 'crypto' ? CRYPTO_COMING_SOON : STOCK_SYMBOLS_COMING_SOON
@@ -215,7 +304,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
     ? (numPredicted - currentPrice) / currentPrice * 100
     : 0
   const direction = deltaPct >= 0 ? 'up' : 'down'
-  const canSubmit = !priceLoading && currentPrice !== null && !isNaN(numPredicted) && numPredicted > 0
+  const canSubmit = !priceLoading && currentPrice !== null && !isNaN(numPredicted) && numPredicted > 0 && !isLocked
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -227,7 +316,11 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         : await fetchStockPrice(symbol)
       if (!lockedPrice) throw new Error('Impossible de récupérer le prix')
 
-      const resolveAt = Timestamp.fromMillis(Date.now() + TF_MS[timeframe])
+      // Vérification côté client : si on est en période de lock, on refuse
+      if (resolveDate.getTime() - Date.now() <= LOCK_MS) {
+        throw new Error('Paris verrouillés 10 minutes avant la résolution')
+      }
+      const resolveAt = Timestamp.fromDate(resolveDate)
       await createPrediction({
         uid,
         symbol,
@@ -262,7 +355,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
       if (newBadges.length > 0) {
         onToast(`🏆 Badge${newBadges.length > 1 ? 's' : ''} débloqué${newBadges.length > 1 ? 's' : ''} : ${newBadges.map(b => b.icon + ' ' + b.name).join(', ')}`)
       } else {
-        onToast(`✅ Prédiction soumise · +5 XP · Résolution dans ${TF_LABEL[timeframe]}`)
+        onToast(`✅ Prédiction soumise · +5 XP · Résolution le ${fmtTime(resolveDate)}`)
       }
       onPredictionCreated()
     } catch (e) {
@@ -358,14 +451,29 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '14px 16px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>HORIZON DE PRÉDICTION</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {TIMEFRAMES.map(tf => (
-              <button key={tf} onClick={() => setTimeframe(tf)} style={{
-                flex: 1, minWidth: 60, padding: '7px 4px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                border: `1px solid ${timeframe === tf ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
-                background: timeframe === tf ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'var(--tm-bg-tertiary)',
-                color: timeframe === tf ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
-              }}>{tf}</button>
-            ))}
+            {TIMEFRAMES.map(tf => {
+              const rDate = nextResolveAt(tf)
+              const diff = rDate.getTime() - Date.now()
+              const locked = diff <= LOCK_MS && diff > 0
+              return (
+                <button key={tf} onClick={() => setTimeframe(tf)}
+                  title={`Résolution : ${fmtTime(rDate)}`}
+                  style={{
+                    flex: 1, minWidth: 60, padding: '7px 4px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    border: `1px solid ${timeframe === tf ? (locked ? 'var(--tm-loss)' : 'var(--tm-accent)') : 'var(--tm-border)'}`,
+                    background: timeframe === tf ? (locked ? 'rgba(244,67,54,0.1)' : 'rgba(var(--tm-accent-rgb,0,229,255),0.12)') : 'var(--tm-bg-tertiary)',
+                    color: timeframe === tf ? (locked ? 'var(--tm-loss)' : 'var(--tm-accent)') : 'var(--tm-text-secondary)',
+                    position: 'relative',
+                  }}>
+                  {tf}
+                  {locked && <span style={{ position: 'absolute', top: -4, right: -4, fontSize: 8 }}>🔒</span>}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 10, color: 'var(--tm-text-muted)' }}>
+            Résolution : <span style={{ color: isLocked ? 'var(--tm-loss)' : 'var(--tm-text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>{fmtTime(resolveDate)}</span>
+            {isLocked && <span style={{ color: 'var(--tm-loss)', marginLeft: 8 }}>· 🔒 Paris fermés</span>}
           </div>
         </div>
 
@@ -439,20 +547,59 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
           </div>
         </div>
 
+        {/* Resolve time + countdown */}
+        <div style={{
+          background: isLocked
+            ? 'rgba(244,67,54,0.07)'
+            : 'rgba(var(--tm-accent-rgb,0,229,255),0.05)',
+          border: `1px solid ${isLocked ? 'rgba(244,67,54,0.3)' : 'rgba(var(--tm-accent-rgb,0,229,255),0.15)'}`,
+          borderRadius: 10, padding: '10px 14px',
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: isLocked ? 'var(--tm-loss)' : 'var(--tm-accent)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            {isLocked ? '🔒 Paris verrouillés' : '⏱ Résolution prévue'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--tm-text-secondary)', marginBottom: 6 }}>
+            {fmtTime(resolveDate)}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: isLocked ? 'var(--tm-loss)' : 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '-0.02em' }}>
+            {countdown}
+          </div>
+          {isLocked && (
+            <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginTop: 6 }}>
+              Les paris sont fermés 10 minutes avant la résolution pour garantir l'équité.
+            </div>
+          )}
+        </div>
+
         {/* Submit button */}
         <button
           onClick={handleSubmit}
           disabled={!canSubmit || submitting}
           style={{
-            padding: '14px 0', borderRadius: 12, border: 'none', cursor: canSubmit && !submitting ? 'pointer' : 'not-allowed',
-            background: canSubmit ? 'var(--tm-accent)' : 'var(--tm-border)',
-            color: canSubmit ? 'var(--tm-bg)' : 'var(--tm-text-muted)',
+            padding: '14px 0', borderRadius: 12, border: 'none',
+            cursor: canSubmit && !submitting ? 'pointer' : 'not-allowed',
+            background: isLocked
+              ? 'rgba(244,67,54,0.15)'
+              : canSubmit
+              ? 'var(--tm-accent)'
+              : 'var(--tm-border)',
+            color: isLocked
+              ? 'var(--tm-loss)'
+              : canSubmit
+              ? 'var(--tm-bg)'
+              : 'var(--tm-text-muted)',
             fontSize: 14, fontWeight: 700,
             opacity: submitting ? 0.7 : 1,
             transition: 'all 0.15s',
           }}
         >
-          {submitting ? 'Envoi…' : canSubmit ? `🎯 Soumettre ma prédiction · +5 XP` : 'Sélectionne un actif et un prix'}
+          {submitting
+            ? 'Envoi…'
+            : isLocked
+            ? '🔒 Paris fermés — résolution imminente'
+            : canSubmit
+            ? `🎯 Soumettre ma prédiction · +5 XP`
+            : 'Sélectionne un actif et un prix'}
         </button>
       </div>
     </div>
@@ -580,6 +727,21 @@ function PredCard({ pred }: { pred: Prediction }) {
   const dirColor  = pred.direction === 'up' ? 'var(--tm-profit)' : 'var(--tm-loss)'
   const resColor  = isResolved ? (pred.isCorrect ? 'var(--tm-profit)' : 'var(--tm-loss)') : 'var(--tm-text-muted)'
 
+  // Live countdown pour les prédictions actives
+  const [liveCountdown, setLiveCountdown] = useState(() => isPending ? fmtCountdown(pred.resolveAt) : '')
+  const [liveIsLocked, setLiveIsLocked] = useState(() => isPending && pred.resolveAt.toMillis() - Date.now() <= LOCK_MS)
+  useEffect(() => {
+    if (!isPending) return
+    const tick = () => {
+      const diff = pred.resolveAt.toMillis() - Date.now()
+      setLiveCountdown(fmtDiff(diff))
+      setLiveIsLocked(diff <= LOCK_MS && diff > 0)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [isPending, pred.resolveAt])
+
   return (
     <div style={{
       background: 'var(--tm-bg-secondary)', borderRadius: 12, padding: '12px 16px',
@@ -599,8 +761,13 @@ function PredCard({ pred }: { pred: Prediction }) {
             </span>
             <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', background: 'var(--tm-bg-tertiary)', padding: '1px 6px', borderRadius: 4 }}>{pred.timeframe}</span>
             {isPending && (
-              <span style={{ fontSize: 10, color: 'var(--tm-accent)', background: 'rgba(var(--tm-accent-rgb,0,229,255),0.08)', padding: '1px 6px', borderRadius: 4 }}>
-                ⏳ {fmtCountdown(pred.resolveAt)}
+              <span style={{
+                fontSize: 10, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700,
+                color: liveIsLocked ? 'var(--tm-loss)' : 'var(--tm-accent)',
+                background: liveIsLocked ? 'rgba(244,67,54,0.1)' : 'rgba(var(--tm-accent-rgb,0,229,255),0.08)',
+                padding: '1px 6px', borderRadius: 4,
+              }}>
+                {liveIsLocked ? '🔒' : '⏳'} {liveCountdown}
               </span>
             )}
             {isExpired && (
@@ -612,11 +779,16 @@ function PredCard({ pred }: { pred: Prediction }) {
           </div>
 
           {/* Prix */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace', flexWrap: 'wrap' }}>
             <span>Base: {fmtPrice(pred.currentPrice)}</span>
             <span style={{ color: dirColor }}>→ {fmtPrice(pred.predictedPrice)}</span>
             {isResolved && pred.actualPrice != null && (
               <span style={{ color: resColor }}>Réel: {fmtPrice(pred.actualPrice)}</span>
+            )}
+            {isPending && (
+              <span style={{ color: 'var(--tm-text-muted)', opacity: 0.7 }}>
+                · résolution {fmtTime(pred.resolveAt.toDate())}
+              </span>
             )}
           </div>
 
