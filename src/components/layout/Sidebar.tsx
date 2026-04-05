@@ -13,21 +13,21 @@ import {
 } from '@/components/ui/Icons'
 
 const NAV = [
-  { to: '/',           label: 'Dashboard',  Icon: IconDashboard,  end: true },
-  { to: '/trades',     label: 'Trades',     Icon: IconTrades },
-  { to: '/analyse',    label: 'Analyse',    Icon: IconAnalyse },
-  { to: '/marches',    label: 'Marchés',    Icon: IconMarches },
-  { to: '/predict',    label: 'Prédictions',Icon: IconPredict },
-  { to: '/journal',    label: 'Journal',    Icon: IconJournal },
-  { to: '/alertes',    label: 'Alertes',    Icon: IconAlertes },
-  { to: '/calendrier', label: 'Calendrier', Icon: IconCalendrier },
-  { to: '/systemes',   label: 'Systèmes',   Icon: IconSystemes },
+  { to: '/app',              label: 'Dashboard',  Icon: IconDashboard,  end: true },
+  { to: '/app/trades',     label: 'Trades',     Icon: IconTrades },
+  { to: '/app/analyse',    label: 'Analyse',    Icon: IconAnalyse },
+  { to: '/app/marches',    label: 'Marchés',    Icon: IconMarches },
+  { to: '/app/predict',    label: 'Prédictions',Icon: IconPredict },
+  { to: '/app/journal',    label: 'Journal',    Icon: IconJournal },
+  { to: '/app/alertes',    label: 'Alertes',    Icon: IconAlertes },
+  { to: '/app/calendrier', label: 'Calendrier', Icon: IconCalendrier },
+  { to: '/app/systemes',   label: 'Systèmes',   Icon: IconSystemes },
 ]
 const NAV_BOTTOM = [
-    { to: '/badges', label: 'Badges', Icon: IconStar },
-  { to: '/referral', label: 'Parrainage', Icon: IconStar },
-  { to: '/profil',   label: 'Profil',     Icon: IconProfil },
-  { to: '/settings', label: 'Paramètres', Icon: IconSettings },
+  { to: '/app/badges',   label: 'Badges',     Icon: IconStar },
+  { to: '/app/referral', label: 'Parrainage', Icon: IconStar },
+  { to: '/app/profil',   label: 'Profil',     Icon: IconProfil },
+  { to: '/app/settings', label: 'Paramètres', Icon: IconSettings },
 ]
 
 export default function Sidebar() {
@@ -35,7 +35,7 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const [profilePhoto, setProfilePhoto] = useState<string|null>(null)
   const [profileName, setProfileName] = useState<string|null>(null)
-  async function handleLogout() { await logout(); navigate('/login') }
+  async function handleLogout() { await logout(); navigate('/') }
 
   // Subscribe to Firestore user doc for live photo/name updates
   useEffect(() => {

@@ -17,7 +17,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await signInWithEmail(email, password)
-      navigate('/')
+      navigate('/app')
     } catch (err: unknown) {
       toast.error((err as Error).message ?? 'Erreur de connexion')
     } finally {
@@ -29,7 +29,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await signInWithGoogle()
-      navigate('/')
+      navigate('/app')
     } catch (err: unknown) {
       toast.error((err as Error).message ?? 'Erreur Google')
     } finally {

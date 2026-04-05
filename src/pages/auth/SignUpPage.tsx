@@ -38,7 +38,7 @@ export default function SignUpPage() {
         await genFn()
       } catch { /* non-blocking */ }
       toast.success('Compte créé ! Bienvenue sur TradeMindset 🎉')
-      navigate('/')
+      navigate('/app')
     } catch (err: unknown) {
       toast.error((err as Error).message ?? 'Erreur inscription')
     } finally {
@@ -60,7 +60,7 @@ export default function SignUpPage() {
         const genFn = httpsCallable(fbFn, 'generateUserReferralCode')
         await genFn()
       } catch { /* non-blocking */ }
-      navigate('/')
+      navigate('/app')
     } catch (err: unknown) {
       toast.error((err as Error).message ?? 'Erreur Google')
     } finally {

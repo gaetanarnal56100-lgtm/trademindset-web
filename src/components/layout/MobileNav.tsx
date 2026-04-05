@@ -6,11 +6,11 @@ import {
 } from '@/components/ui/Icons'
 
 const NAV = [
-  { to: '/',        label: 'Dashboard', Icon: IconDashboard, end: true },
-  { to: '/trades',  label: 'Trades',    Icon: IconTrades },
-  { to: '/analyse', label: 'Analyse',   Icon: IconAnalyse },
-  { to: '/journal', label: 'Journal',   Icon: IconJournal },
-  { to: '/alertes', label: 'Alertes',   Icon: IconAlertes },
+  { to: '/app',          label: 'Dashboard', Icon: IconDashboard, end: true },
+  { to: '/app/trades',  label: 'Trades',    Icon: IconTrades },
+  { to: '/app/analyse', label: 'Analyse',   Icon: IconAnalyse },
+  { to: '/app/journal', label: 'Journal',   Icon: IconJournal },
+  { to: '/app/alertes', label: 'Alertes',   Icon: IconAlertes },
 ]
 
 export default function MobileNav() {
