@@ -23,49 +23,81 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
   const ref = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [hover, setHover] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const handleShare = async () => {
     const el = ref.current
-    if (!el) return
+    if (!el || loading) return
+    setLoading(true)
     try {
-      // Find the most relevant canvas (largest visible one)
+      let blob: Blob | null = null
+
+      // 1. Try canvas capture first (for chart components with canvas)
       const canvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
       const cv = canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]
-      if (!cv) return
 
-      const dataUrl = cv.toDataURL('image/png')
-      const blob = await (await fetch(dataUrl)).blob()
+      if (cv && cv.width > 0 && cv.height > 0) {
+        // Canvas-based component (charts)
+        const dataUrl = cv.toDataURL('image/png')
+        blob = await (await fetch(dataUrl)).blob()
+      } else {
+        // HTML-based component (KeyLevelsCard, TradePlanCard, MTFDashboard…)
+        // Use html-to-image for full DOM capture
+        const { toPng } = await import('html-to-image')
+        const dataUrl = await toPng(el, {
+          quality: 1,
+          pixelRatio: 2,
+          backgroundColor: getComputedStyle(document.documentElement)
+            .getPropertyValue('--tm-bg').trim() || '#0D1117',
+          filter: (node) => {
+            // Exclude the share button itself from the screenshot
+            if (node instanceof HTMLButtonElement && node.title?.startsWith('Partager')) return false
+            return true
+          },
+        })
+        blob = await (await fetch(dataUrl)).blob()
+      }
 
-      // 1. Try Clipboard API (copy as image — paste anywhere)
+      if (!blob) { setLoading(false); return }
+
+      const filename = `trademindset-${label.toLowerCase().replace(/\s+/g, '-')}.png`
+
+      // 2. Try Clipboard API (copy as image — paste anywhere)
       try {
         await navigator.clipboard.write([
           new ClipboardItem({ 'image/png': blob })
         ])
         setCopied(true)
         setTimeout(() => setCopied(false), 2500)
+        setLoading(false)
         return
       } catch { /* clipboard write failed, fallback below */ }
 
-      // 2. Fallback: Web Share API (mobile)
+      // 3. Fallback: Web Share API (mobile)
       if (navigator.share && navigator.canShare) {
-        const file = new File([blob], `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`, { type:'image/png' })
+        const file = new File([blob], filename, { type: 'image/png' })
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ title: `TradeMindset — ${label}`, files: [file] })
           setCopied(true)
           setTimeout(() => setCopied(false), 2500)
+          setLoading(false)
           return
         }
       }
 
-      // 3. Last fallback: download file
+      // 4. Last fallback: download file
+      const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `trademindset-${label.toLowerCase().replace(/\s+/g,'-')}.png`
+      a.href = url
+      a.download = filename
       a.click()
+      URL.revokeObjectURL(url)
       setCopied(true)
       setTimeout(() => setCopied(false), 2500)
     } catch (err) {
       console.warn('Share failed:', err)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -73,18 +105,24 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
     <div ref={ref} style={{ position:'relative', marginBottom:16 }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       {children}
-      {(hover || copied) && (
+      {(hover || copied || loading) && (
         <button onClick={handleShare} title={`Partager ${label}`}
+          disabled={loading}
           style={{
             position:'absolute', bottom:12, right:12, zIndex:10,
             padding:'4px 10px', borderRadius:8, display:'flex', alignItems:'center', gap:5,
-            background: copied ? 'rgba(var(--tm-profit-rgb,34,199,89),0.85)' : 'rgba(13,17,23,0.85)',
+            background: copied
+              ? 'rgba(34,199,89,0.85)'
+              : loading
+              ? 'rgba(13,17,23,0.92)'
+              : 'rgba(13,17,23,0.85)',
             border: copied ? '1px solid #22C759' : '1px solid #2A2F3E',
-            cursor:'pointer', fontSize:10, fontWeight:600,
+            cursor: loading ? 'wait' : 'pointer', fontSize:10, fontWeight:600,
             color: '#fff',
             backdropFilter:'blur(8px)', transition:'all 0.15s',
+            opacity: loading ? 0.8 : 1,
           }}>
-          {copied ? '✓ Sauvé' : '↗ Partager'}
+          {copied ? '✓ Copié' : loading ? '⏳ Capture…' : '↗ Partager'}
         </button>
       )}
     </div>
