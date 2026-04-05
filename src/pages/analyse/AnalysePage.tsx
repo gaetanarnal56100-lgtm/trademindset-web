@@ -724,6 +724,49 @@ function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
   return<canvas ref={ref} width={700} height={180} style={{width:'100%',height:180,borderRadius:8,display:'block'}}/>
 }
 
+function SegmentedCVDHistoryChart({pts,segs}:{pts:CVDPt[];segs:Seg[]}){
+  const ref=useRef<HTMLCanvasElement>(null)
+  useEffect(()=>{
+    const c=ref.current;if(!c||pts.length<2)return
+    const ctx=c.getContext('2d')!,W=c.width,H=c.height
+    ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
+    // Subtle horizontal grid
+    ctx.setLineDash([2,4]);ctx.strokeStyle='#ffffff08';ctx.lineWidth=1
+    for(let i=1;i<4;i++){const y=H*i/4;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+    ctx.setLineDash([])
+    // Zero line
+    let minV=0,maxV=0
+    for(const s of segs)for(const p of pts){if(p[s]<minV)minV=p[s];if(p[s]>maxV)maxV=p[s]}
+    const range=maxV-minV||1
+    const zY=H-16-((-minV)/range)*(H-16)
+    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
+    ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
+    // Time labels
+    if(pts.length>=2){
+      const fmt=(t:number)=>{const d=new Date(t);return`${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`}
+      ctx.font='9px monospace';ctx.fillStyle='#ffffff30'
+      ;([0,0.5,1] as const).forEach(frac=>{
+        const idx=Math.floor(frac*(pts.length-1))
+        const x=frac===0?24:frac===1?W-24:W/2
+        ctx.textAlign=frac===0?'left':frac===1?'right':'center'
+        ctx.fillText(fmt(pts[idx].t),x,H-3)
+      })
+    }
+    // Draw lines + fill per segment
+    for(const seg of segs){
+      const cfg=SEG_CFG[seg]
+      ctx.beginPath();pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=(H-16)-((p[seg]-minV)/range)*(H-16);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
+      const last=pts[pts.length-1][seg];ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
+      const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,cfg.color+(last>=0?'35':'05'));grad.addColorStop(1,cfg.color+'02')
+      ctx.fillStyle=grad;ctx.fill()
+      ctx.beginPath();ctx.strokeStyle=seg==='all'?cfg.color:cfg.color+'CC';ctx.lineWidth=seg==='whales'||seg==='all'?2:1.5
+      pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=(H-16)-((p[seg]-minV)/range)*(H-16);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
+    }
+  },[pts,segs])
+  if(pts.length<2)return null
+  return<canvas ref={ref} width={700} height={200} style={{width:'100%',height:200,borderRadius:8,display:'block'}}/>
+}
+
 function OISparkline({vals}:{vals:number[]}){
   const ref=useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
@@ -844,6 +887,11 @@ export default function AnalysePage() {
   const [wtSummary, setWtSummary] = useState<WhaleSummary|null>(null)
   const [wtTf,      setWtTf]      = useState('1h')
 
+  // Segmented CVD history state
+  const [segHistory,    setSegHistory]    = useState<CVDPt[]>([])
+  const [segHistLoading,setSegHistLoading]= useState(false)
+  const [segHistSegs,   setSegHistSegs]   = useState<Seg[]>(['all','large','institutional','whales'])
+
   // Dérivés state
   const [oi,        setOI]        = useState<OIData|null>(null)
   const [funding,   setFunding]   = useState<Funding|null>(null)
@@ -920,6 +968,35 @@ export default function AnalysePage() {
         const div=ps<-0.1&&cs>0?'Haussière 📈':ps>0.1&&cs<0?'Baissière 📉':'Aucune'
         setWtSummary({trend,trendColor:tc,netCVD:last.cum,momentum:ms,divergence:div})
       }).catch(()=>{})
+  },[symbol,mode,wtTf])
+
+  // ── Segmented CVD History ──
+  useEffect(()=>{
+    if(mode!=='structure')return
+    setSegHistLoading(true);setSegHistory([])
+    const TF_MS:Record<string,number>={'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'12h':43200000,'24h':86400000}
+    const startTime=Date.now()-(TF_MS[wtTf]||3600000)
+    const base=`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=1000`
+    const trades:Array<{t:number;usd:number;isBuy:boolean}>=[]
+    ;(async()=>{
+      let url=`${base}&startTime=${startTime}`
+      for(let batch=0;batch<3;batch++){
+        const r=await fetch(url);const rows=await r.json()
+        if(!Array.isArray(rows)||!rows.length)break
+        for(const x of rows){const usd=parseFloat(x.p)*parseFloat(x.q);if(usd>=100)trades.push({t:x.T,usd,isBuy:!x.m})}
+        if(rows.length<1000)break
+        url=`${base}&fromId=${(rows[rows.length-1].a as number)+1}`
+      }
+      const acc:Record<Seg,number>={small:0,medium:0,large:0,institutional:0,whales:0,all:0}
+      const step=Math.max(1,Math.floor(trades.length/300))
+      const pts:CVDPt[]=[]
+      trades.forEach((tr,i)=>{
+        const delta=tr.isBuy?tr.usd:-tr.usd
+        ;(['small','medium','large','institutional','whales','all'] as Seg[]).forEach(s=>{if(inSeg(tr.usd,s))acc[s]+=delta})
+        if(i%step===0||i===trades.length-1)pts.push({t:tr.t,...acc})
+      })
+      setSegHistory(pts);setSegHistLoading(false)
+    })().catch(()=>setSegHistLoading(false))
   },[symbol,mode,wtTf])
 
   // ── Dérivés ──
@@ -1264,6 +1341,21 @@ export default function AnalysePage() {
               <span style={{color:'rgba(255,255,255,0.2)'}}>── Retail</span>
             </div>
             <WhaleTrendChart pts={wtPts}/>
+            {/* Segmented CVD by order size */}
+            <div style={{marginTop:16}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
+                <span style={{fontSize:11,fontWeight:600,color:'var(--tm-text-secondary)'}}>CVD par Taille d'Ordre</span>
+                <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                  {(['all','small','medium','large','institutional','whales'] as Seg[]).map(s=>{
+                    const cfg=SEG_CFG[s];const active=segHistSegs.includes(s)
+                    return<button key={s} onClick={()=>setSegHistSegs(prev=>active&&prev.length>1?prev.filter(x=>x!==s):[...prev,s])} style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:500,cursor:'pointer',border:`1px solid ${active?cfg.color:'var(--tm-border)'}`,background:active?`${cfg.color}18`:'var(--tm-bg-tertiary)',color:active?cfg.color:'var(--tm-text-muted)'}}>{cfg.range}</button>
+                  })}
+                </div>
+              </div>
+              {segHistLoading&&<div style={{height:200,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:12,background:'#080C14',borderRadius:8}}><div style={{width:16,height:16,border:'2px solid #2A2F3E',borderTopColor:'#FFA726',borderRadius:'50%',animation:'spin 0.8s linear infinite',marginRight:8}}/>Chargement trades...</div>}
+              {!segHistLoading&&<SegmentedCVDHistoryChart pts={segHistory} segs={segHistSegs}/>}
+              {!segHistLoading&&segHistory.length<2&&<div style={{height:50,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:11}}>Pas de données disponibles</div>}
+            </div>
             {wtSummary&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:10}}>
               {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:wtSummary.divergence,c:wtSummary.divergence.includes('Hauss')?'var(--tm-profit)':wtSummary.divergence.includes('Baiss')?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:'30%',c:'#FFA726'}].map(({l,v,c})=>(
                 <div key={l} style={{background:'var(--tm-bg-tertiary)',borderRadius:8,padding:'8px',textAlign:'center'}}><div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:2}}>{l}</div><div style={{fontSize:12,fontWeight:600,color:c}}>{v}</div></div>
