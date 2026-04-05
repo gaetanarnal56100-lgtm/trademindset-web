@@ -25,8 +25,8 @@ const PRESET_EXCHANGES = [
   { name: 'Kraken',   maker: 0.002,  taker: 0.005  },
 ]
 
-// ─── Main page ─────────────────────────────────────────────────────────────────
-export default function ExchangesPage() {
+// ─── ExchangeManager — contenu réutilisable (sans wrapper page) ───────────────
+export function ExchangeManager() {
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
@@ -63,12 +63,6 @@ export default function ExchangesPage() {
     }
   }
 
-  const s: React.CSSProperties = {
-    padding: '28px 28px 60px',
-    maxWidth: 1200,
-    margin: '0 auto',
-  }
-
   // Dedup: remove duplicate exchanges by name, keep the default one or first
   const hasDuplicates = (() => {
     const names = exchanges.map(e => e.name.toLowerCase())
@@ -81,7 +75,6 @@ export default function ExchangesPage() {
     for (const ex of exchanges) {
       const key = ex.name.toLowerCase()
       if (seen.has(key)) {
-        // Keep the default one, or the first seen
         const existing = seen.get(key)!
         if (ex.isDefault && !existing.isDefault) {
           toDelete.push(existing.id)
@@ -101,14 +94,11 @@ export default function ExchangesPage() {
   }
 
   return (
-    <div style={s}>
-      {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:24, flexWrap:'wrap', gap:12 }}>
+    <>
+      {/* Controls row */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne, sans-serif', letterSpacing:'-0.02em' }}>
-            Exchanges
-          </h1>
-          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'4px 0 0' }}>
+          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:0 }}>
             {loading ? '…' : `${exchanges.length} exchange${exchanges.length !== 1 ? 's' : ''} configuré${exchanges.length !== 1 ? 's' : ''}`}
           </p>
           {hasDuplicates && (
@@ -152,7 +142,7 @@ export default function ExchangesPage() {
         )}
       </div>
 
-      {/* Empty state */}
+      {/* List */}
       {loading ? (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:16 }}>
           {[1,2,3].map(i => <SkeletonCard key={i} />)}
@@ -161,7 +151,6 @@ export default function ExchangesPage() {
         <EmptyState onAdd={() => setShowAdd(true)} search={search} />
       ) : (
         <>
-          {/* Default exchange highlight */}
           {exchanges.some(e => e.isDefault) && (
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
@@ -175,7 +164,6 @@ export default function ExchangesPage() {
               ))}
             </div>
           )}
-
           {filtered.filter(e => !e.isDefault).length > 0 && (
             <div>
               {exchanges.some(e => e.isDefault) && (
@@ -197,13 +185,23 @@ export default function ExchangesPage() {
       )}
 
       {/* Preset quick-add */}
-      {!loading && (
-        <PresetSection exchanges={exchanges} />
-      )}
+      {!loading && <PresetSection exchanges={exchanges} />}
 
       {/* Modals */}
       {showAdd    && <ExchangeModal onClose={() => setShowAdd(false)} />}
       {editTarget && <ExchangeModal exchange={editTarget} onClose={() => setEditTarget(null)} />}
+    </>
+  )
+}
+
+// ─── ExchangesPage — wrapper pour la route /exchanges ─────────────────────────
+export default function ExchangesPage() {
+  return (
+    <div style={{ padding: '28px 28px 60px', maxWidth: 1200, margin: '0 auto' }}>
+      <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:'0 0 20px', fontFamily:'Syne, sans-serif', letterSpacing:'-0.02em' }}>
+        Exchanges
+      </h1>
+      <ExchangeManager />
     </div>
   )
 }
@@ -230,14 +228,10 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
 
   return (
     <div style={card}>
-      {/* Top line accent for default */}
       {exchange.isDefault && (
         <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'var(--tm-profit)', opacity:0.6 }} />
       )}
-
-      {/* Header */}
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
-        {/* Avatar */}
         <div style={{
           width:42, height:42, borderRadius:'50%', flexShrink:0,
           background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',
@@ -247,7 +241,6 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
         }}>
           {initial(exchange.name)}
         </div>
-
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:2 }}>
             {exchange.name}
@@ -259,8 +252,6 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
             </div>
           )}
         </div>
-
-        {/* Menu */}
         <div style={{ position:'relative' }}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
@@ -286,8 +277,6 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
           )}
         </div>
       </div>
-
-      {/* Fees */}
       <div style={{ background:'var(--tm-bg-secondary)', borderRadius:10, padding:'12px 14px' }}>
         <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.06em' }}>
           Frais de trading
@@ -308,8 +297,6 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
           </div>
         </div>
       </div>
-
-      {/* Set default button */}
       {!exchange.isDefault && (
         <button
           onClick={onSetDefault}
@@ -325,8 +312,6 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
           Définir par défaut
         </button>
       )}
-
-      {/* Delete confirm */}
       {confirmDelete && (
         <ConfirmDeleteOverlay
           name={exchange.name}
@@ -376,11 +361,11 @@ function ConfirmDeleteOverlay({ name, onConfirm, onCancel }: { name: string; onC
 // ─── Exchange Modal (Add + Edit) ───────────────────────────────────────────────
 function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: () => void }) {
   const isEdit = !!exchange
-  const [name, setName]               = useState(exchange?.name ?? '')
-  const [makerFee, setMakerFee]       = useState(exchange ? exchange.makerFeeRate * 100 : 0.1)
-  const [takerFee, setTakerFee]       = useState(exchange ? exchange.takerFeeRate * 100 : 0.1)
-  const [isDefault, setIsDefault]     = useState(exchange?.isDefault ?? false)
-  const [saving, setSaving]           = useState(false)
+  const [name, setName]           = useState(exchange?.name ?? '')
+  const [makerFee, setMakerFee]   = useState(exchange ? exchange.makerFeeRate * 100 : 0.1)
+  const [takerFee, setTakerFee]   = useState(exchange ? exchange.takerFeeRate * 100 : 0.1)
+  const [isDefault, setIsDefault] = useState(exchange?.isDefault ?? false)
+  const [saving, setSaving]       = useState(false)
 
   async function handleSave() {
     if (!name.trim()) return
@@ -421,7 +406,6 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
         borderRadius:18, width:'100%', maxWidth:460, overflow:'hidden',
         boxShadow:'0 24px 48px rgba(0,0,0,0.6)',
       }}>
-        {/* Header */}
         <div style={{ padding:'18px 20px 14px', borderBottom:'1px solid var(--tm-border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div>
             <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)' }}>
@@ -433,9 +417,7 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
           </div>
           <button onClick={onClose} style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:18, color:'var(--tm-text-muted)', width:28, height:28, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
         </div>
-
         <div style={{ padding:20, display:'flex', flexDirection:'column', gap:16 }}>
-          {/* Presets (only for new) */}
           {!isEdit && (
             <div>
               <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Presets rapides</div>
@@ -454,8 +436,6 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
               </div>
             </div>
           )}
-
-          {/* Name */}
           <FormField label="Nom de l'exchange">
             <input
               value={name} onChange={e => setName(e.target.value)}
@@ -463,8 +443,6 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
               style={inputStyle}
             />
           </FormField>
-
-          {/* Fees */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
             <FormField label="Frais Maker (%)" hint="Ordre limite">
               <div style={{ position:'relative' }}>
@@ -487,8 +465,6 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
               </div>
             </FormField>
           </div>
-
-          {/* Default toggle */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:'var(--tm-bg-tertiary)', borderRadius:10, border:'1px solid var(--tm-border)' }}>
             <div>
               <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-primary)' }}>Exchange par défaut</div>
@@ -496,8 +472,6 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
             </div>
             <Toggle checked={isDefault} onChange={setIsDefault} />
           </div>
-
-          {/* Buttons */}
           <div style={{ display:'flex', gap:10, marginTop:4 }}>
             <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:9, border:'1px solid var(--tm-border)', background:'transparent', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:13 }}>
               Annuler
@@ -525,16 +499,13 @@ function PresetSection({ exchanges }: { exchanges: Exchange[] }) {
   const existingNames = new Set(exchanges.map(e => e.name.toLowerCase()))
   const missing = PRESET_EXCHANGES.filter(p => !existingNames.has(p.name.toLowerCase()))
   if (!missing.length) return null
-
   return (
     <div style={{ marginTop:32 }}>
       <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:12 }}>
         Ajouter rapidement
       </div>
       <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-        {missing.map(p => (
-          <QuickAddButton key={p.name} preset={p} />
-        ))}
+        {missing.map(p => <QuickAddButton key={p.name} preset={p} />)}
       </div>
     </div>
   )
@@ -545,14 +516,9 @@ function QuickAddButton({ preset }: { preset: typeof PRESET_EXCHANGES[0] }) {
   async function handleAdd() {
     setAdding(true)
     try {
-      await createExchange({
-        name: preset.name,
-        makerFeeRate: preset.maker,
-        takerFeeRate: preset.taker,
-        isDefault: false,
-      })
+      await createExchange({ name: preset.name, makerFeeRate: preset.maker, takerFeeRate: preset.taker, isDefault: false })
       toast.success(`${preset.name} ajouté`)
-    } catch (err) {
+    } catch {
       toast.error('Erreur lors de l\'ajout')
     } finally {
       setAdding(false)

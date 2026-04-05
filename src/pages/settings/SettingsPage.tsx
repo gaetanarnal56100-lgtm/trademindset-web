@@ -1,6 +1,7 @@
 // SettingsPage.tsx — Paramètres v2 : export/import, suppression données, suppression compte
 import { useState, useRef, useEffect } from 'react'
 import { ThemeSelector } from '@/components/ui/ThemeSelector'
+import { ExchangeManager } from '@/pages/exchanges/ExchangesPage'
 import { getAuth, signOut, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth'
 import { collection, getDocs, doc, deleteDoc, writeBatch, Timestamp, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
@@ -393,6 +394,11 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
+      </Section>
+
+      {/* ── Exchanges ─────────────────────────────────────────────────── */}
+      <Section title="Exchanges" subtitle="Gérer vos exchanges de trading" icon="🔗">
+        <ExchangeManager />
       </Section>
 
       {/* ── Export ────────────────────────────────────────────────────── */}
