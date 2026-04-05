@@ -313,13 +313,52 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 
   const closed=useMemo(()=>trades.filter(t=>t.status==='closed'),[trades])
 
-  // Monthly
+  // Adaptive period grouping: day / week / month based on trading span
+  const tradingSpanDays=useMemo(()=>{
+    if(closed.length===0)return 0
+    const times=closed.map(t=>t.date.getTime())
+    return(Math.max(...times)-Math.min(...times))/86_400_000
+  },[closed])
+
+  const granularity=tradingSpanDays<14?'day' as const:tradingSpanDays<60?'week' as const:'month' as const
+
+  const pLbl=granularity==='day'
+    ?{title:'Performance par Jour',   best:'Meilleur jour',     worst:'Pire jour',     avg:'Moyenne/jour',  tab:'Par jour'}
+    :granularity==='week'
+    ?{title:'Performance par Semaine',best:'Meilleure semaine', worst:'Pire semaine',  avg:'Moyenne/sem.',  tab:'Par semaine'}
+    :{title:'Performance par Mois',  best:'Meilleur mois',     worst:'Pire mois',     avg:'Moyenne/mois',  tab:'Par mois'}
+
   const months=useMemo(()=>{
+    if(granularity==='day'){
+      const map: Record<string,{value:number;date:Date}>={}
+      for(const t of closed){
+        const d=t.date
+        const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+        if(!map[k])map[k]={value:0,date:d}
+        map[k].value+=tradePnL(t)
+      }
+      return Object.entries(map).sort(([a],[b])=>a.localeCompare(b)).map(([,v])=>({
+        label:v.date.toLocaleDateString('fr-FR',{weekday:'short'}).slice(0,3),
+        full:v.date.toLocaleDateString('fr-FR',{day:'numeric',month:'short'}),
+        value:v.value,
+      }))
+    }
+    if(granularity==='week'){
+      const map: Record<string,number>={}
+      for(const t of closed){
+        const d=t.date,dow=d.getDay()===0?6:d.getDay()-1
+        const mon=new Date(d);mon.setDate(d.getDate()-dow)
+        const k=`${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`
+        map[k]=(map[k]||0)+tradePnL(t)
+      }
+      return Object.entries(map).sort(([a],[b])=>a.localeCompare(b)).map(([,value],i)=>({label:`S${i+1}`,full:`Sem. ${i+1}`,value}))
+    }
+    // Monthly (default)
     const map: Record<string,number>={}
     for(const t of closed){const k=t.date.toLocaleDateString('fr-FR',{month:'short'});map[k]=(map[k]||0)+tradePnL(t)}
     const order=['jan.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']
     return order.filter(m=>map[m]!=null).map(m=>({label:m[0].toUpperCase(),full:m,value:map[m]!}))
-  },[closed])
+  },[closed,granularity])
   const maxAbsM=Math.max(...months.map(m=>Math.abs(m.value)),1)
   const bestM=months.length?months.reduce((a,b)=>b.value>a.value?b:a,months[0]).value:0
   const worstM=months.length?months.reduce((a,b)=>b.value<a.value?b:a,months[0]).value:0
@@ -424,7 +463,7 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 
       {tab==='analytics'&&(
         <div>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:12}}>Performance par Mois</div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:12}}>{pLbl.title}</div>
           {months.length===0?<div style={{textAlign:'center',color:'var(--tm-text-muted)',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
             <>
               <div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:10,padding:'0 4px'}}>
@@ -440,9 +479,9 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
                 })}
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-                {[{l:'Meilleur mois',v:fmtK(bestM),c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)'},
-                  {l:'Pire mois',v:fmtK(worstM),c:'var(--tm-loss)',bg:'rgba(var(--tm-loss-rgb,255,59,48),0.06)',bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.15)'},
-                  {l:'Moyenne/mois',v:fmtK(avgM),c:'var(--tm-text-secondary)',bg:'rgba(255,255,255,0.02)',bdr:'var(--tm-border-sub)'}].map(({l,v,c,bg,bdr})=>(
+                {[{l:pLbl.best,v:fmtK(bestM),c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)'},
+                  {l:pLbl.worst,v:fmtK(worstM),c:'var(--tm-loss)',bg:'rgba(var(--tm-loss-rgb,255,59,48),0.06)',bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.15)'},
+                  {l:pLbl.avg,v:fmtK(avgM),c:'var(--tm-text-secondary)',bg:'rgba(255,255,255,0.02)',bdr:'var(--tm-border-sub)'}].map(({l,v,c,bg,bdr})=>(
                   <div key={l} style={{background:bg,border:`1px solid ${bdr}`,borderRadius:10,padding:'10px 12px',textAlign:'center'}}>
                     <div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.06em'}}>{l}</div>
                     <div style={{fontSize:14,fontWeight:700,color:c,fontFamily:'JetBrains Mono, monospace'}}>{v}</div>
@@ -457,7 +496,7 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
       {tab==='metrics'&&(
         <div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
-            <MetricsTabBtn id="month"   label="Par mois"/>
+            <MetricsTabBtn id="month"   label={pLbl.tab}/>
             <MetricsTabBtn id="session" label="Par session"/>
             <MetricsTabBtn id="hour"    label="Par heure"/>
             <MetricsTabBtn id="day"     label="Par jour"/>
