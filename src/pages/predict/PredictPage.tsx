@@ -22,18 +22,17 @@ const TF_LABEL: Record<PredictionTimeframe, string> = {
   '1h': '1 heure', '4h': '4 heures', '24h': '24 heures', '3d': '3 jours', '7d': '7 jours',
 }
 
-// Top crypto symbols (subset pour facilité de sélection)
-const CRYPTO_SYMBOLS = [
-  'BTC','ETH','BNB','SOL','XRP','ADA','AVAX','DOT','MATIC','LINK',
-  'UNI','ATOM','LTC','BCH','NEAR','ARB','OP','INJ','TIA','APT',
-  'SUI','SEI','JTO','PYTH','WIF','DOGE','SHIB','PEPE','WLD','FET',
-]
+// Top 10 crypto disponibles maintenant
+const CRYPTO_SYMBOLS = ['BTC','ETH','BNB','SOL','XRP','ADA','AVAX','DOT','MATIC','LINK']
 
-// Stocks (subset représentatif)
-const STOCK_SYMBOLS = [
+// Coming soon (affichage grisé, non cliquables)
+const CRYPTO_COMING_SOON = [
+  'UNI','ATOM','LTC','BCH','NEAR','ARB','OP','INJ','TIA','APT',
+  'SUI','SEI','DOGE','SHIB','PEPE','WLD','FET',
+]
+const STOCK_SYMBOLS_COMING_SOON = [
   'AAPL','MSFT','NVDA','GOOGL','META','AMZN','TSLA','AMD','COIN','NFLX',
   'JPM','GS','V','MA','SPY','QQQ','BNP.PA','TTE.PA','MC.PA','AIR.PA',
-  'SAP.DE','ASML.AS','NESN.SW','NOVO-B.CO','TSM','BABA','TM','NVO','SHOP','RY',
 ]
 
 type Tab = 'predict' | 'mine' | 'community'
@@ -183,10 +182,12 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
   const [communityPreds, setCommunityPreds] = useState<Prediction[]>([])
   const [commLoading, setCommLoading] = useState(false)
 
-  const symbols = assetType === 'crypto' ? CRYPTO_SYMBOLS : STOCK_SYMBOLS
+  // Seul le crypto top 10 est disponible ; actions = coming soon
+  const activeSymbols = assetType === 'crypto' ? CRYPTO_SYMBOLS : []
+  const comingSoonSymbols = assetType === 'crypto' ? CRYPTO_COMING_SOON : STOCK_SYMBOLS_COMING_SOON
   const filtered = search
-    ? symbols.filter(s => s.toLowerCase().includes(search.toLowerCase()))
-    : symbols
+    ? activeSymbols.filter(s => s.toLowerCase().includes(search.toLowerCase()))
+    : activeSymbols
 
   // Fetch prix au changement d'actif
   const fetchPrice = useCallback(async (sym: string, type: AssetType) => {
@@ -279,16 +280,32 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '14px 16px' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>TYPE D'ACTIF</div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {(['crypto', 'stock'] as AssetType[]).map(t => (
-              <button key={t} onClick={() => { setAssetType(t); setSymbol(t === 'crypto' ? 'BTC' : 'AAPL'); setSearch('') }} style={{
-                flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                border: `1px solid ${assetType === t ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
-                background: assetType === t ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'var(--tm-bg-tertiary)',
-                color: assetType === t ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
-              }}>
-                {t === 'crypto' ? '₿ Crypto' : '📈 Actions'}
-              </button>
-            ))}
+            {/* Crypto — disponible */}
+            <button onClick={() => { setAssetType('crypto'); setSymbol('BTC'); setSearch('') }} style={{
+              flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              border: `1px solid ${assetType === 'crypto' ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
+              background: assetType === 'crypto' ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'var(--tm-bg-tertiary)',
+              color: assetType === 'crypto' ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
+            }}>
+              ₿ Crypto
+            </button>
+            {/* Actions — coming soon */}
+            <div title="Bientôt disponible" style={{
+              flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'not-allowed', fontSize: 13, fontWeight: 600,
+              border: '1px solid var(--tm-border)',
+              background: 'var(--tm-bg-tertiary)',
+              color: 'var(--tm-text-muted)',
+              opacity: 0.6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              📈 Actions
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99,
+                background: 'linear-gradient(135deg,#BF5AF222,#0A85FF22)',
+                border: '1px solid #BF5AF244', color: '#BF5AF2',
+                letterSpacing: '0.06em', textTransform: 'uppercase',
+              }}>Soon</span>
+            </div>
           </div>
         </div>
 
@@ -300,7 +317,8 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
             placeholder="Rechercher…"
             style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--tm-border)', background: 'var(--tm-bg-tertiary)', color: 'var(--tm-text-primary)', fontSize: 13, outline: 'none', marginBottom: 10, boxSizing: 'border-box' }}
           />
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 120, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+            {/* Actifs disponibles */}
             {filtered.map(s => (
               <button key={s} onClick={() => { setSymbol(s); setSearch('') }} style={{
                 padding: '4px 10px', borderRadius: 20, cursor: 'pointer', fontSize: 11, fontWeight: 600,
@@ -309,6 +327,30 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
                 color: symbol === s ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
               }}>{s}</button>
             ))}
+            {/* Séparateur + coming soon (si pas de recherche) */}
+            {!search && comingSoonSymbols.length > 0 && (
+              <>
+                <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 2px' }}>
+                  <div style={{ flex: 1, height: 1, background: 'var(--tm-border)' }} />
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
+                    background: 'linear-gradient(135deg,#BF5AF222,#0A85FF22)',
+                    border: '1px solid #BF5AF244', color: '#BF5AF2',
+                    letterSpacing: '0.07em', textTransform: 'uppercase',
+                  }}>Bientôt disponible</span>
+                  <div style={{ flex: 1, height: 1, background: 'var(--tm-border)' }} />
+                </div>
+                {comingSoonSymbols.map(s => (
+                  <div key={s} title="Bientôt disponible" style={{
+                    padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                    border: '1px solid var(--tm-border)',
+                    background: 'var(--tm-bg-tertiary)',
+                    color: 'var(--tm-text-muted)',
+                    opacity: 0.45, cursor: 'not-allowed',
+                  }}>{s}</div>
+                ))}
+              </>
+            )}
           </div>
         </div>
 
