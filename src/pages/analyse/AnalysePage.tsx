@@ -676,7 +676,9 @@ function CVDChart({ pts, segs }: { pts: CVDPt[]; segs: Seg[] }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
     const c=ref.current; if(!c||pts.length<2)return
-    const ctx=c.getContext('2d')!,W=c.width,H=c.height
+    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=160
+    c.width=W*dpr;c.height=H*dpr
+    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
     ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
     let minV=0,maxV=0
     for(const s of segs)for(const p of pts){if(p[s]<minV)minV=p[s];if(p[s]>maxV)maxV=p[s]}
@@ -696,14 +698,16 @@ function CVDChart({ pts, segs }: { pts: CVDPt[]; segs: Seg[] }) {
     }
   },[pts,segs])
   if(pts.length<2)return<div style={{height:160,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:12,background:'#080C14',borderRadius:8}}>En attente du flux...</div>
-  return<canvas ref={ref} width={700} height={160} style={{width:'100%',height:160,borderRadius:8,display:'block'}}/>
+  return<canvas ref={ref} style={{width:'100%',height:160,borderRadius:8,display:'block'}}/>
 }
 
 function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
   const ref=useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
     const c=ref.current;if(!c||pts.length<2)return
-    const ctx=c.getContext('2d')!,W=c.width,H=c.height
+    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=180
+    c.width=W*dpr;c.height=H*dpr
+    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
     ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
     const cvd=pts.map(p=>p.cum),ema=pts.map(p=>p.ema)
     const minV=Math.min(...cvd,...ema),maxV=Math.max(...cvd,...ema),range=maxV-minV||1
@@ -721,14 +725,16 @@ function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
     ctx.beginPath();ctx.strokeStyle='#FFA726';ctx.lineWidth=1.2
     pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.ema-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
   },[pts])
-  return<canvas ref={ref} width={700} height={180} style={{width:'100%',height:180,borderRadius:8,display:'block'}}/>
+  return<canvas ref={ref} style={{width:'100%',height:180,borderRadius:8,display:'block'}}/>
 }
 
 function SegmentedCVDHistoryChart({pts,segs}:{pts:CVDPt[];segs:Seg[]}){
   const ref=useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
     const c=ref.current;if(!c||pts.length<2)return
-    const ctx=c.getContext('2d')!,W=c.width,H=c.height
+    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=200
+    c.width=W*dpr;c.height=H*dpr
+    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
     ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
     // Subtle horizontal grid
     ctx.setLineDash([2,4]);ctx.strokeStyle='#ffffff08';ctx.lineWidth=1
@@ -764,14 +770,16 @@ function SegmentedCVDHistoryChart({pts,segs}:{pts:CVDPt[];segs:Seg[]}){
     }
   },[pts,segs])
   if(pts.length<2)return null
-  return<canvas ref={ref} width={700} height={200} style={{width:'100%',height:200,borderRadius:8,display:'block'}}/>
+  return<canvas ref={ref} style={{width:'100%',height:200,borderRadius:8,display:'block'}}/>
 }
 
 function OISparkline({vals}:{vals:number[]}){
   const ref=useRef<HTMLCanvasElement>(null)
   useEffect(()=>{
     const c=ref.current;if(!c||vals.length<2)return
-    const ctx=c.getContext('2d')!,W=c.width,H=c.height
+    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||500,H=54
+    c.width=W*dpr;c.height=H*dpr
+    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
     ctx.clearRect(0,0,W,H)
     const mn=Math.min(...vals),mx=Math.max(...vals),rng=mx-mn||1
     ctx.beginPath();vals.forEach((v,i)=>{const x=(i/(vals.length-1))*W,y=H-((v-mn)/rng)*(H-4);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
@@ -781,7 +789,7 @@ function OISparkline({vals}:{vals:number[]}){
     ctx.beginPath();ctx.strokeStyle='#F59714';ctx.lineWidth=1.5
     vals.forEach((v,i)=>{const x=(i/(vals.length-1))*W,y=H-((v-mn)/rng)*(H-4);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
   },[vals])
-  return<canvas ref={ref} width={500} height={54} style={{width:'100%',height:54,display:'block',borderRadius:6}}/>
+  return<canvas ref={ref} style={{width:'100%',height:54,display:'block',borderRadius:6}}/>
 }
 
 function PressureBar({score}:{score:number}){
@@ -869,7 +877,13 @@ function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }
 }
 
 export default function AnalysePage() {
-  const [symbol, setSymbol] = useState('')  // Vide par défaut — l'utilisateur choisit
+  // Pre-fill symbol from Marchés heatmap click if available
+  const initSymbol = () => {
+    const s = localStorage.getItem('tm_analyse_symbol')
+    if (s) { localStorage.removeItem('tm_analyse_symbol'); return s }
+    return ''
+  }
+  const [symbol, setSymbol] = useState(initSymbol)
   const [mode,   setMode]   = useState<Mode>('micro')
 
   // CVD state

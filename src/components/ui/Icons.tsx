@@ -57,3 +57,4 @@ export const IconGoogle      = ({ size = 20, className = '' }: IconProps) => (
   </svg>
 )
 export const IconExchange    = icon('M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10 M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41')
+export const IconMarches     = icon('M3 3h4v4H3z M9 3h4v4H9z M15 3h4v4H15z M3 9h4v4H3z M9 9h4v4H9z M15 9h4v4H15z M3 15h4v4H3z M9 15h4v4H9z M15 15h4v4H15z')
