@@ -62,10 +62,10 @@ export async function fetchStockPrice(symbol: string): Promise<number | null> {
 // ── Logique XP ─────────────────────────────────────────────────
 export function computeXP(isCorrect: boolean, accuracy: number): number {
   if (!isCorrect) return 0
-  let xp = 20
-  if (accuracy <= 5) xp += 50
-  if (accuracy <= 2) xp += 100
-  if (accuracy <= 1) xp += 200
+  let xp = 5
+  if (accuracy <= 1)   xp += 8
+  if (accuracy <= 0.5) xp += 15
+  if (accuracy <= 0.1) xp += 30
   return xp
 }
 
@@ -153,10 +153,10 @@ export async function resolveExpiredPredictions(uid: string): Promise<ResolvedSu
 
     // 4. Award XP
     if (isCorrect) {
-      await callAwardXP(20, 'prediction_correct', pred.id)
-      if (accuracy <= 5) await callAwardXP(50, 'prediction_accurate_5', pred.id)
-      if (accuracy <= 2) await callAwardXP(100, 'prediction_accurate_2', pred.id)
-      if (accuracy <= 1) await callAwardXP(200, 'prediction_oracle', pred.id)
+      await callAwardXP(5,  'prediction_correct',      pred.id)
+      if (accuracy <= 1)   await callAwardXP(8,  'prediction_accurate_1',   pred.id)
+      if (accuracy <= 0.5) await callAwardXP(15, 'prediction_accurate_0_5', pred.id)
+      if (accuracy <= 0.1) await callAwardXP(30, 'prediction_oracle',       pred.id)
     }
 
     // 5. Mettre à jour les stats

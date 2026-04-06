@@ -22,8 +22,22 @@ const TF_LABEL: Record<PredictionTimeframe, string> = {
   '1h': '1 heure', '4h': '4 heures', '24h': '24 heures', '3d': '3 jours', '7d': '7 jours',
 }
 
-/** Période de verrouillage avant la résolution (10 min) — impossible de parier */
-const LOCK_MS = 10 * 60 * 1000
+/** Fenêtre de fermeture : entre 10 min et 2h avant la résolution */
+const LOCK_MIN_MS = 10 * 60 * 1000        // 10 minutes
+const LOCK_MAX_MS = 2 * 60 * 60 * 1000   // 2 heures
+
+/**
+ * Calcule l'heure de fermeture des paris pour un round donné.
+ * Déterministe (basé sur le timestamp de résolution) → identique pour tous
+ * les utilisateurs du même round, mais non annoncé dans l'UI.
+ * Résultat toujours dans [resolveAt - 2h, resolveAt - 10min].
+ */
+function computeLockAt(resolveDate: Date): Date {
+  const seed   = resolveDate.getTime()
+  const range  = LOCK_MAX_MS - LOCK_MIN_MS   // 110 min en ms
+  const offset = LOCK_MIN_MS + (seed % range)
+  return new Date(resolveDate.getTime() - offset)
+}
 
 /**
  * Calcule la prochaine heure de résolution FIXE pour un timeframe donné.
@@ -249,27 +263,31 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
   const [communityPreds, setCommunityPreds] = useState<Prediction[]>([])
   const [commLoading, setCommLoading] = useState(false)
 
-  // ── Fixed resolve time + lock period ────────────────────────
+  // ── Fixed resolve time + random lock ────────────────────────
   const [resolveDate, setResolveDate] = useState<Date>(() => nextResolveAt('24h'))
+  const [lockAt, setLockAt]           = useState<Date>(() => computeLockAt(nextResolveAt('24h')))
   const [countdown, setCountdown]     = useState('')
   const [isLocked, setIsLocked]       = useState(false)
 
-  // Recalcule la résolution quand le timeframe change
+  // Recalcule résolution + heure de lock quand le timeframe change
   useEffect(() => {
-    setResolveDate(nextResolveAt(timeframe))
+    const rd = nextResolveAt(timeframe)
+    setResolveDate(rd)
+    setLockAt(computeLockAt(rd))
   }, [timeframe])
 
   // Ticker live (toutes les secondes)
   useEffect(() => {
     const tick = () => {
-      const diff = resolveDate.getTime() - Date.now()
-      setIsLocked(diff <= LOCK_MS && diff > 0)
+      const now  = Date.now()
+      const diff = resolveDate.getTime() - now
+      setIsLocked(now >= lockAt.getTime() && now < resolveDate.getTime())
       setCountdown(fmtDiff(diff))
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [resolveDate])
+  }, [resolveDate, lockAt])
 
   // Seul le crypto top 10 est disponible ; actions = coming soon
   const activeSymbols = assetType === 'crypto' ? CRYPTO_SYMBOLS : []
@@ -317,8 +335,8 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
       if (!lockedPrice) throw new Error('Impossible de récupérer le prix')
 
       // Vérification côté client : si on est en période de lock, on refuse
-      if (resolveDate.getTime() - Date.now() <= LOCK_MS) {
-        throw new Error('Paris verrouillés 10 minutes avant la résolution')
+      if (Date.now() >= lockAt.getTime()) {
+        throw new Error('Les paris sont fermés pour ce round')
       }
       const resolveAt = Timestamp.fromDate(resolveDate)
       await createPrediction({
@@ -336,8 +354,8 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         displayName: anonymize(displayName),
       })
 
-      // +5 XP pour la soumission
-      await callAwardXP(5, 'prediction_submit')
+      // +3 XP pour la soumission
+      await callAwardXP(3, 'prediction_submit')
 
       // Stats + badges
       await recordSubmitStats(uid)
@@ -355,7 +373,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
       if (newBadges.length > 0) {
         onToast(`🏆 Badge${newBadges.length > 1 ? 's' : ''} débloqué${newBadges.length > 1 ? 's' : ''} : ${newBadges.map(b => b.icon + ' ' + b.name).join(', ')}`)
       } else {
-        onToast(`✅ Prédiction soumise · +5 XP · Résolution le ${fmtTime(resolveDate)}`)
+        onToast(`✅ Prédiction soumise · +3 XP · Résolution le ${fmtTime(resolveDate)}`)
       }
       onPredictionCreated()
     } catch (e) {
@@ -452,9 +470,10 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>HORIZON DE PRÉDICTION</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {TIMEFRAMES.map(tf => {
-              const rDate = nextResolveAt(tf)
-              const diff = rDate.getTime() - Date.now()
-              const locked = diff <= LOCK_MS && diff > 0
+              const rDate  = nextResolveAt(tf)
+              const lAt    = computeLockAt(rDate)
+              const now    = Date.now()
+              const locked = now >= lAt.getTime() && now < rDate.getTime()
               return (
                 <button key={tf} onClick={() => setTimeframe(tf)}
                   title={`Résolution : ${fmtTime(rDate)}`}
@@ -530,11 +549,11 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         <div style={{ background: 'linear-gradient(135deg, rgba(var(--tm-accent-rgb,0,229,255),0.06), rgba(191,90,242,0.06))', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)', borderRadius: 12, padding: '12px 14px' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', marginBottom: 8 }}>⚡ XP potentiel</div>
           {[
-            { label: 'Soumission', xp: '+5 XP', color: 'var(--tm-text-secondary)' },
-            { label: 'Direction correcte', xp: '+20 XP', color: 'var(--tm-profit)' },
-            { label: 'Précision ≤5%', xp: '+50 XP', color: 'var(--tm-profit)' },
-            { label: 'Précision ≤2%', xp: '+100 XP', color: '#FFD700' },
-            { label: 'Précision ≤1%', xp: '+200 XP', color: 'var(--tm-purple)' },
+            { label: 'Soumission',         xp: '+3 XP',  color: 'var(--tm-text-secondary)' },
+            { label: 'Direction correcte', xp: '+5 XP',  color: 'var(--tm-profit)' },
+            { label: 'Précision ≤1%',      xp: '+8 XP',  color: 'var(--tm-profit)' },
+            { label: 'Précision ≤0,5%',    xp: '+15 XP', color: '#FFD700' },
+            { label: 'Précision ≤0,1%',    xp: '+30 XP', color: 'var(--tm-purple)' },
           ].map(({ label, xp, color }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>{label}</span>
@@ -543,7 +562,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
           ))}
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Max possible</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-purple)', fontFamily: 'JetBrains Mono, monospace' }}>+375 XP</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-purple)', fontFamily: 'JetBrains Mono, monospace' }}>+61 XP</span>
           </div>
         </div>
 
@@ -566,7 +585,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
           </div>
           {isLocked && (
             <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginTop: 6 }}>
-              Les paris sont fermés 10 minutes avant la résolution pour garantir l'équité.
+              Les paris se ferment à un moment aléatoire avant la résolution pour garantir l'équité.
             </div>
           )}
         </div>
@@ -598,7 +617,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
             : isLocked
             ? '🔒 Paris fermés — résolution imminente'
             : canSubmit
-            ? `🎯 Soumettre ma prédiction · +5 XP`
+            ? `🎯 Soumettre ma prédiction · +3 XP`
             : 'Sélectionne un actif et un prix'}
         </button>
       </div>
@@ -728,19 +747,21 @@ function PredCard({ pred }: { pred: Prediction }) {
   const resColor  = isResolved ? (pred.isCorrect ? 'var(--tm-profit)' : 'var(--tm-loss)') : 'var(--tm-text-muted)'
 
   // Live countdown pour les prédictions actives
+  const predLockAt = computeLockAt(pred.resolveAt.toDate())
   const [liveCountdown, setLiveCountdown] = useState(() => isPending ? fmtCountdown(pred.resolveAt) : '')
-  const [liveIsLocked, setLiveIsLocked] = useState(() => isPending && pred.resolveAt.toMillis() - Date.now() <= LOCK_MS)
+  const [liveIsLocked, setLiveIsLocked]   = useState(() => isPending && Date.now() >= predLockAt.getTime())
   useEffect(() => {
     if (!isPending) return
     const tick = () => {
-      const diff = pred.resolveAt.toMillis() - Date.now()
+      const now  = Date.now()
+      const diff = pred.resolveAt.toMillis() - now
       setLiveCountdown(fmtDiff(diff))
-      setLiveIsLocked(diff <= LOCK_MS && diff > 0)
+      setLiveIsLocked(now >= predLockAt.getTime() && now < pred.resolveAt.toMillis())
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [isPending, pred.resolveAt])
+  }, [isPending, pred.resolveAt, predLockAt])
 
   return (
     <div style={{
