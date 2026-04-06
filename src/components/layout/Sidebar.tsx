@@ -19,7 +19,6 @@ const NAV = [
   { to: '/app/marches',    label: 'Marchés',    Icon: IconMarches },
   { to: '/app/predict',    label: 'Prédictions',Icon: IconPredict },
   { to: '/app/journal',    label: 'Journal',    Icon: IconJournal },
-  { to: '/app/alertes',    label: 'Alertes',    Icon: IconAlertes },
   { to: '/app/calendrier', label: 'Calendrier', Icon: IconCalendrier },
   { to: '/app/systemes',   label: 'Systèmes',   Icon: IconSystemes },
 ]

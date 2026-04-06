@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
+import RsiEliteChart from './RsiEliteChart'
 import TradePlanCard from './TradePlanCard'
 import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
@@ -1189,6 +1190,11 @@ export default function AnalysePage() {
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
         <ShareWrapper label="WaveTrend"><WaveTrendChart symbol={symbol} /></ShareWrapper>
         <ShareWrapper label="VMC"><VMCOscillatorChart symbol={symbol} /></ShareWrapper>
+      </div>}
+
+      {/* RSI Elite Toolkit — tous les actifs */}
+      {symbol && <div style={{marginBottom:16}}>
+        <ShareWrapper label="RSI Elite"><RsiEliteChart symbol={symbol} /></ShareWrapper>
       </div>}
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}

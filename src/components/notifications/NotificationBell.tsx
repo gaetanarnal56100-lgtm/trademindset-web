@@ -1,7 +1,84 @@
-// NotificationBell.tsx — Système de notifications complet avec réglages granulaires
+// NotificationBell.tsx — Système de notifications complet avec réglages granulaires + historique alertes intégré
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { signalService, TradingSignal } from '@/services/notifications/SignalNotificationService'
+import { signalService, TradingSignal, type SignalType } from '@/services/notifications/SignalNotificationService'
+
+// ── Signal metadata (repris d'AlertesPage) ────────────────────────────────
+const SIGNAL_META: Record<SignalType, { icon: string; label: string; color: string; bg: string; desc: string }> = {
+  WT_SMART_BULL:  { icon:'⭐', label:'WT Smart Bull',   color:'var(--tm-accent)',   bg:'rgba(0,229,255,0.12)',       desc:'Croisement WT1/WT2 en zone de survente extrême — signal premium de retournement haussier.' },
+  WT_SMART_BEAR:  { icon:'⭐', label:'WT Smart Bear',   color:'var(--tm-loss)',     bg:'rgba(255,59,48,0.12)',       desc:'Croisement WT1/WT2 en zone de surachat extrême — signal premium de retournement baissier.' },
+  WT_BULL:        { icon:'📈', label:'WT Bullish',       color:'var(--tm-profit)',   bg:'rgba(34,199,89,0.10)',       desc:'Croisement haussier WaveTrend (WT1 passe au-dessus de WT2).' },
+  WT_BEAR:        { icon:'📉', label:'WT Bearish',       color:'var(--tm-loss)',     bg:'rgba(255,59,48,0.10)',       desc:'Croisement baissier WaveTrend (WT1 passe en dessous de WT2).' },
+  VMC_BUY:        { icon:'🟢', label:'VMC BUY',          color:'var(--tm-profit)',   bg:'rgba(34,199,89,0.12)',       desc:"Le VMC Oscillator confirme un signal d'achat — croisement haussier confirmé par le ribbon et le momentum." },
+  VMC_SELL:       { icon:'🔴', label:'VMC SELL',          color:'var(--tm-loss)',     bg:'rgba(255,59,48,0.12)',       desc:'Le VMC Oscillator confirme un signal de vente — croisement baissier confirmé par le ribbon et le momentum.' },
+  VMC_COMPRESSION:{ icon:'🔄', label:'VMC Compression',  color:'var(--tm-warning)',  bg:'rgba(255,149,0,0.12)',       desc:'Les EMAs du ribbon se compriment — breakout potentiel imminent.' },
+  MTF_BUY:        { icon:'🎯', label:'MTF BUY',          color:'var(--tm-profit)',   bg:'rgba(34,199,89,0.12)',       desc:"Signal d'achat multi-timeframe avec forte confluence (>70%). RSI + VMC alignés sur plusieurs TFs." },
+  MTF_SELL:       { icon:'🎯', label:'MTF SELL',          color:'var(--tm-loss)',     bg:'rgba(255,59,48,0.12)',       desc:"Signal de vente multi-timeframe avec forte confluence (>70%). RSI + VMC alignés sur plusieurs TFs." },
+  MTF_CONFLUENCE: { icon:'🔗', label:'MTF Confluence',    color:'var(--tm-purple)',   bg:'rgba(191,90,242,0.12)',      desc:'Confluence élevée sur le dashboard MTF — la majorité des timeframes pointent dans la même direction.' },
+}
+
+const URGENCY_BADGE: Record<string, { label: string; color: string }> = {
+  premium: { label: 'PREMIUM', color: '#FFD700' },
+  high:    { label: 'HIGH',    color: 'var(--tm-loss)' },
+  medium:  { label: 'MEDIUM',  color: 'var(--tm-warning)' },
+  low:     { label: 'LOW',     color: 'var(--tm-text-secondary)' },
+}
+
+type AlertFilter = 'all' | 'wt' | 'vmc' | 'mtf'
+
+function timeAgoLong(d: Date): string {
+  const diff = Date.now() - d.getTime()
+  if (diff < 60_000) return 'à l\'instant'
+  if (diff < 3600_000) return `il y a ${Math.floor(diff/60_000)}m`
+  if (diff < 86400_000) return `il y a ${Math.floor(diff/3600_000)}h`
+  return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
+}
+
+function AlertSignalCard({ signal, expanded, onToggle }: { signal: TradingSignal; expanded: boolean; onToggle: () => void }) {
+  const meta = SIGNAL_META[signal.type as SignalType]
+  const urgencyKey = signal.urgency ?? (signal.type.includes('SMART') ? 'premium' : signal.type.includes('BUY')||signal.type.includes('SELL')||signal.type.includes('CONFLUENCE') ? 'high' : 'medium')
+  const urg = URGENCY_BADGE[urgencyKey]
+  if (!meta) return null
+  return (
+    <div onClick={onToggle} style={{
+      background: expanded ? meta.bg : 'transparent',
+      borderBottom: '1px solid rgba(255,255,255,0.04)',
+      padding: '10px 16px', cursor: 'pointer', transition: 'background 0.15s',
+    }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <div style={{ width:34, height:34, borderRadius:10, background: meta.bg, border:`1px solid ${meta.color}30`,
+          display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>
+          {meta.icon}
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2, flexWrap:'wrap' }}>
+            <span style={{ fontSize:11, fontWeight:700, color:meta.color }}>{meta.label}</span>
+            {urg && <span style={{ fontSize:9, fontWeight:700, color:urg.color, background:`${urg.color}18`, padding:'1px 6px', borderRadius:8, border:`1px solid ${urg.color}30` }}>{urg.label}</span>}
+            <span style={{ fontSize:9, color:'var(--tm-text-muted)', marginLeft:'auto', fontFamily:'JetBrains Mono,monospace' }}>{timeAgoLong(signal.timestamp)}</span>
+          </div>
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <span style={{ fontSize:11, fontWeight:600, color:'#F59714', fontFamily:'JetBrains Mono,monospace' }}>{signal.symbol}</span>
+            <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>·</span>
+            <span style={{ fontSize:10, color:'var(--tm-text-secondary)' }}>{signal.timeframe}</span>
+          </div>
+          <div style={{ fontSize:11, color:'#C5C8D6', marginTop:2 }}>{signal.message}</div>
+        </div>
+        <div style={{ fontSize:10, color:'var(--tm-text-muted)', transform:expanded?'rotate(180deg)':'none', transition:'transform 0.2s', flexShrink:0 }}>▼</div>
+      </div>
+      {expanded && (
+        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${meta.color}20` }}>
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--tm-text-secondary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.08em' }}>Explication</div>
+          <div style={{ fontSize:11, color:'#C5C8D6', lineHeight:1.6 }}>{meta.desc}</div>
+          {signal.detail && (
+            <div style={{ marginTop:6, padding:'6px 10px', background:'rgba(0,0,0,0.25)', borderRadius:6, fontFamily:'JetBrains Mono,monospace', fontSize:10, color:'var(--tm-text-secondary)' }}>
+              {signal.detail}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface NotifPrefs {
@@ -186,12 +263,14 @@ function Toggle({ value, onChange, size = 'md' }: { value: boolean; onChange: (v
 
 // ── Main NotificationBell ─────────────────────────────────────────────────
 export default function NotificationBell() {
-  const [signals,  setSignals]  = useState<TradingSignal[]>([])
-  const [open,     setOpen]     = useState(false)
-  const [tab,      setTab]      = useState<'history' | 'settings'>('history')
-  const [hasNew,   setHasNew]   = useState(false)
-  const [granted,  setGranted]  = useState(false)
-  const [prefs,    setPrefs]    = useState<NotifPrefs>(() => {
+  const [signals,      setSignals]      = useState<TradingSignal[]>([])
+  const [open,         setOpen]         = useState(false)
+  const [tab,          setTab]          = useState<'alertes' | 'settings'>('alertes')
+  const [alertFilter,  setAlertFilter]  = useState<AlertFilter>('all')
+  const [expandedId,   setExpandedId]   = useState<string | null>(null)
+  const [hasNew,       setHasNew]       = useState(false)
+  const [granted,      setGranted]      = useState(false)
+  const [prefs,        setPrefs]        = useState<NotifPrefs>(() => {
     try { const s = localStorage.getItem('notif_prefs'); return s ? { ...DEFAULT_PREFS, ...JSON.parse(s) } : DEFAULT_PREFS } catch { return DEFAULT_PREFS }
   })
   const panelRef = useRef<HTMLDivElement>(null)
@@ -236,6 +315,16 @@ export default function NotificationBell() {
   }, [])
 
   const recent = signals.filter(s => (s.timestamp instanceof Date ? Date.now()-s.timestamp.getTime() : Infinity) < 30*60*1000).length
+
+  const filteredSignals = signals.filter(s => {
+    if (alertFilter === 'wt')  return s.type.startsWith('WT_')
+    if (alertFilter === 'vmc') return s.type.startsWith('VMC_')
+    if (alertFilter === 'mtf') return s.type.startsWith('MTF_')
+    return true
+  })
+  const wtCount  = signals.filter(s => s.type.startsWith('WT_')).length
+  const vmcCount = signals.filter(s => s.type.startsWith('VMC_')).length
+  const mtfCount = signals.filter(s => s.type.startsWith('MTF_')).length
 
   function updatePref<K extends keyof NotifPrefs>(key: K, value: NotifPrefs[K]) {
     setPrefs(p => ({ ...p, [key]: value }))
@@ -290,12 +379,12 @@ export default function NotificationBell() {
             </div>
             {/* Tabs */}
             <div style={{ display:'flex', gap:4 }}>
-              {(['history','settings'] as const).map(t => (
+              {(['alertes','settings'] as const).map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{ flex:1, padding:'7px 0', borderRadius:'8px 8px 0 0',
                   background: tab===t ? 'var(--tm-bg)' : 'transparent',
                   border:'none', cursor:'pointer', fontSize:11, fontWeight:600,
                   color: tab===t ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)', borderBottom: tab===t ? 'none' : undefined }}>
-                  {t === 'history' ? `🕐 Historique${recent > 0 ? ` (${recent})` : ''}` : '⚙ Réglages'}
+                  {t === 'alertes' ? `🔔 Alertes${signals.length > 0 ? ` (${signals.length})` : ''}` : '⚙ Réglages'}
                 </button>
               ))}
             </div>
@@ -304,33 +393,65 @@ export default function NotificationBell() {
           {/* Content */}
           <div style={{ overflowY:'auto', flex:1 }}>
 
-            {/* ── HISTORY TAB ── */}
-            {tab === 'history' && (
-              <div style={{ padding:'8px 0' }}>
-                {signals.length === 0 ? (
-                  <div style={{ padding:'32px 16px', textAlign:'center', color:'var(--tm-text-muted)', fontSize:12 }}>
-                    <div style={{ fontSize:24, marginBottom:8 }}>🔕</div>
-                    Aucun signal récent
-                  </div>
-                ) : signals.slice(0, 20).map(sig => {
-                  const urgency = sig.type.includes('SMART') ? 'premium' : sig.type.includes('BUY') || sig.type.includes('SELL') ? 'high' : 'medium'
-                  const c = URGENCY_COLOR[urgency]
-                  const sigAge = (sig.timestamp instanceof Date ? Date.now()-sig.timestamp.getTime() : Infinity) < 30*60*1000
-                  return (
-                    <div key={sig.id} style={{ padding:'10px 16px', display:'flex', gap:10, alignItems:'flex-start',
-                      background: sigAge ? 'rgba(255,255,255,0.02)' : 'transparent',
-                      borderBottom:'1px solid rgba(255,255,255,0.03)' }}>
-                      <div style={{ width:3, borderRadius:2, alignSelf:'stretch', background:c, flexShrink:0, minHeight:32 }}/>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:2 }}>
-                          <span style={{ fontSize:11, fontWeight:700, color:c }}>{sig.symbol} · {sig.timeframe}</span>
-                          <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{timeAgo(sig.timestamp)}</span>
+            {/* ── ALERTES TAB ── */}
+            {tab === 'alertes' && (
+              <div>
+                {/* Stats + filter row */}
+                {signals.length > 0 && (
+                  <div style={{ padding:'8px 12px', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+                    {/* Mini stats */}
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6, marginBottom:8 }}>
+                      {[
+                        { label:'Total',   value:signals.length, color:'var(--tm-text-primary)' },
+                        { label:'WT',      value:wtCount,        color:'#37D7FF' },
+                        { label:'VMC',     value:vmcCount,       color:'var(--tm-warning)' },
+                        { label:'MTF',     value:mtfCount,       color:'var(--tm-purple)' },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} style={{ textAlign:'center', padding:'5px 0', background:'rgba(255,255,255,0.02)', borderRadius:8, border:'1px solid #1E2330' }}>
+                          <div style={{ fontSize:15, fontWeight:800, color, fontFamily:'JetBrains Mono,monospace' }}>{value}</div>
+                          <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginTop:1 }}>{label}</div>
                         </div>
-                        <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{sig.message}</div>
-                      </div>
+                      ))}
                     </div>
-                  )
-                })}
+                    {/* Filter pills */}
+                    <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                      {([
+                        { id:'all' as AlertFilter, label:'Toutes',   count:signals.length },
+                        { id:'wt'  as AlertFilter, label:'WT',       count:wtCount },
+                        { id:'vmc' as AlertFilter, label:'VMC',      count:vmcCount },
+                        { id:'mtf' as AlertFilter, label:'MTF',      count:mtfCount },
+                      ]).map(f => (
+                        <button key={f.id} onClick={() => setAlertFilter(f.id)} style={{
+                          padding:'3px 10px', borderRadius:16, fontSize:10, fontWeight:600, cursor:'pointer',
+                          border:`1px solid ${alertFilter===f.id ? 'var(--tm-warning)' : 'var(--tm-border)'}`,
+                          background: alertFilter===f.id ? 'rgba(255,149,0,0.15)' : 'transparent',
+                          color: alertFilter===f.id ? 'var(--tm-warning)' : 'var(--tm-text-muted)',
+                        }}>
+                          {f.label} {f.count > 0 && <span style={{ fontSize:9 }}>({f.count})</span>}
+                        </button>
+                      ))}
+                      <button onClick={() => { signalService.clearHistory(); setSignals([]) }} style={{
+                        marginLeft:'auto', padding:'3px 10px', borderRadius:16, fontSize:10,
+                        background:'rgba(255,59,48,0.08)', border:'1px solid rgba(255,59,48,0.2)', color:'var(--tm-loss)', cursor:'pointer',
+                      }}>
+                        🗑
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {/* Signal cards */}
+                {filteredSignals.length === 0 ? (
+                  <div style={{ padding:'32px 16px', textAlign:'center', color:'var(--tm-text-muted)', fontSize:12 }}>
+                    <div style={{ fontSize:28, marginBottom:8 }}>🔕</div>
+                    <div style={{ fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:4 }}>Aucune alerte</div>
+                    <div style={{ fontSize:11, maxWidth:280, margin:'0 auto', lineHeight:1.5 }}>
+                      Les alertes apparaissent automatiquement quand les oscillateurs WaveTrend et VMC détectent des signaux sur la page Analyse.
+                    </div>
+                  </div>
+                ) : filteredSignals.map(sig => (
+                  <AlertSignalCard key={sig.id} signal={sig} expanded={expandedId === sig.id}
+                    onToggle={() => setExpandedId(expandedId === sig.id ? null : sig.id)} />
+                ))}
               </div>
             )}
 

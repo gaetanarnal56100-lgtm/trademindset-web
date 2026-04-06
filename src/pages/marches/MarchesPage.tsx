@@ -17,6 +17,9 @@ const fbFunctions = getFunctions(app, 'europe-west1')
 interface YahooCandle { t: number; o: number; h: number; l: number; c: number; v: number }
 type YahooFn = { s: string; candles: YahooCandle[] }
 
+// Extended TokenRSI with optional divergence field
+type TokenRSIWithDiv = TokenRSI & { divergence?: 'bull' | 'bear' }
+
 // Subset filters (which tokens to show)
 type CryptoSubset = 'all' | 'top50' | 'alts'
 type StockSubset  = 'all' | 'us' | 'europe' | 'cac40' | 'dax' | 'ftse' | 'asia' | 'etf'
@@ -59,6 +62,69 @@ function calcRSI(closes: number[], period = 14): number {
   if (avgL === 0) return 100
   const result = 100 - 100 / (1 + avgG / avgL)
   return isNaN(result) ? 50 : +result.toFixed(2)
+}
+
+// ── RSI full array (Wilder smoothing) ────────────────────────────────────────
+
+function calcRSIArr(closes: number[], period = 14): number[] {
+  const out = new Array(closes.length).fill(50)
+  if (closes.length <= period) return out
+  let avgGain = 0, avgLoss = 0
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1]
+    if (d > 0) avgGain += d; else avgLoss -= d
+  }
+  avgGain /= period; avgLoss /= period
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss)
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1]
+    const gain = d > 0 ? d : 0; const loss = d < 0 ? -d : 0
+    avgGain = (avgGain * (period - 1) + gain) / period
+    avgLoss = (avgLoss * (period - 1) + loss) / period
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss)
+  }
+  return out
+}
+
+// ── Pivot detection ───────────────────────────────────────────────────────────
+
+function findPivotLowIdxs(arr: number[], lb = 4, rb = 4): number[] {
+  const pivots: number[] = []
+  for (let i = lb; i < arr.length - rb; i++) {
+    const v = arr[i]
+    let ok = true
+    for (let j = i - lb; j <= i + rb; j++) { if (j !== i && arr[j] <= v) { ok = false; break } }
+    if (ok) pivots.push(i)
+  }
+  return pivots
+}
+
+function findPivotHighIdxs(arr: number[], lb = 4, rb = 4): number[] {
+  const pivots: number[] = []
+  for (let i = lb; i < arr.length - rb; i++) {
+    const v = arr[i]
+    let ok = true
+    for (let j = i - lb; j <= i + rb; j++) { if (j !== i && arr[j] >= v) { ok = false; break } }
+    if (ok) pivots.push(i)
+  }
+  return pivots
+}
+
+// ── RSI divergence detection ──────────────────────────────────────────────────
+
+function detectRSIDivergence(closes: number[], rsiArr: number[]): 'bull' | 'bear' | null {
+  if (closes.length < 20 || rsiArr.length < 20) return null
+  const lows  = findPivotLowIdxs(closes)
+  if (lows.length >= 2) {
+    const i1 = lows[lows.length - 2], i2 = lows[lows.length - 1]
+    if (closes[i2] < closes[i1] && rsiArr[i2] > rsiArr[i1] + 2) return 'bull'
+  }
+  const highs = findPivotHighIdxs(closes)
+  if (highs.length >= 2) {
+    const i1 = highs[highs.length - 2], i2 = highs[highs.length - 1]
+    if (closes[i2] > closes[i1] && rsiArr[i2] < rsiArr[i1] - 2) return 'bear'
+  }
+  return null
 }
 
 // ── WaveTrend WT1 helper ─────────────────────────────────────────────────────
@@ -361,9 +427,9 @@ async function getTopCryptoSymbols(n = 200): Promise<string[]> {
   return _cachedCryptoSymbols
 }
 
-async function fetchCryptoRSI(symbols: string[], tf: Timeframe = '1d'): Promise<TokenRSI[]> {
+async function fetchCryptoRSI(symbols: string[], tf: Timeframe = '1d'): Promise<TokenRSIWithDiv[]> {
   const interval = TF_TO_BINANCE[tf], limit = TF_LIMIT[tf]
-  const BATCH = 50, results: TokenRSI[] = []
+  const BATCH = 50, results: TokenRSIWithDiv[] = []
   for (let i = 0; i < symbols.length; i += BATCH) {
     const batch = symbols.slice(i, i + BATCH)
     const settled = await Promise.allSettled(batch.map(async sym => {
@@ -379,12 +445,15 @@ async function fetchCryptoRSI(symbols: string[], tf: Timeframe = '1d'): Promise<
       if (closes.length < 2) return null
       const last = closes[closes.length - 1], prev = closes[closes.length - 2]
       const change = prev !== 0 ? +((last - prev) / prev * 100).toFixed(2) : 0
+      const rsiArr = calcRSIArr(closes)
+      const divergence = detectRSIDivergence(closes, rsiArr) ?? undefined
       return {
         symbol: sym.replace('USDT', ''),
         rsi: calcRSI(closes), wt1: calcWT1(candles),
         change24h: isNaN(change) ? 0 : change,
         volume: volumes[volumes.length - 1], price: last,
-      } satisfies TokenRSI
+        divergence,
+      } satisfies TokenRSIWithDiv
     }))
     results.push(...settled.flatMap(r => r.status === 'fulfilled' && r.value ? [r.value] : []))
   }
@@ -393,7 +462,7 @@ async function fetchCryptoRSI(symbols: string[], tf: Timeframe = '1d'): Promise<
 
 // ── Stock fetcher ─────────────────────────────────────────────────────────────
 
-async function fetchStockRSI(symbol: string, tf: Timeframe = '1d'): Promise<TokenRSI | null> {
+async function fetchStockRSI(symbol: string, tf: Timeframe = '1d'): Promise<TokenRSIWithDiv | null> {
   try {
     const { interval, range } = TF_TO_YAHOO[tf]
     const fn  = httpsCallable<Record<string, unknown>, YahooFn>(fbFunctions, 'fetchYahooCandles')
@@ -406,9 +475,12 @@ async function fetchStockRSI(symbol: string, tf: Timeframe = '1d'): Promise<Toke
     if (!last || !prev || last.c == null || prev.c == null) return null
     const displaySym = symbol.replace(/\.(PA|DE|L|AS|SW|CO|ST|MI)$/, '')
     const change = prev.c !== 0 ? +((last.c - prev.c) / prev.c * 100).toFixed(2) : 0
+    const rsiArr = calcRSIArr(closes)
+    const divergence = detectRSIDivergence(closes, rsiArr) ?? undefined
     return {
       symbol: displaySym, rsi: calcRSI(closes), wt1: calcWT1(candles),
       change24h: isNaN(change) ? 0 : change, volume: last.v ?? 0, price: last.c,
+      divergence,
     }
   } catch { return null }
 }
@@ -416,8 +488,8 @@ async function fetchStockRSI(symbol: string, tf: Timeframe = '1d'): Promise<Toke
 async function fetchGroupParallel(
   symbols: string[], tf: Timeframe = '1d',
   onProgress?: (done: number, total: number) => void
-): Promise<TokenRSI[]> {
-  const BATCH = 10, results: TokenRSI[] = []
+): Promise<TokenRSIWithDiv[]> {
+  const BATCH = 10, results: TokenRSIWithDiv[] = []
   for (let i = 0; i < symbols.length; i += BATCH) {
     const batch   = symbols.slice(i, i + BATCH)
     const settled = await Promise.allSettled(batch.map(s => fetchStockRSI(s, tf)))
@@ -463,10 +535,51 @@ function avgRSI(tokens: TokenRSI[]): number | null {
   return +( sum / tokens.length).toFixed(1)
 }
 
+// ── Divergence Scanner section ────────────────────────────────────────────────
+
+function DivergenceScanner({ tokens, onTokenClick }: { tokens: TokenRSIWithDiv[]; onTokenClick: (sym: string) => void }) {
+  const bulls = tokens.filter(t => t.divergence === 'bull')
+  const bears = tokens.filter(t => t.divergence === 'bear')
+  if (bulls.length === 0 && bears.length === 0) return null
+  return (
+    <div style={{ marginBottom: 16, padding: '14px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid #1E2330', borderRadius: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 16 }}>🎯</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Divergences RSI détectées</span>
+        <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginLeft: 4 }}>Timeframe actuel</span>
+        {bulls.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: 'var(--tm-profit)', background: 'rgba(34,199,89,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(34,199,89,0.25)' }}>↗ {bulls.length} BULL</span>}
+        {bears.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-loss)', background: 'rgba(255,59,48,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(255,59,48,0.25)', marginLeft: bulls.length ? 4 : 'auto' }}>↘ {bears.length} BEAR</span>}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {bulls.map(t => (
+          <button key={t.symbol} onClick={() => onTokenClick(t.symbol)} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+            background: 'rgba(34,199,89,0.08)', border: '1px solid rgba(34,199,89,0.3)',
+            color: 'var(--tm-profit)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
+          }}>
+            ↗ {t.symbol}
+            <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+          </button>
+        ))}
+        {bears.map(t => (
+          <button key={t.symbol} onClick={() => onTokenClick(t.symbol)} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+            background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.3)',
+            color: 'var(--tm-loss)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
+          }}>
+            ↘ {t.symbol}
+            <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Stocks tab ────────────────────────────────────────────────────────────────
 
 function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
-  const [groupData,     setGroupData]     = useState<Record<string, TokenRSI[]>>({})
+  const [groupData,     setGroupData]     = useState<Record<string, TokenRSIWithDiv[]>>({})
   const [groupProgress, setGroupProgress] = useState<Record<string, { done: number; total: number }>>({})
   const [loadedGroups,  setLoadedGroups]  = useState<Set<string>>(new Set())
   const [timeframe,     setTimeframe]     = useState<Timeframe>('1d')
@@ -589,6 +702,9 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         return <SkeletonGroup key={g.label} label={`${g.label} ${prog ? `(${prog.done}/${prog.total})` : ''}`} count={g.symbols.length} />
       })}
 
+      {/* Divergence Scanner */}
+      {finalTokens.length > 0 && <DivergenceScanner tokens={finalTokens as TokenRSIWithDiv[]} onTokenClick={onTokenClick} />}
+
       {finalTokens.length > 0 && (
         <div ref={shareRef}>
           <RsiHeatmap tokens={finalTokens} timeframe={timeframe} defaultTimeframe="1d" onTimeframeChange={setTimeframe} onTokenClick={onTokenClick} />
@@ -601,7 +717,7 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 // ── Crypto tab ────────────────────────────────────────────────────────────────
 
 function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
-  const [tokens,    setTokens]    = useState<TokenRSI[]>([])
+  const [tokens,    setTokens]    = useState<TokenRSIWithDiv[]>([])
   const [loading,   setLoading]   = useState(true)
   const [timeframe, setTimeframe] = useState<Timeframe>('1d')
   const [subset,    setSubset]    = useState<CryptoSubset>('all')
@@ -705,6 +821,9 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
           totalWeaker={weaker}
         />
       </div>
+
+      {/* Divergence Scanner */}
+      <DivergenceScanner tokens={finalTokens} onTokenClick={onTokenClick} />
 
       <div ref={shareRef}>
         <RsiHeatmap tokens={finalTokens} timeframe={timeframe} defaultTimeframe="1d" onTimeframeChange={setTimeframe} onTokenClick={onTokenClick} />
