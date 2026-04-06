@@ -846,7 +846,7 @@ export default function MarchesPage() {
 
   const handleTokenClick = (symbol: string) => {
     localStorage.setItem('tm_analyse_symbol', tab === 'crypto' ? symbol + 'USDT' : symbol)
-    navigate('/analyse')
+    navigate('/app/analyse')
   }
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
