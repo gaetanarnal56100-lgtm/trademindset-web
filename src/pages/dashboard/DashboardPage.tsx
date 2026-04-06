@@ -4,6 +4,7 @@ import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/services/firebase/config'
 import PnLCurve from './PnLModal'
+import ShareStatsModal from '@/components/share/ShareStatsModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function safeTime(d: any): number {
@@ -601,6 +602,7 @@ export default function DashboardPage() {
   const [period,  setPeriod]  = useState('1M')
   const [userCount, setUserCount] = useState<number|null>(null)
   const [activeTab, setActiveTab] = useState<'journal' | 'modular'>('journal')
+  const [showShare, setShowShare] = useState(false)
 
   useEffect(()=>{
     const u1=subscribeTrades(t=>{setTrades(t);setLoading(false)})
@@ -633,6 +635,21 @@ export default function DashboardPage() {
         </div>
         {/* Info banner */}
         <div style={{display:'flex',gap:8,alignItems:'center',padding:'8px 14px',background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
+          <button
+            onClick={() => setShowShare(true)}
+            style={{
+              display:'flex',alignItems:'center',gap:6,padding:'4px 12px',
+              background:'rgba(0,229,255,0.08)',
+              border:'1px solid rgba(0,229,255,0.25)',
+              borderRadius:8,cursor:'pointer',fontSize:10,fontWeight:700,
+              color:'var(--tm-accent)',
+              transition:'all 0.2s',letterSpacing:'0.04em',
+            }}
+          >
+            <span style={{fontSize:12}}>📤</span>
+            Partager mes stats
+          </button>
+          <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
           <button onClick={()=>setActiveTab(activeTab==='modular'?'journal':'modular')} style={{
             display:'flex',alignItems:'center',gap:6,padding:'4px 12px',
             background:activeTab==='modular'?'rgba(var(--tm-accent-rgb,0,229,255),0.12)':'rgba(var(--tm-accent-rgb,0,229,255),0.04)',
@@ -874,6 +891,15 @@ export default function DashboardPage() {
         <div style={{marginTop:8}}>
           <ModularDashboard />
         </div>
+      )}
+
+      {/* Share stats modal */}
+      {showShare && (
+        <ShareStatsModal
+          trades={trades}
+          moods={moods}
+          onClose={() => setShowShare(false)}
+        />
       )}
     </div>
   )
