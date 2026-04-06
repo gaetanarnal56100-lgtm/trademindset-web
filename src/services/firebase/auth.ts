@@ -97,11 +97,11 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   if (!snap.exists()) return null
   const d = snap.data()
   return {
-    uid:         d.uid,
-    email:       d.email,
-    displayName: d.displayName,
-    photoURL:    d.photoURL,
-    isPremium:   d.isPremium ?? false,
-    createdAt:   d.createdAt?.toDate() ?? new Date(),
+    uid,                                   // toujours depuis Firebase Auth, jamais depuis Firestore
+    email:       d.email       ?? uid,     // fallback si champ absent
+    displayName: d.displayName ?? '',
+    photoURL:    d.photoURL    ?? undefined,
+    isPremium:   d.isPremium   ?? false,
+    createdAt:   d.createdAt?.toDate()     ?? new Date(),
   }
 }
