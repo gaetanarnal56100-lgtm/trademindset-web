@@ -159,8 +159,28 @@ const PERIODS: { v: '1M' | '3M' | 'ALL'; label: string }[] = [
 
 export default function ShareStatsModal({ trades, moods, onClose }: ShareStatsModalProps) {
   const user = useUser()
-  const [period, setPeriod]           = useState<'1M' | '3M' | 'ALL'>('1M')
-  const [config, setConfig]           = useState<ShareCardConfig>(DEFAULT_CONFIG)
+  const [period, setPeriod]           = useState<'1M' | '3M' | 'ALL'>(() => {
+    try {
+      const saved = localStorage.getItem('tm_share_period')
+      if (saved === '1M' || saved === '3M' || saved === 'ALL') return saved
+    } catch { /* ignore */ }
+    return '1M'
+  })
+  const [config, setConfig]           = useState<ShareCardConfig>(() => {
+    try {
+      const saved = localStorage.getItem('tm_share_config')
+      if (saved) {
+        const parsed = JSON.parse(saved) as ShareCardConfig
+        // Merge avec DEFAULT_CONFIG pour gérer les nouvelles clés futures
+        return {
+          ...DEFAULT_CONFIG,
+          ...parsed,
+          metrics: { ...DEFAULT_CONFIG.metrics, ...parsed.metrics },
+        }
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_CONFIG
+  })
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null)
   const [profileName,  setProfileName]  = useState<string | null>(null)
   const [status, setStatus]           = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
@@ -180,6 +200,15 @@ export default function ShareStatsModal({ trades, moods, onClose }: ShareStatsMo
     }, () => {})
     return () => unsub()
   }, [user?.uid])
+
+  // Persistance des préférences
+  useEffect(() => {
+    try { localStorage.setItem('tm_share_config', JSON.stringify(config)) } catch { /* ignore */ }
+  }, [config])
+
+  useEffect(() => {
+    try { localStorage.setItem('tm_share_period', period) } catch { /* ignore */ }
+  }, [period])
 
   // Close on Escape
   useEffect(() => {
