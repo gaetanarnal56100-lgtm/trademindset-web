@@ -185,17 +185,20 @@ function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:
 }
 
 // ── Draw oscillator ───────────────────────────────────────────────────────
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number) {
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,extCrosshairSlot?:number|null) {
   ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
-  const startIdx = viewStart !== undefined ? viewStart : Math.max(0, main.length - 150)
-  const endIdx   = viewEnd   !== undefined ? Math.min(viewEnd, main.length) : main.length
-  const m=main.slice(startIdx,endIdx),s=signal.slice(startIdx,endIdx),h=histogram.slice(startIdx,endIdx)
+  const startIdx   = viewStart !== undefined ? viewStart : Math.max(0, main.length - 150)
+  const endIdxRaw  = viewEnd   !== undefined ? viewEnd   : main.length  // peut dépasser main.length (marge droite)
+  const dataEnd    = Math.min(endIdxRaw, main.length)                    // clampé pour les données
+  const totalSlots = Math.max(endIdxRaw - startIdx, 2)                   // nombre total de slots (incl. marge droite)
+  const m=main.slice(startIdx,dataEnd),s=signal.slice(startIdx,dataEnd),h=histogram.slice(startIdx,dataEnd)
   if(m.length<2)return
   const oscH = emas && emas.length > 0 ? H * 0.76 : H
   const allVals=[...m,...s,...h,obLevel,osLevel,0]
   const minV=Math.min(...allVals)*1.1,maxV=Math.max(...allVals)*1.1,range=maxV-minV||1
   const yp=(v:number)=>oscH-((v-minV)/range)*oscH
-  const xp=(i:number)=>(i/(m.length-1))*W
+  // xp utilise totalSlots pour que la marge droite corresponde exactement à celle de LW
+  const xp=(i:number)=>(i/Math.max(totalSlots-1,1))*W
 
   // Background zones
   ctx.fillStyle=`rgba(${resolveCSSColor('--tm-loss-rgb','255,59,48')},0.06)`;ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
@@ -221,7 +224,26 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   ctx.beginPath();ctx.strokeStyle=mainColor;ctx.lineWidth=2;m.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
 
   // Signal dots
-  if(dots){dots.filter(d=>d.i>=startIdx&&d.i<endIdx).forEach(d=>{const i=d.i-startIdx;if(i<0||i>=m.length)return;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'#00E5FF':'#FF3B30';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
+  if(dots){dots.filter(d=>d.i>=startIdx&&d.i<dataEnd).forEach(d=>{const i=d.i-startIdx;if(i<0||i>=m.length)return;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'#00E5FF':'#FF3B30';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
+
+  // ── Crosshair externe (depuis LightweightChart) ──────────────────────
+  if (extCrosshairSlot != null && hoverIdx == null && extCrosshairSlot >= 0 && extCrosshairSlot < totalSlots) {
+    const hx = xp(extCrosshairSlot)
+    ctx.save()
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3])
+    ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, oscH); ctx.stroke()
+    if (extCrosshairSlot < m.length) {
+      const hy = yp(m[extCrosshairSlot])
+      ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke()
+      // Petite valeur sur l'axe Y
+      ctx.setLineDash([])
+      ctx.fillStyle = mainColor
+      ctx.fillRect(W - 48, hy - 9, 48, 18)
+      ctx.fillStyle = '#0D1117'; ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+      ctx.fillText(m[extCrosshairSlot].toFixed(1), W - 24, hy + 3)
+    }
+    ctx.setLineDash([]); ctx.restore()
+  }
 
   // ── Interactive crosshair ───────────────────────────────────────────
   if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < m.length) {
@@ -380,7 +402,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
@@ -407,10 +429,16 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
     }
   }, [visibleRange, candles.length])
 
-  const total    = candles.length
-  const viewStart= total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
-  const viewEnd  = total > 0 ? Math.min(total, Math.ceil(viewport.to  * total)) : 0
-  const viewSize = Math.max(viewEnd - viewStart, 2)
+  const total      = candles.length
+  const viewStart  = total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
+  const viewEndRaw = total > 0 ? Math.ceil(viewport.to * total) : 0          // sans clamp → marge droite
+  const viewEnd    = viewEndRaw                                               // passé tel quel à drawOscillator
+  const dataEnd    = Math.min(viewEndRaw, total)                              // pour hover uniquement
+  const viewSize   = Math.max(dataEnd - viewStart, 2)
+  // Slot dans la fenêtre visible pour le crosshair externe (depuis LW)
+  const extCrosshairSlot = (crosshairFrac != null && total > 0)
+    ? Math.round(crosshairFrac * total) - viewStart
+    : null
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -433,8 +461,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd)
-    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport,
+      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd,extCrosshairSlot)
+    }, [result, viewStart, viewEnd, extCrosshairSlot], viewSize, viewport, setViewport,
     onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
   )
 
@@ -486,7 +514,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
@@ -512,10 +540,15 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
     }
   }, [visibleRange, candles.length])
 
-  const vmcTotal    = candles.length
-  const vmcViewStart= vmcTotal > 0 ? Math.max(0, Math.floor(viewport.from * vmcTotal)) : 0
-  const vmcViewEnd  = vmcTotal > 0 ? Math.min(vmcTotal, Math.ceil(viewport.to  * vmcTotal)) : 0
-  const vmcViewSize = Math.max(vmcViewEnd - vmcViewStart, 2)
+  const vmcTotal       = candles.length
+  const vmcViewStart   = vmcTotal > 0 ? Math.max(0, Math.floor(viewport.from * vmcTotal)) : 0
+  const vmcViewEndRaw  = vmcTotal > 0 ? Math.ceil(viewport.to * vmcTotal) : 0
+  const vmcViewEnd     = vmcViewEndRaw
+  const vmcDataEnd     = Math.min(vmcViewEndRaw, vmcTotal)
+  const vmcViewSize    = Math.max(vmcDataEnd - vmcViewStart, 2)
+  const vmcExtCrosshairSlot = (crosshairFrac != null && vmcTotal > 0)
+    ? Math.round(crosshairFrac * vmcTotal) - vmcViewStart
+    : null
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -550,8 +583,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd], vmcViewSize, viewport, setViewport,
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,vmcExtCrosshairSlot)
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, vmcExtCrosshairSlot], vmcViewSize, viewport, setViewport,
     onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
   )
 

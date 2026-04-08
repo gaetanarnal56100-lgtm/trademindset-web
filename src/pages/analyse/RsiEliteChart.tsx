@@ -164,7 +164,8 @@ function draw(
   pairs:  DivPair[],
   startIdx: number,
   maLen: number,
-  endIdx?: number,
+  endIdx?: number,    // peut dépasser rsiArr.length (marge droite LW)
+  extCrosshairSlot?: number | null,
 ) {
   const ctx = setCanvasHiDPI(canvas, cssW, cssH)
   if (!ctx) return
@@ -174,11 +175,15 @@ function draw(
   const cW = W - PAD_L - PAD_R
   const cH = H - PAD_T - PAD_B
 
-  const visible = rsiArr.slice(startIdx, endIdx)
+  const endIdxRaw  = endIdx ?? rsiArr.length
+  const dataEnd    = Math.min(endIdxRaw, rsiArr.length)
+  const totalSlots = Math.max(endIdxRaw - startIdx, 2)  // incl. marge droite
+  const visible = rsiArr.slice(startIdx, dataEnd)
   const N = visible.length
   if (N < 2) return
 
-  const toX = (i: number) => PAD_L + (i / (N-1)) * cW
+  // toX utilise totalSlots pour l'alignement avec la marge droite de LW
+  const toX = (i: number) => PAD_L + (i / Math.max(totalSlots - 1, 1)) * cW
   const toY = (v: number) => PAD_T + (1 - v/100) * cH
 
   // ── Background ────────────────────────────────────────────────────────
@@ -285,6 +290,26 @@ function draw(
     ctx.fillText(txt, W-PAD_R-tw-4, y+4)
   }
 
+  // ── Crosshair externe (depuis LightweightChart) ───────────────────────
+  if (extCrosshairSlot != null && extCrosshairSlot >= 0 && extCrosshairSlot < totalSlots) {
+    const hx = toX(extCrosshairSlot)
+    ctx.save()
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3])
+    ctx.beginPath(); ctx.moveTo(hx, PAD_T); ctx.lineTo(hx, PAD_T + cH); ctx.stroke()
+    if (extCrosshairSlot < N) {
+      const hy = toY(visible[extCrosshairSlot])
+      ctx.beginPath(); ctx.moveTo(PAD_L, hy); ctx.lineTo(PAD_L + cW, hy); ctx.stroke()
+      ctx.setLineDash([])
+      // Badge valeur RSI
+      const val = visible[extCrosshairSlot].toFixed(1)
+      ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'left'
+      const tw = ctx.measureText(val).width + 8
+      ctx.fillStyle = '#C5C8D6'; ctx.fillRect(PAD_L - tw - 2, hy - 8, tw, 16)
+      ctx.fillStyle = '#0D1117'; ctx.fillText(val, PAD_L - tw + 2, hy + 4)
+    }
+    ctx.setLineDash([]); ctx.restore()
+  }
+
   // ── Chart border ──────────────────────────────────────────────────────
   ctx.strokeStyle = 'rgba(255,255,255,0.06)'
   ctx.lineWidth = 1
@@ -292,7 +317,7 @@ function draw(
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void }) {
+export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null }) {
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
   const [maLen,   setMaLen]   = useState(14)
@@ -319,8 +344,12 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
   useEffect(() => { onViewportRef.current = onViewportChange }, [onViewportChange])
   vpRef.current = viewport
 
+  // ref pour crosshair externe (mis à jour sans re-render)
+  const crosshairFracRef = useRef(crosshairFrac ?? null)
+  useEffect(() => { crosshairFracRef.current = crosshairFrac ?? null }, [crosshairFrac])
+
   // ── Redraw helper ───────────────────────────────────────────────────────
-  const redraw = useCallback((rsiArr: number[], rsiMAArr: number[], divPairs: DivPair[], ml: number, vp?: {from:number;to:number}) => {
+  const redraw = useCallback((rsiArr: number[], rsiMAArr: number[], divPairs: DivPair[], ml: number, vp?: {from:number;to:number}, extFrac?: number|null) => {
     const canvas = canvasRef.current
     const container = containerRef.current
     if (!canvas || !container || rsiArr.length < 2) return
@@ -329,8 +358,10 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
     const curVp = vp ?? vpRef.current
     const n = rsiArr.length
     const startIdx = Math.max(0, Math.floor(curVp.from * n))
-    const endIdx   = Math.min(n, Math.ceil(curVp.to * n))
-    draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml, endIdx)
+    const endIdxRaw = Math.ceil(curVp.to * n)   // pas de clamp — marge droite
+    const frac = extFrac !== undefined ? extFrac : crosshairFracRef.current
+    const extCrosshairSlot = (frac != null && n > 0) ? Math.round(frac * n) - startIdx : null
+    draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml, endIdxRaw, extCrosshairSlot)
   }, [])
 
   // ── Load ────────────────────────────────────────────────────────────────
@@ -374,6 +405,8 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
 
   // Redraw quand data ou viewport change
   useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, viewport) }, [rsi, rsiMA, pairs, maLen, redraw, viewport])
+  // Redraw quand le crosshair externe change (60fps max depuis LW)
+  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, undefined, crosshairFrac ?? null) }, [crosshairFrac]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Resize observer ────────────────────────────────────────────────────
   useEffect(() => {

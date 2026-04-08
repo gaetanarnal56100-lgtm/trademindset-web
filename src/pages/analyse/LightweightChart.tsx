@@ -17,6 +17,7 @@ interface Props {
   onTimeframeChange?: (interval: string) => void
   onVisibleRangeChange?: (from: number, to: number) => void
   syncRangeIn?: {from: number; to: number} | null
+  onCrosshairChange?: (fraction: number | null) => void
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -355,7 +356,7 @@ const LW_MIN_TO_OSC: Record<number, string> = {
   1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 240:'4h', 1440:'1d', 10080:'1w',
 }
 
-export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn}:Props) {
+export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange}:Props) {
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
   const chartApi = useRef<IChartApi|null>(null)
@@ -363,7 +364,9 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef      = useRef<Candle[]>([])
   const mpLinesRef      = useRef<any[]>([])
-  const onRangeRef      = useRef(onVisibleRangeChange)
+  const onRangeRef         = useRef(onVisibleRangeChange)
+  const onCrosshairRef     = useRef(onCrosshairChange)
+  useEffect(() => { onCrosshairRef.current = onCrosshairChange }, [onCrosshairChange])
   // Anti-loop: store the logical range we last set programmatically.
   // When LW echoes back that exact range, we swallow it (it's not a user action).
   // Any range that differs by more than eps = real user interaction → forward to oscillators.
@@ -441,23 +444,34 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       timeScale:{borderColor:bsub,timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
-    // LW → oscillateurs : émet des fractions 0-1
+    // LW → oscillateurs : émet des fractions (from peut être légèrement <0, to légèrement >1 — marge LW)
     // Si l'événement correspond exactement à ce qu'on vient de définir programmatiquement,
     // on l'ignore (écho) — sinon c'est une vraie interaction utilisateur.
     c.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (!range || !candlesRef.current.length) return
       if (lastSetLogical.current) {
-        const eps = 0.5  // tolérance d'un demi-bar
+        const eps = 0.5
         const eq = Math.abs(range.from - lastSetLogical.current.from) < eps &&
                    Math.abs(range.to   - lastSetLogical.current.to  ) < eps
-        lastSetLogical.current = null  // consommé dans tous les cas
-        if (eq) return  // c'était l'écho de notre setVisibleLogicalRange
+        lastSetLogical.current = null
+        if (eq) return
       }
       const total = candlesRef.current.length
-      onRangeRef.current?.(
-        Math.max(0, range.from / total),
-        Math.min(1, range.to  / total)
-      )
+      // Pas de clamp sur `to` : on passe la marge droite LW aux oscillateurs pour un alignement parfait
+      onRangeRef.current?.(Math.max(0, range.from / total), range.to / total)
+    })
+
+    // Crosshair sync : envoie la fraction (0-1) de la bougie survolée aux oscillateurs
+    let lastCrosshairMs = 0
+    c.subscribeCrosshairMove((param) => {
+      const now = performance.now()
+      if (now - lastCrosshairMs < 16) return  // ~60fps
+      lastCrosshairMs = now
+      if (param.logical != null && candlesRef.current.length > 0) {
+        onCrosshairRef.current?.(param.logical / candlesRef.current.length)
+      } else {
+        onCrosshairRef.current?.(null)
+      }
     })
     const profit = resolveCSSColor('--tm-profit','#22C759')
     const loss   = resolveCSSColor('--tm-loss',  '#FF3B30')

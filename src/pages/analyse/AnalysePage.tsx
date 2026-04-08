@@ -817,11 +817,12 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — LightweightChart uniquement (zoom/pan sync bidirectionnel) ──
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, syncRangeIn }: {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, syncRangeIn, onCrosshairChange }: {
   symbol: string; isCrypto: boolean
   onTimeframeChange?: (interval: string) => void
   onVisibleRangeChange?: (from: number, to: number) => void
   syncRangeIn?: {from: number; to: number} | null
+  onCrosshairChange?: (fraction: number | null) => void
 }) {
   return (
     <LightweightChart
@@ -830,6 +831,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
       onTimeframeChange={onTimeframeChange}
       onVisibleRangeChange={onVisibleRangeChange}
       syncRangeIn={syncRangeIn}
+      onCrosshairChange={onCrosshairChange}
     />
   )
 }
@@ -847,6 +849,10 @@ export default function AnalysePage() {
   const [syncRangeFromOsc, setSyncRangeFromOsc] = useState<{from:number;to:number}|null>(null)
   // Toggle synchronisation UT + viewport entre LightweightChart et oscillateurs
   const [syncEnabled, setSyncEnabled] = useState(true)
+  const [crosshairFrac, setCrosshairFrac] = useState<number|null>(null)
+  const handleCrosshairChange = useCallback((f: number|null) => {
+    setCrosshairFrac(f)
+  }, [])
   const handleOscViewport = useCallback((from:number, to:number) => {
     setSyncRangeFromOsc({ from, to })
   }, [])
@@ -1145,6 +1151,7 @@ export default function AnalysePage() {
             onTimeframeChange={setSyncInterval}
             onVisibleRangeChange={syncEnabled ? (from, to) => setSyncRange({ from, to }) : undefined}
             syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
+            onCrosshairChange={handleCrosshairChange}
           />
 
           {/* Oscillateurs collés directement sous la chart, sync bidirectionnelle */}
@@ -1155,6 +1162,7 @@ export default function AnalysePage() {
                 syncInterval={syncEnabled ? syncInterval : undefined}
                 visibleRange={syncEnabled ? syncRange : null}
                 onViewportChange={syncEnabled ? handleOscViewport : undefined}
+                crosshairFrac={crosshairFrac}
               />
             </ShareWrapper>
             <ShareWrapper label="VMC">
@@ -1163,6 +1171,7 @@ export default function AnalysePage() {
                 syncInterval={syncEnabled ? syncInterval : undefined}
                 visibleRange={syncEnabled ? syncRange : null}
                 onViewportChange={syncEnabled ? handleOscViewport : undefined}
+                crosshairFrac={crosshairFrac}
               />
             </ShareWrapper>
             <ShareWrapper label="RSI Elite">
@@ -1171,6 +1180,7 @@ export default function AnalysePage() {
                 syncInterval={syncEnabled ? syncInterval : undefined}
                 visibleRange={syncEnabled ? syncRange : null}
                 onViewportChange={syncEnabled ? handleOscViewport : undefined}
+                crosshairFrac={crosshairFrac}
               />
             </ShareWrapper>
           </div>
