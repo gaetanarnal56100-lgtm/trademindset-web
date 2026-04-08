@@ -373,9 +373,14 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       timeScale:{borderColor:bsub,timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
-    // Emit visible range changes to sync oscillators
-    c.timeScale().subscribeVisibleTimeRangeChange((range) => {
-      if (range) onVisibleRangeChange?.(range.from as number, range.to as number)
+    // Emit visible range as 0-1 fractions using logical bar indices (no timestamp conversion needed)
+    c.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (!range || !candlesRef.current.length) return
+      const total = candlesRef.current.length
+      onVisibleRangeChange?.(
+        Math.max(0, range.from / total),
+        Math.min(1, range.to  / total)
+      )
     })
     const profit = resolveCSSColor('--tm-profit','#22C759')
     const loss   = resolveCSSColor('--tm-loss',  '#FF3B30')

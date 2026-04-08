@@ -16,15 +16,15 @@ const TF_REFRESH_MS: Record<string, number> = {
 interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
 
 const TF_OPTIONS = [
-  { label:'5m',  interval:'5m',  limit:200 },
-  { label:'15m', interval:'15m', limit:200 },
-  { label:'30m', interval:'30m', limit:200 },
-  { label:'1H',  interval:'1h',  limit:200 },
-  { label:'2H',  interval:'2h',  limit:200 },
-  { label:'4H',  interval:'4h',  limit:200 },
-  { label:'12H', interval:'12h', limit:200 },
-  { label:'1J',  interval:'1d',  limit:200 },
-  { label:'1S',  interval:'1w',  limit:200 },
+  { label:'5m',  interval:'5m',  limit:500 },
+  { label:'15m', interval:'15m', limit:500 },
+  { label:'30m', interval:'30m', limit:500 },
+  { label:'1H',  interval:'1h',  limit:500 },
+  { label:'2H',  interval:'2h',  limit:500 },
+  { label:'4H',  interval:'4h',  limit:500 },
+  { label:'12H', interval:'12h', limit:500 },
+  { label:'1J',  interval:'1d',  limit:500 },
+  { label:'1S',  interval:'1w',  limit:500 },
 ]
 
 function isCryptoSymbol(symbol: string) {
@@ -290,15 +290,25 @@ function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW,
   )
 }
 
-// ── Interactive canvas hook ───────────────────────────────────────────────
+// ── Viewport type (fractions 0-1 of total data) ──────────────────────────
+interface Viewport { from: number; to: number }
+
+// ── Interactive canvas hook — with wheel zoom + drag pan ──────────────────
 function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
-  deps: unknown[], dataLen: number, viewSize?: number
+  deps: unknown[],
+  viewSize: number,                       // number of bars currently visible
+  viewport: Viewport,                     // current view fractions
+  setViewport: (vp:Viewport) => void      // update viewport
 ) {
-  const ref = useRef<HTMLCanvasElement>(null)
+  const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
-  const [canvasW, setCanvasW] = useState(800)
+  const [canvasW,  setCanvasW]  = useState(800)
+  const dragRef = useRef<{x:number; vp:Viewport}|null>(null)
+  const vpRef   = useRef<Viewport>(viewport)
+  vpRef.current = viewport
 
+  // ── Redraw ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const c = ref.current; if(!c) return
     const dpr = window.devicePixelRatio || 1
@@ -312,19 +322,49 @@ function useInteractiveCanvas(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, hoverIdx])
 
-  const displayLen = viewSize ?? Math.min(dataLen, 150)
-
-  const onMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const c = ref.current; if (!c || displayLen < 2) return
+  // ── Wheel zoom ─────────────────────────────────────────────────────────
+  const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault()
+    const c = ref.current; if (!c) return
     const rect = c.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const idx = Math.round((x / rect.width) * (displayLen - 1))
-    setHoverIdx(Math.max(0, Math.min(displayLen - 1, idx)))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayLen])
+    const mouseX = (e.clientX - rect.left) / rect.width  // 0-1 position of cursor
+    const vp  = vpRef.current
+    const span = vp.to - vp.from
+    const factor = e.deltaY > 0 ? 1.15 : 0.87             // scroll down = zoom out, up = zoom in
+    const newSpan = Math.min(1, Math.max(0.02, span * factor))
+    const newFrom = Math.max(0, Math.min(1 - newSpan, vp.from + mouseX * (span - newSpan)))
+    setViewport({ from: newFrom, to: newFrom + newSpan })
+  }, [setViewport])
 
-  const onLeave = useCallback(() => setHoverIdx(null), [])
-  return { ref, hoverIdx, canvasW, onMove, onLeave }
+  // ── Drag pan ───────────────────────────────────────────────────────────
+  const onMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    dragRef.current = { x: e.clientX, vp: vpRef.current }
+  }, [])
+
+  const onMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (dragRef.current) {
+      // Panning
+      const c = ref.current; if (!c) return
+      const rect = c.getBoundingClientRect()
+      const dx   = (dragRef.current.x - e.clientX) / rect.width
+      const { from, to } = dragRef.current.vp
+      const span = to - from
+      const newFrom = Math.max(0, Math.min(1 - span, from + dx))
+      setViewport({ from: newFrom, to: newFrom + span })
+    } else {
+      // Crosshair hover
+      const c = ref.current; if (!c || viewSize < 2) return
+      const rect = c.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const idx = Math.round((x / rect.width) * (viewSize - 1))
+      setHoverIdx(Math.max(0, Math.min(viewSize - 1, idx)))
+    }
+  }, [setViewport, viewSize])
+
+  const onMouseUp  = useCallback(() => { dragRef.current = null }, [])
+  const onLeave    = useCallback(() => { dragRef.current = null; setHoverIdx(null) }, [])
+
+  return { ref, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave }
 }
 
 // ── WaveTrend Chart ────────────────────────────────────────────────────────
@@ -335,19 +375,35 @@ function resolveCSSColor(varName: string, fallback: string): string {
 
 export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
-
-  // Sync timeframe from parent chart when syncInterval changes
   useEffect(() => {
     if (!syncInterval) return
     const found = TF_OPTIONS.find(t => t.interval === syncInterval)
     if (found) setTf(found)
   }, [syncInterval])
+
   const [candles, setCandles] = useState<Candle[]>([])
-  const [result, setResult] = useState<WTResult|null>(null)
-  const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
+  const [result,  setResult]  = useState<WTResult|null>(null)
+  const [status,  setStatus]  = useState<'idle'|'loading'|'error'>('idle')
+  const [errorMsg,setErrorMsg]= useState('')
   const [nextRefresh, setNextRefresh] = useState(0)
   const obLevel=53, osLevel=-53
+
+  // ── Viewport (fractions 0-1 of candles array) ──────────────────────────
+  const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
+  useEffect(() => {
+    if (!visibleRange) {
+      // Default: show last ~150 bars
+      const n = candles.length || 1
+      setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else {
+      setViewport(visibleRange)
+    }
+  }, [visibleRange, candles.length])
+
+  const total    = candles.length
+  const viewStart= total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
+  const viewEnd  = total > 0 ? Math.min(total, Math.ceil(viewport.to  * total)) : 0
+  const viewSize = Math.max(viewEnd - viewStart, 2)
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -356,37 +412,22 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol:
   }, [symbol, tf])
 
   useEffect(() => { loadCandles() }, [loadCandles])
-  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; setNextRefresh(ms / 1000); const t = setInterval(() => setNextRefresh(x => x <= 1 ? ms / 1000 : x - 1), 1000); return () => clearInterval(t) }, [tf])
-  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; const t = setInterval(() => loadCandles(), ms); return () => clearInterval(t) }, [tf, loadCandles])
-
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval]||3600000; setNextRefresh(ms/1000); const t=setInterval(()=>setNextRefresh(x=>x<=1?ms/1000:x-1),1000); return()=>clearInterval(t) }, [tf])
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval]||3600000; const t=setInterval(()=>loadCandles(),ms); return()=>clearInterval(t) }, [tf,loadCandles])
   useEffect(() => {
     if (candles.length < 20) return
     const r = calcWaveTrend(candles, 10, 21, obLevel, osLevel); setResult(r)
     if (r.wt1.length > 1) signalService.checkWaveTrend(symbol, tf.label, r.wt1, r.wt2, obLevel, osLevel)
   }, [candles, symbol, tf.label])
 
-  const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
+  const dots      = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
 
-  // Compute view slice from visibleRange (LW emits seconds, candles have ms)
-  const { viewStart, viewEnd, viewSize } = (() => {
-    const total = result?.wt1.length ?? candles.length
-    if (!visibleRange || candles.length === 0) {
-      const s = Math.max(0, total - 150)
-      return { viewStart: s, viewEnd: total, viewSize: Math.min(total, 150) }
-    }
-    const fromMs = visibleRange.from * 1000, toMs = visibleRange.to * 1000
-    let s = candles.findIndex(c => c.t >= fromMs); if (s < 0) s = 0
-    let e = candles.length
-    for (let i = candles.length - 1; i >= 0; i--) { if (candles[i].t <= toMs) { e = i + 1; break } }
-    return { viewStart: s, viewEnd: Math.max(e, s + 2), viewSize: Math.max(e - s, 2) }
-  })()
-
-  const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
+  const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd)
-    }, [result, viewStart, viewEnd], result?.wt1.length ?? 0, viewSize
+      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd)
+    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -419,8 +460,10 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol:
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={180} onMouseMove={onMove} onMouseLeave={onLeave}
-          style={{width:'100%',height:180,display:'block',borderRadius:8,cursor:'crosshair'}}/>
+        <canvas ref={canvasRef} width={800} height={180}
+          onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp} onMouseLeave={onLeave}
+          style={{width:'100%',height:180,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
         {hoverIdx !== null && result && result.wt1.length > 0 && (
           <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt" viewStart={viewStart} viewEnd={viewEnd}/>
         )}
@@ -437,18 +480,34 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol:
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
 export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
-
-  // Sync timeframe from parent chart when syncInterval changes
   useEffect(() => {
     if (!syncInterval) return
     const found = TF_OPTIONS.find(t => t.interval === syncInterval)
     if (found) setTf(found)
   }, [syncInterval])
+
   const [candles, setCandles] = useState<Candle[]>([])
-  const [result, setResult] = useState<VMCResult|null>(null)
-  const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
+  const [result,  setResult]  = useState<VMCResult|null>(null)
+  const [status,  setStatus]  = useState<'idle'|'loading'|'error'>('idle')
+  const [errorMsg,setErrorMsg]= useState('')
+  const [nextRefreshVMC, setNextRefreshVMC] = useState(0)
   const obLevel=35, osLevel=-25
+
+  // ── Viewport ───────────────────────────────────────────────────────────
+  const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
+  useEffect(() => {
+    if (!visibleRange) {
+      const n = candles.length || 1
+      setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else {
+      setViewport(visibleRange)
+    }
+  }, [visibleRange, candles.length])
+
+  const vmcTotal    = candles.length
+  const vmcViewStart= vmcTotal > 0 ? Math.max(0, Math.floor(viewport.from * vmcTotal)) : 0
+  const vmcViewEnd  = vmcTotal > 0 ? Math.min(vmcTotal, Math.ceil(viewport.to  * vmcTotal)) : 0
+  const vmcViewSize = Math.max(vmcViewEnd - vmcViewStart, 2)
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -457,21 +516,18 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
   }, [symbol, tf])
 
   useEffect(() => { loadCandles() }, [loadCandles])
-  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; const t = setInterval(() => loadCandles(), ms); return () => clearInterval(t) }, [tf, loadCandles])
-  const [nextRefreshVMC, setNextRefreshVMC] = useState(0)
-  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval] || 3600000; setNextRefreshVMC(ms/1000); const t = setInterval(() => setNextRefreshVMC(x => x<=1?ms/1000:x-1), 1000); return () => clearInterval(t) }, [tf])
-
+  useEffect(() => { const ms=TF_REFRESH_MS[tf.interval]||3600000; const t=setInterval(()=>loadCandles(),ms); return()=>clearInterval(t) }, [tf,loadCandles])
+  useEffect(() => { const ms=TF_REFRESH_MS[tf.interval]||3600000; setNextRefreshVMC(ms/1000); const t=setInterval(()=>setNextRefreshVMC(x=>x<=1?ms/1000:x-1),1000); return()=>clearInterval(t) }, [tf])
   useEffect(() => {
     if (candles.length < 60) return
     const r = calcVMCOscillator(candles, 'swing'); setResult(r)
-    const sig = r.sig[r.sig.length-1]??0, mom = r.momentum[r.momentum.length-1]??0
+    const sig=r.sig[r.sig.length-1]??0, mom=r.momentum[r.momentum.length-1]??0
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
   }, [candles, symbol, tf.label])
 
   const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
   const statusColor=result?.status==='BUY'?'var(--tm-profit)':result?.status==='SELL'?'var(--tm-loss)':result?.status==='OVERBOUGHT'?'var(--tm-loss)':result?.status==='OVERSOLD'?'var(--tm-profit)':'var(--tm-text-secondary)'
 
-  // Compute cross signals for VMC (same logic as WaveTrend dots)
   const vmcDots = result ? result.sig.flatMap((s, i) => {
     if (i === 0) return []
     const crossUp = result.sig[i-1] <= result.sigSignal[i-1] && result.sig[i] > result.sigSignal[i]
@@ -483,21 +539,7 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
     return []
   }) : []
 
-  // Compute view slice from visibleRange
-  const { viewStart: vmcViewStart, viewEnd: vmcViewEnd, viewSize: vmcViewSize } = (() => {
-    const total = result?.sig.length ?? candles.length
-    if (!visibleRange || candles.length === 0) {
-      const s = Math.max(0, total - 150)
-      return { viewStart: s, viewEnd: total, viewSize: Math.min(total, 150) }
-    }
-    const fromMs = visibleRange.from * 1000, toMs = visibleRange.to * 1000
-    let s = candles.findIndex(c => c.t >= fromMs); if (s < 0) s = 0
-    let e = candles.length
-    for (let i = candles.length - 1; i >= 0; i--) { if (candles[i].t <= toMs) { e = i + 1; break } }
-    return { viewStart: s, viewEnd: Math.max(e, s + 2), viewSize: Math.max(e - s, 2) }
-  })()
-
-  const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
+  const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd)
