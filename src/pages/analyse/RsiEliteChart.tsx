@@ -291,10 +291,12 @@ function draw(
   }
 
   // ── Crosshair externe (depuis LightweightChart) ───────────────────────
-  // extCrosshairSlot = frac * totalSlots → toX(extCrosshairSlot) = PAD_L + (frac * totalSlots / totalSlots) * cW = PAD_L + frac * cW
-  // Soit directement hx = PAD_L + frac * cW, alignement pixel-perfect
-  if (extCrosshairSlot != null && extCrosshairSlot >= 0 && extCrosshairSlot <= totalSlots) {
-    const hx = toX(extCrosshairSlot)   // = PAD_L + frac * cW
+  // frac = extCrosshairSlot / totalSlots = param.point.x / containerW_LW
+  // hx = frac * W = position pixel directe → même screen x que le curseur LW
+  // (LW et oscillateurs ont la même largeur CSS dans la colonne → alignement pixel-perfect)
+  if (extCrosshairSlot != null && extCrosshairSlot >= 0 && extCrosshairSlot <= totalSlots + 1) {
+    const frac = extCrosshairSlot / Math.max(totalSlots, 1)
+    const hx = frac * W   // position screen directe, ignore PAD_L intentionnellement
     ctx.save()
     ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3])
     ctx.beginPath(); ctx.moveTo(hx, PAD_T); ctx.lineTo(hx, PAD_T + cH); ctx.stroke()

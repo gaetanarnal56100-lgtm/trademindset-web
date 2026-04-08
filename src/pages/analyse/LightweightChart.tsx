@@ -461,18 +461,20 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       onRangeRef.current?.(Math.max(0, range.from / total), range.to / total)
     })
 
-    // Crosshair sync : émet la POSITION PROPORTIONNELLE dans la fenêtre visible (0-1)
-    // = (logical - from) / (to - from) = exactement xPixel/W de LW
-    // → alignement parfait sans aucune conversion d'indice côté oscillateur
+    // Crosshair sync : émet param.point.x / containerWidth
+    // param.point.x = pixel dans la zone chart (hors price axis droite)
+    // containerWidth = largeur totale du div LW (chart area + price axis)
+    // → fraction [0,1] sur le container entier → hx = frac * W_osc est pixel-perfect
+    //   car LW et les oscillateurs partagent la même largeur CSS dans la colonne
     let lastCrosshairMs = 0
     c.subscribeCrosshairMove((param) => {
       const now = performance.now()
       if (now - lastCrosshairMs < 16) return  // ~60fps
       lastCrosshairMs = now
-      if (param.logical != null) {
-        const range = c.timeScale().getVisibleLogicalRange()
-        if (range && range.to > range.from) {
-          const frac = (param.logical - range.from) / (range.to - range.from)
+      if (param.point != null && param.logical != null) {
+        const containerW = chartEl.current?.clientWidth ?? 0
+        if (containerW > 0) {
+          const frac = param.point.x / containerW
           onCrosshairRef.current?.(Math.max(0, Math.min(1, frac)))
         }
       } else {
