@@ -776,6 +776,9 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
   const pending  = preds.filter(p => p.status === 'pending')
   const resolved = preds.filter(p => p.status !== 'pending')
 
+  // ⚠️ useState doit être avant tout return conditionnel (règle des hooks React)
+  const [claiming, setClaiming] = useState(false)
+
   if (loading) return (
     <div style={{ textAlign: 'center', padding: 48, color: 'var(--tm-text-muted)' }}>
       <div style={{ width: 24, height: 24, border: '2px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
@@ -783,8 +786,6 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
       Chargement…
     </div>
   )
-
-  const [claiming, setClaiming] = useState(false)
   const handleClaim = async () => {
     setClaiming(true)
     const ok = await claimDailyRefill(uid)

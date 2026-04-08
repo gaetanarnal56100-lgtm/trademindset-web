@@ -36,11 +36,36 @@ function classifyCategory(t: string): Category {
   return'MARKETS'
 }
 
+/** Essaie plusieurs proxies CORS dans l'ordre — retourne le contenu XML du premier qui répond */
+async function fetchViaProxy(url:string):Promise<string|null>{
+  // Proxy 1: allorigins (retourne {contents:string})
+  try{
+    const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,{signal:AbortSignal.timeout(8000)})
+    if(r.ok){const d=await r.json() as{contents?:string};if(d.contents?.includes('<item')||d.contents?.includes('<entry'))return d.contents}
+  }catch{/**/}
+  // Proxy 2: corsproxy.io (retourne le body directement)
+  try{
+    const r=await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`,{signal:AbortSignal.timeout(8000)})
+    if(r.ok){const t=await r.text();if(t.includes('<item')||t.includes('<entry'))return t}
+  }catch{/**/}
+  // Proxy 3: rss2json (retourne JSON avec articles)
+  try{
+    const r=await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&count=10`,{signal:AbortSignal.timeout(8000)})
+    if(r.ok){
+      const d=await r.json() as{items?:{title?:string;link?:string}[]}
+      if(d.items?.length){
+        // Convertir en XML-like pour que fetchFeed puisse parser
+        const xml=d.items.map(it=>`<item><title><![CDATA[${it.title||''}]]></title><link>${it.link||''}</link></item>`).join('')
+        return `<rss>${xml}</rss>`
+      }
+    }
+  }catch{/**/}
+  return null
+}
+
 async function fetchFeed(url:string,label:string):Promise<{title:string;source:string;url?:string}[]>{
   try{
-    const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,{signal:AbortSignal.timeout(10000)})
-    if(!r.ok)return[]
-    const{contents}=await r.json() as{contents:string}
+    const contents=await fetchViaProxy(url)
     if(!contents?.includes('<item')&&!contents?.includes('<entry'))return[]
     const items:{title:string;source:string;url?:string}[]=[]
     const itemRx=/<item[\s\S]*?<\/item>|<entry[\s\S]*?<\/entry>/gi
@@ -125,10 +150,13 @@ export default function NewsTickerBanner(){
     try{
       const allRaw:{title:string;source:string;url?:string}[]=[]
       const seen=new Set<string>()
+      // Flux publics sans auth — Bloomberg bloque souvent, on utilise Reuters / FT / CoinDesk / Yahoo Finance
       await Promise.allSettled([
-        {url:'https://feeds.bloomberg.com/markets/news.rss',label:'Markets'},
-        {url:'https://feeds.bloomberg.com/economics/news.rss',label:'Economics'},
-        {url:'https://feeds.bloomberg.com/crypto/news.rss',label:'Crypto'},
+        {url:'https://feeds.reuters.com/reuters/businessNews',         label:'Reuters'},
+        {url:'https://feeds.reuters.com/reuters/technologyNews',       label:'Tech'},
+        {url:'https://www.coindesk.com/arc/outboundfeeds/rss/',        label:'Crypto'},
+        {url:'https://feeds.marketwatch.com/marketwatch/topstories/',  label:'Markets'},
+        {url:'https://finance.yahoo.com/news/rssindex',                label:'Finance'},
       ].map(async f=>{
         const its=await fetchFeed(f.url,f.label)
         its.forEach(it=>{const k=it.title.slice(0,40).toLowerCase();if(!seen.has(k)){seen.add(k);allRaw.push(it)}})
