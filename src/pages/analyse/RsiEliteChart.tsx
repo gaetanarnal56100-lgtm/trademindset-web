@@ -291,10 +291,17 @@ function draw(
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function RsiEliteChart({ symbol: initialSymbol }: { symbol: string }) {
+export default function RsiEliteChart({ symbol: initialSymbol, syncInterval }: { symbol: string; syncInterval?: string }) {
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
   const [maLen,   setMaLen]   = useState(14)
+
+  // Sync timeframe from parent chart
+  useEffect(() => {
+    if (!syncInterval) return
+    const found = TF_OPTIONS.find(t => t.interval === syncInterval)
+    if (found) setTf(found)
+  }, [syncInterval])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
   const [rsi,     setRsi]     = useState<number[]>([])
@@ -392,7 +399,7 @@ export default function RsiEliteChart({ symbol: initialSymbol }: { symbol: strin
             }}>{v}</button>
           ))}
           <div style={{ width: 1, height: 14, background: '#2A2F3E' }} />
-          {TF_OPTIONS.map(t => (
+          {!syncInterval && TF_OPTIONS.map(t => (
             <button key={t.label} onClick={() => setTf(t)} style={{
               padding: '3px 8px', borderRadius: 5, fontSize: 10, fontWeight: 600, cursor: 'pointer',
               border: `1px solid ${tf.label===t.label ? '#00E5FF' : '#2A2F3E'}`,
@@ -400,6 +407,7 @@ export default function RsiEliteChart({ symbol: initialSymbol }: { symbol: strin
               color: tf.label===t.label ? '#00E5FF' : '#545B7A',
             }}>{t.label}</button>
           ))}
+          {syncInterval && <span style={{fontSize:9,color:'#545B7A',padding:'3px 0',fontFamily:'monospace'}}>🔗 Synchronisé sur {syncInterval}</span>}
         </div>
       </div>
 

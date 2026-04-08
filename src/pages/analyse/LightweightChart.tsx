@@ -749,7 +749,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   ]
 
   return(
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:16,position:'relative'}}>
+    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative'}}>
 
       {/* Header */}
       <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>

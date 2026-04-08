@@ -851,7 +851,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange }: { symbol: string; 
                        ['lw','lw']
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 0 }}>
       {/* Sélecteur */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px',
@@ -1166,11 +1166,28 @@ export default function AnalysePage() {
         </div>
       )}
 
-      {/* Graphique — layout selector */}
-      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} />}
+      {/* ══ CHART + OSCILLATEURS COLLÉS ══ */}
+      {symbol && (
+        <div style={{marginBottom:16}}>
+          {/* Chart principal */}
+          <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} />
 
+          {/* Oscillateurs collés directement sous la chart, sans gap */}
+          <div style={{display:'flex',flexDirection:'column',gap:4,marginTop:-4}}>
+            <ShareWrapper label="WaveTrend">
+              <WaveTrendChart symbol={symbol} syncInterval={syncInterval} />
+            </ShareWrapper>
+            <ShareWrapper label="VMC">
+              <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} />
+            </ShareWrapper>
+            <ShareWrapper label="RSI Elite">
+              <RsiEliteChart symbol={symbol} syncInterval={syncInterval} />
+            </ShareWrapper>
+          </div>
+        </div>
+      )}
 
-      {/* Plan de Trade IA — tous les actifs, en premier */}
+      {/* Plan de Trade IA — tous les actifs */}
       {symbol && <ShareWrapper label="Trade Plan">
         <TradePlanCard
           symbol={symbol}
@@ -1186,17 +1203,6 @@ export default function AnalysePage() {
       {symbol && <ShareWrapper label="MTF Dashboard">
         <MTFDashboard symbol={symbol} />
       </ShareWrapper>}
-
-      {/* WaveTrend + VMC Oscillator — tous les actifs, en colonne, synchronisés */}
-      {symbol && <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:16}}>
-        <ShareWrapper label="WaveTrend"><WaveTrendChart symbol={symbol} syncInterval={syncInterval} /></ShareWrapper>
-        <ShareWrapper label="VMC"><VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} /></ShareWrapper>
-      </div>}
-
-      {/* RSI Elite Toolkit — tous les actifs */}
-      {symbol && <div style={{marginBottom:16}}>
-        <ShareWrapper label="RSI Elite"><RsiEliteChart symbol={symbol} /></ShareWrapper>
-      </div>}
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>

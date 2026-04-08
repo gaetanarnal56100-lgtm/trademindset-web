@@ -453,11 +453,23 @@ export function VMCOscillatorChart({ symbol, syncInterval }: { symbol: string; s
   const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
   const statusColor=result?.status==='BUY'?'var(--tm-profit)':result?.status==='SELL'?'var(--tm-loss)':result?.status==='OVERBOUGHT'?'var(--tm-loss)':result?.status==='OVERSOLD'?'var(--tm-profit)':'var(--tm-text-secondary)'
 
+  // Compute cross signals for VMC (same logic as WaveTrend dots)
+  const vmcDots = result ? result.sig.flatMap((s, i) => {
+    if (i === 0) return []
+    const crossUp = result.sig[i-1] <= result.sigSignal[i-1] && result.sig[i] > result.sigSignal[i]
+    const crossDn = result.sig[i-1] >= result.sigSignal[i-1] && result.sig[i] < result.sigSignal[i]
+    if (crossUp && result.sig[i] <= osLevel) return [{ i, type: 'smartBull' }]
+    if (crossUp) return [{ i, type: 'bull' }]
+    if (crossDn && result.sig[i] >= obLevel) return [{ i, type: 'smartBear' }]
+    if (crossDn) return [{ i, type: 'bear' }]
+    return []
+  }) : []
+
   const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','var(--tm-warning)',`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.55)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.55)`,undefined,result.emas,hi)
-    }, [result], result?.sig.length ?? 0
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','var(--tm-warning)',`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.55)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.55)`,vmcDots,result.emas,hi)
+    }, [result, vmcDots], result?.sig.length ?? 0
   )
 
   return (
