@@ -164,6 +164,7 @@ function draw(
   pairs:  DivPair[],
   startIdx: number,
   maLen: number,
+  endIdx?: number,
 ) {
   const ctx = setCanvasHiDPI(canvas, cssW, cssH)
   if (!ctx) return
@@ -173,7 +174,7 @@ function draw(
   const cW = W - PAD_L - PAD_R
   const cH = H - PAD_T - PAD_B
 
-  const visible = rsiArr.slice(startIdx)
+  const visible = rsiArr.slice(startIdx, endIdx)
   const N = visible.length
   if (N < 2) return
 
@@ -216,7 +217,7 @@ function draw(
   })
 
   // ── RSI MA line (orange, solid, drawn BEFORE RSI so it's behind) ──────
-  const maVis = rsiMA.slice(startIdx)
+  const maVis = rsiMA.slice(startIdx, endIdx)
   ctx.beginPath()
   let maStarted = false
   for (let i=0; i<maVis.length && i<N; i++) {
@@ -291,7 +292,7 @@ function draw(
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void }) {
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
   const [maLen,   setMaLen]   = useState(14)
@@ -311,16 +312,25 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
   const [candles, setCandles] = useState<{t:number}[]>([])
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const [viewport, setViewport] = useState<{from:number;to:number}>({from:0, to:1})
+  const vpRef            = useRef<{from:number;to:number}>({from:0, to:1})
+  const dragRef          = useRef<{x:number; vp:{from:number;to:number}}|null>(null)
+  const onViewportRef    = useRef(onViewportChange)
+  useEffect(() => { onViewportRef.current = onViewportChange }, [onViewportChange])
+  vpRef.current = viewport
 
   // ── Redraw helper ───────────────────────────────────────────────────────
-  const redraw = useCallback((rsiArr: number[], rsiMAArr: number[], divPairs: DivPair[], ml: number, startOverride?: number) => {
+  const redraw = useCallback((rsiArr: number[], rsiMAArr: number[], divPairs: DivPair[], ml: number, vp?: {from:number;to:number}) => {
     const canvas = canvasRef.current
     const container = containerRef.current
     if (!canvas || !container || rsiArr.length < 2) return
     const cssW = container.clientWidth
     const cssH = 240
-    const startIdx = startOverride !== undefined ? startOverride : Math.max(0, rsiArr.length - 150)
-    draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml)
+    const curVp = vp ?? vpRef.current
+    const n = rsiArr.length
+    const startIdx = Math.max(0, Math.floor(curVp.from * n))
+    const endIdx   = Math.min(n, Math.ceil(curVp.to * n))
+    draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml, endIdx)
   }, [])
 
   // ── Load ────────────────────────────────────────────────────────────────
@@ -352,25 +362,27 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
   useEffect(() => { load() }, [load])
   useEffect(() => { setSymbol(initialSymbol) }, [initialSymbol])
 
-  // ── Compute startIdx from visibleRange ─────────────────────────────────
-  const computeStart = useCallback((rsiArr: number[]): number => {
-    if (!visibleRange || candles.length === 0) return Math.max(0, rsiArr.length - 150)
-    const fromMs = visibleRange.from * 1000
-    const s = candles.findIndex(c => c.t >= fromMs)
-    return s < 0 ? Math.max(0, rsiArr.length - 150) : s
-  }, [visibleRange, candles])
+  // ── Sync viewport depuis LW chart (fractions 0-1) ──────────────────────
+  useEffect(() => {
+    if (!visibleRange) {
+      const n = candles.length || 1
+      setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else {
+      setViewport({ from: visibleRange.from, to: visibleRange.to })
+    }
+  }, [visibleRange, candles.length])
 
-  // Redraw when data or visibleRange changes
-  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, computeStart(rsi)) }, [rsi, rsiMA, pairs, maLen, redraw, computeStart])
+  // Redraw quand data ou viewport change
+  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, viewport) }, [rsi, rsiMA, pairs, maLen, redraw, viewport])
 
   // ── Resize observer ────────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    const ro = new ResizeObserver(() => { redraw(rsi, rsiMA, pairs, maLen, computeStart(rsi)) })
+    const ro = new ResizeObserver(() => { redraw(rsi, rsiMA, pairs, maLen, vpRef.current) })
     ro.observe(container)
     return () => ro.disconnect()
-  }, [rsi, rsiMA, pairs, maLen, redraw, computeStart])
+  }, [rsi, rsiMA, pairs, maLen, redraw])
 
   // ── Status label ────────────────────────────────────────────────────────
   const rsiStatus = currRSI === null ? null
@@ -453,7 +465,35 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
             <div style={{ fontSize:22, marginBottom:6 }}>⚠️</div>{error}
           </div>
         )}
-        <canvas ref={canvasRef} style={{ display:'block', width:'100%', height:240 }} />
+        <canvas ref={canvasRef} style={{ display:'block', width:'100%', height:240, cursor:'crosshair', userSelect:'none' }}
+          onWheel={e => {
+            e.preventDefault()
+            const rect = canvasRef.current!.getBoundingClientRect()
+            const mouseX = (e.clientX - rect.left) / rect.width
+            const vp = vpRef.current
+            const span = vp.to - vp.from
+            const factor = e.deltaY > 0 ? 1.15 : 0.87
+            const newSpan = Math.min(1, Math.max(0.02, span * factor))
+            const newFrom = Math.max(0, Math.min(1 - newSpan, vp.from + mouseX * (span - newSpan)))
+            const newVp = { from: newFrom, to: newFrom + newSpan }
+            setViewport(newVp)
+            onViewportRef.current?.(newVp.from, newVp.to)
+          }}
+          onMouseDown={e => { dragRef.current = { x: e.clientX, vp: vpRef.current } }}
+          onMouseMove={e => {
+            if (!dragRef.current) return
+            const rect = canvasRef.current!.getBoundingClientRect()
+            const dx = (dragRef.current.x - e.clientX) / rect.width
+            const { from, to } = dragRef.current.vp
+            const span = to - from
+            const newFrom = Math.max(0, Math.min(1 - span, from + dx))
+            const newVp = { from: newFrom, to: newFrom + span }
+            setViewport(newVp)
+            onViewportRef.current?.(newVp.from, newVp.to)
+          }}
+          onMouseUp={() => { dragRef.current = null }}
+          onMouseLeave={() => { dragRef.current = null }}
+        />
         <style>{`@keyframes rsiSpin{to{transform:rotate(360deg)}}`}</style>
       </div>
     </div>

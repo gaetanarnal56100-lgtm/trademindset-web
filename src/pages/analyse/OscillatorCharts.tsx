@@ -297,9 +297,10 @@ interface Viewport { from: number; to: number }
 function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
   deps: unknown[],
-  viewSize: number,                       // number of bars currently visible
-  viewport: Viewport,                     // current view fractions
-  setViewport: (vp:Viewport) => void      // update viewport
+  viewSize: number,
+  viewport: Viewport,
+  setViewport: (vp:Viewport) => void,
+  onViewportChange?: (vp:Viewport) => void   // appelé uniquement sur interaction utilisateur
 ) {
   const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
@@ -323,17 +324,22 @@ function useInteractiveCanvas(
   }, [...deps, hoverIdx])
 
   // ── Wheel zoom ─────────────────────────────────────────────────────────
+  const onViewportChangeRef = useRef(onViewportChange)
+  useEffect(() => { onViewportChangeRef.current = onViewportChange }, [onViewportChange])
+
   const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault()
     const c = ref.current; if (!c) return
     const rect = c.getBoundingClientRect()
-    const mouseX = (e.clientX - rect.left) / rect.width  // 0-1 position of cursor
+    const mouseX = (e.clientX - rect.left) / rect.width
     const vp  = vpRef.current
     const span = vp.to - vp.from
-    const factor = e.deltaY > 0 ? 1.15 : 0.87             // scroll down = zoom out, up = zoom in
+    const factor = e.deltaY > 0 ? 1.15 : 0.87
     const newSpan = Math.min(1, Math.max(0.02, span * factor))
     const newFrom = Math.max(0, Math.min(1 - newSpan, vp.from + mouseX * (span - newSpan)))
-    setViewport({ from: newFrom, to: newFrom + newSpan })
+    const newVp = { from: newFrom, to: newFrom + newSpan }
+    setViewport(newVp)
+    onViewportChangeRef.current?.(newVp)
   }, [setViewport])
 
   // ── Drag pan ───────────────────────────────────────────────────────────
@@ -343,14 +349,15 @@ function useInteractiveCanvas(
 
   const onMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (dragRef.current) {
-      // Panning
       const c = ref.current; if (!c) return
       const rect = c.getBoundingClientRect()
       const dx   = (dragRef.current.x - e.clientX) / rect.width
       const { from, to } = dragRef.current.vp
       const span = to - from
       const newFrom = Math.max(0, Math.min(1 - span, from + dx))
-      setViewport({ from: newFrom, to: newFrom + span })
+      const newVp = { from: newFrom, to: newFrom + span }
+      setViewport(newVp)
+      onViewportChangeRef.current?.(newVp)
     } else {
       // Crosshair hover
       const c = ref.current; if (!c || viewSize < 2) return
@@ -373,7 +380,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
@@ -427,7 +434,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol:
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
       drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd)
-    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport
+    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport,
+    onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -478,7 +486,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol:
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
@@ -543,7 +551,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd], result?.sig.length ?? 0, vmcViewSize
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd], vmcViewSize, viewport, setViewport,
+    onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
   )
 
   return (

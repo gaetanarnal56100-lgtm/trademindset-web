@@ -816,11 +816,12 @@ function PressureBar({score}:{score:number}){
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-// ── ChartLayout — LightweightChart uniquement (zoom/pan sync avec oscillateurs) ──
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange }: {
+// ── ChartLayout — LightweightChart uniquement (zoom/pan sync bidirectionnel) ──
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, syncRangeIn }: {
   symbol: string; isCrypto: boolean
   onTimeframeChange?: (interval: string) => void
   onVisibleRangeChange?: (from: number, to: number) => void
+  syncRangeIn?: {from: number; to: number} | null
 }) {
   return (
     <LightweightChart
@@ -828,6 +829,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
       isCrypto={isCrypto}
       onTimeframeChange={onTimeframeChange}
       onVisibleRangeChange={onVisibleRangeChange}
+      syncRangeIn={syncRangeIn}
     />
   )
 }
@@ -840,8 +842,12 @@ export default function AnalysePage() {
     return ''
   })
   const [mode,   setMode]   = useState<Mode>('micro')
-  const [syncInterval, setSyncInterval] = useState<string>('1h')
-  const [syncRange, setSyncRange] = useState<{from:number;to:number}|null>(null)
+  const [syncInterval,     setSyncInterval]     = useState<string>('1h')
+  const [syncRange,        setSyncRange]        = useState<{from:number;to:number}|null>(null)
+  const [syncRangeFromOsc, setSyncRangeFromOsc] = useState<{from:number;to:number}|null>(null)
+  const handleOscViewport = useCallback((from:number, to:number) => {
+    setSyncRangeFromOsc({ from, to })
+  }, [])
 
   // CVD state
   const [connected, setConnected] = useState(false)
@@ -1120,18 +1126,19 @@ export default function AnalysePage() {
             isCrypto={isCryptoSymbol(symbol)}
             onTimeframeChange={setSyncInterval}
             onVisibleRangeChange={(from, to) => setSyncRange({ from, to })}
+            syncRangeIn={syncRangeFromOsc}
           />
 
-          {/* Oscillateurs collés directement sous la chart, sans gap */}
+          {/* Oscillateurs collés directement sous la chart, sync bidirectionnelle */}
           <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:0}}>
             <ShareWrapper label="WaveTrend">
-              <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+              <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} onViewportChange={handleOscViewport} />
             </ShareWrapper>
             <ShareWrapper label="VMC">
-              <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+              <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} onViewportChange={handleOscViewport} />
             </ShareWrapper>
             <ShareWrapper label="RSI Elite">
-              <RsiEliteChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+              <RsiEliteChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} onViewportChange={handleOscViewport} />
             </ShareWrapper>
           </div>
         </div>

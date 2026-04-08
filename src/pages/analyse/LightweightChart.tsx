@@ -16,6 +16,7 @@ interface Props {
   isCrypto: boolean
   onTimeframeChange?: (interval: string) => void
   onVisibleRangeChange?: (from: number, to: number) => void
+  syncRangeIn?: {from: number; to: number} | null
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -303,14 +304,29 @@ const LW_MIN_TO_OSC: Record<number, string> = {
   1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 240:'4h', 1440:'1d', 10080:'1w',
 }
 
-export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange}:Props) {
+export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn}:Props) {
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
   const chartApi = useRef<IChartApi|null>(null)
   const seriesR  = useRef<ISeriesApi<'Candlestick'>|null>(null)
   const wsRef    = useRef<WebSocket|null>(null)
-  const candlesRef = useRef<Candle[]>([])
-  const mpLinesRef = useRef<any[]>([])
+  const candlesRef      = useRef<Candle[]>([])
+  const mpLinesRef      = useRef<any[]>([])
+  const onRangeRef      = useRef(onVisibleRangeChange)
+  const settingExternal = useRef(false)
+  useEffect(() => { onRangeRef.current = onVisibleRangeChange }, [onVisibleRangeChange])
+
+  // Oscillateurs → LW : appliquer la plage envoyée par un oscillateur
+  useEffect(() => {
+    if (!syncRangeIn || !chartApi.current || !candlesRef.current.length) return
+    const total = candlesRef.current.length
+    settingExternal.current = true
+    chartApi.current.timeScale().setVisibleLogicalRange({
+      from: syncRangeIn.from * total,
+      to:   syncRangeIn.to   * total,
+    })
+    setTimeout(() => { settingExternal.current = false }, 50)
+  }, [syncRangeIn])
 
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
   const [tool,     setTool]     = useState<ToolId>('cursor')
@@ -373,11 +389,12 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       timeScale:{borderColor:bsub,timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
-    // Emit visible range as 0-1 fractions using logical bar indices (no timestamp conversion needed)
+    // LW → oscillateurs : émet des fractions 0-1 (sauf si c'est nous qui avons bougé le range)
     c.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (settingExternal.current) return   // évite la boucle infinie
       if (!range || !candlesRef.current.length) return
       const total = candlesRef.current.length
-      onVisibleRangeChange?.(
+      onRangeRef.current?.(
         Math.max(0, range.from / total),
         Math.min(1, range.to  / total)
       )
