@@ -1,7 +1,11 @@
 // LiveChart.tsx — Widget TradingView complet (même interface que tradingview.com)
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-interface Props { symbol: string; isCrypto: boolean }
+interface Props {
+  symbol: string
+  isCrypto: boolean
+  onTimeframeChange?: (interval: string) => void
+}
 
 function toTVSymbol(symbol: string, isCrypto: boolean): string {
   if (isCrypto) {
@@ -24,7 +28,13 @@ function resolveCSSColor(varName: string, fallback: string): string {
 }
 
 
-export default function LiveChart({ symbol, isCrypto }: Props) {
+// Map TV interval codes → oscillator interval strings
+const TV_TO_OSC: Record<string, string> = {
+  '1':'5m', '5':'5m', '15':'15m', '30':'30m',
+  '60':'1h', '120':'2h', '240':'4h', 'D':'1d', 'W':'1w',
+}
+
+export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props) {
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
   const [chartType,setChartType]= useState<1|2|3>(1) // 1=bougies, 2=ligne, 3=aire
   const [expanded, setExpanded] = useState(false)
@@ -167,7 +177,7 @@ export default function LiveChart({ symbol, isCrypto }: Props) {
         {/* UT */}
         <div style={{ display:'flex', gap:3, flexWrap:'wrap' }}>
           {TIMEFRAMES.map(t => (
-            <button key={t.label} onClick={() => setTf(t)} style={{
+            <button key={t.label} onClick={() => { setTf(t); onTimeframeChange?.(TV_TO_OSC[t.tv] ?? '1h') }} style={{
               padding:'3px 8px', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer',
               border:`1px solid ${tf.label===t.label?'var(--tm-blue)':resolveCSSColor('--tm-border','#2A2F3E')}`,
               background: tf.label===t.label?'rgba(var(--tm-blue-rgb,10,133,255),0.15)':'transparent',
