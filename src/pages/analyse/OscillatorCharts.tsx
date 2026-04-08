@@ -185,7 +185,7 @@ function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:
 }
 
 // ── Draw oscillator ───────────────────────────────────────────────────────
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,extCrosshairSlot?:number|null) {
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,extCrosshairSlot?:number|null,areaRatio?:number) {
   ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
   const startIdx   = viewStart !== undefined ? viewStart : Math.max(0, main.length - 150)
   const endIdxRaw  = viewEnd   !== undefined ? viewEnd   : main.length  // peut dépasser main.length (marge droite)
@@ -197,26 +197,29 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   const allVals=[...m,...s,...h,obLevel,osLevel,0]
   const minV=Math.min(...allVals)*1.1,maxV=Math.max(...allVals)*1.1,range=maxV-minV||1
   const yp=(v:number)=>oscH-((v-minV)/range)*oscH
-  // xp : même formule que LW → (slot - from)/(to - from)*W → slot/totalSlots*W (PAS totalSlots-1)
-  const xp=(i:number)=>(i/Math.max(totalSlots,1))*W
+  // drawW = W * areaRatio : largeur de dessin alignée sur la zone chart LW (hors price axis)
+  // xp dessine les barres dans [0, drawW], comme LW dessine dans [0, tsW]
+  // Crosshair : hx = frac * W (frac = point.x / totalW → hx = point.x si W == totalW)
+  const drawW = W * (areaRatio ?? 1)
+  const xp=(i:number)=>(i/Math.max(totalSlots,1))*drawW
 
-  // Background zones
-  ctx.fillStyle=`rgba(${resolveCSSColor('--tm-loss-rgb','255,59,48')},0.06)`;ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
-  ctx.fillStyle=`rgba(${resolveCSSColor('--tm-profit-rgb','34,199,89')},0.06)`;ctx.fillRect(0,yp(osLevel),W,yp(minV)-yp(osLevel))
+  // Background zones (sur drawW uniquement)
+  ctx.fillStyle=`rgba(${resolveCSSColor('--tm-loss-rgb','255,59,48')},0.06)`;ctx.fillRect(0,yp(maxV),drawW,yp(obLevel)-yp(maxV))
+  ctx.fillStyle=`rgba(${resolveCSSColor('--tm-profit-rgb','34,199,89')},0.06)`;ctx.fillRect(0,yp(osLevel),drawW,yp(minV)-yp(osLevel))
 
-  // Grid lines
+  // Grid lines (sur drawW uniquement)
   ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=0.8
-  ;[0,obLevel,osLevel].forEach(l=>{ctx.beginPath();ctx.moveTo(0,yp(l));ctx.lineTo(W,yp(l));ctx.stroke()})
+  ;[0,obLevel,osLevel].forEach(l=>{ctx.beginPath();ctx.moveTo(0,yp(l));ctx.lineTo(drawW,yp(l));ctx.stroke()})
   ctx.setLineDash([])
 
-  // Level labels on right
+  // Level labels on right (à la fin de drawW)
   ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle=resolveCSSColor('--tm-text-muted','#555C70');ctx.textAlign='right'
-  ctx.fillText(String(obLevel),W-4,yp(obLevel)-3)
-  ctx.fillText(String(osLevel),W-4,yp(osLevel)+11)
-  ctx.fillText('0',W-4,yp(0)-3)
+  ctx.fillText(String(obLevel),drawW-4,yp(obLevel)-3)
+  ctx.fillText(String(osLevel),drawW-4,yp(osLevel)+11)
+  ctx.fillText('0',drawW-4,yp(0)-3)
 
-  // Histogram — largeur de barre = 1 slot = W/totalSlots
-  const barW=W/totalSlots
+  // Histogram — largeur de barre = 1 slot = drawW/totalSlots
+  const barW=drawW/totalSlots
   h.forEach((v,i)=>{const x=xp(i),y=v>=0?yp(v):yp(0),bH=Math.abs(yp(v)-yp(0));ctx.fillStyle=v>=0?histBullColor:histBearColor;ctx.fillRect(x-barW/2+0.5,y,barW-1,bH||1)})
 
   // Signal & Main lines
@@ -404,7 +407,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
@@ -461,8 +464,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd,extCrosshairSlot)
-    }, [result, viewStart, viewEnd, extCrosshairSlot], viewSize, viewport, setViewport,
+      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd,extCrosshairSlot,chartAreaRatio)
+    }, [result, viewStart, viewEnd, extCrosshairSlot, chartAreaRatio], viewSize, viewport, setViewport,
     onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
   )
 
@@ -514,7 +517,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
@@ -582,8 +585,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,vmcExtCrosshairSlot)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, vmcExtCrosshairSlot], vmcViewSize, viewport, setViewport,
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,vmcExtCrosshairSlot,chartAreaRatio)
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, vmcExtCrosshairSlot, chartAreaRatio], vmcViewSize, viewport, setViewport,
     onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
   )
 

@@ -822,7 +822,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
   onTimeframeChange?: (interval: string) => void
   onVisibleRangeChange?: (from: number, to: number) => void
   syncRangeIn?: {from: number; to: number} | null
-  onCrosshairChange?: (fraction: number | null) => void
+  onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
 }) {
   return (
     <LightweightChart
@@ -849,9 +849,12 @@ export default function AnalysePage() {
   const [syncRangeFromOsc, setSyncRangeFromOsc] = useState<{from:number;to:number}|null>(null)
   // Toggle synchronisation UT + viewport entre LightweightChart et oscillateurs
   const [syncEnabled, setSyncEnabled] = useState(true)
-  const [crosshairFrac, setCrosshairFrac] = useState<number|null>(null)
-  const handleCrosshairChange = useCallback((f: number|null) => {
-    setCrosshairFrac(f)
+  const [crosshairFrac,    setCrosshairFrac]    = useState<number|null>(null)
+  const [chartAreaRatio,   setChartAreaRatio]   = useState<number>(0.93) // 0.93 = approximation initiale
+  const handleCrosshairChange = useCallback((d: {frac:number; areaRatio:number}|null) => {
+    if (d == null) { setCrosshairFrac(null); return }
+    if (d.frac >= 0) setCrosshairFrac(d.frac)  // frac=-1 = resize event, ne pas effacer le crosshair
+    if (d.areaRatio > 0 && d.areaRatio < 1) setChartAreaRatio(d.areaRatio)
   }, [])
   const handleOscViewport = useCallback((from:number, to:number) => {
     setSyncRangeFromOsc({ from, to })
@@ -1163,6 +1166,7 @@ export default function AnalysePage() {
                 visibleRange={syncEnabled ? syncRange : null}
                 onViewportChange={syncEnabled ? handleOscViewport : undefined}
                 crosshairFrac={crosshairFrac}
+                chartAreaRatio={chartAreaRatio}
               />
             </ShareWrapper>
             <ShareWrapper label="VMC">
@@ -1172,6 +1176,7 @@ export default function AnalysePage() {
                 visibleRange={syncEnabled ? syncRange : null}
                 onViewportChange={syncEnabled ? handleOscViewport : undefined}
                 crosshairFrac={crosshairFrac}
+                chartAreaRatio={chartAreaRatio}
               />
             </ShareWrapper>
             <ShareWrapper label="RSI Elite">
@@ -1181,6 +1186,7 @@ export default function AnalysePage() {
                 visibleRange={syncEnabled ? syncRange : null}
                 onViewportChange={syncEnabled ? handleOscViewport : undefined}
                 crosshairFrac={crosshairFrac}
+                chartAreaRatio={chartAreaRatio}
               />
             </ShareWrapper>
           </div>

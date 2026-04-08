@@ -166,12 +166,17 @@ function draw(
   maLen: number,
   endIdx?: number,    // peut dépasser rsiArr.length (marge droite LW)
   extCrosshairSlot?: number | null,
+  areaRatio?: number,
 ) {
   const ctx = setCanvasHiDPI(canvas, cssW, cssH)
   if (!ctx) return
 
   const W = cssW, H = cssH
-  const PAD_L = 44, PAD_R = 12, PAD_T = 14, PAD_B = 22
+  const PAD_L = 44, PAD_T = 14, PAD_B = 22
+  // PAD_R ajusté pour que la zone de dessin RSI s'aligne avec la chart area LW :
+  // drawW = W * areaRatio → PAD_R = W - PAD_L - drawW = W * (1 - areaRatio)
+  const drawW = W * (areaRatio ?? 1)
+  const PAD_R = Math.max(12, W - PAD_L - drawW)
   const cW = W - PAD_L - PAD_R
   const cH = H - PAD_T - PAD_B
 
@@ -321,7 +326,7 @@ function draw(
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null }) {
+export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
   const [maLen,   setMaLen]   = useState(14)
@@ -352,6 +357,10 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
   const crosshairFracRef = useRef(crosshairFrac ?? null)
   useEffect(() => { crosshairFracRef.current = crosshairFrac ?? null }, [crosshairFrac])
 
+  // ref pour chartAreaRatio (mis à jour sans re-render)
+  const chartAreaRatioRef = useRef(chartAreaRatio ?? 0.93)
+  useEffect(() => { chartAreaRatioRef.current = chartAreaRatio ?? 0.93 }, [chartAreaRatio])
+
   // ── Redraw helper ───────────────────────────────────────────────────────
   const redraw = useCallback((rsiArr: number[], rsiMAArr: number[], divPairs: DivPair[], ml: number, vp?: {from:number;to:number}, extFrac?: number|null) => {
     const canvas = canvasRef.current
@@ -368,7 +377,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
     const frac = extFrac !== undefined ? extFrac : crosshairFracRef.current
     const totalSlotsForCH = Math.max(endIdxRaw - startIdx, 2)
     const extCrosshairSlot = frac != null ? frac * totalSlotsForCH : null
-    draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml, endIdxRaw, extCrosshairSlot)
+    draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml, endIdxRaw, extCrosshairSlot, chartAreaRatioRef.current)
   }, [])
 
   // ── Load ────────────────────────────────────────────────────────────────
@@ -412,8 +421,8 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
 
   // Redraw quand data ou viewport change
   useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, viewport) }, [rsi, rsiMA, pairs, maLen, redraw, viewport])
-  // Redraw quand le crosshair externe change (60fps max depuis LW)
-  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, undefined, crosshairFrac ?? null) }, [crosshairFrac]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Redraw quand le crosshair externe ou le ratio change (60fps max depuis LW)
+  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, undefined, crosshairFrac ?? null) }, [crosshairFrac, chartAreaRatio]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Resize observer ────────────────────────────────────────────────────
   useEffect(() => {

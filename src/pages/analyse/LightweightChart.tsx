@@ -17,7 +17,7 @@ interface Props {
   onTimeframeChange?: (interval: string) => void
   onVisibleRangeChange?: (from: number, to: number) => void
   syncRangeIn?: {from: number; to: number} | null
-  onCrosshairChange?: (fraction: number | null) => void
+  onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -461,30 +461,32 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       onRangeRef.current?.(Math.max(0, range.from / total), range.to / total)
     })
 
-    // Crosshair sync : émet la fraction [0,1] alignée sur le container total LW.
-    // Utilise les API LW pour une mesure cohérente (même espace de coordonnées que param.point.x) :
-    //   tsW = c.timeScale().width()        — largeur chart area en px
-    //   psW = c.priceScale('right').width()— largeur price axis en px
-    //   totalW = tsW + psW                 — = largueur totale container LW
-    //   frac = param.point.x / totalW      — fraction sur l'élément entier
-    // En oscillateur : hx = frac * W_osc. Si W_osc == totalW → hx = param.point.x → alignement parfait.
+    // Helper : calcule tsW, psW et émet areaRatio + frac crosshair
+    // tsW = largeur de la zone chart (sans price axis), psW = largeur price axis
+    // areaRatio = tsW / (tsW + psW) = fraction du container consacrée aux barres
+    // → oscillateurs doivent dessiner leurs barres sur drawW = W * areaRatio pour s'aligner avec LW
+    const getAreaRatio = () => {
+      const tsW = c.timeScale().width()
+      const psW = c.priceScale('right').width()
+      return { tsW, psW, totalW: tsW + psW, areaRatio: tsW > 0 ? tsW / (tsW + psW) : 1 }
+    }
+
     let lastCrosshairMs = 0
     c.subscribeCrosshairMove((param) => {
       const now = performance.now()
       if (now - lastCrosshairMs < 16) return  // ~60fps
       lastCrosshairMs = now
       if (param.point != null && param.logical != null) {
-        const tsW = c.timeScale().width()
-        const psW = c.priceScale('right').width()
-        const totalW = tsW + psW
+        const { totalW, areaRatio } = getAreaRatio()
         if (totalW > 0) {
           const frac = param.point.x / totalW
-          onCrosshairRef.current?.(Math.max(0, Math.min(1, frac)))
+          onCrosshairRef.current?.({ frac: Math.max(0, Math.min(1, frac)), areaRatio })
         }
       } else {
         onCrosshairRef.current?.(null)
       }
     })
+
     const profit = resolveCSSColor('--tm-profit','#22C759')
     const loss   = resolveCSSColor('--tm-loss',  '#FF3B30')
     seriesR.current=c.addCandlestickSeries({
@@ -493,7 +495,12 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       wickUpColor:profit+'90',wickDownColor:loss+'90',
       priceLineVisible:false,
     })
-    const ro=new ResizeObserver(()=>c.applyOptions({width:el.clientWidth}))
+    const ro=new ResizeObserver(()=>{
+      c.applyOptions({width:el.clientWidth})
+      // Réémet areaRatio après resize pour que les oscillateurs se recalibrent
+      const { areaRatio } = getAreaRatio()
+      onCrosshairRef.current?.({ frac: -1, areaRatio })  // frac -1 = resize event (pas de crosshair)
+    })
     ro.observe(el)
     return()=>{ro.disconnect();c.remove();chartApi.current=null;seriesR.current=null}
   },[])
