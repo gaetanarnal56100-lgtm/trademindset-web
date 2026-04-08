@@ -227,20 +227,22 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   if(dots){dots.filter(d=>d.i>=startIdx&&d.i<dataEnd).forEach(d=>{const i=d.i-startIdx;if(i<0||i>=m.length)return;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'#00E5FF':'#FF3B30';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
 
   // ── Crosshair externe (depuis LightweightChart) ──────────────────────
-  if (extCrosshairSlot != null && hoverIdx == null && extCrosshairSlot >= 0 && extCrosshairSlot < totalSlots) {
-    const hx = xp(extCrosshairSlot)
+  // extCrosshairSlot est la position PROPORTIONNELLE 0-1 dans la fenêtre → hx = frac * W (= xPixel/W de LW)
+  if (extCrosshairSlot != null && hoverIdx == null && extCrosshairSlot >= 0 && extCrosshairSlot <= 1) {
+    const hx = extCrosshairSlot * W  // alignement pixel-perfect avec LW
     ctx.save()
     ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3])
     ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, oscH); ctx.stroke()
-    if (extCrosshairSlot < m.length) {
-      const hy = yp(m[extCrosshairSlot])
+    // Valeur de l'oscillateur à la position du crosshair
+    const dataSlotIdx = Math.round(extCrosshairSlot * totalSlots)
+    if (dataSlotIdx >= 0 && dataSlotIdx < m.length) {
+      const hy = yp(m[dataSlotIdx])
       ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke()
-      // Petite valeur sur l'axe Y
       ctx.setLineDash([])
       ctx.fillStyle = mainColor
       ctx.fillRect(W - 48, hy - 9, 48, 18)
       ctx.fillStyle = '#0D1117'; ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
-      ctx.fillText(m[extCrosshairSlot].toFixed(1), W - 24, hy + 3)
+      ctx.fillText(m[dataSlotIdx].toFixed(1), W - 24, hy + 3)
     }
     ctx.setLineDash([]); ctx.restore()
   }
@@ -435,10 +437,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
   const viewEnd    = viewEndRaw                                               // passé tel quel à drawOscillator
   const dataEnd    = Math.min(viewEndRaw, total)                              // pour hover uniquement
   const viewSize   = Math.max(dataEnd - viewStart, 2)
-  // Slot dans la fenêtre visible pour le crosshair externe (depuis LW)
-  const extCrosshairSlot = (crosshairFrac != null && total > 0)
-    ? Math.round(crosshairFrac * total) - viewStart
-    : null
+  // crosshairFrac est déjà la position proportionnelle 0-1 dans la fenêtre visible (= xPixel/W de LW)
+  const extCrosshairSlot = crosshairFrac ?? null
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -546,9 +546,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
   const vmcViewEnd     = vmcViewEndRaw
   const vmcDataEnd     = Math.min(vmcViewEndRaw, vmcTotal)
   const vmcViewSize    = Math.max(vmcDataEnd - vmcViewStart, 2)
-  const vmcExtCrosshairSlot = (crosshairFrac != null && vmcTotal > 0)
-    ? Math.round(crosshairFrac * vmcTotal) - vmcViewStart
-    : null
+  // crosshairFrac = position proportionnelle 0-1 dans la fenêtre visible (= xPixel/W de LW)
+  const vmcExtCrosshairSlot = crosshairFrac ?? null
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')

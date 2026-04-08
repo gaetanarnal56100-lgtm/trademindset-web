@@ -461,14 +461,20 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       onRangeRef.current?.(Math.max(0, range.from / total), range.to / total)
     })
 
-    // Crosshair sync : envoie la fraction (0-1) de la bougie survolée aux oscillateurs
+    // Crosshair sync : émet la POSITION PROPORTIONNELLE dans la fenêtre visible (0-1)
+    // = (logical - from) / (to - from) = exactement xPixel/W de LW
+    // → alignement parfait sans aucune conversion d'indice côté oscillateur
     let lastCrosshairMs = 0
     c.subscribeCrosshairMove((param) => {
       const now = performance.now()
       if (now - lastCrosshairMs < 16) return  // ~60fps
       lastCrosshairMs = now
-      if (param.logical != null && candlesRef.current.length > 0) {
-        onCrosshairRef.current?.(param.logical / candlesRef.current.length)
+      if (param.logical != null) {
+        const range = c.timeScale().getVisibleLogicalRange()
+        if (range && range.to > range.from) {
+          const frac = (param.logical - range.from) / (range.to - range.from)
+          onCrosshairRef.current?.(Math.max(0, Math.min(1, frac)))
+        }
       } else {
         onCrosshairRef.current?.(null)
       }

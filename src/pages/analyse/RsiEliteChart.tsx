@@ -291,17 +291,19 @@ function draw(
   }
 
   // ── Crosshair externe (depuis LightweightChart) ───────────────────────
-  if (extCrosshairSlot != null && extCrosshairSlot >= 0 && extCrosshairSlot < totalSlots) {
-    const hx = toX(extCrosshairSlot)
+  // extCrosshairSlot = frac * totalSlots → toX(extCrosshairSlot) = PAD_L + (frac * totalSlots / totalSlots) * cW = PAD_L + frac * cW
+  // Soit directement hx = PAD_L + frac * cW, alignement pixel-perfect
+  if (extCrosshairSlot != null && extCrosshairSlot >= 0 && extCrosshairSlot <= totalSlots) {
+    const hx = toX(extCrosshairSlot)   // = PAD_L + frac * cW
     ctx.save()
     ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3])
     ctx.beginPath(); ctx.moveTo(hx, PAD_T); ctx.lineTo(hx, PAD_T + cH); ctx.stroke()
-    if (extCrosshairSlot < N) {
-      const hy = toY(visible[extCrosshairSlot])
+    const dataIdx = Math.round(extCrosshairSlot)
+    if (dataIdx >= 0 && dataIdx < N) {
+      const hy = toY(visible[dataIdx])
       ctx.beginPath(); ctx.moveTo(PAD_L, hy); ctx.lineTo(PAD_L + cW, hy); ctx.stroke()
       ctx.setLineDash([])
-      // Badge valeur RSI
-      const val = visible[extCrosshairSlot].toFixed(1)
+      const val = visible[dataIdx].toFixed(1)
       ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'left'
       const tw = ctx.measureText(val).width + 8
       ctx.fillStyle = '#C5C8D6'; ctx.fillRect(PAD_L - tw - 2, hy - 8, tw, 16)
@@ -359,8 +361,11 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
     const n = rsiArr.length
     const startIdx = Math.max(0, Math.floor(curVp.from * n))
     const endIdxRaw = Math.ceil(curVp.to * n)   // pas de clamp — marge droite
+    // frac = position proportionnelle 0-1 dans la fenêtre visible (= xPixel/W de LW)
+    // → convertir en slot continu pour toX : frac * totalSlots
     const frac = extFrac !== undefined ? extFrac : crosshairFracRef.current
-    const extCrosshairSlot = (frac != null && n > 0) ? Math.round(frac * n) - startIdx : null
+    const totalSlotsForCH = Math.max(endIdxRaw - startIdx, 2)
+    const extCrosshairSlot = frac != null ? frac * totalSlotsForCH : null
     draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml, endIdxRaw, extCrosshairSlot)
   }, [])
 
