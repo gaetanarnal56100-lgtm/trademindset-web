@@ -11,7 +11,12 @@ const db = getFirestore(app)
 const fbFn = getFunctions(app, 'europe-west1')
 
 // ── Types ─────────────────────────────────────────────────────────────────
-interface Props { symbol: string; isCrypto: boolean }
+interface Props {
+  symbol: string
+  isCrypto: boolean
+  onTimeframeChange?: (interval: string) => void
+  onVisibleRangeChange?: (from: number, to: number) => void
+}
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
 interface DrawingPoint { time: number; price: number }
@@ -293,7 +298,12 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export default function LightweightChart({symbol,isCrypto}:Props) {
+// Map LW minutes → oscillator interval strings
+const LW_MIN_TO_OSC: Record<number, string> = {
+  1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 240:'4h', 1440:'1d', 10080:'1w',
+}
+
+export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange}:Props) {
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
   const chartApi = useRef<IChartApi|null>(null)
@@ -360,6 +370,10 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
       timeScale:{borderColor:'var(--tm-border-sub)',timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
+    // Emit visible range changes to sync oscillators
+    c.timeScale().subscribeVisibleTimeRangeChange((range) => {
+      if (range) onVisibleRangeChange?.(range.from as number, range.to as number)
+    })
     seriesR.current=c.addCandlestickSeries({
       upColor:'var(--tm-profit)',downColor:'var(--tm-loss)',
       borderUpColor:'var(--tm-profit)',borderDownColor:'var(--tm-loss)',
@@ -749,7 +763,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
           <span style={{fontSize:8,color:'#22C75990'}}>● LIVE</span>
         </div>}
         <div style={{display:'flex',gap:3,marginLeft:4,flexWrap:'wrap'}}>
-          {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===t.label?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.12)`:'transparent',color:tf.label===t.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{t.label}</button>)}
+          {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>{setTf(t);onTimeframeChange?.(LW_MIN_TO_OSC[t.min]??'1h')}} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===t.label?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.12)`:'transparent',color:tf.label===t.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{t.label}</button>)}
         </div>
         <button onClick={()=>setShowHist(x=>!x)} style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
           💾 {drawings.length>0?`${drawings.length} dessin${drawings.length>1?'s':''}`:' Dessins'}
