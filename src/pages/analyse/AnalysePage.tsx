@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
-import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
+import { WaveTrendChart, VMCOscillatorChart, RSIChart } from './OscillatorCharts'
 import TradePlanCard from './TradePlanCard'
 import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
@@ -816,7 +816,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void }) {
   type PanelType = 'tv' | 'lw'
   type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
 
@@ -836,8 +836,8 @@ function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }
   const renderPanel = (type: PanelType, key: string) => (
     <div key={key} style={{ minWidth: 0, flex: 1 }}>
       {type === 'tv'
-        ? <LiveChart symbol={symbol} isCrypto={isCrypto} />
-        : <LightweightChart symbol={symbol} isCrypto={isCrypto} />}
+        ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
+        : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />}
     </div>
   )
 
@@ -895,6 +895,8 @@ export default function AnalysePage() {
     return ''
   })
   const [mode,   setMode]   = useState<Mode>('micro')
+  const [syncInterval, setSyncInterval] = useState<string>('1h')
+  const [syncRange,    setSyncRange]    = useState<{from:number;to:number}|null>(null)
 
   // CVD state
   const [connected, setConnected] = useState(false)
@@ -1165,7 +1167,14 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
+      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} />}
+
+      {/* Oscillateurs synchronisés sous le chart */}
+      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
+        <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+        <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+        <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+      </div>}
 
 
       {/* Plan de Trade IA — tous les actifs, en premier */}
@@ -1185,11 +1194,7 @@ export default function AnalysePage() {
         <MTFDashboard symbol={symbol} />
       </ShareWrapper>}
 
-      {/* WaveTrend + VMC Oscillator — tous les actifs */}
-      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-        <ShareWrapper label="WaveTrend"><WaveTrendChart symbol={symbol} /></ShareWrapper>
-        <ShareWrapper label="VMC"><VMCOscillatorChart symbol={symbol} /></ShareWrapper>
-      </div>}
+      {/* WaveTrend + VMC + RSI sont maintenant affichés directement sous le chart (ci-dessus) */}
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>

@@ -11,7 +11,7 @@ const db = getFirestore(app)
 const fbFn = getFunctions(app, 'europe-west1')
 
 // ── Types ─────────────────────────────────────────────────────────────────
-interface Props { symbol: string; isCrypto: boolean }
+interface Props { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
 interface DrawingPoint { time: number; price: number }
@@ -26,6 +26,7 @@ const TIMEFRAMES = [
   {label:'1m',min:1},{label:'5m',min:5},{label:'15m',min:15},{label:'30m',min:30},
   {label:'1h',min:60},{label:'4h',min:240},{label:'1j',min:1440},{label:'1S',min:10080},
 ]
+const LW_MIN_TO_OSC: Record<number, string> = { 1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 240:'4h', 1440:'1d', 10080:'1w' }
 const COLORS = ['var(--tm-loss)','var(--tm-warning)','#FFD60A','var(--tm-profit)','var(--tm-accent)','var(--tm-blue)','var(--tm-purple)','var(--tm-text-primary)']
 const FIBO_LEVELS = [
   {r:0,l:'0%'},{r:0.236,l:'23.6%'},{r:0.382,l:'38.2%'},{r:0.5,l:'50%'},
@@ -293,7 +294,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export default function LightweightChart({symbol,isCrypto}:Props) {
+export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange}:Props) {
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
   const chartApi = useRef<IChartApi|null>(null)
@@ -301,6 +302,8 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef = useRef<Candle[]>([])
   const mpLinesRef = useRef<any[]>([])
+  const onRangeRef = useRef(onVisibleRangeChange)
+  useEffect(() => { onRangeRef.current = onVisibleRangeChange }, [onVisibleRangeChange])
 
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
   const [tool,     setTool]     = useState<ToolId>('cursor')
@@ -351,20 +354,35 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
   // ── Init Chart ───────────────────────────────────────────────────────
   useEffect(()=>{
     const el=chartEl.current;if(!el)return
+    const bg     = resolveCSSColor('--tm-bg','#0D1117')
+    const bord   = resolveCSSColor('--tm-border','#2A2F3E')
+    const bsub   = resolveCSSColor('--tm-border-sub','#1E2330')
+    const profit = resolveCSSColor('--tm-profit','#22C759')
+    const loss   = resolveCSSColor('--tm-loss','#FF3B30')
+    const muted  = resolveCSSColor('--tm-text-muted','#555C70')
     const c=createChart(el,{
       width:el.clientWidth,height:430,
-      layout:{background:{color:'var(--tm-bg)'},textColor:'#6B7280',fontSize:11,fontFamily:'JetBrains Mono, monospace'},
+      layout:{background:{color:bg},textColor:muted,fontSize:11,fontFamily:'JetBrains Mono, monospace'},
       grid:{vertLines:{color:'#1E233028'},horzLines:{color:'#1E233028'}},
-      crosshair:{mode:CrosshairMode.Normal,vertLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'var(--tm-border)'},horzLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'var(--tm-border)'}},
-      rightPriceScale:{borderColor:'var(--tm-border-sub)',scaleMargins:{top:0.05,bottom:0.05}},
-      timeScale:{borderColor:'var(--tm-border-sub)',timeVisible:true,secondsVisible:false},
+      crosshair:{mode:CrosshairMode.Normal,vertLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:bord},horzLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:bord}},
+      rightPriceScale:{borderColor:bsub,scaleMargins:{top:0.05,bottom:0.05}},
+      timeScale:{borderColor:bsub,timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
     seriesR.current=c.addCandlestickSeries({
-      upColor:'var(--tm-profit)',downColor:'var(--tm-loss)',
-      borderUpColor:'var(--tm-profit)',borderDownColor:'var(--tm-loss)',
-      wickUpColor:'#22C75990',wickDownColor:'#FF3B3090',
+      upColor:profit,downColor:loss,
+      borderUpColor:profit,borderDownColor:loss,
+      wickUpColor:profit+'90',wickDownColor:loss+'90',
       priceLineVisible:false,
+    })
+    // Emit visible range as 0-1 fractions for oscillator sync
+    c.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (!range || !candlesRef.current.length) return
+      const total = candlesRef.current.length
+      onRangeRef.current?.(
+        Math.max(0, range.from / total),
+        Math.min(1, range.to  / total)
+      )
     })
     const ro=new ResizeObserver(()=>c.applyOptions({width:el.clientWidth}))
     ro.observe(el)
@@ -749,7 +767,7 @@ export default function LightweightChart({symbol,isCrypto}:Props) {
           <span style={{fontSize:8,color:'#22C75990'}}>● LIVE</span>
         </div>}
         <div style={{display:'flex',gap:3,marginLeft:4,flexWrap:'wrap'}}>
-          {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===t.label?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.12)`:'transparent',color:tf.label===t.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{t.label}</button>)}
+          {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>{setTf(t);onTimeframeChange?.(LW_MIN_TO_OSC[t.min]??'1h')}} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===t.label?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.12)`:'transparent',color:tf.label===t.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{t.label}</button>)}
         </div>
         <button onClick={()=>setShowHist(x=>!x)} style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
           💾 {drawings.length>0?`${drawings.length} dessin${drawings.length>1?'s':''}`:' Dessins'}
