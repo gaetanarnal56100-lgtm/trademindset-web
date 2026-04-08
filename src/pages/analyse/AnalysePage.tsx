@@ -817,7 +817,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void }) {
   type PanelType = 'tv' | 'lw'
   type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
 
@@ -837,8 +837,8 @@ function ChartLayout({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }
   const renderPanel = (type: PanelType, key: string) => (
     <div key={key} style={{ minWidth: 0, flex: 1 }}>
       {type === 'tv'
-        ? <LiveChart symbol={symbol} isCrypto={isCrypto} />
-        : <LightweightChart symbol={symbol} isCrypto={isCrypto} />}
+        ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
+        : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />}
     </div>
   )
 
@@ -896,6 +896,7 @@ export default function AnalysePage() {
     return ''
   })
   const [mode,   setMode]   = useState<Mode>('micro')
+  const [syncInterval, setSyncInterval] = useState<string>('1h')
 
   // CVD state
   const [connected, setConnected] = useState(false)
@@ -1166,7 +1167,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} />}
+      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} />}
 
 
       {/* Plan de Trade IA — tous les actifs, en premier */}
@@ -1186,10 +1187,10 @@ export default function AnalysePage() {
         <MTFDashboard symbol={symbol} />
       </ShareWrapper>}
 
-      {/* WaveTrend + VMC Oscillator — tous les actifs */}
-      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-        <ShareWrapper label="WaveTrend"><WaveTrendChart symbol={symbol} /></ShareWrapper>
-        <ShareWrapper label="VMC"><VMCOscillatorChart symbol={symbol} /></ShareWrapper>
+      {/* WaveTrend + VMC Oscillator — tous les actifs, en colonne, synchronisés */}
+      {symbol && <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:16}}>
+        <ShareWrapper label="WaveTrend"><WaveTrendChart symbol={symbol} syncInterval={syncInterval} /></ShareWrapper>
+        <ShareWrapper label="VMC"><VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} /></ShareWrapper>
       </div>}
 
       {/* RSI Elite Toolkit — tous les actifs */}

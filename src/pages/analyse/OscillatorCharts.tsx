@@ -329,8 +329,15 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol }: { symbol: string }) {
+export function WaveTrendChart({ symbol, syncInterval }: { symbol: string; syncInterval?: string }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
+
+  // Sync timeframe from parent chart when syncInterval changes
+  useEffect(() => {
+    if (!syncInterval) return
+    const found = TF_OPTIONS.find(t => t.interval === syncInterval)
+    if (found) setTf(found)
+  }, [syncInterval])
   const [candles, setCandles] = useState<Candle[]>([])
   const [result, setResult] = useState<WTResult|null>(null)
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
@@ -383,7 +390,8 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
         </div>
       </div>
       <div style={{display:'flex',gap:4,padding:'0 16px 10px',overflowX:'auto',scrollbarWidth:'none'}}>
-        {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
+        {!syncInterval && TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
+        {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 Synchronisé sur {syncInterval}</span>}
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8,flexDirection:'column'}}>
@@ -409,8 +417,15 @@ export function WaveTrendChart({ symbol }: { symbol: string }) {
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol }: { symbol: string }) {
+export function VMCOscillatorChart({ symbol, syncInterval }: { symbol: string; syncInterval?: string }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
+
+  // Sync timeframe from parent chart when syncInterval changes
+  useEffect(() => {
+    if (!syncInterval) return
+    const found = TF_OPTIONS.find(t => t.interval === syncInterval)
+    if (found) setTf(found)
+  }, [syncInterval])
   const [candles, setCandles] = useState<Candle[]>([])
   const [result, setResult] = useState<VMCResult|null>(null)
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
@@ -464,7 +479,8 @@ export function VMCOscillatorChart({ symbol }: { symbol: string }) {
         </div>
       </div>
       <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none'}}>
-          {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
+          {!syncInterval && TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
+          {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 Synchronisé sur {syncInterval}</span>}
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>
