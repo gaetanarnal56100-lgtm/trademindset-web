@@ -361,23 +361,28 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   // ── Init Chart ───────────────────────────────────────────────────────
   useEffect(()=>{
     const el=chartEl.current;if(!el)return
+    const bg   = resolveCSSColor('--tm-bg',          '#0D1117')
+    const bord = resolveCSSColor('--tm-border',      '#2A2F3E')
+    const bsub = resolveCSSColor('--tm-border-sub',  '#1E2330')
     const c=createChart(el,{
       width:el.clientWidth,height:430,
-      layout:{background:{color:'var(--tm-bg)'},textColor:'#6B7280',fontSize:11,fontFamily:'JetBrains Mono, monospace'},
+      layout:{background:{color:bg},textColor:'#6B7280',fontSize:11,fontFamily:'JetBrains Mono, monospace'},
       grid:{vertLines:{color:'#1E233028'},horzLines:{color:'#1E233028'}},
-      crosshair:{mode:CrosshairMode.Normal,vertLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'var(--tm-border)'},horzLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:'var(--tm-border)'}},
-      rightPriceScale:{borderColor:'var(--tm-border-sub)',scaleMargins:{top:0.05,bottom:0.05}},
-      timeScale:{borderColor:'var(--tm-border-sub)',timeVisible:true,secondsVisible:false},
+      crosshair:{mode:CrosshairMode.Normal,vertLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:bord},horzLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:bord}},
+      rightPriceScale:{borderColor:bsub,scaleMargins:{top:0.05,bottom:0.05}},
+      timeScale:{borderColor:bsub,timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
     // Emit visible range changes to sync oscillators
     c.timeScale().subscribeVisibleTimeRangeChange((range) => {
       if (range) onVisibleRangeChange?.(range.from as number, range.to as number)
     })
+    const profit = resolveCSSColor('--tm-profit','#22C759')
+    const loss   = resolveCSSColor('--tm-loss',  '#FF3B30')
     seriesR.current=c.addCandlestickSeries({
-      upColor:'var(--tm-profit)',downColor:'var(--tm-loss)',
-      borderUpColor:'var(--tm-profit)',borderDownColor:'var(--tm-loss)',
-      wickUpColor:'#22C75990',wickDownColor:'#FF3B3090',
+      upColor:profit,downColor:loss,
+      borderUpColor:profit,borderDownColor:loss,
+      wickUpColor:profit+'90',wickDownColor:loss+'90',
       priceLineVisible:false,
     })
     const ro=new ResizeObserver(()=>c.applyOptions({width:el.clientWidth}))

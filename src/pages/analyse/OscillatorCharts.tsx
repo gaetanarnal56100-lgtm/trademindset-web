@@ -185,10 +185,11 @@ function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:
 }
 
 // ── Draw oscillator ───────────────────────────────────────────────────────
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null) {
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number) {
   ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
-  const tail=Math.min(main.length,150)
-  const m=main.slice(-tail),s=signal.slice(-tail),h=histogram.slice(-tail)
+  const startIdx = viewStart !== undefined ? viewStart : Math.max(0, main.length - 150)
+  const endIdx   = viewEnd   !== undefined ? Math.min(viewEnd, main.length) : main.length
+  const m=main.slice(startIdx,endIdx),s=signal.slice(startIdx,endIdx),h=histogram.slice(startIdx,endIdx)
   if(m.length<2)return
   const oscH = emas && emas.length > 0 ? H * 0.76 : H
   const allVals=[...m,...s,...h,obLevel,osLevel,0]
@@ -220,7 +221,7 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   ctx.beginPath();ctx.strokeStyle=mainColor;ctx.lineWidth=2;m.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
 
   // Signal dots
-  if(dots){const offset=main.length-tail;dots.filter(d=>d.i>=offset).forEach(d=>{const i=d.i-offset;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'var(--tm-accent)':'var(--tm-loss)';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
+  if(dots){dots.filter(d=>d.i>=startIdx&&d.i<endIdx).forEach(d=>{const i=d.i-startIdx;if(i<0||i>=m.length)return;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?'#00E5FF':'#FF3B30';const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
 
   // ── Interactive crosshair ───────────────────────────────────────────
   if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < m.length) {
@@ -249,18 +250,19 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
 }
 
 // ── Crosshair tooltip component ───────────────────────────────────────────
-function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW, type }:
-  { candles: Candle[]; main: number[]; signal: number[]; histogram: number[]; hoverIdx: number; canvasW: number; type: 'wt'|'vmc' }) {
-  const tail = Math.min(main.length, 150)
-  const offset = main.length - tail
-  const dataIdx = offset + hoverIdx
+function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW, type, viewStart, viewEnd }:
+  { candles: Candle[]; main: number[]; signal: number[]; histogram: number[]; hoverIdx: number; canvasW: number; type: 'wt'|'vmc'; viewStart?: number; viewEnd?: number }) {
+  const startIdx = viewStart !== undefined ? viewStart : Math.max(0, main.length - 150)
+  const endIdx   = viewEnd   !== undefined ? Math.min(viewEnd, main.length) : main.length
+  const viewSize = endIdx - startIdx
+  const dataIdx = startIdx + hoverIdx
   const candle = candles[dataIdx]
   if (!candle) return null
   const time = new Date(candle.t)
   const timeStr = time.toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) + ' ' +
     time.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
   const mainVal = main[dataIdx], sigVal = signal[dataIdx], histVal = histogram[dataIdx]
-  const xp = (hoverIdx / (tail - 1)) * canvasW
+  const xp = (hoverIdx / Math.max(viewSize - 1, 1)) * canvasW
   const left = xp > canvasW / 2 ? 12 : canvasW - 200
 
   return (
@@ -291,7 +293,7 @@ function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW,
 // ── Interactive canvas hook ───────────────────────────────────────────────
 function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
-  deps: unknown[], dataLen: number
+  deps: unknown[], dataLen: number, viewSize?: number
 ) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
@@ -310,14 +312,16 @@ function useInteractiveCanvas(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, hoverIdx])
 
+  const displayLen = viewSize ?? Math.min(dataLen, 150)
+
   const onMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const c = ref.current; if (!c || dataLen < 2) return
+    const c = ref.current; if (!c || displayLen < 2) return
     const rect = c.getBoundingClientRect()
     const x = e.clientX - rect.left
-    const tail = Math.min(dataLen, 150)
-    const idx = Math.round((x / rect.width) * (tail - 1))
-    setHoverIdx(Math.max(0, Math.min(tail - 1, idx)))
-  }, [dataLen])
+    const idx = Math.round((x / rect.width) * (displayLen - 1))
+    setHoverIdx(Math.max(0, Math.min(displayLen - 1, idx)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayLen])
 
   const onLeave = useCallback(() => setHoverIdx(null), [])
   return { ref, hoverIdx, canvasW, onMove, onLeave }
@@ -329,7 +333,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval }: { symbol: string; syncInterval?: string }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
 
   // Sync timeframe from parent chart when syncInterval changes
@@ -364,11 +368,25 @@ export function WaveTrendChart({ symbol, syncInterval }: { symbol: string; syncI
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
 
+  // Compute view slice from visibleRange (LW emits seconds, candles have ms)
+  const { viewStart, viewEnd, viewSize } = (() => {
+    const total = result?.wt1.length ?? candles.length
+    if (!visibleRange || candles.length === 0) {
+      const s = Math.max(0, total - 150)
+      return { viewStart: s, viewEnd: total, viewSize: Math.min(total, 150) }
+    }
+    const fromMs = visibleRange.from * 1000, toMs = visibleRange.to * 1000
+    let s = candles.findIndex(c => c.t >= fromMs); if (s < 0) s = 0
+    let e = candles.length
+    for (let i = candles.length - 1; i >= 0; i--) { if (candles[i].t <= toMs) { e = i + 1; break } }
+    return { viewStart: s, viewEnd: Math.max(e, s + 2), viewSize: Math.max(e - s, 2) }
+  })()
+
   const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','var(--tm-warning)',`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.5)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.5)`,dots,undefined,hi)
-    }, [result], result?.wt1.length ?? 0
+      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd)
+    }, [result, viewStart, viewEnd], result?.wt1.length ?? 0, viewSize
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -404,7 +422,7 @@ export function WaveTrendChart({ symbol, syncInterval }: { symbol: string; syncI
         <canvas ref={canvasRef} width={800} height={180} onMouseMove={onMove} onMouseLeave={onLeave}
           style={{width:'100%',height:180,display:'block',borderRadius:8,cursor:'crosshair'}}/>
         {hoverIdx !== null && result && result.wt1.length > 0 && (
-          <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt"/>
+          <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt" viewStart={viewStart} viewEnd={viewEnd}/>
         )}
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'WT1'},{color:'var(--tm-warning)',label:'WT2'},{color:'var(--tm-profit)',label:'Momentum +'},{color:'var(--tm-loss)',label:'Momentum −'},{color:'var(--tm-accent)',label:'● Smart'}].map(({color,label})=>(
@@ -417,7 +435,7 @@ export function WaveTrendChart({ symbol, syncInterval }: { symbol: string; syncI
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval }: { symbol: string; syncInterval?: string }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
   const [tf, setTf] = useState(TF_OPTIONS[3])
 
   // Sync timeframe from parent chart when syncInterval changes
@@ -465,11 +483,25 @@ export function VMCOscillatorChart({ symbol, syncInterval }: { symbol: string; s
     return []
   }) : []
 
+  // Compute view slice from visibleRange
+  const { viewStart: vmcViewStart, viewEnd: vmcViewEnd, viewSize: vmcViewSize } = (() => {
+    const total = result?.sig.length ?? candles.length
+    if (!visibleRange || candles.length === 0) {
+      const s = Math.max(0, total - 150)
+      return { viewStart: s, viewEnd: total, viewSize: Math.min(total, 150) }
+    }
+    const fromMs = visibleRange.from * 1000, toMs = visibleRange.to * 1000
+    let s = candles.findIndex(c => c.t >= fromMs); if (s < 0) s = 0
+    let e = candles.length
+    for (let i = candles.length - 1; i >= 0; i--) { if (candles[i].t <= toMs) { e = i + 1; break } }
+    return { viewStart: s, viewEnd: Math.max(e, s + 2), viewSize: Math.max(e - s, 2) }
+  })()
+
   const { ref: canvasRef, hoverIdx, canvasW, onMove, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','var(--tm-warning)',`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.55)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.55)`,vmcDots,result.emas,hi)
-    }, [result, vmcDots], result?.sig.length ?? 0
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd)
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd], result?.sig.length ?? 0, vmcViewSize
   )
 
   return (
@@ -505,7 +537,7 @@ export function VMCOscillatorChart({ symbol, syncInterval }: { symbol: string; s
         <canvas ref={canvasRef} width={800} height={230} onMouseMove={onMove} onMouseLeave={onLeave}
           style={{width:'100%',height:230,display:'block',borderRadius:8,cursor:'crosshair'}}/>
         {hoverIdx !== null && result && result.sig.length > 0 && (
-          <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc"/>
+          <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc" viewStart={vmcViewStart} viewEnd={vmcViewEnd}/>
         )}
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'VMC Sig'},{color:'var(--tm-warning)',label:'Signal'},{color:'var(--tm-profit)',label:'Mom +'},{color:'var(--tm-loss)',label:'Mom −'},{color:'var(--tm-warning)',label:`OB:${obLevel}`},{color:'var(--tm-profit)',label:`OS:${osLevel}`}].map(({color,label})=>(

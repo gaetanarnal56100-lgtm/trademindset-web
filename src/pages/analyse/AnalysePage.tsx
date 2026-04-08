@@ -816,75 +816,19 @@ function PressureBar({score}:{score:number}){
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-// ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void }) {
-  type PanelType = 'tv' | 'lw'
-  type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
-
-  const [mode, setMode] = useState<LayoutMode>('tv')
-
-  const LAYOUTS: { id: LayoutMode; icon: string; label: string; desc: string }[] = [
-    { id: 'tv',    icon: '📺',   label: 'TV seul',    desc: 'TradingView uniquement' },
-    { id: 'lw',    icon: '⚡',   label: 'LW seul',    desc: 'Lightweight uniquement' },
-    { id: 'tv-lw', icon: '📺⚡', label: 'TV | LW',    desc: 'TradingView + Lightweight côte à côte' },
-    { id: 'lw-tv', icon: '⚡📺', label: 'LW | TV',    desc: 'Lightweight + TradingView côte à côte' },
-    { id: 'tv-tv', icon: '📺📺', label: 'TV | TV',    desc: 'Deux TradingView (ex: 15m + 1h)' },
-    { id: 'lw-lw', icon: '⚡⚡', label: 'LW | LW',    desc: 'Deux Lightweight (ex: BTC + ETH)' },
-  ]
-
-  const isSplit = ['tv-lw','lw-tv','tv-tv','lw-lw'].includes(mode)
-
-  const renderPanel = (type: PanelType, key: string) => (
-    <div key={key} style={{ minWidth: 0, flex: 1 }}>
-      {type === 'tv'
-        ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
-        : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />}
-    </div>
-  )
-
-  const panels: [PanelType, PanelType] | [PanelType] =
-    mode === 'tv'    ? ['tv'] :
-    mode === 'lw'    ? ['lw'] :
-    mode === 'tv-lw' ? ['tv','lw'] :
-    mode === 'lw-tv' ? ['lw','tv'] :
-    mode === 'tv-tv' ? ['tv','tv'] :
-                       ['lw','lw']
-
+// ── ChartLayout — LightweightChart uniquement (zoom/pan sync avec oscillateurs) ──
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange }: {
+  symbol: string; isCrypto: boolean
+  onTimeframeChange?: (interval: string) => void
+  onVisibleRangeChange?: (from: number, to: number) => void
+}) {
   return (
-    <div style={{ marginBottom: 0 }}>
-      {/* Sélecteur */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px',
-        background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 12,
-        marginBottom: 8, flexWrap: 'wrap',
-      }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', marginRight: 2, flexShrink: 0 }}>DISPOSITION :</span>
-        {LAYOUTS.map(l => (
-          <button key={l.id} onClick={() => setMode(l.id)} title={l.desc} style={{
-            display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-            borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer',
-            border: `1px solid ${mode === l.id ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
-            background: mode === l.id ? 'rgba(var(--tm-accent-rgb,0,229,255),0.10)' : 'transparent',
-            color: mode === l.id ? 'var(--tm-accent)' : 'var(--tm-text-muted)', transition: 'all 0.15s',
-          }}>
-            <span style={{ fontSize: 12 }}>{l.icon}</span>
-            <span>{l.label}</span>
-          </button>
-        ))}
-        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--tm-text-muted)', flexShrink: 0 }}>
-          {LAYOUTS.find(l => l.id === mode)?.desc}
-        </span>
-      </div>
-
-      {/* Graphiques */}
-      <div style={{
-        display: isSplit ? 'grid' : 'block',
-        gridTemplateColumns: isSplit ? '1fr 1fr' : undefined,
-        gap: isSplit ? 8 : undefined,
-      }}>
-        {panels.map((type, i) => renderPanel(type, `${type}-${i}`))}
-      </div>
-    </div>
+    <LightweightChart
+      symbol={symbol}
+      isCrypto={isCrypto}
+      onTimeframeChange={onTimeframeChange}
+      onVisibleRangeChange={onVisibleRangeChange}
+    />
   )
 }
 
@@ -897,6 +841,7 @@ export default function AnalysePage() {
   })
   const [mode,   setMode]   = useState<Mode>('micro')
   const [syncInterval, setSyncInterval] = useState<string>('1h')
+  const [syncRange, setSyncRange] = useState<{from:number;to:number}|null>(null)
 
   // CVD state
   const [connected, setConnected] = useState(false)
@@ -1169,19 +1114,24 @@ export default function AnalysePage() {
       {/* ══ CHART + OSCILLATEURS COLLÉS ══ */}
       {symbol && (
         <div style={{marginBottom:16}}>
-          {/* Chart principal */}
-          <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} />
+          {/* Chart principal LightweightChart */}
+          <ChartLayout
+            symbol={symbol}
+            isCrypto={isCryptoSymbol(symbol)}
+            onTimeframeChange={setSyncInterval}
+            onVisibleRangeChange={(from, to) => setSyncRange({ from, to })}
+          />
 
           {/* Oscillateurs collés directement sous la chart, sans gap */}
-          <div style={{display:'flex',flexDirection:'column',gap:4,marginTop:-4}}>
+          <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:0}}>
             <ShareWrapper label="WaveTrend">
-              <WaveTrendChart symbol={symbol} syncInterval={syncInterval} />
+              <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
             </ShareWrapper>
             <ShareWrapper label="VMC">
-              <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} />
+              <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
             </ShareWrapper>
             <ShareWrapper label="RSI Elite">
-              <RsiEliteChart symbol={symbol} syncInterval={syncInterval} />
+              <RsiEliteChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
             </ShareWrapper>
           </div>
         </div>

@@ -291,7 +291,7 @@ function draw(
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function RsiEliteChart({ symbol: initialSymbol, syncInterval }: { symbol: string; syncInterval?: string }) {
+export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
   const [maLen,   setMaLen]   = useState(14)
@@ -308,17 +308,18 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval }: {
   const [rsiMA,   setRsiMA]   = useState<number[]>([])
   const [pairs,   setPairs]   = useState<DivPair[]>([])
   const [currRSI, setCurrRSI] = useState<number | null>(null)
+  const [candles, setCandles] = useState<{t:number}[]>([])
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // ── Redraw helper ───────────────────────────────────────────────────────
-  const redraw = useCallback((rsiArr: number[], rsiMAArr: number[], divPairs: DivPair[], ml: number) => {
+  const redraw = useCallback((rsiArr: number[], rsiMAArr: number[], divPairs: DivPair[], ml: number, startOverride?: number) => {
     const canvas = canvasRef.current
     const container = containerRef.current
     if (!canvas || !container || rsiArr.length < 2) return
     const cssW = container.clientWidth
     const cssH = 240
-    const startIdx = Math.max(0, rsiArr.length - 150)
+    const startIdx = startOverride !== undefined ? startOverride : Math.max(0, rsiArr.length - 150)
     draw(canvas, cssW, cssH, rsiArr, rsiMAArr, divPairs, startIdx, ml)
   }, [])
 
@@ -327,6 +328,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval }: {
     setLoading(true); setError(null)
     try {
       const candles = await fetchCandles(symbol, tf.interval, tf.limit)
+      setCandles(candles.map(c => ({ t: c.t })))
       const closes  = candles.map(c => c.c)
       const rsiArr  = calcRSIArr(closes)
       // Build MA over the valid RSI slice (skip the warm-up zeros)
@@ -350,17 +352,25 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval }: {
   useEffect(() => { load() }, [load])
   useEffect(() => { setSymbol(initialSymbol) }, [initialSymbol])
 
-  // Redraw when data changes
-  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen) }, [rsi, rsiMA, pairs, maLen, redraw])
+  // ── Compute startIdx from visibleRange ─────────────────────────────────
+  const computeStart = useCallback((rsiArr: number[]): number => {
+    if (!visibleRange || candles.length === 0) return Math.max(0, rsiArr.length - 150)
+    const fromMs = visibleRange.from * 1000
+    const s = candles.findIndex(c => c.t >= fromMs)
+    return s < 0 ? Math.max(0, rsiArr.length - 150) : s
+  }, [visibleRange, candles])
+
+  // Redraw when data or visibleRange changes
+  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, computeStart(rsi)) }, [rsi, rsiMA, pairs, maLen, redraw, computeStart])
 
   // ── Resize observer ────────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    const ro = new ResizeObserver(() => { redraw(rsi, rsiMA, pairs, maLen) })
+    const ro = new ResizeObserver(() => { redraw(rsi, rsiMA, pairs, maLen, computeStart(rsi)) })
     ro.observe(container)
     return () => ro.disconnect()
-  }, [rsi, rsiMA, pairs, maLen, redraw])
+  }, [rsi, rsiMA, pairs, maLen, redraw, computeStart])
 
   // ── Status label ────────────────────────────────────────────────────────
   const rsiStatus = currRSI === null ? null
