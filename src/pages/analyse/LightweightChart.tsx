@@ -180,6 +180,57 @@ function calcMP(candles:Candle[],bins=30):MPResult|null{
   return{poc:buckets[pocIdx].price,vah:buckets[hi_].price+step/2,val:buckets[lo_].price-step/2,profile:buckets}
 }
 
+// ── RSI Divergences ───────────────────────────────────────────────────────
+interface RSIDivPair{type:'bull'|'bear';leftIdx:number;rightIdx:number;leftPrice:number;rightPrice:number}
+interface RSIDivResult{bullDivs:RSIDivPair[];bearDivs:RSIDivPair[];rsi:number[]}
+function calcRSI(closes:number[],period=14):number[]{
+  const rsi=new Array(closes.length).fill(50)
+  if(closes.length<=period)return rsi
+  let gains=0,losses=0
+  for(let i=1;i<=period;i++){const d=closes[i]-closes[i-1];if(d>0)gains+=d;else losses-=d}
+  let ag=gains/period,al=losses/period
+  rsi[period]=al===0?100:100-100/(1+ag/al)
+  for(let i=period+1;i<closes.length;i++){
+    const d=closes[i]-closes[i-1];const g=d>0?d:0;const l=d<0?-d:0
+    ag=(ag*(period-1)+g)/period;al=(al*(period-1)+l)/period
+    rsi[i]=al===0?100:100-100/(1+ag/al)
+  }
+  return rsi
+}
+function calcRSIDiv(candles:Candle[],rsiPeriod=14,pivotLen=5,lookback=60):RSIDivResult{
+  const n=candles.length
+  const closes=candles.map(c=>c.close)
+  const lows=candles.map(c=>c.low)
+  const highs=candles.map(c=>c.high)
+  const rsi=calcRSI(closes,rsiPeriod)
+  const pLows:number[]=[],pHighs:number[]=[]
+  for(let i=pivotLen;i<n-pivotLen;i++){
+    let isL=true,isH=true
+    for(let j=1;j<=pivotLen;j++){
+      if(rsi[i]>=rsi[i-j]||rsi[i]>=rsi[i+j])isL=false
+      if(rsi[i]<=rsi[i-j]||rsi[i]<=rsi[i+j])isH=false
+    }
+    if(isL)pLows.push(i);if(isH)pHighs.push(i)
+  }
+  const bullDivs:RSIDivPair[]=[],bearDivs:RSIDivPair[]=[]
+  for(let k=1;k<pLows.length;k++){
+    const ri=pLows[k],li=pLows[k-1]
+    if(ri-li>lookback)continue
+    // Regular Bull: price lower low + RSI higher low
+    if(rsi[ri]>rsi[li]&&lows[ri]<lows[li])
+      bullDivs.push({type:'bull',leftIdx:li,rightIdx:ri,leftPrice:lows[li],rightPrice:lows[ri]})
+  }
+  for(let k=1;k<pHighs.length;k++){
+    const ri=pHighs[k],li=pHighs[k-1]
+    if(ri-li>lookback)continue
+    // Regular Bear: price higher high + RSI lower high
+    if(rsi[ri]<rsi[li]&&highs[ri]>highs[li])
+      bearDivs.push({type:'bear',leftIdx:li,rightIdx:ri,leftPrice:highs[li],rightPrice:highs[ri]})
+  }
+  // Keep only the most recent 8 of each
+  return{bullDivs:bullDivs.slice(-8),bearDivs:bearDivs.slice(-8),rsi}
+}
+
 // ── Indicator settings types ──────────────────────────────────────────────
 interface VMCSettings{smoothLen:number;signalMult:number;upThreshold:number;loThreshold:number;ribbonMin:number}
 interface SMCSettings{swingLen:number;showOB:boolean;showFVG:boolean;obCount:number}
@@ -313,19 +364,19 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const candlesRef      = useRef<Candle[]>([])
   const mpLinesRef      = useRef<any[]>([])
   const onRangeRef      = useRef(onVisibleRangeChange)
-  const settingExternal = useRef(false)
+  // Anti-loop: store the logical range we last set programmatically.
+  // When LW echoes back that exact range, we swallow it (it's not a user action).
+  // Any range that differs by more than eps = real user interaction → forward to oscillators.
+  const lastSetLogical  = useRef<{from:number;to:number}|null>(null)
   useEffect(() => { onRangeRef.current = onVisibleRangeChange }, [onVisibleRangeChange])
 
   // Oscillateurs → LW : appliquer la plage envoyée par un oscillateur
   useEffect(() => {
     if (!syncRangeIn || !chartApi.current || !candlesRef.current.length) return
     const total = candlesRef.current.length
-    settingExternal.current = true
-    chartApi.current.timeScale().setVisibleLogicalRange({
-      from: syncRangeIn.from * total,
-      to:   syncRangeIn.to   * total,
-    })
-    setTimeout(() => { settingExternal.current = false }, 50)
+    const target = { from: syncRangeIn.from * total, to: syncRangeIn.to * total }
+    lastSetLogical.current = target
+    chartApi.current.timeScale().setVisibleLogicalRange(target)
   }, [syncRangeIn])
 
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
@@ -347,7 +398,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const [settingsOpen, setSettingsOpen] = useState<string|null>(null)
 
   // Indicator toggles
-  const [indOn, setIndOn] = useState<Record<string,boolean>>({smc:false,msd:false,vmc:false,mp:false})
+  const [indOn, setIndOn] = useState<Record<string,boolean>>({smc:false,msd:false,vmc:false,mp:false,rsiDiv:false})
 
   // Indicator settings
   const [vmcS, setVmcS] = useState<VMCSettings>({smoothLen:10,signalMult:1.75,upThreshold:35,loThreshold:-35,ribbonMin:5})
@@ -356,10 +407,11 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const [mpS,  setMpS]  = useState<MPSettings>({bins:30,showProfile:true})
 
   // Computed results
-  const [smcResult, setSmcResult] = useState<SMCResult|null>(null)
-  const [msdResult, setMsdResult] = useState<MSDResult|null>(null)
-  const [vmcResult, setVmcResult] = useState<VMCResult|null>(null)
-  const [mpResult,  setMpResult]  = useState<MPResult|null>(null)
+  const [smcResult,    setSmcResult]    = useState<SMCResult|null>(null)
+  const [msdResult,    setMsdResult]    = useState<MSDResult|null>(null)
+  const [vmcResult,    setVmcResult]    = useState<VMCResult|null>(null)
+  const [mpResult,     setMpResult]     = useState<MPResult|null>(null)
+  const [rsiDivResult, setRsiDivResult] = useState<RSIDivResult|null>(null)
 
   // Recalculate when settings change
   useEffect(()=>{const c=candlesRef.current;if(c.length)setSmcResult(calcSMC(c,smcS.swingLen))},[smcS.swingLen])
@@ -389,10 +441,18 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       timeScale:{borderColor:bsub,timeVisible:true,secondsVisible:false},
     })
     chartApi.current=c
-    // LW → oscillateurs : émet des fractions 0-1 (sauf si c'est nous qui avons bougé le range)
+    // LW → oscillateurs : émet des fractions 0-1
+    // Si l'événement correspond exactement à ce qu'on vient de définir programmatiquement,
+    // on l'ignore (écho) — sinon c'est une vraie interaction utilisateur.
     c.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (settingExternal.current) return   // évite la boucle infinie
       if (!range || !candlesRef.current.length) return
+      if (lastSetLogical.current) {
+        const eps = 0.5  // tolérance d'un demi-bar
+        const eq = Math.abs(range.from - lastSetLogical.current.from) < eps &&
+                   Math.abs(range.to   - lastSetLogical.current.to  ) < eps
+        lastSetLogical.current = null  // consommé dans tous les cas
+        if (eq) return  // c'était l'écho de notre setVisibleLogicalRange
+      }
       const total = candlesRef.current.length
       onRangeRef.current?.(
         Math.max(0, range.from / total),
@@ -434,6 +494,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       setMsdResult(calcMSD(candles,msdS.swingLen))
       setVmcResult(calcVMC(candles,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold))
       setMpResult(calcMP(candles,mpS.bins))
+      setRsiDivResult(calcRSIDiv(candles))
       setFetchError(null)
     }
     setLoading(false)
@@ -649,7 +710,36 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         ctx.fillRect(cw-bw-2,y-2,bw,4)
       })
     }
-  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,msdResult,vmcResult,mpResult,smcS,msdS,mpS,snapPrice])
+
+    // ── RSI Divergences ───────────────────────────────────────────────
+    if(indOn.rsiDiv&&rsiDivResult){
+      const drawDiv=(pair:RSIDivPair,isBull:boolean)=>{
+        const lc=candles[pair.leftIdx],rc=candles[pair.rightIdx]
+        if(!lc||!rc)return
+        const x1=toX(lc.time),y1=toY(pair.leftPrice)
+        const x2=toX(rc.time),y2=toY(pair.rightPrice)
+        if(x1==null||x2==null||y1==null||y2==null)return
+        const col=isBull?'#22C759':'#FF3B30'
+        ctx.save()
+        // Dotted line connecting pivots
+        ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.globalAlpha=0.8
+        ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.setLineDash([])
+        // Circles at both pivot prices
+        ctx.fillStyle=col;ctx.globalAlpha=0.9
+        ctx.beginPath();ctx.arc(x1,y1,4,0,Math.PI*2);ctx.fill()
+        ctx.beginPath();ctx.arc(x2,y2,4,0,Math.PI*2);ctx.fill()
+        // Label on the right pivot
+        ctx.font='bold 9px JetBrains Mono, monospace';ctx.globalAlpha=1
+        const lbl=isBull?'REG BULL':'REG BEAR'
+        const tw=ctx.measureText(lbl).width+8
+        ctx.fillStyle=col+'28';ctx.beginPath();ctx.roundRect?.(x2-tw/2,isBull?y2+6:y2-18,tw,13,3);ctx.fill()
+        ctx.fillStyle=col;ctx.fillText(lbl,x2-tw/2+4,isBull?y2+16:y2-8)
+        ctx.restore()
+      }
+      rsiDivResult.bullDivs.forEach(p=>drawDiv(p,true))
+      rsiDivResult.bearDivs.forEach(p=>drawDiv(p,false))
+    }
+  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice])
 
   // RAF loop for smooth redraw on any viewport change
   useEffect(()=>{
@@ -761,10 +851,11 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   }
 
   const INDS=[
-    {id:'smc',icon:'🏦',label:'SMC',color:'var(--tm-blue)'},
-    {id:'msd',icon:'📊',label:'Structure',color:'var(--tm-profit)'},
-    {id:'vmc',icon:'〜',label:'VMC',color:'var(--tm-purple)'},
-    {id:'mp', icon:'📈',label:'Mkt Profile',color:'var(--tm-warning)'},
+    {id:'smc',    icon:'🏦', label:'SMC',         color:'var(--tm-blue)',    noSettings:false},
+    {id:'msd',    icon:'📊', label:'Structure',   color:'var(--tm-profit)', noSettings:false},
+    {id:'vmc',    icon:'〜', label:'VMC',         color:'var(--tm-purple)', noSettings:false},
+    {id:'mp',     icon:'📈', label:'Mkt Profile', color:'var(--tm-warning)',noSettings:false},
+    {id:'rsiDiv', icon:'◇',  label:'RSI Div',     color:'#FF9F0A',          noSettings:true},
   ]
   const TOOLS=[
     {id:'cursor',icon:'↖',label:'Sélection'},
@@ -802,17 +893,19 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         <span style={{fontSize:9,color:'var(--tm-text-muted)',fontWeight:700,flexShrink:0}}>INDICATEURS :</span>
         {INDS.map(ind=>(
           <div key={ind.id} style={{display:'flex',alignItems:'center',gap:0}}>
-            <button onClick={()=>toggleInd(ind.id)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:'6px 0 0 6px',fontSize:10,fontWeight:600,cursor:'pointer',
-              border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,borderRight:'none',
+            <button onClick={()=>toggleInd(ind.id)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',
+              borderRadius:ind.noSettings?'6px':'6px 0 0 6px',fontSize:10,fontWeight:600,cursor:'pointer',
+              border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,
+              borderRight:ind.noSettings?undefined:'none',
               background:indOn[ind.id]?`${ind.color}18`:'transparent',
               color:indOn[ind.id]?ind.color:'var(--tm-text-muted)'}}>
               {ind.icon} {ind.label}
               {indOn[ind.id]&&<span style={{width:5,height:5,borderRadius:'50%',background:ind.color,display:'inline-block'}}/>}
             </button>
-            <button onClick={()=>setSettingsOpen(settingsOpen===ind.id?null:ind.id)} style={{padding:'3px 6px',borderRadius:'0 6px 6px 0',fontSize:10,cursor:'pointer',
+            {!ind.noSettings&&<button onClick={()=>setSettingsOpen(settingsOpen===ind.id?null:ind.id)} style={{padding:'3px 6px',borderRadius:'0 6px 6px 0',fontSize:10,cursor:'pointer',
               border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,
               background:settingsOpen===ind.id?`${ind.color}28`:'transparent',
-              color:settingsOpen===ind.id?ind.color:'var(--tm-text-muted)'}}>⚙</button>
+              color:settingsOpen===ind.id?ind.color:'var(--tm-text-muted)'}}>⚙</button>}
           </div>
         ))}
       </div>

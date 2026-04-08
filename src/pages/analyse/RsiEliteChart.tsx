@@ -11,11 +11,11 @@ const fbFn = getFunctions(app, 'europe-west1')
 interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
 
 const TF_OPTIONS = [
-  { label: '15m', interval: '15m', limit: 200 },
-  { label: '1H',  interval: '1h',  limit: 200 },
-  { label: '4H',  interval: '4h',  limit: 200 },
-  { label: '1J',  interval: '1d',  limit: 200 },
-  { label: '1S',  interval: '1w',  limit: 200 },
+  { label: '15m', interval: '15m', limit: 500 },
+  { label: '1H',  interval: '1h',  limit: 500 },
+  { label: '4H',  interval: '4h',  limit: 500 },
+  { label: '1J',  interval: '1d',  limit: 500 },
+  { label: '1S',  interval: '1w',  limit: 500 },
 ]
 
 // Une paire de pivots qui forment une divergence

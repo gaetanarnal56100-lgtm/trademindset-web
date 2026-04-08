@@ -845,6 +845,8 @@ export default function AnalysePage() {
   const [syncInterval,     setSyncInterval]     = useState<string>('1h')
   const [syncRange,        setSyncRange]        = useState<{from:number;to:number}|null>(null)
   const [syncRangeFromOsc, setSyncRangeFromOsc] = useState<{from:number;to:number}|null>(null)
+  // Toggle synchronisation UT + viewport entre LightweightChart et oscillateurs
+  const [syncEnabled, setSyncEnabled] = useState(true)
   const handleOscViewport = useCallback((from:number, to:number) => {
     setSyncRangeFromOsc({ from, to })
   }, [])
@@ -1120,25 +1122,56 @@ export default function AnalysePage() {
       {/* ══ CHART + OSCILLATEURS COLLÉS ══ */}
       {symbol && (
         <div style={{marginBottom:16}}>
+          {/* Barre de contrôle sync UT */}
+          <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 12px',marginBottom:4,background:'var(--tm-bg-secondary)',border:'1px solid var(--tm-border)',borderRadius:10}}>
+            <span style={{fontSize:11,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>🔗 Sync UT &amp; viewport</span>
+            <button
+              onClick={() => setSyncEnabled(p => !p)}
+              style={{
+                padding:'3px 12px',borderRadius:20,fontSize:10,fontWeight:600,cursor:'pointer',
+                border:`1px solid ${syncEnabled ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
+                background: syncEnabled ? 'rgba(0,229,255,0.12)' : 'var(--tm-bg-tertiary)',
+                color: syncEnabled ? 'var(--tm-accent)' : 'var(--tm-text-muted)',
+                transition:'all 0.15s',
+              }}
+            >{syncEnabled ? '✓ Activé' : '✗ Désactivé'}</button>
+            {syncEnabled && <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>UT: {syncInterval} · zoom/pan partagé</span>}
+          </div>
+
           {/* Chart principal LightweightChart */}
           <ChartLayout
             symbol={symbol}
             isCrypto={isCryptoSymbol(symbol)}
             onTimeframeChange={setSyncInterval}
-            onVisibleRangeChange={(from, to) => setSyncRange({ from, to })}
-            syncRangeIn={syncRangeFromOsc}
+            onVisibleRangeChange={syncEnabled ? (from, to) => setSyncRange({ from, to }) : undefined}
+            syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
           />
 
           {/* Oscillateurs collés directement sous la chart, sync bidirectionnelle */}
           <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:0}}>
             <ShareWrapper label="WaveTrend">
-              <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} onViewportChange={handleOscViewport} />
+              <WaveTrendChart
+                symbol={symbol}
+                syncInterval={syncEnabled ? syncInterval : undefined}
+                visibleRange={syncEnabled ? syncRange : null}
+                onViewportChange={syncEnabled ? handleOscViewport : undefined}
+              />
             </ShareWrapper>
             <ShareWrapper label="VMC">
-              <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} onViewportChange={handleOscViewport} />
+              <VMCOscillatorChart
+                symbol={symbol}
+                syncInterval={syncEnabled ? syncInterval : undefined}
+                visibleRange={syncEnabled ? syncRange : null}
+                onViewportChange={syncEnabled ? handleOscViewport : undefined}
+              />
             </ShareWrapper>
             <ShareWrapper label="RSI Elite">
-              <RsiEliteChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} onViewportChange={handleOscViewport} />
+              <RsiEliteChart
+                symbol={symbol}
+                syncInterval={syncEnabled ? syncInterval : undefined}
+                visibleRange={syncEnabled ? syncRange : null}
+                onViewportChange={syncEnabled ? handleOscViewport : undefined}
+              />
             </ShareWrapper>
           </div>
         </div>
