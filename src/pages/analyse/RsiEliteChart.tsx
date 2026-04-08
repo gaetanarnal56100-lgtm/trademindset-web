@@ -182,8 +182,8 @@ function draw(
   const N = visible.length
   if (N < 2) return
 
-  // toX utilise totalSlots pour l'alignement avec la marge droite de LW
-  const toX = (i: number) => PAD_L + (i / Math.max(totalSlots - 1, 1)) * cW
+  // toX : même formule que LW → slot/totalSlots*W (PAS totalSlots-1)
+  const toX = (i: number) => PAD_L + (i / Math.max(totalSlots, 1)) * cW
   const toY = (v: number) => PAD_T + (1 - v/100) * cH
 
   // ── Background ────────────────────────────────────────────────────────

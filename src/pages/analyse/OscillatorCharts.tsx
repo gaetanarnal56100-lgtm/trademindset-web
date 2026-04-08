@@ -197,8 +197,8 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   const allVals=[...m,...s,...h,obLevel,osLevel,0]
   const minV=Math.min(...allVals)*1.1,maxV=Math.max(...allVals)*1.1,range=maxV-minV||1
   const yp=(v:number)=>oscH-((v-minV)/range)*oscH
-  // xp utilise totalSlots pour que la marge droite corresponde exactement à celle de LW
-  const xp=(i:number)=>(i/Math.max(totalSlots-1,1))*W
+  // xp : même formule que LW → (slot - from)/(to - from)*W → slot/totalSlots*W (PAS totalSlots-1)
+  const xp=(i:number)=>(i/Math.max(totalSlots,1))*W
 
   // Background zones
   ctx.fillStyle=`rgba(${resolveCSSColor('--tm-loss-rgb','255,59,48')},0.06)`;ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
@@ -215,8 +215,8 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   ctx.fillText(String(osLevel),W-4,yp(osLevel)+11)
   ctx.fillText('0',W-4,yp(0)-3)
 
-  // Histogram
-  const barW=W/m.length
+  // Histogram — largeur de barre = 1 slot = W/totalSlots
+  const barW=W/totalSlots
   h.forEach((v,i)=>{const x=xp(i),y=v>=0?yp(v):yp(0),bH=Math.abs(yp(v)-yp(0));ctx.fillStyle=v>=0?histBullColor:histBearColor;ctx.fillRect(x-barW/2+0.5,y,barW-1,bH||1)})
 
   // Signal & Main lines
