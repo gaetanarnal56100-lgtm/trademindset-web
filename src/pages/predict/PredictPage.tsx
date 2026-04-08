@@ -5,6 +5,7 @@ import { useUser } from '@/hooks/useAuth'
 import { callAwardXP } from '@/services/gamification/prestigeEngine'
 import {
   createPrediction, getUserPredictions, getCommunityPredictions, getAllRecentPredictions,
+  getVirtualBalance, updateVirtualBalance, claimDailyRefill,
   type Prediction, type PredictionTimeframe,
 } from '@/services/firestore/predictions'
 import { Timestamp } from 'firebase/firestore'
@@ -246,11 +247,13 @@ function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
 // ═══════════════════════════════════════════════════════════════
 // ONGLET 1 — Prédire
 // ═══════════════════════════════════════════════════════════════
-function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
+function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSDT, onBalanceChange }: {
   uid: string
   displayName?: string
   onToast: (msg: string) => void
   onPredictionCreated: () => void
+  virtualUSDT: number | null
+  onBalanceChange: (delta: number) => void
 }) {
   const [assetType, setAssetType] = useState<AssetType>('crypto')
   const [symbol, setSymbol]       = useState<string>('BTC')
@@ -262,6 +265,9 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
   const [submitting, setSubmitting] = useState(false)
   const [communityPreds, setCommunityPreds] = useState<Prediction[]>([])
   const [commLoading, setCommLoading] = useState(false)
+  // ── USDT virtuel ─────────────────────────────────────────────
+  const [stake, setStake]         = useState(0)
+  const [stakeOpen, setStakeOpen] = useState(false)
 
   // ── Fixed resolve time + random lock ────────────────────────
   const [resolveDate, setResolveDate] = useState<Date>(() => nextResolveAt('24h'))
@@ -339,6 +345,13 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         throw new Error('Les paris sont fermés pour ce round')
       }
       const resolveAt = Timestamp.fromDate(resolveDate)
+      // Déduction USDT virtuel avant création (pour bloquer si solde insuffisant)
+      if (stake > 0) {
+        if ((virtualUSDT ?? 0) < stake) throw new Error(`Solde insuffisant (${virtualUSDT ?? 0} USDT)`)
+        await updateVirtualBalance(uid, -stake)
+        onBalanceChange(-stake)
+      }
+
       await createPrediction({
         uid,
         symbol,
@@ -352,6 +365,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         status: 'pending',
         createdAt: Timestamp.now(),
         displayName: anonymize(displayName),
+        ...(stake > 0 ? { stake, odds: 1.9, potentialWin: +(stake * 1.9).toFixed(2) } : {}),
       })
 
       // +3 XP pour la soumission
@@ -370,11 +384,14 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
         predictionLastDate:     d.predictionLastDate ?? '',
       }
       const newBadges = await checkAndAwardPredictionBadges(uid, stats)
+      const stakeMsg = stake > 0 ? ` · 💰 -${stake} USDT misés` : ''
       if (newBadges.length > 0) {
         onToast(`🏆 Badge${newBadges.length > 1 ? 's' : ''} débloqué${newBadges.length > 1 ? 's' : ''} : ${newBadges.map(b => b.icon + ' ' + b.name).join(', ')}`)
       } else {
-        onToast(`✅ Prédiction soumise · +3 XP · Résolution le ${fmtTime(resolveDate)}`)
+        onToast(`✅ Prédiction soumise · +3 XP${stakeMsg} · Résolution le ${fmtTime(resolveDate)}`)
       }
+      setStake(0)
+      setStakeOpen(false)
       onPredictionCreated()
     } catch (e) {
       onToast(`❌ Erreur : ${(e as Error).message}`)
@@ -545,6 +562,70 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
           )}
         </div>
 
+        {/* Panel mise USDT virtuel */}
+        <div style={{ background: 'var(--tm-bg-secondary)', border: `1px solid ${stakeOpen ? 'rgba(255,159,10,0.35)' : 'var(--tm-border)'}`, borderRadius: 12, overflow: 'hidden' }}>
+          <button
+            onClick={() => setStakeOpen(o => !o)}
+            style={{ width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, color: stakeOpen ? '#FF9F0A' : 'var(--tm-text-secondary)' }}>
+              💰 Miser des USDT virtuels
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {virtualUSDT != null && (
+                <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--tm-text-muted)' }}>
+                  Solde: {virtualUSDT.toLocaleString('fr-FR')} USDT
+                </span>
+              )}
+              <span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>{stakeOpen ? '▲' : '▼'}</span>
+            </span>
+          </button>
+          {stakeOpen && (
+            <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Slider */}
+              <input
+                type="range"
+                min={0}
+                max={Math.min(500, virtualUSDT ?? 500)}
+                step={10}
+                value={stake}
+                onChange={e => setStake(Number(e.target.value))}
+                style={{ width: '100%', accentColor: '#FF9F0A' }}
+              />
+              {/* Presets */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[10, 50, 100].map(v => (
+                  <button key={v} onClick={() => setStake(Math.min(v, virtualUSDT ?? v))}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${stake === v ? '#FF9F0A' : 'var(--tm-border)'}`, background: stake === v ? 'rgba(255,159,10,0.15)' : 'var(--tm-bg-tertiary)', color: stake === v ? '#FF9F0A' : 'var(--tm-text-secondary)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace' }}>
+                    {v}
+                  </button>
+                ))}
+                <button onClick={() => setStake(Math.min(500, virtualUSDT ?? 0))}
+                  style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--tm-border)', background: 'var(--tm-bg-tertiary)', color: 'var(--tm-text-secondary)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  Max
+                </button>
+                {stake > 0 && (
+                  <button onClick={() => setStake(0)}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--tm-border)', background: 'var(--tm-bg-tertiary)', color: 'var(--tm-text-muted)', fontSize: 11, cursor: 'pointer' }}>
+                    Annuler
+                  </button>
+                )}
+              </div>
+              {/* Résumé */}
+              {stake > 0 ? (
+                <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--tm-text-primary)', background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.2)', borderRadius: 8, padding: '8px 10px' }}>
+                  <span style={{ color: 'var(--tm-text-secondary)' }}>Mise: </span>
+                  <span style={{ color: '#FF9F0A', fontWeight: 700 }}>{stake} USDT</span>
+                  <span style={{ color: 'var(--tm-text-secondary)' }}> → Gain potentiel: </span>
+                  <span style={{ color: 'var(--tm-profit)', fontWeight: 700 }}>+{(stake * 0.9).toFixed(0)} USDT</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Aucune mise — déplace le slider pour miser (odds ×1.9)</div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* XP preview card */}
         <div style={{ background: 'linear-gradient(135deg, rgba(var(--tm-accent-rgb,0,229,255),0.06), rgba(191,90,242,0.06))', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)', borderRadius: 12, padding: '12px 14px' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', marginBottom: 8 }}>⚡ XP potentiel</div>
@@ -628,10 +709,12 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated }: {
 // ═══════════════════════════════════════════════════════════════
 // ONGLET 2 — Mes prédictions
 // ═══════════════════════════════════════════════════════════════
-function MyPredictionsTab({ uid, onToast, refreshKey }: {
+function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChange }: {
   uid: string
   onToast: (msg: string) => void
   refreshKey: number
+  virtualUSDT: number | null
+  onBalanceChange: (delta: number) => void
 }) {
   const [preds, setPreds]         = useState<Prediction[]>([])
   const [loading, setLoading]     = useState(true)
@@ -665,11 +748,18 @@ function MyPredictionsTab({ uid, onToast, refreshKey }: {
         }
         const newBadges = await checkAndAwardPredictionBadges(uid, stats)
 
+        // Mettre à jour le solde UI avec la variation totale USDT
+        const totalBalanceChange = summaries.reduce((acc, s) => acc + s.balanceChange, 0)
+        if (totalBalanceChange !== 0) onBalanceChange(totalBalanceChange)
+
         for (const s of summaries) {
           const xpMsg = s.xpEarned > 0 ? ` · +${s.xpEarned + 5} XP` : ''
+          const usdtMsg = s.balanceChange !== 0
+            ? ` · ${s.balanceChange > 0 ? '+' : ''}${s.balanceChange.toFixed(0)} USDT`
+            : ''
           onToast(
             `${resultEmoji(s.isCorrect, s.accuracy)} ${s.prediction.symbol} résolu — ` +
-            `${s.isCorrect ? 'Correct ✓' : 'Incorrect ✗'} · Précision ${s.accuracy.toFixed(2)}%${xpMsg}`,
+            `${s.isCorrect ? 'Correct ✓' : 'Incorrect ✗'} · Précision ${s.accuracy.toFixed(2)}%${xpMsg}${usdtMsg}`,
           )
         }
         if (newBadges.length > 0) {
@@ -694,8 +784,31 @@ function MyPredictionsTab({ uid, onToast, refreshKey }: {
     </div>
   )
 
+  const [claiming, setClaiming] = useState(false)
+  const handleClaim = async () => {
+    setClaiming(true)
+    const ok = await claimDailyRefill(uid)
+    if (ok) {
+      onBalanceChange(200)
+      onToast('💸 +200 USDT virtuels réclamés !')
+    } else {
+      onToast('ℹ️ Recharge déjà utilisée aujourd\'hui ou solde suffisant')
+    }
+    setClaiming(false)
+  }
+
   return (
     <div>
+      {/* Bannière recharge (solde bas) */}
+      {virtualUSDT != null && virtualUSDT < 50 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+          <span style={{ fontSize: 12, color: '#FF9F0A' }}>💸 Solde bas ({virtualUSDT} USDT) — récupère ta recharge quotidienne !</span>
+          <button onClick={handleClaim} disabled={claiming}
+            style={{ padding: '5px 12px', borderRadius: 8, border: 'none', background: '#FF9F0A', color: '#000', fontSize: 11, fontWeight: 700, cursor: claiming ? 'default' : 'pointer', opacity: claiming ? 0.7 : 1 }}>
+            {claiming ? '…' : '+200 USDT'}
+          </button>
+        </div>
+      )}
       {resolving && (
         <div style={{ background: 'rgba(var(--tm-accent-rgb,0,229,255),0.05)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--tm-accent)' }}>
           ⏳ Résolution des prédictions expirées en cours…
@@ -812,6 +925,22 @@ function PredCard({ pred }: { pred: Prediction }) {
               </span>
             )}
           </div>
+
+          {/* Mise USDT (si applicable) */}
+          {pred.stake != null && pred.stake > 0 && (
+            <div style={{ marginTop: 5, fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>
+              {isPending && (
+                <span style={{ color: '#FF9F0A' }}>
+                  💰 Mise: {pred.stake} USDT → Gain potentiel: +{(pred.stake * 0.9).toFixed(0)} USDT
+                </span>
+              )}
+              {isResolved && pred.balanceChange != null && pred.balanceChange !== 0 && (
+                <span style={{ color: pred.balanceChange > 0 ? 'var(--tm-profit)' : 'var(--tm-loss)', fontWeight: 700 }}>
+                  {pred.balanceChange > 0 ? '+' : ''}{pred.balanceChange.toFixed(0)} USDT
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Accuracy bar (si résolu) */}
           {isResolved && pred.accuracy != null && (
@@ -974,6 +1103,7 @@ export default function PredictPage() {
     predictionStreak: 0,
     predictionBestAccuracy: 100,
   })
+  const [virtualUSDT, setVirtualUSDT] = useState<number | null>(null)
 
   useEffect(() => {
     if (!user?.uid) return
@@ -987,7 +1117,11 @@ export default function PredictPage() {
         })
       }
     })
+    getVirtualBalance(user.uid).then(setVirtualUSDT)
   }, [user?.uid, refreshKey])
+
+  const handleBalanceChange = (delta: number) =>
+    setVirtualUSDT(prev => prev != null ? +(prev + delta).toFixed(2) : null)
 
   if (!user) return null
 
@@ -1010,15 +1144,16 @@ export default function PredictPage() {
           </p>
         </div>
         {/* Stats rapides */}
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {[
-            { label: 'Prédictions', value: userStats.predictionsTotal, icon: '🎯' },
-            { label: 'Streak correct', value: userStats.predictionStreak, icon: '🔥' },
-            { label: 'Meilleure précision', value: userStats.predictionBestAccuracy < 100 ? `${userStats.predictionBestAccuracy.toFixed(1)}%` : '—', icon: '💎' },
-          ].map(({ label, value, icon }) => (
-            <div key={label} style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 10, padding: '8px 14px', textAlign: 'center' }}>
+            { label: 'USDT virtuel', value: virtualUSDT != null ? `${virtualUSDT.toLocaleString('fr-FR')}` : '—', icon: '💰', highlight: virtualUSDT != null && virtualUSDT < 50 },
+            { label: 'Prédictions', value: userStats.predictionsTotal, icon: '🎯', highlight: false },
+            { label: 'Streak correct', value: userStats.predictionStreak, icon: '🔥', highlight: false },
+            { label: 'Meilleure précision', value: userStats.predictionBestAccuracy < 100 ? `${userStats.predictionBestAccuracy.toFixed(1)}%` : '—', icon: '💎', highlight: false },
+          ].map(({ label, value, icon, highlight }) => (
+            <div key={label} style={{ background: 'var(--tm-bg-secondary)', border: `1px solid ${highlight ? 'rgba(255,159,10,0.4)' : 'var(--tm-border)'}`, borderRadius: 10, padding: '8px 14px', textAlign: 'center' }}>
               <div style={{ fontSize: 18 }}>{icon}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: highlight ? '#FF9F0A' : 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{value ?? '—'}</div>
               <div style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>{label}</div>
             </div>
           ))}
@@ -1046,6 +1181,8 @@ export default function PredictPage() {
           displayName={user.displayName ?? undefined}
           onToast={msg => { setToast(msg) }}
           onPredictionCreated={() => setRefreshKey(k => k + 1)}
+          virtualUSDT={virtualUSDT}
+          onBalanceChange={handleBalanceChange}
         />
       )}
       {tab === 'mine' && (
@@ -1053,6 +1190,8 @@ export default function PredictPage() {
           uid={user.uid}
           onToast={msg => setToast(msg)}
           refreshKey={refreshKey}
+          virtualUSDT={virtualUSDT}
+          onBalanceChange={handleBalanceChange}
         />
       )}
       {tab === 'community' && (

@@ -2,8 +2,8 @@
 // Collection globale (shared entre tous les utilisateurs)
 
 import {
-  collection, doc, addDoc, getDocs, runTransaction,
-  query, where, orderBy, limit, Timestamp, setDoc,
+  collection, doc, addDoc, getDocs, getDoc, runTransaction,
+  query, where, orderBy, limit, Timestamp, setDoc, increment,
 } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 
@@ -29,6 +29,11 @@ export interface Prediction {
   xpEarned?: number
   createdAt: Timestamp
   displayName?: string       // anonymisé, ex: "J***"
+  // ── USDT virtuel ──────────────────────────────────────────────
+  stake?: number             // montant misé (0 ou absent = pas de pari)
+  odds?: number              // toujours 1.9 — stocké pour flexibilité future
+  potentialWin?: number      // stake * 1.9 (pré-calculé)
+  balanceChange?: number     // +stake*0.9 si correct, -stake si incorrect (rempli à la résolution)
 }
 
 export interface UserPredictionStats {
@@ -128,4 +133,54 @@ export async function updateUserPredictionStats(
   stats: Partial<UserPredictionStats>,
 ): Promise<void> {
   await setDoc(doc(db, 'users', uid), stats, { merge: true })
+}
+
+// ── USDT Virtuel ───────────────────────────────────────────────
+
+const VIRTUAL_USDT_INIT = 1000
+const REFILL_AMOUNT      = 200
+const REFILL_THRESHOLD   = 50  // solde < 50 → éligible à la recharge
+
+/**
+ * Récupère le solde USDT virtuel de l'utilisateur.
+ * Initialise à 1000 USDT si le champ est absent (lazy init).
+ */
+export async function getVirtualBalance(uid: string): Promise<number> {
+  const snap = await getDoc(doc(db, 'users', uid))
+  if (!snap.exists()) return VIRTUAL_USDT_INIT
+  const d = snap.data()
+  if (d.virtualUSDT == null) {
+    // Première fois — initialiser à 1000
+    await setDoc(doc(db, 'users', uid), { virtualUSDT: VIRTUAL_USDT_INIT }, { merge: true })
+    return VIRTUAL_USDT_INIT
+  }
+  return d.virtualUSDT as number
+}
+
+/**
+ * Incrémente (ou décrémente) le solde USDT virtuel de façon atomique.
+ * delta positif = crédit, négatif = débit.
+ */
+export async function updateVirtualBalance(uid: string, delta: number): Promise<void> {
+  await setDoc(doc(db, 'users', uid), { virtualUSDT: increment(delta) }, { merge: true })
+}
+
+/**
+ * Réclame la recharge quotidienne de 200 USDT si :
+ * - solde < REFILL_THRESHOLD
+ * - pas déjà réclamé aujourd'hui
+ * Retourne true si la recharge a été accordée.
+ */
+export async function claimDailyRefill(uid: string): Promise<boolean> {
+  const snap = await getDoc(doc(db, 'users', uid))
+  const d = snap.exists() ? snap.data() : {}
+  const balance: number = d.virtualUSDT ?? VIRTUAL_USDT_INIT
+  if (balance >= REFILL_THRESHOLD) return false
+  const today = new Date().toISOString().slice(0, 10)
+  if (d.virtualUSDTLastRefill === today) return false
+  await setDoc(doc(db, 'users', uid), {
+    virtualUSDT: increment(REFILL_AMOUNT),
+    virtualUSDTLastRefill: today,
+  }, { merge: true })
+  return true
 }

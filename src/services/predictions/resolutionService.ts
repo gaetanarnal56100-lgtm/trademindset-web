@@ -6,6 +6,7 @@ import app from '@/services/firebase/config'
 import { callAwardXP } from '@/services/gamification/prestigeEngine'
 import {
   getPendingExpiredPredictions, resolvePrediction, updateUserPredictionStats,
+  updateVirtualBalance,
   type Prediction, type UserPredictionStats,
 } from '@/services/firestore/predictions'
 import { doc, getDoc, Timestamp } from 'firebase/firestore'
@@ -27,6 +28,7 @@ export interface ResolvedSummary {
   isCorrect: boolean
   accuracy: number
   xpEarned: number
+  balanceChange: number  // variation USDT virtuel (+profit ou 0 si pas de mise)
 }
 
 // ── Prix Binance ───────────────────────────────────────────────
@@ -141,17 +143,31 @@ export async function resolveExpiredPredictions(uid: string): Promise<ResolvedSu
       Math.abs(actualPrice - pred.predictedPrice) / actualPrice * 100
     const xpEarned = computeXP(isCorrect, accuracy)
 
-    // 3. Résoudre (transaction anti-doublon)
+    // 3. Calculer la variation USDT virtuelle
+    const stake = pred.stake ?? 0
+    let balanceChange = 0
+    if (stake > 0) {
+      if (isCorrect) {
+        // Rend la mise × 1.9 (mise remboursée + 90% de profit)
+        balanceChange = +(stake * 0.9)  // le stake original a déjà été déduit à la soumission
+        await updateVirtualBalance(uid, stake * 1.9)
+      } else {
+        balanceChange = -stake  // déjà déduit à la soumission — juste pour l'affichage
+      }
+    }
+
+    // 4. Résoudre (transaction anti-doublon)
     const resolved = await resolvePrediction(pred.id, {
       status: 'resolved',
       actualPrice,
       isCorrect,
       accuracy,
       xpEarned,
+      balanceChange,
     })
     if (!resolved) continue // déjà résolu par un autre onglet
 
-    // 4. Award XP
+    // 5. Award XP
     if (isCorrect) {
       await callAwardXP(5,  'prediction_correct',      pred.id)
       if (accuracy <= 1)   await callAwardXP(8,  'prediction_accurate_1',   pred.id)
@@ -159,7 +175,7 @@ export async function resolveExpiredPredictions(uid: string): Promise<ResolvedSu
       if (accuracy <= 0.1) await callAwardXP(30, 'prediction_oracle',       pred.id)
     }
 
-    // 5. Mettre à jour les stats
+    // 6. Mettre à jour les stats
     stats = {
       ...stats,
       predictionsCorrect:     stats.predictionsCorrect + (isCorrect ? 1 : 0),
@@ -169,7 +185,7 @@ export async function resolveExpiredPredictions(uid: string): Promise<ResolvedSu
         : stats.predictionBestAccuracy,
     }
 
-    summaries.push({ prediction: pred, actualPrice, isCorrect, accuracy, xpEarned })
+    summaries.push({ prediction: pred, actualPrice, isCorrect, accuracy, xpEarned, balanceChange })
   }
 
   // 6. Persister les stats (une seule écriture)
