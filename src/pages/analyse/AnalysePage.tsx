@@ -848,12 +848,13 @@ function OISparkline({vals}:{vals:number[]}){
 
 // Segmented CVD History — multi-line par bucket de volume (proxy klines)
 interface SegHistPt { t: number; small: number; medium: number; large: number; institutional: number; whales: number }
+// SEG_LINES_CFG dérive de SEG_CFG pour garantir des couleurs identiques
 const SEG_LINES_CFG: { key: keyof SegHistPt; color: string; label: string; range: string; lw: number }[] = [
-  { key: 'whales',        color: '#EF5350', label: 'Whales',        range: '≥3× vol moy', lw: 2.0 },
-  { key: 'institutional', color: '#FFA726', label: 'Institutional', range: '2-3× vol',    lw: 1.6 },
-  { key: 'large',         color: '#66BB6A', label: 'Large',         range: '1.5-2× vol',  lw: 1.4 },
-  { key: 'medium',        color: '#42A5F5', label: 'Medium',        range: '0.7-1.5×',    lw: 1.2 },
-  { key: 'small',         color: '#607D8B', label: 'Small',         range: '<0.7× vol',   lw: 1.0 },
+  { key: 'whales',        color: SEG_CFG.whales.color,        label: SEG_CFG.whales.label,        range: '≥3× vol moy', lw: 2.0 },
+  { key: 'institutional', color: SEG_CFG.institutional.color, label: SEG_CFG.institutional.label, range: '2-3× vol',    lw: 1.6 },
+  { key: 'large',         color: SEG_CFG.large.color,         label: SEG_CFG.large.label,         range: '1.5-2× vol',  lw: 1.4 },
+  { key: 'medium',        color: SEG_CFG.medium.color,        label: SEG_CFG.medium.label,        range: '0.7-1.5×',    lw: 1.2 },
+  { key: 'small',         color: SEG_CFG.small.color,         label: SEG_CFG.small.label,         range: '<0.7× vol',   lw: 1.0 },
 ]
 function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -1465,6 +1466,7 @@ export default function AnalysePage() {
         </div>
 
         {/* CVD Panel */}
+        <ShareWrapper label={`CVD ${symbol}`}>
         <div style={C.card}><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:8}}>
@@ -1493,9 +1495,9 @@ export default function AnalysePage() {
             {/* Segment toggles */}
             <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
               {(Object.keys(SEG_CFG) as Seg[]).map(seg=>{const cfg=SEG_CFG[seg],on=segs.includes(seg),val=cvdAcc.current[seg]
-                return<button key={seg} onClick={()=>setSegs(prev=>on?prev.filter(s=>s!==seg):[...prev,seg])} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'5px 10px',borderRadius:8,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${on?cfg.color:'var(--tm-border)'}`,background:on?`${cfg.color}`:'var(--tm-bg-tertiary)',color:on?cfg.color:'var(--tm-text-muted)',transition:'all 0.15s'}}>
-                  <span>{cfg.label}</span>
-                  <span style={{fontSize:9,fontFamily:'monospace',color:val>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{val>=0?'+':''}{fmtU(val)}</span>
+                return<button key={seg} onClick={()=>setSegs(prev=>on?prev.filter(s=>s!==seg):[...prev,seg])} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'5px 10px',borderRadius:8,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${on?cfg.color:'var(--tm-border)'}`,background:on?cfg.color+'20':'var(--tm-bg-tertiary)',color:on?cfg.color:'var(--tm-text-muted)',transition:'all 0.15s',minWidth:60}}>
+                  <span style={{marginBottom:2}}>{cfg.label}</span>
+                  <span style={{fontSize:9,fontFamily:'JetBrains Mono,monospace',fontWeight:700,color:val>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{val>=0?'+':''}{fmtU(val)}</span>
                 </button>
               })}
             </div>
@@ -1526,6 +1528,7 @@ export default function AnalysePage() {
             </div>}
           </div>
         </div>
+        </ShareWrapper>
 
         {/* Order Flow */}
         <div style={C.card}><div style={C.top}/>
