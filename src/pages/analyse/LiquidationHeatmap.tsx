@@ -171,28 +171,38 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, t
     }
   }
 
-  // Bougies — petites, semi-transparentes, au dessus de la heatmap
+  // Bougies — coordonnées snappées au pixel entier pour un rendu net
   for(let ci=0;ci<data.N;ci++){
-    const c=data.candles[ci], cx=ci*colW+colW/2
+    const c=data.candles[ci]
     const bull=c.close>=c.open
-    const hY=H*(1-(c.high-data.pMin)/range)
-    const lY=H*(1-(c.low-data.pMin)/range)
-    const oY=H*(1-(c.open-data.pMin)/range)
-    const cY=H*(1-(c.close-data.pMin)/range)
-    const bW=Math.max(colW*0.5, 1.2)
 
-    const color=bull?'rgba(0,220,140,0.85)':'rgba(220,40,60,0.85)'
-    ctx.strokeStyle=color; ctx.lineWidth=0.7
-    ctx.beginPath(); ctx.moveTo(cx,hY); ctx.lineTo(cx,lY); ctx.stroke()
+    // Snap x : centrer sur pixel entier
+    const cx = Math.round(ci*colW + colW/2)
+    // Snap y : arrondi à l'entier le plus proche
+    const hY = Math.round(H*(1-(c.high -data.pMin)/range))
+    const lY = Math.round(H*(1-(c.low  -data.pMin)/range))
+    const oY = Math.round(H*(1-(c.open -data.pMin)/range))
+    const cY = Math.round(H*(1-(c.close-data.pMin)/range))
+    // Body width : entier minimum 1px
+    const bW = Math.max(Math.round(colW*0.6), 1)
+    const bX = cx - Math.floor(bW/2)
+
+    const color = bull ? 'rgba(0,220,140,0.92)' : 'rgba(220,40,60,0.92)'
+
+    // Mèche : cx+0.5 → trait de 1px exactement centré sur un pixel (pas de blur)
+    ctx.strokeStyle=color; ctx.lineWidth=1
+    ctx.beginPath(); ctx.moveTo(cx+0.5, hY); ctx.lineTo(cx+0.5, lY); ctx.stroke()
+
+    // Corps : tous entiers → fillRect net
     ctx.fillStyle=color
-    ctx.fillRect(cx-bW/2, Math.min(oY,cY), bW, Math.max(Math.abs(cY-oY),1))
+    ctx.fillRect(bX, Math.min(oY,cY), bW, Math.max(Math.abs(cY-oY), 1))
   }
 
   // Ligne prix courant
   if(price>0&&price>=data.pMin&&price<=data.pMax){
-    const py=H*(1-(price-data.pMin)/range)
+    const py=Math.round(H*(1-(price-data.pMin)/range))+0.5
     ctx.save(); ctx.setLineDash([4,3])
-    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=0.8
+    ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1
     ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(chartW,py); ctx.stroke()
     ctx.restore()
     const label=fmtP(price)
