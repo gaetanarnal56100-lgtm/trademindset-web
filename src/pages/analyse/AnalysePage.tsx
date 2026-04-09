@@ -746,52 +746,127 @@ function OISparkline({vals}:{vals:number[]}){
   return<canvas ref={ref} style={{width:'100%',height:54,display:'block',borderRadius:6}}/>
 }
 
-// Segmented CVD History — multi-line par bucket de taille d'ordre (inspiré Material Indicators)
+// Segmented CVD History — multi-line par bucket de volume (proxy klines)
 interface SegHistPt { t: number; small: number; medium: number; large: number; institutional: number; whales: number }
+const SEG_LINES_CFG: { key: keyof SegHistPt; color: string; label: string; range: string; lw: number }[] = [
+  { key: 'whales',        color: '#EF5350', label: 'Whales',        range: '≥3× vol moy', lw: 2.0 },
+  { key: 'institutional', color: '#FFA726', label: 'Institutional', range: '2-3× vol',    lw: 1.6 },
+  { key: 'large',         color: '#66BB6A', label: 'Large',         range: '1.5-2× vol',  lw: 1.4 },
+  { key: 'medium',        color: '#42A5F5', label: 'Medium',        range: '0.7-1.5×',    lw: 1.2 },
+  { key: 'small',         color: '#607D8B', label: 'Small',         range: '<0.7× vol',   lw: 1.0 },
+]
 function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const SEG_LINES: { key: keyof SegHistPt; color: string; label: string; range: string; lw: number }[] = [
-    { key: 'whales',        color: '#EF5350', label: 'Whales',        range: '>$1M',       lw: 2.5 },
-    { key: 'institutional', color: '#FFA726', label: 'Institutional', range: '$100k–1M',   lw: 1.8 },
-    { key: 'large',         color: '#66BB6A', label: 'Large',         range: '$10k–100k',  lw: 1.5 },
-    { key: 'medium',        color: '#42A5F5', label: 'Medium',        range: '$1k–10k',    lw: 1.2 },
-    { key: 'small',         color: '#607D8B', label: 'Small',         range: '$100–1k',    lw: 1.0 },
-  ]
+  const PAD_L = 56, PAD_B = 26, PAD_T = 10, PAD_R = 6
+  const H_CANVAS = 240
+
   useEffect(() => {
     const c = ref.current; if (!c || pts.length < 2) return
-    const dpr = window.devicePixelRatio || 1, W = c.offsetWidth || 700, H = 200
-    c.width = W * dpr; c.height = H * dpr
+    const dpr = window.devicePixelRatio || 1
+    const W = c.offsetWidth || 700, H = H_CANVAS
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr)
     const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
+
+    const cW = W - PAD_L - PAD_R
+    const cH = H - PAD_T - PAD_B
+
+    // Background
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+
+    // Value range across all segments
     let minV = 0, maxV = 0
-    for (const ln of SEG_LINES) for (const p of pts) {
+    for (const ln of SEG_LINES_CFG) for (const p of pts) {
       const v = p[ln.key] as number
       if (v < minV) minV = v; if (v > maxV) maxV = v
     }
+    const pad = (maxV - minV) * 0.08
+    minV -= pad; maxV += pad
     const range = maxV - minV || 1
-    const zY = H - ((-minV) / range) * H
-    ctx.setLineDash([3, 3]); ctx.strokeStyle = '#1E2330'; ctx.lineWidth = 0.8
-    ctx.beginPath(); ctx.moveTo(0, zY); ctx.lineTo(W, zY); ctx.stroke(); ctx.setLineDash([])
-    for (const ln of SEG_LINES) {
+
+    const toX = (i: number) => PAD_L + (i / (pts.length - 1)) * cW
+    const toY = (v: number) => PAD_T + (1 - (v - minV) / range) * cH
+
+    // ── Y Axis ──
+    ctx.font = '9px JetBrains Mono, monospace'
+    ctx.textAlign = 'right'
+    const yTicks = 5
+    for (let i = 0; i <= yTicks; i++) {
+      const v = minV + (range / yTicks) * i
+      const y = Math.round(toY(v)) + 0.5
+      // Grid line
+      ctx.strokeStyle = '#1A2030'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(W - PAD_R, y); ctx.stroke()
+      // Label
+      ctx.fillStyle = '#4A5568'
+      ctx.fillText(fmtU(v), PAD_L - 5, y + 3)
+    }
+
+    // Zero line (highlighted)
+    const zY = Math.round(toY(0)) + 0.5
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = '#2E3A50'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(PAD_L, zY); ctx.lineTo(W - PAD_R, zY); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.fillStyle = '#2E3A50'; ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right'
+    ctx.fillText('0', PAD_L - 5, zY + 3)
+
+    // ── X Axis time labels ──
+    ctx.font = '9px JetBrains Mono, monospace'; ctx.textAlign = 'center'
+    const xTickCount = Math.min(7, pts.length - 1)
+    for (let i = 0; i <= xTickCount; i++) {
+      const idx = Math.round((i / xTickCount) * (pts.length - 1))
+      const x = Math.round(toX(idx)) + 0.5
+      const d = new Date(pts[idx].t)
+      const hh = d.getHours().toString().padStart(2, '0')
+      const mm = d.getMinutes().toString().padStart(2, '0')
+      const dd = d.getDate(), mo = d.getMonth() + 1
+      // Show date if span > 1 day (pts span > 2h and first/last differ in day)
+      const span = pts[pts.length - 1].t - pts[0].t
+      const label = span > 86400_000
+        ? `${dd}/${mo}\n${hh}:${mm}`
+        : `${hh}:${mm}`
+      ctx.fillStyle = '#4A5568'
+      if (span > 86400_000) {
+        ctx.fillText(`${dd}/${mo}`, x, H - PAD_B + 10)
+        ctx.fillText(`${hh}:${mm}`, x, H - PAD_B + 20)
+      } else {
+        ctx.fillText(label, x, H - PAD_B + 12)
+      }
+      // Tick mark
+      ctx.strokeStyle = '#2A2F3E'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(x, PAD_T + cH); ctx.lineTo(x, PAD_T + cH + 4); ctx.stroke()
+    }
+
+    // ── Clip to chart area then draw lines ──
+    ctx.save()
+    ctx.beginPath(); ctx.rect(PAD_L, PAD_T, cW, cH); ctx.clip()
+
+    for (const ln of SEG_LINES_CFG) {
       ctx.beginPath()
       pts.forEach((p, i) => {
-        const x = (i / (pts.length - 1)) * W
-        const y = H - ((p[ln.key] as number - minV) / range) * H
+        const x = toX(i), y = toY(p[ln.key] as number)
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
       })
-      ctx.strokeStyle = ln.color; ctx.lineWidth = ln.lw; ctx.globalAlpha = 0.85
+      ctx.strokeStyle = ln.color; ctx.lineWidth = ln.lw; ctx.globalAlpha = 0.9
       ctx.stroke(); ctx.globalAlpha = 1
     }
+
+    ctx.restore()
+
+    // Chart border
+    ctx.strokeStyle = '#1E2330'; ctx.lineWidth = 1
+    ctx.strokeRect(PAD_L + 0.5, PAD_T + 0.5, cW - 1, cH - 1)
+
   }, [pts])
+
   if (pts.length < 2) return (
-    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
+    <div style={{ height: H_CANVAS, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
       En attente des données historiques…
     </div>
   )
   return (
     <div>
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
-        {SEG_LINES.map(ln => (
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+        {SEG_LINES_CFG.map(ln => (
           <div key={ln.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 16, height: 2, background: ln.color, borderRadius: 1 }} />
             <span style={{ fontSize: 9, color: ln.color, fontFamily: 'JetBrains Mono,monospace' }}>{ln.label}</span>
@@ -799,7 +874,7 @@ function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
           </div>
         ))}
       </div>
-      <canvas ref={ref} style={{ width: '100%', height: 200, borderRadius: 8, display: 'block' }} />
+      <canvas ref={ref} style={{ width: '100%', height: H_CANVAS, borderRadius: 8, display: 'block' }} />
     </div>
   )
 }
@@ -878,6 +953,7 @@ export default function AnalysePage() {
   // Segmented CVD History state
   const [segHistPts,  setSegHistPts]  = useState<SegHistPt[]>([])
   const [segHistLoad, setSegHistLoad] = useState(false)
+  const [segHistTf,   setSegHistTf]   = useState('24h')
 
   // Dérivés state
   const [oi,        setOI]        = useState<OIData|null>(null)
@@ -957,56 +1033,65 @@ export default function AnalysePage() {
       }).catch(()=>{})
   },[symbol,mode,wtTf])
 
-  // ── Segmented CVD History — charge dès qu'on a un symbole crypto ──
+  // ── Segmented CVD History — klines avec takerBuyVolume (historique conséquent) ──
   useEffect(() => {
     if (!symbol || !/USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)) return
     setSegHistPts([])
     setSegHistLoad(true)
 
-    const processAggTrades = (trades: { p: string; q: string; m: boolean; T: number }[]) => {
-      if (!Array.isArray(trades) || trades.length === 0) return
-      const bucketMs = 60 * 1000
-      const buckets = new Map<number, SegHistPt>()
-      for (const t of trades) {
-        const price = parseFloat(t.p), qty = parseFloat(t.q), vol = price * qty
-        if (vol < 100) continue
-        const bk = Math.floor(t.T / bucketMs) * bucketMs
-        if (!buckets.has(bk)) buckets.set(bk, { t: bk, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 })
-        const b = buckets.get(bk)!
-        const delta = t.m ? -vol : vol
-        if (vol >= 1e6)      b.whales        += delta
-        else if (vol >= 1e5) b.institutional += delta
-        else if (vol >= 1e4) b.large         += delta
-        else if (vol >= 1e3) b.medium        += delta
-        else if (vol >= 100) b.small         += delta
-      }
-      const sorted = [...buckets.values()].sort((a, b) => a.t - b.t)
+    // Paramètres selon timeframe choisi
+    const TF_KLINES: Record<string, { interval: string; limit: number }> = {
+      '4h':  { interval: '1m',  limit: 240 },
+      '24h': { interval: '5m',  limit: 288 },
+      '3j':  { interval: '15m', limit: 288 },
+      '7j':  { interval: '30m', limit: 336 },
+    }
+    const { interval, limit } = TF_KLINES[segHistTf] ?? TF_KLINES['24h']
+
+    // Calcul CVD segmenté à partir des klines (takerBuyBaseAssetVolume exact)
+    const processKlines = (klines: unknown[][]) => {
+      if (!Array.isArray(klines) || klines.length === 0) return
+      // Volume moyen pour classer la bougie
+      const vols = klines.map(k => parseFloat(k[5] as string))
+      const avgVol = vols.reduce((a, b) => a + b, 0) / (vols.length || 1)
+
       const cum: SegHistPt = { t: 0, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 }
-      const pts: SegHistPt[] = sorted.map(b => {
-        cum.small         += b.small
-        cum.medium        += b.medium
-        cum.large         += b.large
-        cum.institutional += b.institutional
-        cum.whales        += b.whales
-        return { t: b.t, small: cum.small, medium: cum.medium, large: cum.large, institutional: cum.institutional, whales: cum.whales }
+      const pts: SegHistPt[] = klines.map(k => {
+        const t       = Number(k[0])
+        const close   = parseFloat(k[4] as string)
+        const vol     = parseFloat(k[5] as string)                    // base asset vol
+        const buyBase = parseFloat(k[9] as string)                    // taker buy base vol (exact)
+        const buyVol  = buyBase * close
+        const sellVol = (vol - buyBase) * close
+        const delta   = buyVol - sellVol
+        const ratio   = avgVol > 0 ? vol / avgVol : 1
+
+        // Segmentation par intensité relative de volume
+        if      (ratio >= 3)   cum.whales        += delta
+        else if (ratio >= 2)   cum.institutional += delta
+        else if (ratio >= 1.5) cum.large         += delta
+        else if (ratio >= 0.7) cum.medium        += delta
+        else                   cum.small         += delta
+
+        return { t, small: cum.small, medium: cum.medium, large: cum.large, institutional: cum.institutional, whales: cum.whales }
       })
       setSegHistPts(pts)
     }
 
     const doFetch = async () => {
       try {
-        // Futures d'abord (plus de volume, meilleure segmentation)
-        const r1 = await fetch(`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=1000`)
+        // Futures d'abord (volume + précis, takerBuy disponible)
+        const r1 = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
         const d1 = await r1.json() as unknown
-        if (Array.isArray(d1) && d1.length > 0) { processAggTrades(d1 as { p: string; q: string; m: boolean; T: number }[]); return }
-        // Fallback spot si futures indisponible
-        const r2 = await fetch(`https://api.binance.com/api/v3/aggTrades?symbol=${symbol}&limit=1000`)
+        if (Array.isArray(d1) && d1.length > 0) { processKlines(d1 as unknown[][]); return }
+        // Fallback spot
+        const r2 = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
         const d2 = await r2.json() as unknown
-        if (Array.isArray(d2)) processAggTrades(d2 as { p: string; q: string; m: boolean; T: number }[])
+        if (Array.isArray(d2)) processKlines(d2 as unknown[][])
       } catch { /* réseau indisponible */ } finally { setSegHistLoad(false) }
     }
     void doFetch()
-  }, [symbol])
+  }, [symbol, segHistTf])
 
   // ── Dérivés ──
   useEffect(()=>{
@@ -1301,9 +1386,16 @@ export default function AnalysePage() {
             <CVDChart pts={cvdPts} segs={segs}/>
             {/* Historique CVD par taille d'ordre — toujours visible */}
             <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid #1E2330'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                <span style={{fontSize:11,fontWeight:600,color:'var(--tm-text-secondary)'}}>📊 Historique par taille d'ordre</span>
-                {segHistLoad&&<div style={{width:10,height:10,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:6}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:11,fontWeight:600,color:'var(--tm-text-secondary)'}}>📊 CVD Historique par taille</span>
+                  {segHistLoad&&<div style={{width:10,height:10,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
+                </div>
+                <div style={{display:'flex',gap:4}}>
+                  {(['4h','24h','3j','7j'] as const).map(tf=>(
+                    <button key={tf} onClick={()=>setSegHistTf(tf)} style={{padding:'2px 9px',borderRadius:5,fontSize:9,fontWeight:600,cursor:'pointer',border:`1px solid ${segHistTf===tf?'var(--tm-accent)':'var(--tm-border)'}`,background:segHistTf===tf?'rgba(0,229,255,0.1)':'var(--tm-bg-tertiary)',color:segHistTf===tf?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s'}}>{tf}</button>
+                  ))}
+                </div>
               </div>
               <SegmentedCVDHistoryChart pts={segHistPts}/>
             </div>
