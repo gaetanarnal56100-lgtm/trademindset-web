@@ -1,12 +1,215 @@
 // src/pages/trades/TradesPage.tsx
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '@/store/appStore'
 import {
   subscribeTrades, subscribeSystems, subscribeExchanges, createTrade, deleteTrade, updateTrade,
   tradePnL, type Trade, type TradingSystem, type Exchange
 } from '@/services/firestore'
 import { TradeDetailModal } from '@/components/trades/TradeDetailModal'
+
+// ── Asset Panel ────────────────────────────────────────────────────────────
+interface AssetTicker {
+  symbol: string; lastPrice: string; priceChangePercent: string
+  highPrice: string; lowPrice: string; quoteVolume: string; priceChange: string
+}
+interface KlineBar { t: number; o: number; h: number; l: number; c: number }
+
+function fmtU(v: number) {
+  const a = Math.abs(v)
+  if (a >= 1e9) return `${(v/1e9).toFixed(2)}B`
+  if (a >= 1e6) return `${(v/1e6).toFixed(1)}M`
+  if (a >= 1e3) return `${(v/1e3).toFixed(0)}K`
+  return v.toFixed(2)
+}
+
+function AssetPriceChart({ bars }: { bars: KlineBar[] }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 200
+
+  useEffect(() => {
+    const c = ref.current; if (!c || bars.length < 2) return
+    const dpr = window.devicePixelRatio || 1
+    const W = c.offsetWidth || 700, H = H_C
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr)
+    const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
+    const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B
+
+    const prices = bars.map(b => b.c)
+    const minV = Math.min(...prices), maxV = Math.max(...prices)
+    const vPad = (maxV - minV) * 0.06
+    const lo = minV - vPad, hi = maxV + vPad, range = hi - lo || 1
+
+    const toX = (i: number) => PAD_L + (i / (bars.length - 1)) * cW
+    const toY = (v: number) => PAD_T + (1 - (v - lo) / range) * cH
+
+    // Background
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = '#060A10'
+    ctx.fillRect(0, 0, PAD_L, H)
+    ctx.fillRect(0, PAD_T + cH, W, PAD_B)
+
+    // Y grid + labels
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
+    for (let i = 0; i <= 4; i++) {
+      const v = lo + (range / 4) * i
+      const y = Math.round(toY(v)) + 0.5
+      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(PAD_L + 1, y); ctx.lineTo(W - PAD_R, y); ctx.stroke()
+      ctx.setLineDash([])
+      ctx.strokeStyle = '#3A4A5C'
+      ctx.beginPath(); ctx.moveTo(PAD_L - 4, y); ctx.lineTo(PAD_L, y); ctx.stroke()
+      const label = v >= 1000 ? `$${(v/1000).toFixed(1)}k` : v >= 1 ? `$${v.toFixed(2)}` : `$${v.toFixed(4)}`
+      ctx.fillStyle = '#8899BB'; ctx.fillText(label, PAD_L - 7, y + 3)
+    }
+    ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(PAD_L + 0.5, PAD_T); ctx.lineTo(PAD_L + 0.5, PAD_T + cH + 4); ctx.stroke()
+
+    // X labels
+    const span = bars[bars.length - 1].t - bars[0].t
+    const multiDay = span > 86_400_000
+    const xN = Math.min(7, bars.length - 1)
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
+    for (let i = 0; i <= xN; i++) {
+      const idx = Math.round((i / xN) * (bars.length - 1))
+      const x = Math.round(toX(idx)) + 0.5
+      const d = new Date(bars[idx].t)
+      const hh = d.getHours().toString().padStart(2,'0'), mm = d.getMinutes().toString().padStart(2,'0')
+      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + cH); ctx.stroke()
+      ctx.setLineDash([])
+      ctx.strokeStyle = '#3A4A5C'
+      ctx.beginPath(); ctx.moveTo(x, PAD_T + cH); ctx.lineTo(x, PAD_T + cH + 4); ctx.stroke()
+      ctx.fillStyle = '#8899BB'
+      if (multiDay) {
+        ctx.fillText(`${d.getDate()}/${d.getMonth()+1}`, x, PAD_T + cH + 13)
+        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 24)
+      } else {
+        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 14)
+      }
+    }
+    ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(PAD_L, PAD_T + cH + 0.5); ctx.lineTo(W - PAD_R, PAD_T + cH + 0.5); ctx.stroke()
+
+    // Area fill + line
+    ctx.save(); ctx.beginPath(); ctx.rect(PAD_L + 1, PAD_T, cW - 1, cH); ctx.clip()
+    const isUp = bars[bars.length - 1].c >= bars[0].c
+    const lineColor = isUp ? '#22C759' : '#FF3B30'
+    ctx.beginPath()
+    bars.forEach((b, i) => { const x = toX(i), y = toY(b.c); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.lineTo(toX(bars.length - 1), PAD_T + cH); ctx.lineTo(toX(0), PAD_T + cH); ctx.closePath()
+    const grad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + cH)
+    grad.addColorStop(0, lineColor + '35'); grad.addColorStop(1, lineColor + '03')
+    ctx.fillStyle = grad; ctx.fill()
+    ctx.beginPath()
+    bars.forEach((b, i) => { const x = toX(i), y = toY(b.c); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.strokeStyle = lineColor; ctx.lineWidth = 1.8; ctx.stroke()
+    ctx.restore()
+  }, [bars])
+
+  if (bars.length < 2) return (
+    <div style={{ height: H_C, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--tm-text-muted)', fontSize:12, background:'#080C14', borderRadius:8 }}>
+      En attente des données…
+    </div>
+  )
+  return <canvas ref={ref} style={{ width:'100%', height: H_C, borderRadius:8, display:'block' }} />
+}
+
+function AssetPanel({
+  symbol, ticker, bars, assetLoad, assetTf, onTfChange, tradePnLFn,
+  symTrades,
+}: {
+  symbol: string
+  ticker: AssetTicker | null
+  bars: KlineBar[]
+  assetLoad: boolean
+  assetTf: string
+  onTfChange: (tf: string) => void
+  tradePnLFn: (t: Trade) => number
+  symTrades: Trade[]
+}) {
+  const price  = ticker ? parseFloat(ticker.lastPrice) : null
+  const pct    = ticker ? parseFloat(ticker.priceChangePercent) : null
+  const isUp   = pct != null && pct >= 0
+
+  // Stats from user trades on this symbol
+  const closedSymTrades = symTrades.filter(t => t.status === 'closed')
+  const symPnls = closedSymTrades.map(tradePnLFn)
+  const symWins = symPnls.filter(p => p > 0).length
+  const symTotal = symPnls.reduce((a,b) => a+b, 0)
+  const symWr = symPnls.length > 0 ? (symWins / symPnls.length * 100).toFixed(0) : null
+
+  return (
+    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2A3A', borderRadius:14, overflow:'hidden', marginBottom:16 }}>
+      {/* Header */}
+      <div style={{ padding:'14px 16px 10px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10, borderBottom:'1px solid #1A2030' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <span style={{ fontSize:20, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne,sans-serif', letterSpacing:'-0.01em' }}>{symbol}</span>
+          {price != null && (
+            <span style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'JetBrains Mono,monospace' }}>
+              {price >= 1000 ? `$${price.toLocaleString('en-US',{maximumFractionDigits:2})}` : price >= 1 ? `$${price.toFixed(4)}` : `$${price.toFixed(6)}`}
+            </span>
+          )}
+          {pct != null && (
+            <span style={{ fontSize:13, fontWeight:700, color: isUp?'var(--tm-profit)':'var(--tm-loss)', background: isUp?'rgba(34,199,89,0.12)':'rgba(255,59,48,0.12)', padding:'3px 10px', borderRadius:6 }}>
+              {isUp?'+':''}{pct.toFixed(2)}%
+            </span>
+          )}
+          {assetLoad && <div style={{ width:12, height:12, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />}
+        </div>
+        <div style={{ display:'flex', gap:4 }}>
+          {(['1j','7j','30j'] as const).map(tf => (
+            <button key={tf} onClick={() => onTfChange(tf)} style={{ padding:'3px 10px', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', border:`1px solid ${assetTf===tf?'var(--tm-accent)':'var(--tm-border)'}`, background:assetTf===tf?'rgba(0,229,255,0.1)':'var(--tm-bg-tertiary)', color:assetTf===tf?'var(--tm-accent)':'var(--tm-text-muted)', transition:'all 0.15s' }}>{tf}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* 24h Stats grid */}
+      {ticker && (
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:1, background:'#1A2030', margin:'0 0 0 0', borderBottom:'1px solid #1A2030' }}>
+          {[
+            { l:'Variation 24h', v: `${isUp?'+':''}$${Math.abs(parseFloat(ticker.priceChange)).toFixed(2)}`, c: isUp?'var(--tm-profit)':'var(--tm-loss)' },
+            { l:'Volume 24h',    v: `$${fmtU(parseFloat(ticker.quoteVolume))}`, c:'var(--tm-text-primary)' },
+            { l:'Haut 24h',     v: parseFloat(ticker.highPrice) >= 1000 ? `$${parseFloat(ticker.highPrice).toLocaleString('en-US',{maximumFractionDigits:2})}` : `$${parseFloat(ticker.highPrice).toFixed(4)}`, c:'var(--tm-profit)' },
+            { l:'Bas 24h',      v: parseFloat(ticker.lowPrice)  >= 1000 ? `$${parseFloat(ticker.lowPrice).toLocaleString('en-US',{maximumFractionDigits:2})}` : `$${parseFloat(ticker.lowPrice).toFixed(4)}`,  c:'var(--tm-loss)' },
+          ].map(({ l, v, c }) => (
+            <div key={l} style={{ background:'var(--tm-bg-secondary)', padding:'10px 14px' }}>
+              <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginBottom:3 }}>{l}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:c, fontFamily:'JetBrains Mono,monospace' }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Price chart */}
+      <div style={{ padding:'12px 14px 8px' }}>
+        <AssetPriceChart bars={bars} />
+      </div>
+
+      {/* Mes trades sur ce symbole */}
+      {symTrades.length > 0 && (
+        <div style={{ padding:'10px 14px 14px', borderTop:'1px solid #1A2030' }}>
+          <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:10 }}>
+            Mes trades sur {symbol} <span style={{ color:'var(--tm-text-muted)', fontWeight:400 }}>({symTrades.length} au total)</span>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+            {[
+              { l:'P&L Total',  v: symTotal !== 0 ? `${symTotal>=0?'+':''}$${Math.abs(symTotal).toFixed(2)}` : '—', c: symTotal>=0?'var(--tm-profit)':'var(--tm-loss)' },
+              { l:'Win Rate',   v: symWr != null ? `${symWr}%` : '—',                                              c:'var(--tm-text-primary)' },
+              { l:'Fermés',     v: `${closedSymTrades.length} / ${symTrades.length}`,                              c:'var(--tm-text-secondary)' },
+              { l:'Ouverts',    v: `${symTrades.filter(t=>t.status==='open').length}`,                             c: symTrades.filter(t=>t.status==='open').length > 0 ? 'var(--tm-accent)' : 'var(--tm-text-muted)' },
+            ].map(({ l, v, c }) => (
+              <div key={l} style={{ background:'var(--tm-bg-tertiary)', border:'1px solid #1E2A3A', borderRadius:8, padding:'8px 10px' }}>
+                <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginBottom:3 }}>{l}</div>
+                <div style={{ fontSize:13, fontWeight:700, color:c, fontFamily:'JetBrains Mono,monospace' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function fmtDate(d: Date) {
   return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
@@ -72,6 +275,44 @@ export default function TradesPage() {
   const systemColor = (id: string) => systems.find(s => s.id === id)?.color ?? 'var(--tm-accent)'
 
   const [showImport, setShowImport] = useState(false)
+
+  // ── Fiche actif ──
+  const [assetTicker, setAssetTicker] = useState<AssetTicker | null>(null)
+  const [assetBars,   setAssetBars]   = useState<KlineBar[]>([])
+  const [assetLoad,   setAssetLoad]   = useState(false)
+  const [assetTf,     setAssetTf]     = useState('7j')
+  const assetAbort = useRef<AbortController | null>(null)
+
+  const loadAsset = useCallback((sym: string, tf: string) => {
+    if (assetAbort.current) assetAbort.current.abort()
+    const ctrl = new AbortController(); assetAbort.current = ctrl
+    const TF_MAP: Record<string,{interval:string;limit:number}> = {
+      '1j':  { interval:'15m', limit:96  },
+      '7j':  { interval:'1h',  limit:168 },
+      '30j': { interval:'4h',  limit:180 },
+    }
+    const { interval, limit } = TF_MAP[tf] ?? TF_MAP['7j']
+    setAssetLoad(true); setAssetTicker(null); setAssetBars([])
+    Promise.all([
+      fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}`, { signal: ctrl.signal }).then(r => r.json()),
+      fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=${limit}`, { signal: ctrl.signal }).then(r => r.json()),
+    ]).then(([ticker, klines]) => {
+      if ((ticker as {symbol?:string}).symbol) setAssetTicker(ticker as AssetTicker)
+      if (Array.isArray(klines)) setAssetBars((klines as unknown[][]).map(k => ({ t:Number(k[0]), o:parseFloat(k[1] as string), h:parseFloat(k[2] as string), l:parseFloat(k[3] as string), c:parseFloat(k[4] as string) })))
+      setAssetLoad(false)
+    }).catch(e => { if (e.name !== 'AbortError') setAssetLoad(false) })
+  }, [])
+
+  // Déclenche la fiche dès que la recherche ressemble à un symbole crypto
+  useEffect(() => {
+    const sym = search.trim().toUpperCase()
+    if (!sym || !/USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(sym)) {
+      setAssetTicker(null); setAssetBars([]); return
+    }
+    loadAsset(sym, assetTf)
+  }, [search, assetTf, loadAsset])
+
+  const symTrades = trades.filter(t => t.symbol.toUpperCase() === search.trim().toUpperCase())
 
   return (
     <div style={{ padding:24, maxWidth:1600, margin:'0 auto' }}>
@@ -198,6 +439,20 @@ export default function TradesPage() {
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Symbole..." style={{ flex:1, minWidth:180, padding:'6px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none' }} />
       </div>
+
+      {/* Fiche actif */}
+      {(assetTicker || assetLoad || assetBars.length > 0) && search.trim().length >= 3 && (
+        <AssetPanel
+          symbol={search.trim().toUpperCase()}
+          ticker={assetTicker}
+          bars={assetBars}
+          assetLoad={assetLoad}
+          assetTf={assetTf}
+          onTfChange={tf => setAssetTf(tf)}
+          tradePnLFn={tradePnL}
+          symTrades={symTrades}
+        />
+      )}
 
       {/* List */}
       {loading ? (
