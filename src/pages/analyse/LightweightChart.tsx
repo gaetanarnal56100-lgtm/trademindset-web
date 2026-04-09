@@ -477,9 +477,11 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       if (now - lastCrosshairMs < 16) return  // ~60fps
       lastCrosshairMs = now
       if (param.point != null && param.logical != null) {
-        const { totalW, areaRatio } = getAreaRatio()
-        if (totalW > 0) {
-          const frac = param.point.x / totalW
+        const { tsW, areaRatio } = getAreaRatio()
+        if (tsW > 0) {
+          // frac = position 0-1 dans la zone chart uniquement (hors price axis)
+          // → slot s sur totalSlots : frac = s/totalSlots (sans facteur areaRatio)
+          const frac = param.point.x / tsW
           onCrosshairRef.current?.({ frac: Math.max(0, Math.min(1, frac)), areaRatio })
         }
       } else {

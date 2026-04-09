@@ -232,7 +232,7 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   // ── Crosshair externe (depuis LightweightChart) ──────────────────────
   // extCrosshairSlot est la position PROPORTIONNELLE 0-1 dans la fenêtre → hx = frac * W (= xPixel/W de LW)
   if (extCrosshairSlot != null && hoverIdx == null && extCrosshairSlot >= 0 && extCrosshairSlot <= 1) {
-    const hx = extCrosshairSlot * W  // alignement pixel-perfect avec LW
+    const hx = extCrosshairSlot * drawW  // frac(0-1) * drawW = même position que xp(s)
     ctx.save()
     ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3])
     ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, oscH); ctx.stroke()
@@ -327,7 +327,8 @@ function useInteractiveCanvas(
   viewSize: number,
   viewport: Viewport,
   setViewport: (vp:Viewport) => void,
-  onViewportChange?: (vp:Viewport) => void   // appelé uniquement sur interaction utilisateur
+  onViewportChange?: (vp:Viewport) => void,   // appelé uniquement sur interaction utilisateur
+  areaRatio?: number,                          // fraction zone chart LW (pour aligner le hover)
 ) {
   const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
@@ -386,11 +387,12 @@ function useInteractiveCanvas(
       setViewport(newVp)
       onViewportChangeRef.current?.(newVp)
     } else {
-      // Crosshair hover
+      // Crosshair hover — utiliser drawW (zone barres) pour aligner avec les barres
       const c = ref.current; if (!c || viewSize < 2) return
       const rect = c.getBoundingClientRect()
       const x = e.clientX - rect.left
-      const idx = Math.round((x / rect.width) * (viewSize - 1))
+      const dw = rect.width * (areaRatio ?? 1)  // largeur zone chart, = drawW
+      const idx = Math.round((Math.min(x, dw) / dw) * (viewSize - 1))
       setHoverIdx(Math.max(0, Math.min(viewSize - 1, idx)))
     }
   }, [setViewport, viewSize])
@@ -466,7 +468,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
       if(!result||result.wt1.length<2) return
       drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd,extCrosshairSlot,chartAreaRatio)
     }, [result, viewStart, viewEnd, extCrosshairSlot, chartAreaRatio], viewSize, viewport, setViewport,
-    onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
+    onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined,
+    chartAreaRatio ?? 0.93
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -587,7 +590,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,vmcExtCrosshairSlot,chartAreaRatio)
     }, [result, vmcDots, vmcViewStart, vmcViewEnd, vmcExtCrosshairSlot, chartAreaRatio], vmcViewSize, viewport, setViewport,
-    onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined
+    onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined,
+    chartAreaRatio ?? 0.93
   )
 
   return (
