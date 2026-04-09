@@ -670,61 +670,161 @@ function DerivativesConfluenceCard({ symbol }: { symbol: string }) {
   )
 }
 
+// ── Axes helper — réutilisé par CVDChart et WhaleTrendChart ──────────────────
+function drawAxes(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  PAD_L: number, PAD_R: number, PAD_T: number, PAD_B: number,
+  minV: number, maxV: number, timestamps: number[]
+) {
+  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B
+  const toY = (v: number) => PAD_T + (1 - (v - minV) / ((maxV - minV) || 1)) * cH
+  // Bandes latérales
+  ctx.fillStyle = '#060A10'
+  ctx.fillRect(0, 0, PAD_L, H)
+  ctx.fillRect(0, PAD_T + cH, W, PAD_B)
+  // Y grid + labels
+  ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
+  for (let i = 0; i <= 4; i++) {
+    const v = minV + ((maxV - minV) / 4) * i
+    const y = Math.round(toY(v)) + 0.5
+    ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(PAD_L + 1, y); ctx.lineTo(W - PAD_R, y); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.strokeStyle = '#3A4A5C'
+    ctx.beginPath(); ctx.moveTo(PAD_L - 4, y); ctx.lineTo(PAD_L, y); ctx.stroke()
+    ctx.fillStyle = '#8899BB'; ctx.fillText(fmtU(v), PAD_L - 7, y + 3)
+  }
+  // Ligne zéro
+  const zY = Math.round(toY(0)) + 0.5
+  if (zY > PAD_T && zY < PAD_T + cH) {
+    const zc = maxV >= 0 ? '#22C75960' : '#FF3B3060'
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = zc; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(PAD_L, zY); ctx.lineTo(W - PAD_R, zY); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.fillStyle = maxV >= 0 ? '#22C759' : '#FF3B30'
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
+    ctx.fillText('0', PAD_L - 7, zY + 3)
+  }
+  // Axe Y vertical
+  ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(PAD_L + 0.5, PAD_T); ctx.lineTo(PAD_L + 0.5, PAD_T + cH + 4); ctx.stroke()
+  // X axis labels
+  if (timestamps.length >= 2) {
+    const span = timestamps[timestamps.length - 1] - timestamps[0]
+    const multiDay = span > 86_400_000
+    const xN = Math.min(7, timestamps.length - 1)
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
+    for (let i = 0; i <= xN; i++) {
+      const idx = Math.round((i / xN) * (timestamps.length - 1))
+      const x = Math.round(PAD_L + (idx / (timestamps.length - 1)) * cW) + 0.5
+      const d = new Date(timestamps[idx])
+      const hh = d.getHours().toString().padStart(2, '0')
+      const mm = d.getMinutes().toString().padStart(2, '0')
+      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + cH); ctx.stroke()
+      ctx.setLineDash([])
+      ctx.strokeStyle = '#3A4A5C'
+      ctx.beginPath(); ctx.moveTo(x, PAD_T + cH); ctx.lineTo(x, PAD_T + cH + 4); ctx.stroke()
+      ctx.fillStyle = '#8899BB'
+      if (multiDay) {
+        ctx.fillText(`${d.getDate()}/${d.getMonth()+1}`, x, PAD_T + cH + 13)
+        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 24)
+      } else {
+        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 14)
+      }
+    }
+  }
+  // Axe X horizontal
+  ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(PAD_L, PAD_T + cH + 0.5); ctx.lineTo(W - PAD_R, PAD_T + cH + 0.5); ctx.stroke()
+}
+
 // ── Charts ─────────────────────────────────────────────────────────────────
 function CVDChart({ pts, segs }: { pts: CVDPt[]; segs: Seg[] }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  useEffect(()=>{
-    const c=ref.current; if(!c||pts.length<2)return
-    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=160
-    c.width=W*dpr;c.height=H*dpr
-    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
-    ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
-    let minV=0,maxV=0
-    for(const s of segs)for(const p of pts){if(p[s]<minV)minV=p[s];if(p[s]>maxV)maxV=p[s]}
-    const range=maxV-minV||1
-    const zY=H-((-minV)/range)*H
-    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
-    ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
-    for(const seg of segs){
-      const cfg=SEG_CFG[seg]
-      ctx.beginPath();pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p[seg]-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
-      const last=pts[pts.length-1][seg];ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
-      const grad=ctx.createLinearGradient(0,0,0,H)
-      grad.addColorStop(0,cfg.color+(last>=0?'40':'05'));grad.addColorStop(1,cfg.color+'02')
-      ctx.fillStyle=grad;ctx.fill()
-      ctx.beginPath();ctx.strokeStyle=seg==='whales'?cfg.color:cfg.color+'CC';ctx.lineWidth=seg==='whales'?2:1.5
-      pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p[seg]-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
+  const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 210
+  useEffect(() => {
+    const c = ref.current; if (!c || pts.length < 2) return
+    const dpr = window.devicePixelRatio || 1, W = c.offsetWidth || 700, H = H_C
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr)
+    const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+    const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B
+    // Value range
+    let minV = 0, maxV = 0
+    for (const s of segs) for (const p of pts) { if (p[s] < minV) minV = p[s]; if (p[s] > maxV) maxV = p[s] }
+    const vPad = (maxV - minV) * 0.08; minV -= vPad; maxV += vPad
+    const range = maxV - minV || 1
+    const toX = (i: number) => PAD_L + (i / (pts.length - 1)) * cW
+    const toY = (v: number) => PAD_T + (1 - (v - minV) / range) * cH
+    const zY = toY(0)
+    // Draw axes first (behind fills)
+    drawAxes(ctx, W, H, PAD_L, PAD_R, PAD_T, PAD_B, minV, maxV, pts.map(p => p.t))
+    // Clip chart area
+    ctx.save(); ctx.beginPath(); ctx.rect(PAD_L + 1, PAD_T, cW - 1, cH); ctx.clip()
+    // Area fills + lines
+    for (const seg of segs) {
+      const cfg = SEG_CFG[seg]
+      const last = pts[pts.length - 1][seg]
+      ctx.beginPath()
+      pts.forEach((p, i) => { const x = toX(i), y = toY(p[seg]); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+      ctx.lineTo(toX(pts.length - 1), zY); ctx.lineTo(toX(0), zY); ctx.closePath()
+      const grad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + cH)
+      grad.addColorStop(0, cfg.color + (last >= 0 ? '40' : '08')); grad.addColorStop(1, cfg.color + '02')
+      ctx.fillStyle = grad; ctx.fill()
+      ctx.beginPath()
+      pts.forEach((p, i) => { const x = toX(i), y = toY(p[seg]); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+      ctx.strokeStyle = seg === 'whales' ? cfg.color : cfg.color + 'CC'
+      ctx.lineWidth = seg === 'whales' ? 2 : 1.5; ctx.stroke()
     }
-  },[pts,segs])
-  if(pts.length<2)return<div style={{height:160,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:12,background:'#080C14',borderRadius:8}}>En attente du flux...</div>
-  return<canvas ref={ref} style={{width:'100%',height:160,borderRadius:8,display:'block'}}/>
+    ctx.restore()
+  }, [pts, segs])
+  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>En attente du flux...</div>
+  return <canvas ref={ref} style={{ width: '100%', height: H_C, borderRadius: 8, display: 'block' }} />
 }
 
-function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
-  const ref=useRef<HTMLCanvasElement>(null)
-  useEffect(()=>{
-    const c=ref.current;if(!c||pts.length<2)return
-    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=180
-    c.width=W*dpr;c.height=H*dpr
-    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
-    ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
-    const cvd=pts.map(p=>p.cum),ema=pts.map(p=>p.ema)
-    const minV=Math.min(...cvd,...ema),maxV=Math.max(...cvd,...ema),range=maxV-minV||1
-    const zY=H-((-minV)/range)*H
-    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
-    ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
-    const last=cvd[cvd.length-1]
-    const color=last>=0?resolveCSSColor('--tm-profit','#22C759'):resolveCSSColor('--tm-loss','#FF3B30')
-    ctx.beginPath();pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.cum-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
-    ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
-    const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,color+'35');grad.addColorStop(1,color+'03')
-    ctx.fillStyle=grad;ctx.fill()
-    ctx.beginPath();ctx.strokeStyle='rgba(200,200,255,0.9)';ctx.lineWidth=1.8
-    pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.cum-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
-    ctx.beginPath();ctx.strokeStyle='#FFA726';ctx.lineWidth=1.2
-    pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.ema-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
-  },[pts])
-  return<canvas ref={ref} style={{width:'100%',height:180,borderRadius:8,display:'block'}}/>
+function WhaleTrendChart({ pts }: { pts: WhaleTrendPt[] }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 220
+  useEffect(() => {
+    const c = ref.current; if (!c || pts.length < 2) return
+    const dpr = window.devicePixelRatio || 1, W = c.offsetWidth || 700, H = H_C
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr)
+    const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+    const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B
+    const cvd = pts.map(p => p.cum), ema = pts.map(p => p.ema)
+    let minV = Math.min(...cvd, ...ema), maxV = Math.max(...cvd, ...ema)
+    const vPad = (maxV - minV) * 0.1; minV -= vPad; maxV += vPad
+    const range = maxV - minV || 1
+    const toX = (i: number) => PAD_L + (i / (pts.length - 1)) * cW
+    const toY = (v: number) => PAD_T + (1 - (v - minV) / range) * cH
+    const zY = toY(0)
+    // Draw axes
+    drawAxes(ctx, W, H, PAD_L, PAD_R, PAD_T, PAD_B, minV, maxV, pts.map(p => p.t))
+    // Clip chart area
+    ctx.save(); ctx.beginPath(); ctx.rect(PAD_L + 1, PAD_T, cW - 1, cH); ctx.clip()
+    // CVD area fill
+    const last = cvd[cvd.length - 1]
+    const color = last >= 0 ? '#22C759' : '#FF3B30'
+    ctx.beginPath()
+    pts.forEach((p, i) => { const x = toX(i), y = toY(p.cum); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.lineTo(toX(pts.length - 1), zY); ctx.lineTo(toX(0), zY); ctx.closePath()
+    const grad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + cH)
+    grad.addColorStop(0, color + '30'); grad.addColorStop(1, color + '03')
+    ctx.fillStyle = grad; ctx.fill()
+    // CVD line
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(200,200,255,0.9)'; ctx.lineWidth = 1.8
+    pts.forEach((p, i) => { const x = toX(i), y = toY(p.cum); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.stroke()
+    // EMA line
+    ctx.beginPath(); ctx.strokeStyle = '#FFA726'; ctx.lineWidth = 1.2
+    pts.forEach((p, i) => { const x = toX(i), y = toY(p.ema); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.stroke()
+    ctx.restore()
+  }, [pts])
+  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>En attente des données…</div>
+  return <canvas ref={ref} style={{ width: '100%', height: H_C, borderRadius: 8, display: 'block' }} />
 }
 
 function OISparkline({vals}:{vals:number[]}){
