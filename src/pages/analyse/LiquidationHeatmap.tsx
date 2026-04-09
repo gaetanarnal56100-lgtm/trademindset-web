@@ -89,9 +89,9 @@ function buildHeatmap(candles: Kline[]): HeatmapData {
         if(b<0||b>=BUCKETS)continue
         // Un seul pixel de large — bandes parfaitement nettes
         running[b]+=vol*w
-        // Demi-pixel de chaque côté pour l'antialiasing naturel
-        if(b>0)         running[b-1]+=vol*w*0.3
-        if(b<BUCKETS-1) running[b+1]+=vol*w*0.3
+        // Léger halo de chaque côté — réduit avec HiDPI (chaque bucket = +de pixels physiques)
+        if(b>0)         running[b-1]+=vol*w*0.12
+        if(b<BUCKETS-1) running[b+1]+=vol*w*0.12
       }
     }
 
@@ -127,11 +127,23 @@ function buildHeatmap(candles: Kline[]): HeatmapData {
   return{pMin,pMax,step,N,cols,candles,buckets:BUCKETS}
 }
 
+// ── HiDPI helper ───────────────────────────────────────────────────────────
+// Configure le canvas en résolution physique (dpr), retourne ctx scalé en pixels CSS
+function hiDPI(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; W: number; H: number } {
+  const dpr = window.devicePixelRatio || 1
+  const W   = canvas.offsetWidth  || 1000
+  const H   = canvas.offsetHeight || CANVAS_H
+  canvas.width  = Math.round(W * dpr)
+  canvas.height = Math.round(H * dpr)
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(dpr, dpr)
+  return { ctx, W, H }
+}
+
 // ── Draw ───────────────────────────────────────────────────────────────────
 
 function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, threshold = 0) {
-  const ctx=canvas.getContext('2d')!
-  const W=canvas.width, H=canvas.height
+  const { ctx, W, H } = hiDPI(canvas)
   const chartW=W-AXIS_W
   const colW=chartW/data.N
   const rowH=H/data.buckets
@@ -202,10 +214,8 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, t
 }
 
 function drawOverlay(canvas: HTMLCanvasElement, tip: Tip|null, data: HeatmapData) {
-  const ctx=canvas.getContext('2d')!
-  const W=canvas.width, H=canvas.height
+  const { ctx, W, H } = hiDPI(canvas)   // reset + scale — clear automatique
   const chartW=W-AXIS_W
-  ctx.clearRect(0,0,W,H)
   if(!tip)return
 
   // Crosshair
@@ -304,15 +314,14 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
     if(!d||!overlayRef.current)return
     const canvas=overlayRef.current
     const rect=canvas.getBoundingClientRect()
-    const scaleX=canvas.width/rect.width
-    const scaleY=canvas.height/rect.height
-    const chartW=canvas.width-AXIS_W
+    // Coordonnées CSS (pas de scaleX/Y — tout se dessine en pixels CSS avec hiDPI)
+    const W=rect.width, H=rect.height
+    const chartW=W-AXIS_W
     let cx:number,cy:number
     if('touches' in e){cx=e.touches[0].clientX;cy=e.touches[0].clientY}
     else{cx=(e as React.MouseEvent).clientX;cy=(e as React.MouseEvent).clientY}
-    const x=(cx-rect.left)*scaleX, y=(cy-rect.top)*scaleY
-    if(x<0||x>chartW||y<0||y>canvas.height)return
-    const H=canvas.height
+    const x=cx-rect.left, y=cy-rect.top
+    if(x<0||x>chartW||y<0||y>H)return
     const tipPrice=d.pMin+(1-y/H)*(d.pMax-d.pMin)
     const ci=Math.min(Math.max(Math.floor(x/chartW*d.N),0),d.N-1)
     const snap=d.candles[ci]
@@ -386,9 +395,9 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
         </div>
       ):(
         <div style={{position:'relative',height:CANVAS_H}}>
-          <canvas ref={baseRef} width={1000} height={CANVAS_H}
+          <canvas ref={baseRef}
             style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block'}}/>
-          <canvas ref={overlayRef} width={1000} height={CANVAS_H}
+          <canvas ref={overlayRef}
             style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block',cursor:'crosshair'}}
             onMouseMove={handlePointer}
             onMouseDown={handlePointer}
