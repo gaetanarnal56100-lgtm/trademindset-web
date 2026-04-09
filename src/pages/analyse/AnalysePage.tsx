@@ -957,47 +957,56 @@ export default function AnalysePage() {
       }).catch(()=>{})
   },[symbol,mode,wtTf])
 
-  // ── Segmented CVD History (Structure tab) ──
+  // ── Segmented CVD History — charge dès qu'on a un symbole crypto ──
   useEffect(() => {
-    if (mode !== 'structure') return
     if (!symbol || !/USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)) return
+    setSegHistPts([])
     setSegHistLoad(true)
-    // Fetch last 3000 aggTrades from Binance futures for segmented CVD history
-    fetch(`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=3000`)
-      .then(r => r.json())
-      .then((trades: { p: string; q: string; m: boolean; T: number }[]) => {
-        if (!Array.isArray(trades) || trades.length === 0) return
-        const bucketMs = 60 * 1000 // 1-minute buckets
-        const buckets = new Map<number, SegHistPt>()
-        for (const t of trades) {
-          const price = parseFloat(t.p), qty = parseFloat(t.q), vol = price * qty
-          if (vol < 100) continue
-          const bk = Math.floor(t.T / bucketMs) * bucketMs
-          if (!buckets.has(bk)) buckets.set(bk, { t: bk, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 })
-          const b = buckets.get(bk)!
-          const delta = t.m ? -vol : vol
-          if (vol >= 1e6)   b.whales        += delta
-          else if (vol >= 1e5) b.institutional += delta
-          else if (vol >= 1e4) b.large         += delta
-          else if (vol >= 1e3) b.medium         += delta
-          else if (vol >= 100) b.small          += delta
-        }
-        // Convert to cumulative per segment
-        const sorted = [...buckets.values()].sort((a, b) => a.t - b.t)
-        const cum: SegHistPt = { t: 0, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 }
-        const pts: SegHistPt[] = sorted.map(b => {
-          cum.small         += b.small
-          cum.medium        += b.medium
-          cum.large         += b.large
-          cum.institutional += b.institutional
-          cum.whales        += b.whales
-          return { t: b.t, small: cum.small, medium: cum.medium, large: cum.large, institutional: cum.institutional, whales: cum.whales }
-        })
-        setSegHistPts(pts)
+
+    const processAggTrades = (trades: { p: string; q: string; m: boolean; T: number }[]) => {
+      if (!Array.isArray(trades) || trades.length === 0) return
+      const bucketMs = 60 * 1000
+      const buckets = new Map<number, SegHistPt>()
+      for (const t of trades) {
+        const price = parseFloat(t.p), qty = parseFloat(t.q), vol = price * qty
+        if (vol < 100) continue
+        const bk = Math.floor(t.T / bucketMs) * bucketMs
+        if (!buckets.has(bk)) buckets.set(bk, { t: bk, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 })
+        const b = buckets.get(bk)!
+        const delta = t.m ? -vol : vol
+        if (vol >= 1e6)      b.whales        += delta
+        else if (vol >= 1e5) b.institutional += delta
+        else if (vol >= 1e4) b.large         += delta
+        else if (vol >= 1e3) b.medium        += delta
+        else if (vol >= 100) b.small         += delta
+      }
+      const sorted = [...buckets.values()].sort((a, b) => a.t - b.t)
+      const cum: SegHistPt = { t: 0, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 }
+      const pts: SegHistPt[] = sorted.map(b => {
+        cum.small         += b.small
+        cum.medium        += b.medium
+        cum.large         += b.large
+        cum.institutional += b.institutional
+        cum.whales        += b.whales
+        return { t: b.t, small: cum.small, medium: cum.medium, large: cum.large, institutional: cum.institutional, whales: cum.whales }
       })
-      .catch(() => {})
-      .finally(() => setSegHistLoad(false))
-  }, [symbol, mode])
+      setSegHistPts(pts)
+    }
+
+    const doFetch = async () => {
+      try {
+        // Futures d'abord (plus de volume, meilleure segmentation)
+        const r1 = await fetch(`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=1000`)
+        const d1 = await r1.json() as unknown
+        if (Array.isArray(d1) && d1.length > 0) { processAggTrades(d1 as { p: string; q: string; m: boolean; T: number }[]); return }
+        // Fallback spot si futures indisponible
+        const r2 = await fetch(`https://api.binance.com/api/v3/aggTrades?symbol=${symbol}&limit=1000`)
+        const d2 = await r2.json() as unknown
+        if (Array.isArray(d2)) processAggTrades(d2 as { p: string; q: string; m: boolean; T: number }[])
+      } catch { /* réseau indisponible */ } finally { setSegHistLoad(false) }
+    }
+    void doFetch()
+  }, [symbol])
 
   // ── Dérivés ──
   useEffect(()=>{
@@ -1290,6 +1299,14 @@ export default function AnalysePage() {
               })}
             </div>
             <CVDChart pts={cvdPts} segs={segs}/>
+            {/* Historique CVD par taille d'ordre — toujours visible */}
+            <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid #1E2330'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                <span style={{fontSize:11,fontWeight:600,color:'var(--tm-text-secondary)'}}>📊 Historique par taille d'ordre</span>
+                {segHistLoad&&<div style={{width:10,height:10,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
+              </div>
+              <SegmentedCVDHistoryChart pts={segHistPts}/>
+            </div>
             {lastCVD&&<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginTop:8}}>
               {(['large','institutional','whales'] as Seg[]).map(s=>{const cfg=SEG_CFG[s],v=lastCVD[s]
                 return<div key={s} onClick={()=>setSegs(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s])} style={{background:'var(--tm-bg-tertiary)',border:`1px solid ${segs.includes(s)?cfg.color:'var(--tm-border)'}`,borderRadius:8,padding:'8px',cursor:'pointer'}}>
@@ -1403,18 +1420,6 @@ export default function AnalysePage() {
           </div>
         </div>
 
-        {/* Segmented CVD History */}
-        <div style={C.card}><div style={C.top}/>
-          <div style={{padding:C.p}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-              <span>📊</span>
-              <span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>CVD par Taille d'Ordre</span>
-              <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',padding:'1px 7px',borderRadius:4}}>Récent · Futures</span>
-              {segHistLoad&&<div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
-            </div>
-            <SegmentedCVDHistoryChart pts={segHistPts}/>
-          </div>
-        </div>
       </div>}
 
       {/* ── DÉRIVÉS ── */}
