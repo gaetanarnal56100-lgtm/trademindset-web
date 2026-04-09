@@ -757,8 +757,8 @@ const SEG_LINES_CFG: { key: keyof SegHistPt; color: string; label: string; range
 ]
 function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const PAD_L = 56, PAD_B = 26, PAD_T = 10, PAD_R = 6
-  const H_CANVAS = 240
+  const PAD_L = 62, PAD_B = 32, PAD_T = 10, PAD_R = 10
+  const H_CANVAS = 260
 
   useEffect(() => {
     const c = ref.current; if (!c || pts.length < 2) return
@@ -770,75 +770,96 @@ function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
     const cW = W - PAD_L - PAD_R
     const cH = H - PAD_T - PAD_B
 
-    // Background
+    // ── Background ──
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+    // Bande Y-axis
+    ctx.fillStyle = '#060A10'; ctx.fillRect(0, 0, PAD_L, H)
+    // Bande X-axis
+    ctx.fillStyle = '#060A10'; ctx.fillRect(0, PAD_T + cH, W, PAD_B)
 
-    // Value range across all segments
+    // ── Value range ──
     let minV = 0, maxV = 0
     for (const ln of SEG_LINES_CFG) for (const p of pts) {
       const v = p[ln.key] as number
       if (v < minV) minV = v; if (v > maxV) maxV = v
     }
-    const pad = (maxV - minV) * 0.08
-    minV -= pad; maxV += pad
+    const rangePad = (maxV - minV) * 0.1
+    minV -= rangePad; maxV += rangePad
     const range = maxV - minV || 1
 
     const toX = (i: number) => PAD_L + (i / (pts.length - 1)) * cW
     const toY = (v: number) => PAD_T + (1 - (v - minV) / range) * cH
 
-    // ── Y Axis ──
-    ctx.font = '9px JetBrains Mono, monospace'
-    ctx.textAlign = 'right'
+    // ── Y Axis graduations ──
     const yTicks = 5
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
     for (let i = 0; i <= yTicks; i++) {
       const v = minV + (range / yTicks) * i
       const y = Math.round(toY(v)) + 0.5
-      // Grid line
-      ctx.strokeStyle = '#1A2030'; ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(W - PAD_R, y); ctx.stroke()
+      // Grid line en pointillés légers
+      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(PAD_L + 1, y); ctx.lineTo(W - PAD_R, y); ctx.stroke()
+      ctx.setLineDash([])
+      // Tick
+      ctx.strokeStyle = '#3A4A5C'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(PAD_L - 4, y); ctx.lineTo(PAD_L, y); ctx.stroke()
       // Label
-      ctx.fillStyle = '#4A5568'
-      ctx.fillText(fmtU(v), PAD_L - 5, y + 3)
+      ctx.fillStyle = '#8899BB'; ctx.fillText(fmtU(v), PAD_L - 7, y + 3)
     }
 
-    // Zero line (highlighted)
+    // Ligne zéro plus visible
+    const lastCumWhales = pts[pts.length - 1].whales
+    const isPositive = lastCumWhales >= 0
+    const zeroColor = isPositive ? '#22C759' : '#FF3B30'
     const zY = Math.round(toY(0)) + 0.5
-    ctx.setLineDash([4, 3]); ctx.strokeStyle = '#2E3A50'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(PAD_L, zY); ctx.lineTo(W - PAD_R, zY); ctx.stroke()
-    ctx.setLineDash([])
-    ctx.fillStyle = '#2E3A50'; ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right'
-    ctx.fillText('0', PAD_L - 5, zY + 3)
+    if (zY > PAD_T && zY < PAD_T + cH) {
+      ctx.setLineDash([5, 4]); ctx.strokeStyle = zeroColor + '60'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(PAD_L, zY); ctx.lineTo(W - PAD_R, zY); ctx.stroke()
+      ctx.setLineDash([])
+      ctx.fillStyle = zeroColor; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
+      ctx.fillText('0', PAD_L - 7, zY + 3)
+    }
 
-    // ── X Axis time labels ──
-    ctx.font = '9px JetBrains Mono, monospace'; ctx.textAlign = 'center'
-    const xTickCount = Math.min(7, pts.length - 1)
+    // Axe Y vertical
+    ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(PAD_L + 0.5, PAD_T); ctx.lineTo(PAD_L + 0.5, PAD_T + cH + 4); ctx.stroke()
+
+    // ── X Axis labels ──
+    const span = pts[pts.length - 1].t - pts[0].t
+    const multiDay = span > 86_400_000
+    const xTickCount = Math.min(8, pts.length - 1)
+    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#8899BB'
     for (let i = 0; i <= xTickCount; i++) {
       const idx = Math.round((i / xTickCount) * (pts.length - 1))
       const x = Math.round(toX(idx)) + 0.5
       const d = new Date(pts[idx].t)
       const hh = d.getHours().toString().padStart(2, '0')
       const mm = d.getMinutes().toString().padStart(2, '0')
-      const dd = d.getDate(), mo = d.getMonth() + 1
-      // Show date if span > 1 day (pts span > 2h and first/last differ in day)
-      const span = pts[pts.length - 1].t - pts[0].t
-      const label = span > 86400_000
-        ? `${dd}/${mo}\n${hh}:${mm}`
-        : `${hh}:${mm}`
-      ctx.fillStyle = '#4A5568'
-      if (span > 86400_000) {
-        ctx.fillText(`${dd}/${mo}`, x, H - PAD_B + 10)
-        ctx.fillText(`${hh}:${mm}`, x, H - PAD_B + 20)
-      } else {
-        ctx.fillText(label, x, H - PAD_B + 12)
-      }
-      // Tick mark
-      ctx.strokeStyle = '#2A2F3E'; ctx.lineWidth = 1
+      // Tick
+      ctx.strokeStyle = '#3A4A5C'; ctx.lineWidth = 1
       ctx.beginPath(); ctx.moveTo(x, PAD_T + cH); ctx.lineTo(x, PAD_T + cH + 4); ctx.stroke()
+      // Vertical grid
+      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'
+      ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + cH); ctx.stroke()
+      ctx.setLineDash([])
+      // Label
+      ctx.fillStyle = '#8899BB'
+      if (multiDay) {
+        const dd = d.getDate(), mo = d.getMonth() + 1
+        ctx.fillText(`${dd}/${mo}`, x, PAD_T + cH + 13)
+        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 24)
+      } else {
+        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 15)
+      }
     }
 
-    // ── Clip to chart area then draw lines ──
+    // Axe X horizontal
+    ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(PAD_L, PAD_T + cH + 0.5); ctx.lineTo(W - PAD_R, PAD_T + cH + 0.5); ctx.stroke()
+
+    // ── Tracé des lignes (clippé à la zone graphique) ──
     ctx.save()
-    ctx.beginPath(); ctx.rect(PAD_L, PAD_T, cW, cH); ctx.clip()
+    ctx.beginPath(); ctx.rect(PAD_L + 1, PAD_T, cW - 1, cH); ctx.clip()
 
     for (const ln of SEG_LINES_CFG) {
       ctx.beginPath()
@@ -849,12 +870,7 @@ function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
       ctx.strokeStyle = ln.color; ctx.lineWidth = ln.lw; ctx.globalAlpha = 0.9
       ctx.stroke(); ctx.globalAlpha = 1
     }
-
     ctx.restore()
-
-    // Chart border
-    ctx.strokeStyle = '#1E2330'; ctx.lineWidth = 1
-    ctx.strokeRect(PAD_L + 0.5, PAD_T + 0.5, cW - 1, cH - 1)
 
   }, [pts])
 
