@@ -9,13 +9,13 @@ import {
 import { TradeDetailModal } from '@/components/trades/TradeDetailModal'
 
 // ── Asset Panel ────────────────────────────────────────────────────────────
-interface AssetTicker {
+export interface AssetTicker {
   symbol: string; lastPrice: string; priceChangePercent: string
   highPrice: string; lowPrice: string; quoteVolume: string; priceChange: string
 }
-interface KlineBar { t: number; o: number; h: number; l: number; c: number }
+export interface KlineBar { t: number; o: number; h: number; l: number; c: number }
 
-function fmtU(v: number) {
+export function fmtU(v: number) {
   const a = Math.abs(v)
   if (a >= 1e9) return `${(v/1e9).toFixed(2)}B`
   if (a >= 1e6) return `${(v/1e6).toFixed(1)}M`
@@ -23,7 +23,7 @@ function fmtU(v: number) {
   return v.toFixed(2)
 }
 
-function AssetPriceChart({ bars }: { bars: KlineBar[] }) {
+export function AssetPriceChart({ bars }: { bars: KlineBar[] }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 200
 

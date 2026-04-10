@@ -9,6 +9,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import RsiHeatmap from '@/pages/analyse/RsiHeatmap'
 import type { TokenRSI, Timeframe } from '@/pages/analyse/RsiHeatmap'
+import AssetDetailSheet from './AssetDetailSheet'
 
 const fbFunctions = getFunctions(app, 'europe-west1')
 
@@ -863,8 +864,17 @@ export default function MarchesPage() {
   const cryptoShareRef = useRef<HTMLDivElement>(null)
   const stocksShareRef = useRef<HTMLDivElement>(null)
 
+  // Asset detail sheet state
+  const [sheetSymbol, setSheetSymbol] = useState<string | null>(null)
+  const [sheetIsCrypto, setSheetIsCrypto] = useState(false)
+
   const handleTokenClick = (symbol: string) => {
-    localStorage.setItem('tm_analyse_symbol', tab === 'crypto' ? symbol + 'USDT' : symbol)
+    setSheetSymbol(symbol)
+    setSheetIsCrypto(tab === 'crypto')
+  }
+
+  const handleOpenAnalysis = (symbol: string) => {
+    localStorage.setItem('tm_analyse_symbol', sheetIsCrypto ? symbol + 'USDT' : symbol)
     navigate('/app/analyse')
   }
 
@@ -905,6 +915,15 @@ export default function MarchesPage() {
         {tab === 'crypto'  && <CryptoTab  onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
         {tab === 'actions' && <StocksTab  onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
       </div>
+
+      {sheetSymbol && (
+        <AssetDetailSheet
+          symbol={sheetSymbol}
+          isCrypto={sheetIsCrypto}
+          onClose={() => setSheetSymbol(null)}
+          onOpenAnalysis={() => handleOpenAnalysis(sheetSymbol)}
+        />
+      )}
     </div>
   )
 }
