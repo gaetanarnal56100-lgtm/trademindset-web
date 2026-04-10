@@ -6,7 +6,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react'
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import app from '@/services/firebase/config'
 import { AssetPriceChart, KlineBar, fmtU } from '@/pages/trades/TradesPage'
+
+const _fbFns = getFunctions(app, 'europe-west1')
+type _YFn = { s: string; candles: { t:number; o:number; h:number; l:number; c:number; v:number }[] }
+
+const TF_YAHOO_SHEET: Record<string, { interval: string; range: string }> = {
+  '1j': { interval: '15m', range: '5d'  },
+  '7j': { interval: '1h',  range: '1mo' },
+  '1m': { interval: '1d',  range: '3mo' },
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -125,49 +136,69 @@ async function proxiedFetch(url: string): Promise<string> {
   throw new Error('Proxy unavailable')
 }
 
-// ── Fetch Stocks fundametals (Yahoo Finance quoteSummary) ──────────────────
+// ── Fetch Stocks fundamentals (Yahoo Finance v8/chart — no crumb needed) ───
+
+interface ChartMeta {
+  longName?: string; shortName?: string
+  regularMarketPrice?: number; regularMarketChangePercent?: number
+  regularMarketVolume?: number; fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number
+  marketCap?: number; trailingPE?: number
+  trailingAnnualDividendRate?: number; trailingAnnualDividendYield?: number
+}
 
 async function fetchStockFundamentals(symbol: string): Promise<StockFundamentals> {
-  const modules = 'summaryDetail,price,calendarEvents,defaultKeyStatistics'
-  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=${modules}`
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1y&interval=1d&events=div&includePrePost=false`
   const raw = await proxiedFetch(url)
 
-  let data: Record<string, unknown>
-  try { data = JSON.parse(raw) } catch { throw new Error('Parse error') }
+  let parsed: Record<string, unknown>
+  try { parsed = JSON.parse(raw) } catch { throw new Error('Parse error') }
 
-  const qsData = data as Record<string, { result?: unknown[] }>
-  const result = qsData?.quoteSummary?.result?.[0] as Record<string, Record<string, unknown>> | undefined
+  const chartArr = (parsed?.chart as Record<string, unknown[]>)?.result
+  const result = chartArr?.[0] as Record<string, unknown> | undefined
+  if (!result) throw new Error('No chart data')
 
-  if (!result) throw new Error('No data')
+  const meta = (result.meta ?? {}) as ChartMeta
+  if (!meta.regularMarketPrice) throw new Error('No price data')
 
-  const pr  = result.price             as Record<string, Record<string, number>>  | undefined
-  const sd  = result.summaryDetail     as Record<string, Record<string, number>>  | undefined
-  const ks  = result.defaultKeyStatistics as Record<string, Record<string, number>> | undefined
-  const cal = result.calendarEvents    as Record<string, unknown> | undefined
+  // Dividends from events
+  type DivEvent = { amount: number; date: number }
+  const divEvents = (result.events as Record<string, Record<string, DivEvent>> | undefined)?.dividends
+  const oneYearAgo = Date.now() / 1000 - 365 * 86400
+  let dividendAnnual: number | null = null
+  let exDividendDate: string | null = null
 
-  const earningsDates = (cal?.earnings as Record<string, unknown[]>)?.earningsDate
-  const firstEarnings = Array.isArray(earningsDates) ? earningsDates[0] as Record<string, number> : null
+  if (divEvents) {
+    const recent = Object.values(divEvents).filter(d => d.date > oneYearAgo)
+    if (recent.length > 0) {
+      dividendAnnual = recent.reduce((s, d) => s + d.amount, 0)
+      const latest = recent.sort((a, b) => b.date - a.date)[0]
+      exDividendDate = new Date(latest.date * 1000).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })
+    }
+  }
+
+  const price = meta.regularMarketPrice ?? 0
+  const divYield = dividendAnnual != null && price > 0
+    ? (dividendAnnual / price) * 100
+    : meta.trailingAnnualDividendYield != null ? meta.trailingAnnualDividendYield * 100 : null
 
   return {
-    companyName:    String(pr?.longName?.raw  ?? pr?.shortName?.raw  ?? symbol),
-    price:          Number(pr?.regularMarketPrice?.raw ?? 0),
-    change24h:      Number(pr?.regularMarketChange?.raw ?? 0),
-    changePct:      Number(pr?.regularMarketChangePercent?.raw ?? 0) * 100,
-    marketCap:      pr?.marketCap?.raw          != null ? Number(pr.marketCap.raw) : null,
-    peRatio:        sd?.trailingPE?.raw          != null ? Number(sd.trailingPE.raw) : null,
-    eps:            ks?.trailingEps?.raw         != null ? Number(ks.trailingEps.raw) : null,
-    beta:           sd?.beta?.raw                != null ? Number(sd.beta.raw) : null,
-    dividendYield:  sd?.dividendYield?.raw       != null ? Number(sd.dividendYield.raw) * 100 : null,
-    dividendAnnual: sd?.dividendRate?.raw        != null ? Number(sd.dividendRate.raw) : null,
-    exDividendDate: sd?.exDividendDate?.fmt      != null ? String(sd.exDividendDate.fmt) : null,
-    payDate:        sd?.payoutRatio?.raw != null ? null : null, // not always available
-    week52High:     sd?.fiftyTwoWeekHigh?.raw    != null ? Number(sd.fiftyTwoWeekHigh.raw) : null,
-    week52Low:      sd?.fiftyTwoWeekLow?.raw     != null ? Number(sd.fiftyTwoWeekLow.raw) : null,
-    earningsDate:   firstEarnings?.raw            != null ? fmtDate(firstEarnings.raw) : null,
-    epsEstimate:    cal != null && (cal.earnings as Record<string, Record<string, number>>)?.earningsAverage?.raw != null
-                    ? Number((cal.earnings as Record<string, Record<string, number>>).earningsAverage.raw)
-                    : null,
-    volume:         pr?.regularMarketVolume?.raw != null ? Number(pr.regularMarketVolume.raw) : null,
+    companyName:    meta.longName ?? meta.shortName ?? symbol,
+    price,
+    change24h:      price * ((meta.regularMarketChangePercent ?? 0) / 100),
+    changePct:      meta.regularMarketChangePercent ?? 0,
+    marketCap:      meta.marketCap ?? null,
+    peRatio:        meta.trailingPE ?? null,
+    eps:            null,
+    beta:           null,
+    dividendYield:  divYield,
+    dividendAnnual,
+    exDividendDate,
+    payDate:        null,
+    week52High:     meta.fiftyTwoWeekHigh ?? null,
+    week52Low:      meta.fiftyTwoWeekLow  ?? null,
+    earningsDate:   null,
+    epsEstimate:    null,
+    volume:         meta.regularMarketVolume ?? null,
   }
 }
 
@@ -246,7 +277,7 @@ async function fetchTickerNews(symbol: string, isCrypto: boolean): Promise<NewsI
   return items
 }
 
-// ── Fetch klines (Binance pour crypto, YF CF pour stocks) ─────────────────
+// ── Fetch klines (Binance pour crypto, Firebase CF pour stocks) ────────────
 
 async function fetchBarsForSheet(symbol: string, isCrypto: boolean, tf: string): Promise<KlineBar[]> {
   if (isCrypto) {
@@ -266,9 +297,17 @@ async function fetchBarsForSheet(symbol: string, isCrypto: boolean, tf: string):
           return raw.map(a => ({ t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string), l: parseFloat(a[3] as string), c: parseFloat(a[4] as string) }))
       } catch { continue }
     }
+    return []
   }
-  // Stocks : not available without Firebase CF — return empty
-  return []
+
+  // Stocks : Firebase Cloud Function fetchYahooCandles
+  try {
+    const { interval, range } = TF_YAHOO_SHEET[tf] ?? TF_YAHOO_SHEET['7j']
+    const fn = httpsCallable<Record<string, unknown>, _YFn>(_fbFns, 'fetchYahooCandles')
+    const res = await fn({ symbol, interval, range })
+    if (res.data.s !== 'ok' || !res.data.candles?.length) return []
+    return res.data.candles.map(c => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c }))
+  } catch { return [] }
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -460,13 +499,14 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
               ))}
               {barsLoad && <div style={{ marginLeft:8, width:14, height:14, border:'1.5px solid rgba(255,255,255,0.1)', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite', alignSelf:'center' }} />}
             </div>
-            {isCrypto
+            {bars.length > 0
               ? <AssetPriceChart bars={bars} />
-              : <div style={{ height:200, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(255,255,255,0.02)', borderRadius:8, border:'1px solid rgba(255,255,255,0.05)', fontSize:11, color:'var(--tm-text-muted)', flexDirection:'column', gap:6 }}>
-                  <span style={{ fontSize:20 }}>📊</span>
+              : !barsLoad && (
+                <div style={{ height:160, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(255,255,255,0.02)', borderRadius:8, border:'1px solid rgba(255,255,255,0.05)', fontSize:11, color:'var(--tm-text-muted)', flexDirection:'column', gap:6 }}>
+                  <span style={{ fontSize:18 }}>📊</span>
                   <span>Graphique disponible sur l'analyse</span>
-                  <button onClick={onOpenAnalysis} style={{ marginTop:4, padding:'4px 12px', borderRadius:6, border:'1px solid var(--tm-accent)', background:'transparent', color:'var(--tm-accent)', fontSize:10, cursor:'pointer' }}>Ouvrir l'analyse →</button>
                 </div>
+              )
             }
           </div>
 
