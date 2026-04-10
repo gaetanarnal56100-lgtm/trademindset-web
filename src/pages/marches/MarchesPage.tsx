@@ -18,7 +18,7 @@ interface YahooCandle { t: number; o: number; h: number; l: number; c: number; v
 type YahooFn = { s: string; candles: YahooCandle[] }
 
 // Extended TokenRSI with optional divergence field
-type TokenRSIWithDiv = TokenRSI & { divergence?: 'bull' | 'bear' }
+type TokenRSIWithDiv = TokenRSI & { divergence?: 'bull' | 'bear'; divergenceCandlesAgo?: number }
 
 // Subset filters (which tokens to show)
 type CryptoSubset = 'all' | 'top50' | 'alts'
@@ -112,17 +112,24 @@ function findPivotHighIdxs(arr: number[], lb = 4, rb = 4): number[] {
 
 // ── RSI divergence detection ──────────────────────────────────────────────────
 
-function detectRSIDivergence(closes: number[], rsiArr: number[]): 'bull' | 'bear' | null {
+function detectRSIDivergence(
+  closes: number[], rsiArr: number[], maxCandlesAgo = 4
+): { type: 'bull' | 'bear'; candlesAgo: number } | null {
   if (closes.length < 20 || rsiArr.length < 20) return null
-  const lows  = findPivotLowIdxs(closes)
+  const n = closes.length
+  const lows = findPivotLowIdxs(closes)
   if (lows.length >= 2) {
     const i1 = lows[lows.length - 2], i2 = lows[lows.length - 1]
-    if (closes[i2] < closes[i1] && rsiArr[i2] > rsiArr[i1] + 2) return 'bull'
+    const candlesAgo = n - 1 - i2
+    if (candlesAgo <= maxCandlesAgo && closes[i2] < closes[i1] && rsiArr[i2] > rsiArr[i1] + 2)
+      return { type: 'bull', candlesAgo }
   }
   const highs = findPivotHighIdxs(closes)
   if (highs.length >= 2) {
     const i1 = highs[highs.length - 2], i2 = highs[highs.length - 1]
-    if (closes[i2] > closes[i1] && rsiArr[i2] < rsiArr[i1] - 2) return 'bear'
+    const candlesAgo = n - 1 - i2
+    if (candlesAgo <= maxCandlesAgo && closes[i2] > closes[i1] && rsiArr[i2] < rsiArr[i1] - 2)
+      return { type: 'bear', candlesAgo }
   }
   return null
 }
@@ -446,13 +453,14 @@ async function fetchCryptoRSI(symbols: string[], tf: Timeframe = '1d'): Promise<
       const last = closes[closes.length - 1], prev = closes[closes.length - 2]
       const change = prev !== 0 ? +((last - prev) / prev * 100).toFixed(2) : 0
       const rsiArr = calcRSIArr(closes)
-      const divergence = detectRSIDivergence(closes, rsiArr) ?? undefined
+      const divResult = detectRSIDivergence(closes, rsiArr)
       return {
         symbol: sym.replace('USDT', ''),
         rsi: calcRSI(closes), wt1: calcWT1(candles),
         change24h: isNaN(change) ? 0 : change,
         volume: volumes[volumes.length - 1], price: last,
-        divergence,
+        divergence: divResult?.type,
+        divergenceCandlesAgo: divResult?.candlesAgo,
       } satisfies TokenRSIWithDiv
     }))
     results.push(...settled.flatMap(r => r.status === 'fulfilled' && r.value ? [r.value] : []))
@@ -476,11 +484,12 @@ async function fetchStockRSI(symbol: string, tf: Timeframe = '1d'): Promise<Toke
     const displaySym = symbol.replace(/\.(PA|DE|L|AS|SW|CO|ST|MI)$/, '')
     const change = prev.c !== 0 ? +((last.c - prev.c) / prev.c * 100).toFixed(2) : 0
     const rsiArr = calcRSIArr(closes)
-    const divergence = detectRSIDivergence(closes, rsiArr) ?? undefined
+    const divResult = detectRSIDivergence(closes, rsiArr)
     return {
       symbol: displaySym, rsi: calcRSI(closes), wt1: calcWT1(candles),
       change24h: isNaN(change) ? 0 : change, volume: last.v ?? 0, price: last.c,
-      divergence,
+      divergence: divResult?.type,
+      divergenceCandlesAgo: divResult?.candlesAgo,
     }
   } catch { return null }
 }
@@ -537,7 +546,7 @@ function avgRSI(tokens: TokenRSI[]): number | null {
 
 // ── Divergence Scanner section ────────────────────────────────────────────────
 
-function DivergenceScanner({ tokens, onTokenClick }: { tokens: TokenRSIWithDiv[]; onTokenClick: (sym: string) => void }) {
+function DivergenceScanner({ tokens, onTokenClick, timeframe }: { tokens: TokenRSIWithDiv[]; onTokenClick: (sym: string) => void; timeframe: string }) {
   const bulls = tokens.filter(t => t.divergence === 'bull')
   const bears = tokens.filter(t => t.divergence === 'bear')
   if (bulls.length === 0 && bears.length === 0) return null
@@ -546,29 +555,39 @@ function DivergenceScanner({ tokens, onTokenClick }: { tokens: TokenRSIWithDiv[]
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <span style={{ fontSize: 16 }}>🎯</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Divergences RSI détectées</span>
-        <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginLeft: 4 }}>Timeframe actuel</span>
+        <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginLeft: 4 }}>UT {timeframe.toUpperCase()}</span>
         {bulls.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: 'var(--tm-profit)', background: 'rgba(34,199,89,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(34,199,89,0.25)' }}>↗ {bulls.length} BULL</span>}
         {bears.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-loss)', background: 'rgba(255,59,48,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(255,59,48,0.25)', marginLeft: bulls.length ? 4 : 'auto' }}>↘ {bears.length} BEAR</span>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {bulls.map(t => (
           <button key={t.symbol} onClick={() => onTokenClick(t.symbol)} style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
             background: 'rgba(34,199,89,0.08)', border: '1px solid rgba(34,199,89,0.3)',
             color: 'var(--tm-profit)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
           }}>
-            ↗ {t.symbol}
-            <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              ↗ {t.symbol}
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+            </span>
+            {t.divergenceCandlesAgo !== undefined && (
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>il y a {t.divergenceCandlesAgo} bougie{t.divergenceCandlesAgo > 1 ? 's' : ''}</span>
+            )}
           </button>
         ))}
         {bears.map(t => (
           <button key={t.symbol} onClick={() => onTokenClick(t.symbol)} style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
             background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.3)',
             color: 'var(--tm-loss)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
           }}>
-            ↘ {t.symbol}
-            <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              ↘ {t.symbol}
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+            </span>
+            {t.divergenceCandlesAgo !== undefined && (
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>il y a {t.divergenceCandlesAgo} bougie{t.divergenceCandlesAgo > 1 ? 's' : ''}</span>
+            )}
           </button>
         ))}
       </div>
@@ -703,7 +722,7 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
       })}
 
       {/* Divergence Scanner */}
-      {finalTokens.length > 0 && <DivergenceScanner tokens={finalTokens as TokenRSIWithDiv[]} onTokenClick={onTokenClick} />}
+      {finalTokens.length > 0 && <DivergenceScanner tokens={finalTokens as TokenRSIWithDiv[]} onTokenClick={onTokenClick} timeframe={timeframe} />}
 
       {finalTokens.length > 0 && (
         <div ref={shareRef}>
@@ -823,7 +842,7 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
       </div>
 
       {/* Divergence Scanner */}
-      <DivergenceScanner tokens={finalTokens} onTokenClick={onTokenClick} />
+      <DivergenceScanner tokens={finalTokens} onTokenClick={onTokenClick} timeframe={timeframe} />
 
       <div ref={shareRef}>
         <RsiHeatmap tokens={finalTokens} timeframe={timeframe} defaultTimeframe="1d" onTimeframeChange={setTimeframe} onTokenClick={onTokenClick} />
