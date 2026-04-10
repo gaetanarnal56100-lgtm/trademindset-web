@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
+import { backgroundMonitor } from '@/services/notifications/BackgroundSignalMonitor'
 import RsiEliteChart from './RsiEliteChart'
 import TradePlanCard from './TradePlanCard'
 import LiveChart from './LiveChart'
@@ -1043,6 +1044,14 @@ export default function AnalysePage() {
   const [syncEnabled, setSyncEnabled] = useState(true)
   const [crosshairFrac,    setCrosshairFrac]    = useState<number|null>(null)
   const [chartAreaRatio,   setChartAreaRatio]   = useState<number>(0.93) // 0.93 = approximation initiale
+
+  // ── Monitor en arrière-plan : poll TOUS les TFs peu importe lequel est affiché ──
+  useEffect(() => {
+    if (!symbol) return
+    backgroundMonitor.start(symbol)
+    return () => backgroundMonitor.stop()
+  }, [symbol])
+
   const handleCrosshairChange = useCallback((d: {frac:number; areaRatio:number}|null) => {
     if (d == null) { setCrosshairFrac(null); return }
     if (d.frac >= 0) setCrosshairFrac(d.frac)  // frac=-1 = resize event, ne pas effacer le crosshair

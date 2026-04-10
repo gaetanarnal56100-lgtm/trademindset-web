@@ -13,9 +13,9 @@ const TF_REFRESH_MS: Record<string, number> = {
   '2h':7200000,'4h':14400000,'12h':43200000,'1d':86400000,'1w':604800000,
 }
 
-interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
+export interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
 
-const TF_OPTIONS = [
+export const TF_OPTIONS = [
   { label:'5m',  interval:'5m',  limit:500 },
   { label:'15m', interval:'15m', limit:500 },
   { label:'30m', interval:'30m', limit:500 },
@@ -31,7 +31,7 @@ function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
 
-async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
+export async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
   const sym = symbol.toUpperCase()
   if (isCryptoSymbol(sym)) {
     const binanceSymbols = [sym, sym.replace(/USDT$/i,'')+'USDT']
@@ -80,7 +80,7 @@ function rollingSum(arr: number[], length: number): number[] {
 
 // ── WaveTrend ──────────────────────────────────────────────────────────────
 interface WTResult { wt1: number[]; wt2: number[]; signals: (null|'bull'|'bear'|'smartBull'|'smartBear')[] }
-function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53): WTResult {
+export function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53): WTResult {
   if (candles.length < n1+n2) return { wt1:[], wt2:[], signals:[] }
   const ap = candles.map(c => (c.h+c.l+c.c)/3)
   const esa:number[]=[], d:number[]=[], ci:number[]=[], tci:number[]=[]
@@ -107,7 +107,7 @@ function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53)
 
 // ── VMC Oscillator ─────────────────────────────────────────────────────────
 interface VMCResult { sig:number[]; sigSignal:number[]; momentum:number[]; bullConfirm:boolean; bearConfirm:boolean; ribbonBull:boolean; ribbonBear:boolean; compression:boolean; status:string; emas:number[][] }
-function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'='swing'): VMCResult {
+export function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'='swing'): VMCResult {
   const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL',emas:[]}
   if (candles.length<60) return EMPTY
   const close=candles.map(c=>c.c), high=candles.map(c=>c.h), low=candles.map(c=>c.l), vol=candles.map(c=>c.v)
