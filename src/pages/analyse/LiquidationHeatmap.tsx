@@ -1,8 +1,9 @@
-// LiquidationHeatmap.tsx — v7 Coinglass-faithful
-// Algorithme cumulatif avec accumulateur running persistant entre colonnes
-// 200 buckets, bougies petites, bandes horizontales longues comme Coinglass
+// LiquidationHeatmap.tsx — v8 avec onglets Heatmap / Liquidation Map
+// Onglet 1 : heatmap temps×prix (Coinglass-faithful)
+// Onglet 2 : liquidation map prix×volume avec lignes cumulatives Long/Short
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import LiquidationMap from './LiquidationMap'
 
 interface Kline { openTime: Date; open: number; high: number; low: number; close: number; volume: number }
 interface HeatmapData { pMin: number; pMax: number; step: number; N: number; cols: Float32Array[]; candles: Kline[]; buckets: number }
@@ -285,6 +286,8 @@ const fmtTS=(d:Date)=>d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',ye
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
+  const [tab, setTab] = useState<'heatmap'|'map'>('heatmap')
+
   const [period,  setPeriod]  = useState(PERIODS[4])   // 24h
   const [data,    setData]    = useState<HeatmapData|null>(null)
   const [price,   setPrice]   = useState(0)
@@ -349,92 +352,115 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
     <div style={{background:'#050210',borderRadius:16,border:'1px solid rgba(80,0,180,0.35)',overflow:'hidden',userSelect:'none'}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
-      {/* Header */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px'}}>
+      {/* Header + onglets */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span>🔥</span>
-          <span style={{fontSize:13,fontWeight:600,color:'white'}}>Liquidation Heatmap</span>
+          <span>{tab==='heatmap'?'🔥':'💧'}</span>
+          <span style={{fontSize:13,fontWeight:600,color:'white'}}>
+            {tab==='heatmap'?'Liquidation Heatmap':'Liquidation Map'}
+          </span>
           <span style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{symbol}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
-          {loading&&<div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'rgba(255,255,255,0.4)'}}>
+          {loading&&tab==='heatmap'&&<div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'rgba(255,255,255,0.4)'}}>
             <div style={{width:10,height:10,border:'1.5px solid rgba(120,0,255,0.3)',borderTopColor:'#9B59B6',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
             Calcul...
           </div>}
-          {price>0&&<span style={{fontSize:14,fontWeight:700,color:'var(--tm-accent)',fontFamily:'monospace'}}>{fmtP(price)}</span>}
+          {price>0&&tab==='heatmap'&&<span style={{fontSize:14,fontWeight:700,color:'var(--tm-accent)',fontFamily:'monospace'}}>{fmtP(price)}</span>}
         </div>
       </div>
 
-      {/* Period selector — toutes les périodes */}
-      <div style={{display:'flex',gap:3,padding:'0 14px 6px',overflowX:'auto',scrollbarWidth:'none'}}>
-        {PERIODS.map(p=>(
-          <button key={p.v} onClick={()=>setPeriod(p)} style={{
-            padding:'3px 9px',borderRadius:5,fontSize:10,cursor:'pointer',border:'none',flexShrink:0,
-            fontWeight:period.v===p.v?700:400,
-            background:period.v===p.v?'rgba(100,0,255,0.5)':'rgba(255,255,255,0.05)',
-            color:period.v===p.v?'white':'rgba(255,255,255,0.4)',
+      {/* Onglets */}
+      <div style={{display:'flex',gap:2,padding:'8px 14px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+        {([['heatmap','🔥 Heatmap'],['map','💧 Liq. Map']] as const).map(([v,label])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{
+            padding:'5px 14px',borderRadius:'6px 6px 0 0',fontSize:11,fontWeight:600,cursor:'pointer',border:'none',
+            background:tab===v?'rgba(100,0,255,0.4)':'transparent',
+            color:tab===v?'white':'rgba(255,255,255,0.4)',
+            borderBottom:tab===v?'2px solid #9B59B6':'2px solid transparent',
             transition:'all 0.15s',
-          }}>{p.label}</button>
+          }}>{label}</button>
         ))}
       </div>
 
-      {/* Threshold slider — Seuil de liquidité comme Coinglass */}
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}>
-        <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',whiteSpace:'nowrap'}}>
-          Seuil de liquidité = <span style={{color:'var(--tm-accent)',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
-        </span>
-        <input
-          type="range" min={0} max={0.8} step={0.01}
-          value={threshold}
-          onChange={e => setThreshold(parseFloat(e.target.value))}
-          style={{flex:1,accentColor:'var(--tm-accent)',cursor:'pointer',height:4}}
-        />
-        {threshold > 0 && (
-          <button onClick={()=>setThreshold(0)} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'1px solid #2A2F3E',borderRadius:4,padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>
-            Reset
-          </button>
-        )}
-      </div>
-
-      {/* Canvas */}
-      {error?(
-        <div style={{height:CANVAS_H,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10}}>
-          <span style={{fontSize:24,opacity:0.3}}>📊</span>
-          <span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>{error}</span>
-          <button onClick={()=>load(symbol,period)} style={{color:'var(--tm-accent)',background:'none',border:'1px solid #00E5FF40',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:11}}>Réessayer</button>
-        </div>
-      ):(
-        <div style={{position:'relative',height:CANVAS_H}}>
-          <canvas ref={baseRef}
-            style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block'}}/>
-          <canvas ref={overlayRef}
-            style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block',cursor:'crosshair'}}
-            onMouseMove={handlePointer}
-            onMouseDown={handlePointer}
-            onMouseLeave={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);setTip(null)}}
-            onTouchStart={handlePointer}
-            onTouchMove={handlePointer}
-            onTouchEnd={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);tipTimer.current=setTimeout(()=>setTip(null),2500)}}
-          />
-        </div>
-      )}
-
-      {/* Legend */}
-      <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 14px'}}>
-        <div style={{width:20,height:80,borderRadius:3,background:`linear-gradient(to bottom,${stops.split(',').reverse().join(',')})`,flexShrink:0}}/>
-        <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',height:80,fontSize:8,color:'rgba(255,255,255,0.4)'}}>
-          <span>Fort</span>
-          <span style={{color:'rgba(255,255,255,0.2)'}}>Liq. Leverage</span>
-          <span>Faible</span>
-        </div>
-        <div style={{marginLeft:'auto',display:'flex',gap:12,alignItems:'center'}}>
-          {[['#00DC8C','Bull'],['#DC2840','Bear']].map(([c,l])=>(
-            <span key={l} style={{display:'flex',alignItems:'center',gap:4,fontSize:9,color:'rgba(255,255,255,0.35)'}}>
-              <span style={{width:10,height:10,borderRadius:2,background:c,display:'inline-block'}}/>{l}
-            </span>
+      {/* ── Onglet Heatmap ─────────────────────────────────────────────── */}
+      {tab === 'heatmap' && <>
+        {/* Period selector */}
+        <div style={{display:'flex',gap:3,padding:'6px 14px 4px',overflowX:'auto',scrollbarWidth:'none'}}>
+          {PERIODS.map(p=>(
+            <button key={p.v} onClick={()=>setPeriod(p)} style={{
+              padding:'3px 9px',borderRadius:5,fontSize:10,cursor:'pointer',border:'none',flexShrink:0,
+              fontWeight:period.v===p.v?700:400,
+              background:period.v===p.v?'rgba(100,0,255,0.5)':'rgba(255,255,255,0.05)',
+              color:period.v===p.v?'white':'rgba(255,255,255,0.4)',
+              transition:'all 0.15s',
+            }}>{p.label}</button>
           ))}
         </div>
-      </div>
+
+        {/* Threshold slider */}
+        <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}>
+          <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',whiteSpace:'nowrap'}}>
+            Seuil = <span style={{color:'var(--tm-accent)',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
+          </span>
+          <input
+            type="range" min={0} max={0.8} step={0.01}
+            value={threshold}
+            onChange={e => setThreshold(parseFloat(e.target.value))}
+            style={{flex:1,accentColor:'var(--tm-accent)',cursor:'pointer',height:4}}
+          />
+          {threshold > 0 && (
+            <button onClick={()=>setThreshold(0)} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'1px solid #2A2F3E',borderRadius:4,padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>
+              Reset
+            </button>
+          )}
+        </div>
+
+        {/* Canvas */}
+        {error?(
+          <div style={{height:CANVAS_H,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10}}>
+            <span style={{fontSize:24,opacity:0.3}}>📊</span>
+            <span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>{error}</span>
+            <button onClick={()=>load(symbol,period)} style={{color:'var(--tm-accent)',background:'none',border:'1px solid #00E5FF40',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:11}}>Réessayer</button>
+          </div>
+        ):(
+          <div style={{position:'relative',height:CANVAS_H}}>
+            <canvas ref={baseRef}
+              style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block'}}/>
+            <canvas ref={overlayRef}
+              style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block',cursor:'crosshair'}}
+              onMouseMove={handlePointer}
+              onMouseDown={handlePointer}
+              onMouseLeave={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);setTip(null)}}
+              onTouchStart={handlePointer}
+              onTouchMove={handlePointer}
+              onTouchEnd={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);tipTimer.current=setTimeout(()=>setTip(null),2500)}}
+            />
+          </div>
+        )}
+
+        {/* Legend */}
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 14px'}}>
+          <div style={{width:20,height:80,borderRadius:3,background:`linear-gradient(to bottom,${stops.split(',').reverse().join(',')})`,flexShrink:0}}/>
+          <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',height:80,fontSize:8,color:'rgba(255,255,255,0.4)'}}>
+            <span>Fort</span>
+            <span style={{color:'rgba(255,255,255,0.2)'}}>Liq. Leverage</span>
+            <span>Faible</span>
+          </div>
+          <div style={{marginLeft:'auto',display:'flex',gap:12,alignItems:'center'}}>
+            {[['#00DC8C','Bull'],['#DC2840','Bear']].map(([c,l])=>(
+              <span key={l} style={{display:'flex',alignItems:'center',gap:4,fontSize:9,color:'rgba(255,255,255,0.35)'}}>
+                <span style={{width:10,height:10,borderRadius:2,background:c,display:'inline-block'}}/>{l}
+              </span>
+            ))}
+          </div>
+        </div>
+      </>}
+
+      {/* ── Onglet Liquidation Map ──────────────────────────────────────── */}
+      {tab === 'map' && (
+        <LiquidationMap symbol={symbol} embedded />
+      )}
     </div>
   )
 }
