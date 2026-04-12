@@ -411,7 +411,16 @@
     "indicators": "INDICATEURS",
     "noDrawings": "Aucun dessin pour {{symbol}} · {{tf}}",
     "dragChart": "Glisser une capture de graphique",
-    "orClickToSelect": "ou cliquer pour sélectionner · PNG, JPG, WebP"
+    "orClickToSelect": "ou cliquer pour sélectionner · PNG, JPG, WebP",
+    "heroSearchTitle": "Recherchez un actif",
+    "screenshotTitle": "Analyse Screenshot IA",
+    "screenshotCardSub": "Upload graphique → GPT-4o Vision → Analyse complète",
+    "analyzed": "✓ Analysé",
+    "analyzeBtn": "Analyser avec GPT-4o Vision",
+    "analyzeBtnMulti": "Analyser {{count}} TF avec GPT-4o",
+    "clickBar": "Cliquez la barre",
+    "cryptoQuick": "Crypto rapide",
+    "actionsQuick": "Actions"
   },
   "marches": {
     "title": "Marchés",

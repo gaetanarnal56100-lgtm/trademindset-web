@@ -1294,7 +1294,7 @@ export default function AnalysePage() {
             {/* Hero */}
             <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
               <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(var(--tm-accent-rgb,0,229,255),0.15),rgba(var(--tm-purple-rgb,191,90,242),0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)'}}>📊</div>
-              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Recherchez un actif</div>
+              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>{t('analyse.heroSearchTitle')}</div>
               <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>{t('analyse.heroSearchSub')}</div>
             </div>
 
@@ -1330,9 +1330,9 @@ export default function AnalysePage() {
             {/* Raccourcis */}
             <div style={{display:'flex',justifyContent:'center',gap:16,flexWrap:'wrap'}}>
               {[
-                {label:t('common.search'),keys:'Cliquez la barre'},
-                {label:'Crypto rapide',keys:'BTC, ETH, SOL...'},
-                {label:'Actions',keys:'AAPL, TSLA, NVDA...'},
+                {label:t('common.search'),keys:t('analyse.clickBar')},
+                {label:t('analyse.cryptoQuick'),keys:'BTC, ETH, SOL...'},
+                {label:t('analyse.actionsQuick'),keys:'AAPL, TSLA, NVDA...'},
               ].map(h=>(
                 <div key={h.label} style={{display:'flex',alignItems:'center',gap:5}}>
                   <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',padding:'2px 7px',borderRadius:4,border:'1px solid #2A2F3E',fontFamily:'JetBrains Mono'}}>{h.keys}</span>
@@ -1346,7 +1346,7 @@ export default function AnalysePage() {
           <div>
             <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
               <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(var(--tm-purple-rgb,191,90,242),0.15),rgba(255,45,85,0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.2)'}}>📸</div>
-              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Analyse Screenshot IA</div>
+              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>{t('analyse.screenshotTitle')}</div>
               <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>{t('analyse.screenshotHeroSub')}</div>
             </div>
             <ChartScreenshotAnalysis />

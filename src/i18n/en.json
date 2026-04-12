@@ -411,7 +411,16 @@
     "indicators": "INDICATORS",
     "noDrawings": "No drawings for {{symbol}} · {{tf}}",
     "dragChart": "Drag a chart screenshot",
-    "orClickToSelect": "or click to select · PNG, JPG, WebP"
+    "orClickToSelect": "or click to select · PNG, JPG, WebP",
+    "heroSearchTitle": "Search an asset",
+    "screenshotTitle": "AI Screenshot Analysis",
+    "screenshotCardSub": "Upload chart → GPT-4o Vision → Full analysis",
+    "analyzed": "✓ Analyzed",
+    "analyzeBtn": "Analyze with GPT-4o Vision",
+    "analyzeBtnMulti": "Analyze {{count}} TF with GPT-4o",
+    "clickBar": "Click the bar",
+    "cryptoQuick": "Quick Crypto",
+    "actionsQuick": "Stocks"
   },
   "marches": {
     "title": "Markets",

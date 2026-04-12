@@ -380,14 +380,14 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
           <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,#BF5AF2,#FF2D55)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>📸</div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Analyse Screenshot IA</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>{t('analyse.screenshotTitle')}</div>
             <div style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>
-              {isMulti ? t('analyse.mtfCharts', { count: images.length }) : 'Upload graphique → GPT-4o Vision → Analyse complète'}
+              {isMulti ? t('analyse.mtfCharts', { count: images.length }) : t('analyse.screenshotCardSub')}
             </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {status === 'done' && <span style={{ fontSize: 10, color: 'var(--tm-profit)', background: 'rgba(var(--tm-profit-rgb,34,199,89),0.1)', padding: '2px 8px', borderRadius: 6 }}>✓ Analysé</span>}
+          {status === 'done' && <span style={{ fontSize: 10, color: 'var(--tm-profit)', background: 'rgba(var(--tm-profit-rgb,34,199,89),0.1)', padding: '2px 8px', borderRadius: 6 }}>{t('analyse.analyzed')}</span>}
           {isMulti && <span style={{ fontSize: 10, color: 'var(--tm-accent)', background: 'rgba(var(--tm-accent-rgb,0,229,255),0.1)', padding: '2px 8px', borderRadius: 6 }}>Multi-TF</span>}
         </div>
       </div>
@@ -461,7 +461,7 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
                   background: 'linear-gradient(135deg,rgba(var(--tm-purple-rgb,191,90,242),0.2),rgba(255,45,85,0.2))',
                   border: '1px solid rgba(var(--tm-purple-rgb,191,90,242),0.4)', color: 'var(--tm-purple)', fontSize: 13, fontWeight: 700,
                   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                  ✨ {isMulti ? `Analyser ${images.length} TF avec GPT-4o` : 'Analyser avec GPT-4o Vision'}
+                  ✨ {isMulti ? t('analyse.analyzeBtnMulti', {count: images.length}) : t('analyse.analyzeBtn')}
                 </button>
                 <button onClick={reset} style={{ padding: '11px 14px', borderRadius: 10, background: 'transparent',
                   border: '1px solid #2A2F3E', color: 'var(--tm-text-muted)', fontSize: 12, cursor: 'pointer' }}>↺</button>
