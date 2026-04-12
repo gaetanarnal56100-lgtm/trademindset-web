@@ -3,6 +3,7 @@
 // 3 modes : Micro / Structure / Dérivés + Derivatives Confluence Card + vraie recherche
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
@@ -20,6 +21,7 @@ function isCryptoSymbol(symbol: string) {
 
 // ── Share / Screenshot wrapper ──────────────────────────────────────────
 function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [hover, setHover] = useState(false)
@@ -122,7 +124,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
             backdropFilter:'blur(8px)', transition:'all 0.15s',
             opacity: loading ? 0.8 : 1,
           }}>
-          {copied ? '✓ Copié' : loading ? '⏳ Capture…' : '↗ Partager'}
+          {copied ? t('common.copied') : loading ? t('common.capturing') : t('common.share')}
         </button>
       )}
     </div>
@@ -340,6 +342,7 @@ async function fetchPriceSummary(symbol: string): Promise<{price:number;change24
 }
 
 function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: string) => void }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
@@ -442,8 +445,8 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           {showHistory && (
             <>
               <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🕐 Historique</span>
-                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer tout</button>
+                <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{t('analyse.history')}</span>
+                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>{t('analyse.clearAll')}</button>
               </div>
               <div style={{maxHeight:320, overflowY:'auto'}}>
                 {history.map(entry => (
@@ -457,7 +460,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'baseline',gap:6}}>
                         <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</span>
-                        {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>● actif</span>}
+                        {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>{t('analyse.activeIndicator')}</span>}
                       </div>
                       <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
                     </div>
@@ -481,10 +484,10 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           {/* Résultats de recherche */}
           {q && (
             <>
-              {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Résultats</div>}
+              {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{t('analyse.results')}</div>}
               <div style={{maxHeight:300,overflowY:'auto'}}>
                 {results.length === 0 ? (
-                  <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun résultat pour "{q}"</div>
+                  <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>{t('analyse.noResults', {query: q})}</div>
                 ) : results.map(r => (
                   <button key={r.symbol} onClick={()=>handleSelect(r)}
                     style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
@@ -505,7 +508,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           {/* Populaires si pas de query et pas d'historique */}
           {!q && !history.length && (
             <>
-              <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>⭐ Populaires</div>
+              <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{t('analyse.popular')}</div>
               <div style={{maxHeight:280,overflowY:'auto'}}>
                 {results.map(r => (
                   <button key={r.symbol} onClick={()=>handleSelect(r)}
@@ -742,6 +745,7 @@ function drawAxes(
 
 // ── Charts ─────────────────────────────────────────────────────────────────
 function CVDChart({ pts, segs }: { pts: CVDPt[]; segs: Seg[] }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLCanvasElement>(null)
   const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 210
   useEffect(() => {
@@ -780,11 +784,12 @@ function CVDChart({ pts, segs }: { pts: CVDPt[]; segs: Seg[] }) {
     }
     ctx.restore()
   }, [pts, segs])
-  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>En attente du flux...</div>
+  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>{t('analyse.awaitingData')}...</div>
   return <canvas ref={ref} style={{ width: '100%', height: H_C, borderRadius: 8, display: 'block' }} />
 }
 
 function WhaleTrendChart({ pts }: { pts: WhaleTrendPt[] }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLCanvasElement>(null)
   const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 220
   useEffect(() => {
@@ -824,7 +829,7 @@ function WhaleTrendChart({ pts }: { pts: WhaleTrendPt[] }) {
     ctx.stroke()
     ctx.restore()
   }, [pts])
-  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>En attente des données…</div>
+  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>{t('analyse.awaitingData')}…</div>
   return <canvas ref={ref} style={{ width: '100%', height: H_C, borderRadius: 8, display: 'block' }} />
 }
 
@@ -858,6 +863,7 @@ const SEG_LINES_CFG: { key: keyof SegHistPt; color: string; label: string; range
   { key: 'small',         color: SEG_CFG.small.color,         label: SEG_CFG.small.label,         range: '<0.7× vol',   lw: 1.0 },
 ]
 function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLCanvasElement>(null)
   const PAD_L = 62, PAD_B = 32, PAD_T = 10, PAD_R = 10
   const H_CANVAS = 260
@@ -978,7 +984,7 @@ function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
 
   if (pts.length < 2) return (
     <div style={{ height: H_CANVAS, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
-      En attente des données historiques…
+      {t('analyse.awaitingData')}…
     </div>
   )
   return (
@@ -1030,6 +1036,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
 }
 
 export default function AnalysePage() {
+  const { t } = useTranslation()
   const [symbol, setSymbol] = useState(() => {
     // Read symbol passed from Marchés page via localStorage
     const stored = localStorage.getItem('tm_analyse_symbol')
@@ -1154,7 +1161,7 @@ export default function AnalysePage() {
         const trend=ms>0.4?'Accumulation forte':ms>0.1?'Accumulation':ms<-0.4?'Distribution forte':ms<-0.1?'Distribution':'Neutre'
         const tc=ms>0.1?'var(--tm-profit)':ms<-0.1?'var(--tm-loss)':'var(--tm-text-secondary)'
         const prices=raw.map(a=>parseFloat(a[4] as string));const ps=prices[prices.length-1]-prices[0],cs=last.cum-(pts[0]?.cum||0)
-        const div=ps<-0.1&&cs>0?'Haussière 📈':ps>0.1&&cs<0?'Baissière 📉':'Aucune'
+        const div=ps<-0.1&&cs>0?'trendBullish':ps>0.1&&cs<0?'trendBearish':'trendNone'
         setWtSummary({trend,trendColor:tc,netCVD:last.cum,momentum:ms,divergence:div})
       }).catch(()=>{})
   },[symbol,mode,wtTf])
@@ -1239,7 +1246,7 @@ export default function AnalysePage() {
       const rate=parseFloat(prem.lastFundingRate)*100,mark=parseFloat(prem.markPrice),idx=parseFloat(prem.indexPrice)
       const next=prem.nextFundingTime?new Date(prem.nextFundingTime):null
       const diff=next?next.getTime()-Date.now():0,h=Math.floor(diff/3600000),m=Math.floor((diff%3600000)/60000)
-      const bias=rate>0.05?'Surchauffe haussière':rate>0.01?'Biais long':rate<-0.05?'Surchauffe baissière':rate<-0.01?'Biais short':'Neutre'
+      const bias=rate>0.05?'cvdBullOverheat':rate>0.01?'cvdBullBias':rate<-0.05?'cvdBearOverheat':rate<-0.01?'cvdBearBias':'cvdNeutral'
       setFunding({rate,mark,index:idx,basis:mark-idx,basisPct:(mark-idx)/idx*100,nextIn:h>0?`${h}h ${m}m`:`${m}m`,bias,isWarning:Math.abs(rate)>0.05})
       setDerivLoad(false)
     }).catch(()=>setDerivLoad(false))
@@ -1252,7 +1259,7 @@ export default function AnalysePage() {
   const wFlowDelta=wF60B-wF60S,isWhaleB=wFlowDelta>50000,isNeutral=Math.abs(wFlowDelta)<50000
   const bullConf=(pressure&&pressure.score>0.1?1:0)+(lastCVD&&lastCVD.institutional>0?1:0)+(traps.filter(t=>t.conf>=0.55).length>0?1:0)
   const bearConf=(pressure&&pressure.score<-0.1?1:0)+(lastCVD&&lastCVD.institutional<0?1:0)
-  const biasLabel=bullConf>bearConf?'Haussier':bearConf>bullConf?'Baissier':'Neutre'
+  const biasLabel=bullConf>bearConf?t('analyse.trendBullish'):bearConf>bullConf?t('analyse.trendBearish'):t('analyse.neutral')
   const biasColor=bullConf>bearConf?'var(--tm-profit)':bearConf>bullConf?'var(--tm-loss)':'var(--tm-text-secondary)'
 
   const isCrypto = isCryptoSymbol(symbol)
@@ -1272,7 +1279,7 @@ export default function AnalysePage() {
         <div>
           <h1 style={{fontSize:24,fontWeight:700,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em'}}>Analyse</h1>
           <p style={{fontSize:13,color:'var(--tm-text-muted)',margin:'4px 0 0'}}>
-            {!symbol ? 'Recherchez un actif pour commencer' : isCrypto ? 'Liquidation Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Plan de Trade'}
+            {!symbol ? t('analyse.searchToBegin') : isCrypto ? t('analyse.cryptoSubtitle') : t('analyse.nonCryptoSubtitle')}
           </p>
         </div>
         <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
@@ -1363,7 +1370,7 @@ export default function AnalysePage() {
                 color: syncEnabled ? 'var(--tm-accent)' : 'var(--tm-text-muted)',
                 transition:'all 0.15s',
               }}
-            >{syncEnabled ? '✓ Activé' : '✗ Désactivé'}</button>
+            >{syncEnabled ? t('analyse.syncEnabled') : t('analyse.syncDisabled')}</button>
             {syncEnabled && <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>UT: {syncInterval} · zoom/pan partagé</span>}
           </div>
 
@@ -1432,7 +1439,7 @@ export default function AnalysePage() {
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-        <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} /></ShareWrapper>
+        <ShareWrapper label={t('analyse.keyLevels')}><KeyLevelsCard symbol={symbol} /></ShareWrapper>
         <ChartScreenshotAnalysis symbol={symbol} />
       </div>}
 
@@ -1444,9 +1451,9 @@ export default function AnalysePage() {
         {/* Mode tabs */}
         <div style={{display:'flex',background:'var(--tm-bg)',borderRadius:12,padding:3,marginBottom:16,border:'1px solid #1E2330',width:'fit-content'}}>
           {([
-            {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel'},
+            {id:'micro',    icon:'📊',label:t('analyse.microLabel'),    sub:t('analyse.microSub')},
             {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine'},
-            {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq'},
+            {id:'derivees', icon:'📈',label:t('analyse.deriveesLabel'),   sub:t('analyse.deriveesSub')},
           ] as {id:Mode;icon:string;label:string;sub:string}[]).map(m=>(
             <button key={m.id} onClick={()=>setMode(m.id)} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 20px',borderRadius:10,border:'none',cursor:'pointer',background:mode===m.id?'var(--tm-accent)':'transparent',transition:'all 0.15s'}}>
               <span style={{fontSize:14}}>{m.icon}</span>
@@ -1465,7 +1472,7 @@ export default function AnalysePage() {
         <div style={{...C.card,padding:C.p}}>
           <div style={C.top}/>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
-            <div><div style={{fontSize:14,fontWeight:700,color:biasColor}}>{biasLabel}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{bullConf+bearConf>0?`${Math.max(bullConf,bearConf)} confirmation${Math.max(bullConf,bearConf)>1?'s':''} active${Math.max(bullConf,bearConf)>1?'s':''}`:'En attente de données'}</div></div>
+            <div><div style={{fontSize:14,fontWeight:700,color:biasColor}}>{biasLabel}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{bullConf+bearConf>0?t('analyse.confirmations', {count: Math.max(bullConf,bearConf)}):t('analyse.awaitingDataShort')}</div></div>
             <div style={{display:'flex',gap:6}}>
               {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:pressure.score>0?'var(--tm-profit)':'var(--tm-loss)',background:`${pressure.score>0?'var(--tm-profit)':'var(--tm-loss)'}`,padding:'2px 8px',borderRadius:5}}>CVD {pressure.score>0?'↑':'↓'}</span>}
               {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:'var(--tm-accent)',background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',padding:'2px 8px',borderRadius:5}}>Whales</span>}
@@ -1633,7 +1640,7 @@ export default function AnalysePage() {
             </div>
             <WhaleTrendChart pts={wtPts}/>
             {wtSummary&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:10}}>
-              {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:wtSummary.divergence,c:wtSummary.divergence.includes('Hauss')?'var(--tm-profit)':wtSummary.divergence.includes('Baiss')?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:'30%',c:'#FFA726'}].map(({l,v,c})=>(
+              {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:t(`analyse.${wtSummary.divergence}`),c:wtSummary.divergence==='trendBullish'?'var(--tm-profit)':wtSummary.divergence==='trendBearish'?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:'30%',c:'#FFA726'}].map(({l,v,c})=>(
                 <div key={l} style={{background:'var(--tm-bg-tertiary)',borderRadius:8,padding:'8px',textAlign:'center'}}><div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:2}}>{l}</div><div style={{fontSize:12,fontWeight:600,color:c}}>{v}</div></div>
               ))}
             </div>}
@@ -1648,7 +1655,7 @@ export default function AnalysePage() {
         <DerivativesConfluenceCard symbol={symbol}/>
 
         {derivLoad&&<div style={{textAlign:'center',padding:24,color:'var(--tm-text-muted)',fontSize:12}}>
-          <div style={{width:20,height:20,border:'2px solid #2A2F3E',borderTopColor:'#F59714',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}}/>Chargement...
+          <div style={{width:20,height:20,border:'2px solid #2A2F3E',borderTopColor:'#F59714',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}}/>{t('common.loading')}
         </div>}
 
         {oi&&<div style={{...C.card,background:'rgba(245,151,20,0.04)',borderColor:'rgba(245,151,20,0.2)'}}>
@@ -1681,7 +1688,7 @@ export default function AnalysePage() {
                 <div style={{fontSize:26,fontWeight:700,fontFamily:'JetBrains Mono,monospace',color:funding.rate>0?'var(--tm-warning)':funding.rate<0?'var(--tm-profit)':'var(--tm-text-secondary)'}}>{funding.rate>0?'+':''}{funding.rate.toFixed(4)}%<span style={{fontSize:11,color:'var(--tm-text-muted)',marginLeft:4}}>/8h</span></div>
                 <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>Taux de financement</div>
               </div>
-              <div style={{fontSize:12,fontWeight:700,color:funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)'}`,padding:'5px 12px',borderRadius:8,border:`1px solid ${funding.isWarning?'rgba(var(--tm-loss-rgb,255,59,48),0.3)':'var(--tm-border)'}`}}>{funding.bias}</div>
+              <div style={{fontSize:12,fontWeight:700,color:funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)'}`,padding:'5px 12px',borderRadius:8,border:`1px solid ${funding.isWarning?'rgba(var(--tm-loss-rgb,255,59,48),0.3)':'var(--tm-border)'}`}}>{t(`analyse.${funding.bias}`)}</div>
             </div>
             <div style={{height:8,background:'linear-gradient(to right,#22C759,#2A2F3E 40%,#2A2F3E 60%,#FF9500)',borderRadius:4,position:'relative',marginBottom:6}}>
               <div style={{position:'absolute',left:`${Math.min(Math.max((funding.rate+0.1)/0.2*100,0),100)}%`,top:'50%',transform:'translate(-50%,-50%)',width:14,height:14,borderRadius:'50%',background:funding.rate>0.05?'var(--tm-loss)':funding.rate>0.01?'var(--tm-warning)':funding.rate<-0.01?'var(--tm-profit)':'var(--tm-text-secondary)',border:'2px solid #0D1117'}}/>

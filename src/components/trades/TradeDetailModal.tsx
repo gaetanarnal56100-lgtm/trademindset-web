@@ -61,7 +61,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
       onDeleted?.()
       onClose()
     } catch {
-      toast.error('Erreur lors de la suppression')
+      toast.error(t('trades.deleteError'))
     } finally {
       setDeleting(false)
     }
@@ -80,7 +80,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
       })
       toast.success(t('trades.duplicated'))
     } catch {
-      toast.error('Erreur lors de la duplication')
+      toast.error(t('trades.duplicateError'))
     }
   }
 
@@ -113,9 +113,9 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
           display:'flex', alignItems:'center', justifyContent:'space-between',
           padding:'14px 18px', borderBottom:'1px solid var(--tm-border)', flexShrink:0,
         }}>
-          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)' }}>Détail du trade</div>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('trades.tradeDetail')}</div>
           <div style={{ display:'flex', gap:6 }}>
-            <button onClick={() => setShowEdit(true)} style={toolbarBtn}>✏️ Modifier</button>
+            <button onClick={() => setShowEdit(true)} style={toolbarBtn}>✏️ {t('common.edit')}</button>
             <button onClick={onClose} style={{ ...toolbarBtn, color:'var(--tm-text-muted)' }}>✕</button>
           </div>
         </div>
@@ -190,7 +190,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
               { label:'P&L Net',        value: `${pnl >= 0?'+':''}$${Math.abs(pnl).toFixed(2)}`,  color:accentColor,            icon:'💰' },
               { label:'ROI',            value: roi !== null ? fmtPct(roi) : '—',                    color: roi && roi>=0 ? 'var(--tm-profit)' : 'var(--tm-loss)', icon:'📈' },
               { label:t('trades.entryPrice'), value: fmtPrice(trade.entryPrice),                          color:'var(--tm-accent)',      icon:'↓' },
-              { label:'Prix de sortie', value: fmtPrice(trade.exitPrice),                           color: isProfit ? 'var(--tm-profit)' : 'var(--tm-loss)', icon:'↑' },
+              { label:t('trades.exitPrice'), value: fmtPrice(trade.exitPrice),                           color: isProfit ? 'var(--tm-profit)' : 'var(--tm-loss)', icon:'↑' },
             ].map(({ label, value, color, icon }) => (
               <div key={label} style={{ background:'var(--tm-bg-card)', borderRadius:12, padding:'12px 14px' }}>
                 <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
@@ -203,28 +203,28 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
           </div>
 
           {/* ── TRADE DETAILS ── */}
-          <Section title="Informations">
-            <Row label="Date"         value={fmtDate(trade.date)} />
-            {trade.quantity  != null && <Row label="Quantité"    value={trade.quantity.toFixed(6)} />}
-            {trade.leverage   > 1     && <Row label="Levier"     value={`${trade.leverage}×`} highlight />}
-            {exchange &&               <Row label="Exchange"     value={exchange.name} />}
-            <Row label={t('trades.orderRole')}   value={trade.orderRole} />
-            <Row label="Session"      value={trade.session} />
-            {trade.notes &&           <Row label="Notes"         value={trade.notes} />}
+          <Section title={t('trades.information')}>
+            <Row label={t('trades.date')}     value={fmtDate(trade.date)} />
+            {trade.quantity  != null && <Row label={t('trades.quantity')}  value={trade.quantity.toFixed(6)} />}
+            {trade.leverage   > 1     && <Row label={t('trades.leverage')} value={`${trade.leverage}×`} highlight />}
+            {exchange &&               <Row label="Exchange"                value={exchange.name} />}
+            <Row label={t('trades.orderRole')} value={trade.orderRole} />
+            <Row label={t('trades.session')}   value={trade.session} />
+            {trade.notes &&           <Row label={t('trades.notes')}        value={trade.notes} />}
           </Section>
 
           {/* ── ADVANCED METRICS ── */}
           <Section title={t('trades.advancedMetrics')}>
             {priceChange !== null && trade.entryPrice && (
               <Row
-                label="Variation de prix"
+                label={t('trades.priceVariation')}
                 value={`${priceChange >= 0 ? '+' : ''}${fmtPrice(priceChange)} (${fmtPct((priceChange / trade.entryPrice) * 100)})`}
                 color={priceChange >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)'}
               />
             )}
             {trade.leverage > 1 && roi !== null && (
               <Row
-                label="Rendement avec levier"
+                label={t('trades.leveragedReturn')}
                 value={fmtPct(roi * trade.leverage)}
                 color={(roi * trade.leverage) >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)'}
               />
@@ -242,7 +242,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
 
           {/* ── PRICE VISUALIZATION ── */}
           {trade.entryPrice && trade.exitPrice && (
-            <Section title="Mouvement de prix">
+            <Section title={t('trades.priceMovement')}>
               <PriceVisualization
                 entry={trade.entryPrice}
                 exit={trade.exitPrice}
@@ -253,7 +253,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
 
           {/* ── TAGS ── */}
           {trade.tags?.length > 0 && (
-            <Section title="Tags">
+            <Section title={t('trades.tags')}>
               <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                 {trade.tags.map(tag => (
                   <span key={tag} style={{
@@ -270,8 +270,8 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
 
           {/* ── ACTIONS ── */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, paddingTop:4 }}>
-            <ActionButton icon="📋" label="Dupliquer" onClick={handleDuplicate} variant="secondary" />
-            <ActionButton icon="🗑" label="Supprimer" onClick={() => setShowDelete(true)} variant="danger" />
+            <ActionButton icon="📋" label={t('trades.duplicate')} onClick={handleDuplicate} variant="secondary" />
+            <ActionButton icon="🗑" label={t('common.delete')} onClick={() => setShowDelete(true)} variant="danger" />
           </div>
         </div>
       </div>{/* end modal */}
@@ -286,16 +286,16 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
             borderRadius:16, padding:24, maxWidth:360, width:'100%', textAlign:'center',
           }}>
             <div style={{ fontSize:32, marginBottom:12 }}>⚠️</div>
-            <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:8 }}>Supprimer ce trade ?</div>
+            <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:8 }}>{t('trades.confirmDelete')}</div>
             <div style={{ fontSize:12, color:'var(--tm-text-secondary)', marginBottom:20 }}>
-              {trade.symbol} — {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)} · Cette action est irréversible.
+              {trade.symbol} — {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)} · {t('trades.irreversible')}
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setShowDelete(false)} style={{ flex:1, padding:'10px', borderRadius:9, border:'1px solid var(--tm-border)', background:'transparent', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:13 }}>
-                Annuler
+                {t('common.cancel')}
               </button>
               <button onClick={handleDelete} disabled={deleting} style={{ flex:1, padding:'10px', borderRadius:9, border:'none', background:'var(--tm-loss)', color:'#fff', cursor:'pointer', fontSize:13, fontWeight:700, opacity:deleting?0.7:1 }}>
-                {deleting ? '…' : 'Supprimer'}
+                {deleting ? '…' : t('common.delete')}
               </button>
             </div>
           </div>
@@ -317,6 +317,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
 
 // ─── Price Visualization ───────────────────────────────────────────────────────
 function PriceVisualization({ entry, exit, type }: { entry: number; exit: number; type: string }) {
+  const { t } = useTranslation()
   const isProfit = type === 'Long' ? exit > entry : exit < entry
   const color = isProfit ? 'var(--tm-profit)' : 'var(--tm-loss)'
   const pct = ((exit - entry) / entry) * 100
@@ -324,7 +325,7 @@ function PriceVisualization({ entry, exit, type }: { entry: number; exit: number
   return (
     <div style={{ display:'flex', alignItems:'center', gap:12 }}>
       <div style={{ textAlign:'center' }}>
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>Entrée</div>
+        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{t('trades.entry')}</div>
         <div style={{ fontSize:14, fontWeight:700, fontFamily:'monospace', color:'var(--tm-accent)' }}>
           {entry >= 1000 ? `$${entry.toLocaleString('fr-FR', { maximumFractionDigits:1 })}` : `$${entry.toFixed(4)}`}
         </div>
@@ -345,7 +346,7 @@ function PriceVisualization({ entry, exit, type }: { entry: number; exit: number
       </div>
 
       <div style={{ textAlign:'center' }}>
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>Sortie</div>
+        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{t('trades.exit')}</div>
         <div style={{ fontSize:14, fontWeight:700, fontFamily:'monospace', color }}>
           {exit >= 1000 ? `$${exit.toLocaleString('fr-FR', { maximumFractionDigits:1 })}` : `$${exit.toFixed(4)}`}
         </div>
@@ -384,7 +385,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
       toast.success(t('trades.updated'))
       onClose()
     } catch {
-      toast.error('Erreur lors de la sauvegarde')
+      toast.error(t('trades.saveError'))
     } finally {
       setSaving(false)
     }
@@ -399,7 +400,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
         boxShadow:'0 24px 48px rgba(0,0,0,0.6)',
       }}>
         <div style={{ padding:'14px 18px', borderBottom:'1px solid var(--tm-border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)' }}>Modifier le trade</div>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('trades.editTrade')}</div>
           <button onClick={onClose} style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:18, color:'var(--tm-text-muted)' }}>×</button>
         </div>
 
@@ -414,7 +415,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
 
           {/* Status */}
           <div>
-            <label style={labelStyle}>Statut</label>
+            <label style={labelStyle}>{t('trades.status')}</label>
             <div style={{ display:'flex', gap:8 }}>
               {(['open','closed'] as const).map(s => (
                 <button key={s} onClick={() => setStatus(s)} style={{
@@ -431,20 +432,20 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
 
           {/* Exit price */}
           <div>
-            <label style={labelStyle}>Prix de sortie</label>
+            <label style={labelStyle}>{t('trades.exitPrice')}</label>
             <input
               type="number" value={exitPrice} onChange={e => setExitPrice(e.target.value)}
-              placeholder={`Entrée: ${trade.entryPrice ?? '—'}`}
+              placeholder={`${t('trades.entry')}: ${trade.entryPrice ?? '—'}`}
               style={inputStyle}
             />
           </div>
 
           {/* Notes */}
           <div>
-            <label style={labelStyle}>Notes</label>
+            <label style={labelStyle}>{t('trades.notes')}</label>
             <textarea
               value={notes} onChange={e => setNotes(e.target.value)}
-              placeholder="Analyse, raison du trade…"
+              placeholder={t('trades.notesPlaceholder')}
               rows={3}
               style={{ ...inputStyle, resize:'vertical', fontFamily:'inherit' }}
             />
@@ -453,10 +454,10 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
           {/* Buttons */}
           <div style={{ display:'flex', gap:10 }}>
             <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:9, border:'1px solid var(--tm-border)', background:'transparent', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:13 }}>
-              Annuler
+              {t('common.cancel')}
             </button>
             <button onClick={handleSave} disabled={saving} style={{ flex:2, padding:'10px', borderRadius:9, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', cursor:'pointer', fontSize:13, fontWeight:700, opacity:saving?0.7:1 }}>
-              {saving ? '…' : 'Enregistrer'}
+              {saving ? '…' : t('common.save')}
             </button>
           </div>
         </div>

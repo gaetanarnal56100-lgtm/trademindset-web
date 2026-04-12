@@ -825,7 +825,7 @@ export default function DashboardPage() {
               {[
                 {tag:'AVERAGE STATE',  icon:'✅',value:emo.avgState,sub:`${emo.entries} entries`,     c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',  bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)'},
                 {tag:'EMOTION IMPACT', icon:'⊜', value:emo.impact,  sub:'Correlation P&L',            c:'var(--tm-text-secondary)',bg:'rgba(255,255,255,0.02)',bdr:'var(--tm-border-sub)'},
-                {tag:'EMOTIONAL RISK', icon:'⚠️',value:emo.risk,    sub:emo.consec>0?`${emo.consec} pertes consécutives`:'Aucune série',c:'var(--tm-warning)',bg:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',bdr:'rgba(var(--tm-warning-rgb,255,149,0),0.15)'},
+                {tag:'EMOTIONAL RISK', icon:'⚠️',value:emo.risk,    sub:emo.consec>0?t('dashboard.consecutiveLosses',{count:emo.consec}):t('dashboard.noStreak'),c:'var(--tm-warning)',bg:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',bdr:'rgba(var(--tm-warning-rgb,255,149,0),0.15)'},
                 {tag:'AI ADVICE',      icon:'▶', value:emo.advice,  sub:'Recommandation',             c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',  bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.15)'},
               ].map(({tag,icon,value,sub,c,bg,bdr})=>(
                 <div key={tag} style={{background:bg,border:`1px solid ${bdr}`,borderRadius:12,padding:'12px 14px'}}>

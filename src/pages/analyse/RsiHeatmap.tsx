@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,12 +32,12 @@ interface RsiHeatmapProps {
 
 type RsiZone = 'overbought' | 'strong' | 'neutral' | 'weak' | 'oversold'
 
-const RSI_ZONES: { id: RsiZone; label: string; range: string; color: string; bg: string }[] = [
-  { id: 'overbought', label: 'Suracheté',  range: '≥ 75', color: '#ff3b5c', bg: 'rgba(255,59,92,0.10)' },
-  { id: 'strong',     label: 'Fort',       range: '60–74', color: '#ff8c61', bg: 'rgba(255,140,97,0.08)' },
-  { id: 'neutral',    label: 'Neutre',     range: '40–59', color: '#6b7280', bg: 'rgba(107,114,128,0.06)' },
-  { id: 'weak',       label: 'Faible',     range: '30–39', color: '#4ecdc4', bg: 'rgba(78,205,196,0.08)' },
-  { id: 'oversold',   label: 'Survendu',   range: '< 30',  color: '#00d4aa', bg: 'rgba(0,212,170,0.10)' },
+const RSI_ZONES: { id: RsiZone; labelKey: string; range: string; color: string; bg: string }[] = [
+  { id: 'overbought', labelKey: 'analyse.zoneOverbought', range: '≥ 75', color: '#ff3b5c', bg: 'rgba(255,59,92,0.10)' },
+  { id: 'strong',     labelKey: 'analyse.zoneFort',       range: '60–74', color: '#ff8c61', bg: 'rgba(255,140,97,0.08)' },
+  { id: 'neutral',    labelKey: 'analyse.zoneNeutral',    range: '40–59', color: '#6b7280', bg: 'rgba(107,114,128,0.06)' },
+  { id: 'weak',       labelKey: 'analyse.zoneWeak',       range: '30–39', color: '#4ecdc4', bg: 'rgba(78,205,196,0.08)' },
+  { id: 'oversold',   labelKey: 'analyse.zoneOversold',   range: '< 30',  color: '#00d4aa', bg: 'rgba(0,212,170,0.10)' },
 ]
 
 function getRsiZone(rsi: number): RsiZone {
@@ -51,12 +52,12 @@ function getRsiZone(rsi: number): RsiZone {
 
 type VmcZone = 'vOverbought' | 'vBullish' | 'vNeutral' | 'vBearish' | 'vOversold'
 
-const VMC_ZONES: { id: VmcZone; label: string; range: string; color: string; bg: string }[] = [
-  { id: 'vOverbought', label: 'Suracheté',  range: '≥ 53',    color: '#ff3b5c', bg: 'rgba(255,59,92,0.10)' },
-  { id: 'vBullish',    label: 'Haussier',   range: '20–52',   color: '#22c759', bg: 'rgba(34,199,89,0.08)' },
-  { id: 'vNeutral',    label: 'Neutre',     range: '-19–19',  color: '#6b7280', bg: 'rgba(107,114,128,0.06)' },
-  { id: 'vBearish',    label: 'Baissier',   range: '-52– -20',color: '#ff8c61', bg: 'rgba(255,140,97,0.08)' },
-  { id: 'vOversold',   label: 'Survendu',   range: '≤ -53',   color: '#00d4aa', bg: 'rgba(0,212,170,0.10)' },
+const VMC_ZONES: { id: VmcZone; labelKey: string; range: string; color: string; bg: string }[] = [
+  { id: 'vOverbought', labelKey: 'analyse.zoneOverbought', range: '≥ 53',    color: '#ff3b5c', bg: 'rgba(255,59,92,0.10)' },
+  { id: 'vBullish',    labelKey: 'analyse.vmcBullish',     range: '20–52',   color: '#22c759', bg: 'rgba(34,199,89,0.08)' },
+  { id: 'vNeutral',    labelKey: 'analyse.zoneNeutral',    range: '-19–19',  color: '#6b7280', bg: 'rgba(107,114,128,0.06)' },
+  { id: 'vBearish',    labelKey: 'analyse.vmcBearish',     range: '-52– -20',color: '#ff8c61', bg: 'rgba(255,140,97,0.08)' },
+  { id: 'vOversold',   labelKey: 'analyse.zoneOversold',   range: '≤ -53',   color: '#00d4aa', bg: 'rgba(0,212,170,0.10)' },
 ]
 
 function getVmcZone(wt1: number): VmcZone {
@@ -152,6 +153,7 @@ function TokenTile({ token, view, onClick, onHover, hovered }: {
 // ── Tooltip ──────────────────────────────────────────────────────────────────
 
 function Tooltip({ token, anchor }: { token: TokenRSI | null; anchor: HTMLElement | null }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ top: 0, left: 0 })
 
@@ -191,12 +193,12 @@ function Tooltip({ token, anchor }: { token: TokenRSI | null; anchor: HTMLElemen
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px', fontSize: 11.5 }}>
         <span style={{ color: 'var(--tm-text-muted)' }}>RSI</span>
         <span style={{ color: rsiZ.color, fontWeight: 700, textAlign: 'right' }}>
-          {token.rsi} <span style={{ fontSize: 9, opacity: 0.7 }}>({rsiZ.label})</span>
+          {token.rsi} <span style={{ fontSize: 9, opacity: 0.7 }}>({t(rsiZ.labelKey)})</span>
         </span>
 
         <span style={{ color: 'var(--tm-text-muted)' }}>VMC WT1</span>
         <span style={{ color: vmcZ.color, fontWeight: 700, textAlign: 'right' }}>
-          {(token.wt1 ?? 0) > 0 ? '+' : ''}{token.wt1 ?? 0} <span style={{ fontSize: 9, opacity: 0.7 }}>({vmcZ.label})</span>
+          {(token.wt1 ?? 0) > 0 ? '+' : ''}{token.wt1 ?? 0} <span style={{ fontSize: 9, opacity: 0.7 }}>({t(vmcZ.labelKey)})</span>
         </span>
 
         <span style={{ color: 'var(--tm-text-muted)' }}>24h</span>
@@ -221,13 +223,14 @@ function Tooltip({ token, anchor }: { token: TokenRSI | null; anchor: HTMLElemen
 // ── Zone Section ─────────────────────────────────────────────────────────────
 
 function ZoneSection({ zone, tokens, view, onTokenClick, onHover, hoveredSym }: {
-  zone: { id: string; label: string; range: string; color: string; bg: string }
+  zone: { id: string; labelKey: string; range: string; color: string; bg: string }
   tokens: TokenRSI[]
   view: View
   onTokenClick?: (sym: string) => void
-  onHover: (t: TokenRSI | null, el: HTMLElement | null) => void
+  onHover: (tok: TokenRSI | null, el: HTMLElement | null) => void
   hoveredSym: string | null
 }) {
+  const { t } = useTranslation()
   const [collapsed, setCollapsed] = useState(false)
   if (tokens.length === 0) return null
 
@@ -243,7 +246,7 @@ function ZoneSection({ zone, tokens, view, onTokenClick, onHover, hoveredSym }: 
         }}
       >
         <div style={{ width: 8, height: 8, borderRadius: 2, background: zone.color, flexShrink: 0 }} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: zone.color }}>{zone.label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: zone.color }}>{t(zone.labelKey)}</span>
         <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{zone.range}</span>
         <span style={{
           marginLeft: 4, fontSize: 10, fontWeight: 700,
@@ -255,14 +258,14 @@ function ZoneSection({ zone, tokens, view, onTokenClick, onHover, hoveredSym }: 
 
       {!collapsed && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {tokens.map(t => (
+          {tokens.map(tok => (
             <TokenTile
-              key={t.symbol}
-              token={t}
+              key={tok.symbol}
+              token={tok}
               view={view}
               onClick={onTokenClick}
               onHover={onHover}
-              hovered={hoveredSym === t.symbol}
+              hovered={hoveredSym === tok.symbol}
             />
           ))}
         </div>
@@ -274,13 +277,14 @@ function ZoneSection({ zone, tokens, view, onTokenClick, onHover, hoveredSym }: 
 // ── Distribution Bar ─────────────────────────────────────────────────────────
 
 function DistributionBar({ tokens, view }: { tokens: TokenRSI[]; view: View }) {
+  const { t } = useTranslation()
   const total = tokens.length || 1
   const zones = view === 'rsi' ? RSI_ZONES : VMC_ZONES
   const counts = zones.map(z => ({
     ...z,
     count: view === 'rsi'
-      ? tokens.filter(t => getRsiZone(t.rsi ?? 50) === z.id).length
-      : tokens.filter(t => getVmcZone(t.wt1 ?? 0) === z.id).length,
+      ? tokens.filter(tok => getRsiZone(tok.rsi ?? 50) === z.id).length
+      : tokens.filter(tok => getVmcZone(tok.wt1 ?? 0) === z.id).length,
   }))
   return (
     <div style={{ padding: '0 2px' }}>
@@ -292,7 +296,7 @@ function DistributionBar({ tokens, view }: { tokens: TokenRSI[]; view: View }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
         {counts.map((z, i) => (
           <span key={i} style={{ fontSize: 10, fontWeight: 600, color: z.color, fontFamily: "'JetBrains Mono',monospace" }}>
-            {z.count} <span style={{ color: 'var(--tm-text-muted)', fontWeight: 400, fontSize: 9 }}>{z.label}</span>
+            {z.count} <span style={{ color: 'var(--tm-text-muted)', fontWeight: 400, fontSize: 9 }}>{t(z.labelKey)}</span>
           </span>
         ))}
       </div>
@@ -335,6 +339,7 @@ export default function RsiHeatmap({
   onTimeframeChange,
   onTokenClick,
 }: RsiHeatmapProps) {
+  const { t } = useTranslation()
   const [localTf, setLocalTf] = useState<Timeframe>(defaultTimeframe)
   const timeframe = controlledTf ?? localTf   // controlled prop takes precedence
   const [view, setView] = useState<View>('rsi')
@@ -353,7 +358,7 @@ export default function RsiHeatmap({
   const filtered = useMemo(() => {
     if (!search) return allTokens
     const q = search.toUpperCase()
-    return allTokens.filter(t => t.symbol.toUpperCase().includes(q))
+    return allTokens.filter(tok => tok.symbol.toUpperCase().includes(q))
   }, [allTokens, search])
 
   const handleTfChange = (tf: Timeframe) => {
@@ -361,8 +366,8 @@ export default function RsiHeatmap({
     onTimeframeChange?.(tf)
   }
 
-  const handleHover = (t: TokenRSI | null, el: HTMLElement | null) => {
-    setHoveredToken(t)
+  const handleHover = (tok: TokenRSI | null, el: HTMLElement | null) => {
+    setHoveredToken(tok)
     setHoveredAnchor(el)
   }
 
@@ -382,8 +387,8 @@ export default function RsiHeatmap({
     return zones.map(z => ({
       zone: z,
       tokens: view === 'rsi'
-        ? [...filtered].filter(t => getRsiZone(t.rsi ?? 50) === z.id).sort((a, b) => (b.rsi ?? 50) - (a.rsi ?? 50))
-        : [...filtered].filter(t => getVmcZone(t.wt1 ?? 0) === z.id).sort((a, b) => (b.wt1 ?? 0) - (a.wt1 ?? 0)),
+        ? [...filtered].filter(tok => getRsiZone(tok.rsi ?? 50) === z.id).sort((a, b) => (b.rsi ?? 50) - (a.rsi ?? 50))
+        : [...filtered].filter(tok => getVmcZone(tok.wt1 ?? 0) === z.id).sort((a, b) => (b.wt1 ?? 0) - (a.wt1 ?? 0)),
     }))
   }, [filtered, view, zones])
 
@@ -419,7 +424,7 @@ export default function RsiHeatmap({
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher…"
+            placeholder={t('analyse.searchTokens')}
             style={{
               background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border-sub)',
               borderRadius: 7, padding: '5px 10px', fontSize: 11,
@@ -445,7 +450,7 @@ export default function RsiHeatmap({
         ))}
         {filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--tm-text-muted)', fontSize: 13 }}>
-            Aucun token trouvé
+            {t('analyse.noTokenFound')}
           </div>
         )}
       </div>

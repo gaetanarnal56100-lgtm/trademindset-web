@@ -3,6 +3,7 @@
 // Pas d'API externe — utilise fetchYahooCandles pour non-crypto, Binance pour crypto
 
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
@@ -204,6 +205,7 @@ function LevelRow({ level, currentPrice }: { level: KeyLevel; currentPrice: numb
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: Props) {
+  const { t } = useTranslation()
   const [levels,       setLevels]       = useState<KeyLevel[]>([])
   const [currentPrice, setCurrentPrice] = useState(0)
   const [status,       setStatus]       = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
@@ -320,7 +322,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
                 background: filter === f ? 'rgba(var(--tm-warning-rgb,255,149,0),0.15)' : 'transparent',
                 color: filter === f ? 'var(--tm-warning)' : 'var(--tm-text-muted)'
               }}>
-                {{ all: 'Tous', above: '↑ Résistances', below: '↓ Supports' }[f]}
+                {{ all: t('common.all'), above: t('analyse.resistances'), below: t('analyse.supports') }[f]}
               </button>
             ))}
           </div>
@@ -368,11 +370,11 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
               {/* Légende */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #1E2330' }}>
                 {[
-                  { icon: '⟰', color: 'var(--tm-loss)', label: 'Résistance' },
-                  { icon: '⟱', color: 'var(--tm-profit)', label: 'Support' },
-                  { icon: '◈', color: 'var(--tm-warning)', label: 'Pivot' },
+                  { icon: '⟰', color: 'var(--tm-loss)', label: t('analyse.resistance') },
+                  { icon: '⟱', color: 'var(--tm-profit)', label: t('analyse.support') },
+                  { icon: '◈', color: 'var(--tm-warning)', label: t('analyse.pivot') },
                   { icon: '▣', color: 'var(--tm-blue)', label: 'Order Block' },
-                  { icon: '▲▼', color: 'var(--tm-purple)', label: 'Swing H/L' },
+                  { icon: '▲▼', color: 'var(--tm-purple)', label: t('analyse.swingHL') },
                 ].map(({ icon, color, label }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 10, color }}>{icon}</span>

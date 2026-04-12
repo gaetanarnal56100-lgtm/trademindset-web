@@ -1,6 +1,7 @@
 // src/pages/trades/TradesPage.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store/appStore'
 import {
   subscribeTrades, subscribeSystems, subscribeExchanges, createTrade, deleteTrade, updateTrade,
@@ -24,6 +25,7 @@ export function fmtU(v: number) {
 }
 
 export function AssetPriceChart({ bars }: { bars: KlineBar[] }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLCanvasElement>(null)
   const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 200
 
@@ -109,7 +111,7 @@ export function AssetPriceChart({ bars }: { bars: KlineBar[] }) {
 
   if (bars.length < 2) return (
     <div style={{ height: H_C, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--tm-text-muted)', fontSize:12, background:'#080C14', borderRadius:8 }}>
-      En attente des données…
+      {t('trades.awaitingData')}
     </div>
   )
   return <canvas ref={ref} style={{ width:'100%', height: H_C, borderRadius:8, display:'block' }} />
@@ -128,6 +130,7 @@ function AssetPanel({
   tradePnLFn: (t: Trade) => number
   symTrades: Trade[]
 }) {
+  const { t } = useTranslation()
   const price  = ticker ? parseFloat(ticker.lastPrice) : null
   const pct    = ticker ? parseFloat(ticker.priceChangePercent) : null
   const isUp   = pct != null && pct >= 0
@@ -168,10 +171,10 @@ function AssetPanel({
       {ticker && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:1, background:'#1A2030', margin:'0 0 0 0', borderBottom:'1px solid #1A2030' }}>
           {[
-            { l:'Variation 24h', v: `${isUp?'+':''}$${Math.abs(parseFloat(ticker.priceChange)).toFixed(2)}`, c: isUp?'var(--tm-profit)':'var(--tm-loss)' },
-            { l:'Volume 24h',    v: `$${fmtU(parseFloat(ticker.quoteVolume))}`, c:'var(--tm-text-primary)' },
-            { l:'Haut 24h',     v: parseFloat(ticker.highPrice) >= 1000 ? `$${parseFloat(ticker.highPrice).toLocaleString('en-US',{maximumFractionDigits:2})}` : `$${parseFloat(ticker.highPrice).toFixed(4)}`, c:'var(--tm-profit)' },
-            { l:'Bas 24h',      v: parseFloat(ticker.lowPrice)  >= 1000 ? `$${parseFloat(ticker.lowPrice).toLocaleString('en-US',{maximumFractionDigits:2})}` : `$${parseFloat(ticker.lowPrice).toFixed(4)}`,  c:'var(--tm-loss)' },
+            { l:t('trades.change24h'), v: `${isUp?'+':''}$${Math.abs(parseFloat(ticker.priceChange)).toFixed(2)}`, c: isUp?'var(--tm-profit)':'var(--tm-loss)' },
+            { l:t('trades.volume24h'), v: `$${fmtU(parseFloat(ticker.quoteVolume))}`, c:'var(--tm-text-primary)' },
+            { l:t('trades.high24h'),   v: parseFloat(ticker.highPrice) >= 1000 ? `$${parseFloat(ticker.highPrice).toLocaleString('en-US',{maximumFractionDigits:2})}` : `$${parseFloat(ticker.highPrice).toFixed(4)}`, c:'var(--tm-profit)' },
+            { l:t('trades.low24h'),    v: parseFloat(ticker.lowPrice)  >= 1000 ? `$${parseFloat(ticker.lowPrice).toLocaleString('en-US',{maximumFractionDigits:2})}` : `$${parseFloat(ticker.lowPrice).toFixed(4)}`,  c:'var(--tm-loss)' },
           ].map(({ l, v, c }) => (
             <div key={l} style={{ background:'var(--tm-bg-secondary)', padding:'10px 14px' }}>
               <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginBottom:3 }}>{l}</div>
@@ -190,14 +193,14 @@ function AssetPanel({
       {symTrades.length > 0 && (
         <div style={{ padding:'10px 14px 14px', borderTop:'1px solid #1A2030' }}>
           <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:10 }}>
-            Mes trades sur {symbol} <span style={{ color:'var(--tm-text-muted)', fontWeight:400 }}>({symTrades.length} au total)</span>
+            {t('trades.myTradesOn', { symbol })} <span style={{ color:'var(--tm-text-muted)', fontWeight:400 }}>({symTrades.length} {t('trades.total')})</span>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
             {[
-              { l:'P&L Total',  v: symTotal !== 0 ? `${symTotal>=0?'+':''}$${Math.abs(symTotal).toFixed(2)}` : '—', c: symTotal>=0?'var(--tm-profit)':'var(--tm-loss)' },
-              { l:'Win Rate',   v: symWr != null ? `${symWr}%` : '—',                                              c:'var(--tm-text-primary)' },
-              { l:'Fermés',     v: `${closedSymTrades.length} / ${symTrades.length}`,                              c:'var(--tm-text-secondary)' },
-              { l:'Ouverts',    v: `${symTrades.filter(t=>t.status==='open').length}`,                             c: symTrades.filter(t=>t.status==='open').length > 0 ? 'var(--tm-accent)' : 'var(--tm-text-muted)' },
+              { l:t('trades.totalPnl'),        v: symTotal !== 0 ? `${symTotal>=0?'+':''}$${Math.abs(symTotal).toFixed(2)}` : '—', c: symTotal>=0?'var(--tm-profit)':'var(--tm-loss)' },
+              { l:t('trades.winRate'),          v: symWr != null ? `${symWr}%` : '—',                                              c:'var(--tm-text-primary)' },
+              { l:t('common.closed'),           v: `${closedSymTrades.length} / ${symTrades.length}`,                              c:'var(--tm-text-secondary)' },
+              { l:t('common.open'),             v: `${symTrades.filter(tr=>tr.status==='open').length}`,                           c: symTrades.filter(tr=>tr.status==='open').length > 0 ? 'var(--tm-accent)' : 'var(--tm-text-muted)' },
             ].map(({ l, v, c }) => (
               <div key={l} style={{ background:'var(--tm-bg-tertiary)', border:'1px solid #1E2A3A', borderRadius:8, padding:'8px 10px' }}>
                 <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginBottom:3 }}>{l}</div>
@@ -223,6 +226,7 @@ function fmtPnL(n: number) {
 }
 
 export default function TradesPage() {
+  const { t } = useTranslation()
   const user = useAppStore(s => s.user)
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [systems, setSystems] = useState<TradingSystem[]>([])
@@ -319,17 +323,17 @@ export default function TradesPage() {
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0 }}>Trades</h1>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0 }}>{t('trades.title')}</h1>
           <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'3px 0 0' }}>
-            {loading ? 'Connexion à Firestore...' : `${filtered.length} trade${filtered.length > 1?'s':''}`}
+            {loading ? t('trades.loadingFirestore') : `${filtered.length} trade${filtered.length > 1?'s':''}`}
           </p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={() => setShowImport(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-warning)', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-            📄 Importer CSV
+            {t('trades.importCSV')}
           </button>
           <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-            + Nouveau trade
+            {t('trades.newTrade')}
           </button>
         </div>
       </div>
@@ -337,10 +341,10 @@ export default function TradesPage() {
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:12 }}>
         {[
-          { l:'P&L Total',  v:fmtPnL(totalPnL), c: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
-          { l:'Win Rate',   v:`${wr}%`,          c:'var(--tm-text-primary)' },
-          { l:'Gains',      v:wins,              c:'var(--tm-profit)' },
-          { l:'Pertes',     v:losses,            c:'var(--tm-loss)' },
+          { l:t('trades.totalPnl'), v:fmtPnL(totalPnL), c: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
+          { l:t('trades.winRate'),  v:`${wr}%`,          c:'var(--tm-text-primary)' },
+          { l:t('trades.gains'),    v:wins,              c:'var(--tm-profit)' },
+          { l:t('trades.losses'),   v:losses,            c:'var(--tm-loss)' },
         ].map(({ l, v, c }) => (
           <div key={l} style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
             <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{l}</div>
@@ -351,7 +355,7 @@ export default function TradesPage() {
 
       {/* Toggle advanced stats */}
       <button onClick={() => setShowStats(x => !x)} style={{ width:'100%', padding:'8px', marginBottom:14, borderRadius:10, border:'1px solid #2A2F3E', background:showStats?'rgba(var(--tm-blue-rgb,10,133,255),0.06)':'var(--tm-bg-secondary)', color:showStats?'var(--tm-blue)':'var(--tm-text-muted)', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-        {showStats ? '▲ Masquer les statistiques avancées' : '▼ Statistiques avancées'}
+        {showStats ? t('trades.hideAdvanced') : t('trades.showAdvanced')}
       </button>
 
       {showStats && (
@@ -360,10 +364,10 @@ export default function TradesPage() {
           {/* Row 2: Advanced metrics */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:10 }}>
             {[
-              { l:'Payoff Ratio',   v:payoff,                    c:'var(--tm-accent)' },
-              { l:'Profit Factor',  v:profitFactor,              c: Number(profitFactor) >= 1.5 ? 'var(--tm-profit)' : 'var(--tm-warning)' },
-              { l:'Expectancy',     v:fmtPnL(expectancy),        c: expectancy >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
-              { l:'Trades fermés',  v:closed.length,             c:'var(--tm-text-secondary)' },
+              { l:t('trades.payoffRatio'),   v:payoff,                    c:'var(--tm-accent)' },
+              { l:t('trades.profitFactor'),  v:profitFactor,              c: Number(profitFactor) >= 1.5 ? 'var(--tm-profit)' : 'var(--tm-warning)' },
+              { l:t('trades.expectancy'),    v:fmtPnL(expectancy),        c: expectancy >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
+              { l:t('trades.closedTrades'),  v:closed.length,             c:'var(--tm-text-secondary)' },
             ].map(({ l, v, c }) => (
               <div key={l} style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
                 <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{l}</div>
@@ -374,10 +378,10 @@ export default function TradesPage() {
           {/* Row 3: Gains/losses details */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:10 }}>
             {[
-              { l:'Moy. gain',       v:fmtPnL(avgWin),            c:'var(--tm-profit)' },
-              { l:'Moy. perte',      v:fmtPnL(-avgLoss),          c:'var(--tm-loss)' },
-              { l:'Meilleur trade',  v:fmtPnL(bestTrade),         c:'var(--tm-profit)' },
-              { l:'Pire trade',      v:fmtPnL(worstTrade),        c:'var(--tm-loss)' },
+              { l:t('trades.avgWin'),      v:fmtPnL(avgWin),            c:'var(--tm-profit)' },
+              { l:t('trades.avgLoss'),     v:fmtPnL(-avgLoss),          c:'var(--tm-loss)' },
+              { l:t('trades.bestTrade'),   v:fmtPnL(bestTrade),         c:'var(--tm-profit)' },
+              { l:t('trades.worstTrade'),  v:fmtPnL(worstTrade),        c:'var(--tm-loss)' },
             ].map(({ l, v, c }) => (
               <div key={l} style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'12px 14px' }}>
                 <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{l}</div>
@@ -389,13 +393,13 @@ export default function TradesPage() {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             {/* Streaks */}
             <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
-              <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:10 }}>Séries</div>
+              <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:10 }}>{t('trades.streaks')}</div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {[
-                  { l:'Meilleure série', v:`${bestStreak} wins`, c:'var(--tm-profit)' },
-                  { l:'Pire série',      v:`${Math.abs(worstStreak)} losses`, c:'var(--tm-loss)' },
-                  { l:'Profit brut',     v:fmtPnL(grossProfit), c:'var(--tm-profit)' },
-                  { l:'Perte brute',     v:fmtPnL(-grossLoss), c:'var(--tm-loss)' },
+                  { l:t('trades.bestStreak'),  v:`${bestStreak} wins`, c:'var(--tm-profit)' },
+                  { l:t('trades.worstStreak'), v:`${Math.abs(worstStreak)} losses`, c:'var(--tm-loss)' },
+                  { l:t('trades.grossProfit'), v:fmtPnL(grossProfit), c:'var(--tm-profit)' },
+                  { l:t('trades.grossLoss'),   v:fmtPnL(-grossLoss), c:'var(--tm-loss)' },
                 ].map(({ l, v, c }) => (
                   <div key={l} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                     <span style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{l}</span>
@@ -406,9 +410,9 @@ export default function TradesPage() {
             </div>
             {/* Top symbols */}
             <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:10, padding:'14px 16px' }}>
-              <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:10 }}>Top Symboles</div>
+              <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:10 }}>{t('trades.topSymbols')}</div>
               {topSymbols.length === 0 ? (
-                <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Pas de données</div>
+                <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>{t('common.noData')}</div>
               ) : (
                 <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                   {topSymbols.map(([sym, data]) => (
@@ -433,11 +437,11 @@ export default function TradesPage() {
         <div style={{ display:'flex', background:'var(--tm-bg-secondary)', borderRadius:8, padding:3, gap:2 }}>
           {(['all','open','closed'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{ padding:'5px 12px', borderRadius:6, border:'none', cursor:'pointer', fontSize:12, fontWeight:500, background: filter===f?'var(--tm-accent)':'transparent', color: filter===f?'var(--tm-bg)':'var(--tm-text-secondary)' }}>
-              {f==='all'?'Tous':f==='open'?'Ouverts':'Fermés'}
+              {f==='all'?t('trades.filterAll'):f==='open'?t('trades.filterOpen'):t('trades.filterClosed')}
             </button>
           ))}
         </div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Symbole..." style={{ flex:1, minWidth:180, padding:'6px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none' }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('trades.searchPlaceholder')} style={{ flex:1, minWidth:180, padding:'6px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none' }} />
       </div>
 
       {/* Fiche actif */}
@@ -459,11 +463,11 @@ export default function TradesPage() {
         <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)' }}>
           <div style={{ width:24, height:24, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-          Chargement depuis Firestore...
+          {t('trades.loadingTrades')}
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)', fontSize:14 }}>
-          Aucun trade{filter !== 'all' ? ` ${filter==='open'?'ouvert':'fermé'}` : ''}
+          {filter === 'all' ? t('trades.noTrades') : filter === 'open' ? t('trades.noTradesOpen') : t('trades.noTradesClosed')}
         </div>
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
@@ -491,15 +495,15 @@ export default function TradesPage() {
                 </div>
                 {trade.quantity && (
                   <div style={{ textAlign:'right' }}>
-                    <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>Qté</div>
+                    <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{t('trades.quantity')}</div>
                     <div style={{ fontSize:12, color:'var(--tm-text-secondary)', fontFamily:'monospace' }}>{trade.quantity.toFixed(4)}</div>
                   </div>
                 )}
                 <div style={{ textAlign:'right', minWidth:80 }}>
-                  <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{isOpen?'Non réalisé':'P&L'}</div>
+                  <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{isOpen?t('trades.unrealized'):t('trades.pnl')}</div>
                   <div style={{ fontSize:14, fontWeight:700, color:pnlColor, fontFamily:'monospace' }}>{fmtPnL(pnl)}</div>
                 </div>
-                <button onClick={e => { e.stopPropagation(); setSelectedTrade(trade) }} style={{ width:28, height:28, borderRadius:6, border:'1px solid var(--tm-border,#2A2F3E)', background:'none', cursor:'pointer', color:'var(--tm-text-muted,#555C70)', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center' }} title="Voir détails">→</button>
+                <button onClick={e => { e.stopPropagation(); setSelectedTrade(trade) }} style={{ width:28, height:28, borderRadius:6, border:'1px solid var(--tm-border,#2A2F3E)', background:'none', cursor:'pointer', color:'var(--tm-text-muted,#555C70)', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center' }} title={t('trades.viewDetails')}>→</button>
               </div>
             )
           })}
@@ -522,6 +526,7 @@ export default function TradesPage() {
 }
 
 function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose: () => void }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState({
     symbol:'', type:'Long' as 'Long'|'Short', entryPrice:'', exitPrice:'',
     quantity:'', leverage:'1', session:'US' as 'US'|'Asia'|'Europe',
@@ -557,17 +562,17 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
       <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:480, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>Nouveau Trade</span>
+          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('trades.newTradeModal')}</span>
           <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
           {[
-            { label:'Symbole', key:'symbol', placeholder:'BTCUSDT' },
-            { label:'Prix entrée', key:'entryPrice', placeholder:'71000' },
-            { label:'Prix sortie', key:'exitPrice', placeholder:'72000' },
-            { label:'Quantité', key:'quantity', placeholder:'0.01' },
-            { label:'Levier', key:'leverage', placeholder:'1' },
-            { label:'P&L net (optionnel)', key:'flashPnLNet', placeholder:'150.00' },
+            { label:t('trades.symbolLabel'),  key:'symbol',       placeholder:'BTCUSDT' },
+            { label:t('trades.entryPrice'),   key:'entryPrice',   placeholder:'71000' },
+            { label:t('trades.exitPrice'),    key:'exitPrice',    placeholder:'72000' },
+            { label:t('trades.quantity'),     key:'quantity',     placeholder:'0.01' },
+            { label:t('trades.leverage'),     key:'leverage',     placeholder:'1' },
+            { label:t('trades.netPnl'),       key:'flashPnLNet',  placeholder:'150.00' },
           ].map(({ label, key, placeholder }) => (
             <div key={key}>
               <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{label}</div>
@@ -575,10 +580,10 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
             </div>
           ))}
           {[
-            { label:'Direction', key:'type', options:['Long','Short'] },
-            { label:'Statut', key:'status', options:['closed','open'] },
-            { label:'Session', key:'session', options:['US','Asia','Europe'] },
-            { label:'Rôle', key:'orderRole', options:['Taker','Maker'] },
+            { label:t('trades.direction'), key:'type',      options:['Long','Short'] },
+            { label:t('trades.status'),    key:'status',    options:['closed','open'] },
+            { label:t('trades.session'),   key:'session',   options:['US','Asia','Europe'] },
+            { label:t('trades.role'),      key:'orderRole', options:['Taker','Maker'] },
           ].map(({ label, key, options }) => (
             <div key={key}>
               <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{label}</div>
@@ -589,19 +594,19 @@ function AddTradeModal({ systems, onClose }: { systems: TradingSystem[]; onClose
           ))}
           {systems.length > 0 && (
             <div style={{ gridColumn:'span 2' }}>
-              <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>Système</div>
+              <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{t('trades.system')}</div>
               <select value={form.systemId} onChange={e => setForm(p => ({...p,systemId:e.target.value}))} style={{...inp,cursor:'pointer'}}>
                 {systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
           )}
           <div style={{ gridColumn:'span 2' }}>
-            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>Notes</div>
-            <textarea value={form.notes} onChange={e => setForm(p => ({...p,notes:e.target.value}))} placeholder="Notes..." rows={2} style={{...inp,resize:'vertical'}} />
+            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:4 }}>{t('trades.notes')}</div>
+            <textarea value={form.notes} onChange={e => setForm(p => ({...p,notes:e.target.value}))} placeholder={t('trades.notes') + '...'} rows={2} style={{...inp,resize:'vertical'}} />
           </div>
         </div>
         <button onClick={save} disabled={saving || !form.symbol} style={{ width:'100%', marginTop:16, padding:10, borderRadius:10, border:'none', background:form.symbol?'var(--tm-accent)':'var(--tm-bg-tertiary)', color:form.symbol?'var(--tm-bg)':'var(--tm-text-muted)', fontSize:14, fontWeight:600, cursor:form.symbol?'pointer':'not-allowed' }}>
-          {saving ? 'Enregistrement...' : 'Créer le trade'}
+          {saving ? t('trades.savingTrade') : t('trades.createTrade')}
         </button>
       </div>
     </div>
@@ -689,6 +694,7 @@ function parseCSVTrades(text: string): CSVTrade[] {
 }
 
 function ImportCSVModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation()
   const [parsed, setParsed]     = useState<CSVTrade[]>([])
   const [fileName, setFileName] = useState('')
   const [importing, setImporting] = useState(false)
@@ -706,9 +712,9 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
       try {
         const text = ev.target?.result as string
         const trades = parseCSVTrades(text)
-        if (trades.length === 0) { setError('Aucun trade détecté dans le fichier.'); return }
+        if (trades.length === 0) { setError(t('trades.noTradesDetected')); return }
         setParsed(trades)
-      } catch { setError('Erreur de lecture du fichier CSV.') }
+      } catch { setError(t('trades.csvReadError')) }
     }
     reader.readAsText(file)
   }
@@ -750,7 +756,7 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
       }
       setDone(true)
     } catch (err) {
-      setError(`Erreur lors de l'import: ${(err as Error).message}`)
+      setError(t('trades.importError', { message: (err as Error).message }))
     } finally {
       setImporting(false)
     }
@@ -765,7 +771,7 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
       <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:560, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>📄 Importer des trades (CSV Propfirm)</span>
+          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('trades.importCSV')}</span>
           <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
         </div>
 
@@ -777,7 +783,7 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
             <input type="file" accept=".csv" onChange={handleFile} style={{ display:'none' }} />
             <div style={{ textAlign:'center' }}>
               <div style={{ fontSize:28, marginBottom:6 }}>📁</div>
-              <div style={{ fontSize:13, color:'var(--tm-text-secondary)', fontWeight:600 }}>{fileName || 'Cliquez pour sélectionner un fichier .csv'}</div>
+              <div style={{ fontSize:13, color:'var(--tm-text-secondary)', fontWeight:600 }}>{fileName || t('trades.selectFile')}</div>
               <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginTop:4 }}>Format supporté : CSV de propfirm (Topstep, FTMO, etc.)</div>
             </div>
           </label>
@@ -794,10 +800,10 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
           <>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:14 }}>
               {[
-                { l: 'Trades détectés', v: parsed.length, c: 'var(--tm-accent)' },
-                { l: 'Gains', v: wins, c: 'var(--tm-profit)' },
-                { l: 'Pertes', v: losses, c: 'var(--tm-loss)' },
-                { l: 'P&L Total', v: `${totalPnL >= 0 ? '+' : ''}$${Math.abs(totalPnL).toFixed(2)}`, c: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
+                { l: t('trades.tradesDetected'), v: parsed.length, c: 'var(--tm-accent)' },
+                { l: t('trades.gains'),           v: wins,          c: 'var(--tm-profit)' },
+                { l: t('trades.losses'),          v: losses,        c: 'var(--tm-loss)' },
+                { l: t('trades.totalPnl'),        v: `${totalPnL >= 0 ? '+' : ''}$${Math.abs(totalPnL).toFixed(2)}`, c: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)' },
               ].map(({ l, v, c }) => (
                 <div key={l} style={{ background:'var(--tm-bg-tertiary)', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
                   <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginBottom:3 }}>{l}</div>
@@ -811,7 +817,7 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
                 <thead>
                   <tr style={{ background:'var(--tm-bg-tertiary)' }}>
-                    {['Symbole','Dir','Qté','Entrée','Sortie','P&L','Date'].map(h => (
+                    {[t('dashboard.tableSymbol'),t('dashboard.tableDir'),t('dashboard.tableQty'),t('dashboard.tableEntry'),t('dashboard.tableExit'),t('dashboard.tablePnl'),t('dashboard.tableDate')].map(h => (
                       <th key={h} style={{ padding:'6px 8px', textAlign:'left', color:'var(--tm-text-muted)', fontWeight:600, fontSize:10, borderBottom:'1px solid #2A2F3E' }}>{h}</th>
                     ))}
                   </tr>
@@ -834,7 +840,7 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
 
             {/* Import button */}
             <button onClick={doImport} disabled={importing} style={{ width:'100%', padding:12, borderRadius:10, border:'none', background: importing ? 'var(--tm-bg-tertiary)' : 'var(--tm-warning)', color: importing ? 'var(--tm-text-muted)' : 'var(--tm-bg)', fontSize:14, fontWeight:700, cursor: importing ? 'not-allowed' : 'pointer' }}>
-              {importing ? `Import en cours... ${progress}/${parsed.length}` : `Importer ${parsed.length} trades dans Firebase`}
+              {importing ? t('trades.importingProgress', { progress, total: parsed.length }) : t('trades.importButton', { count: parsed.length })}
             </button>
 
             {importing && (
@@ -849,10 +855,10 @@ function ImportCSVModal({ onClose }: { onClose: () => void }) {
         {done && (
           <div style={{ textAlign:'center', padding:'20px 0' }}>
             <div style={{ fontSize:48, marginBottom:12 }}>✅</div>
-            <div style={{ fontSize:16, fontWeight:700, color:'var(--tm-profit)', marginBottom:6 }}>{parsed.length} trades importés avec succès !</div>
-            <div style={{ fontSize:12, color:'var(--tm-text-muted)', marginBottom:16 }}>P&L total : <span style={{ color: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)', fontWeight:700, fontFamily:'monospace' }}>{totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toFixed(2)}</span></div>
+            <div style={{ fontSize:16, fontWeight:700, color:'var(--tm-profit)', marginBottom:6 }}>{t('trades.importSuccess', { count: parsed.length })}</div>
+            <div style={{ fontSize:12, color:'var(--tm-text-muted)', marginBottom:16 }}>{t('trades.totalPnl')} : <span style={{ color: totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)', fontWeight:700, fontFamily:'monospace' }}>{totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toFixed(2)}</span></div>
             <button onClick={onClose} style={{ padding:'10px 32px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:14, fontWeight:600, cursor:'pointer' }}>
-              Fermer
+              {t('common.close')}
             </button>
           </div>
         )}

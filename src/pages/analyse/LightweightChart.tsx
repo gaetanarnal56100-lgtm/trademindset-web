@@ -1,6 +1,7 @@
 // LightweightChart.tsx v5 — Canvas drawings + Magnet + Indicator settings
 // Compatible lightweight-charts 4.1.x
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createChart, IChartApi, ISeriesApi, CrosshairMode, Time, LineStyle } from 'lightweight-charts'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, Timestamp } from 'firebase/firestore'
@@ -286,6 +287,7 @@ interface SettingsPanelProps {
   onClose: ()=>void
 }
 function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSettings,msdSettings,setMsdSettings,mpSettings,setMpSettings,onClose}:SettingsPanelProps) {
+  const { t } = useTranslation()
   const Slider = ({label,value,min,max,step=1,onChange}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void}) => (
     <div style={{marginBottom:10}}>
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
@@ -317,23 +319,23 @@ function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSe
           <Slider label="Lissage VMC" value={vmcSettings.smoothLen} min={3} max={30} onChange={v=>setVmcSettings({...vmcSettings,smoothLen:v})}/>
           <Slider label="Multiplicateur signal" value={vmcSettings.signalMult} min={1.1} max={3} step={0.05} onChange={v=>setVmcSettings({...vmcSettings,signalMult:v})}/>
           <Slider label="Seuil haut" value={vmcSettings.upThreshold} min={10} max={80} onChange={v=>setVmcSettings({...vmcSettings,upThreshold:v})}/>
-          <Slider label="Seuil bas" value={vmcSettings.loThreshold} min={-80} max={-10} onChange={v=>setVmcSettings({...vmcSettings,loThreshold:v})}/>
-          <Slider label="Paires EMA ribbon min" value={vmcSettings.ribbonMin} min={3} max={7} onChange={v=>setVmcSettings({...vmcSettings,ribbonMin:v})}/>
+          <Slider label={t('analyse.lowThreshold')} value={vmcSettings.loThreshold} min={-80} max={-10} onChange={v=>setVmcSettings({...vmcSettings,loThreshold:v})}/>
+          <Slider label={t('analyse.ribbonMin')} value={vmcSettings.ribbonMin} min={3} max={7} onChange={v=>setVmcSettings({...vmcSettings,ribbonMin:v})}/>
         </>)}
         {activeId==='smc'&&(<>
-          <Slider label="Longueur swing" value={smcSettings.swingLen} min={3} max={30} onChange={v=>setSmcSettings({...smcSettings,swingLen:v})}/>
-          <Slider label="Nb max OB affichés" value={smcSettings.obCount} min={1} max={8} onChange={v=>setSmcSettings({...smcSettings,obCount:v})}/>
-          <Toggle label="Afficher Order Blocks" value={smcSettings.showOB} onChange={v=>setSmcSettings({...smcSettings,showOB:v})}/>
-          <Toggle label="Afficher FVGs" value={smcSettings.showFVG} onChange={v=>setSmcSettings({...smcSettings,showFVG:v})}/>
+          <Slider label={t('analyse.swingLen')} value={smcSettings.swingLen} min={3} max={30} onChange={v=>setSmcSettings({...smcSettings,swingLen:v})}/>
+          <Slider label={t('analyse.obCount')} value={smcSettings.obCount} min={1} max={8} onChange={v=>setSmcSettings({...smcSettings,obCount:v})}/>
+          <Toggle label={t('analyse.showOB')} value={smcSettings.showOB} onChange={v=>setSmcSettings({...smcSettings,showOB:v})}/>
+          <Toggle label={t('analyse.showFVG')} value={smcSettings.showFVG} onChange={v=>setSmcSettings({...smcSettings,showFVG:v})}/>
         </>)}
         {activeId==='msd'&&(<>
-          <Slider label="Longueur swing" value={msdSettings.swingLen} min={3} max={20} onChange={v=>setMsdSettings({...msdSettings,swingLen:v})}/>
-          <Toggle label="Afficher BOS/CHoCH" value={msdSettings.showBOS} onChange={v=>setMsdSettings({...msdSettings,showBOS:v})}/>
-          <Toggle label="Afficher labels HH/LL…" value={msdSettings.showSwings} onChange={v=>setMsdSettings({...msdSettings,showSwings:v})}/>
+          <Slider label={t('analyse.swingLen')} value={msdSettings.swingLen} min={3} max={20} onChange={v=>setMsdSettings({...msdSettings,swingLen:v})}/>
+          <Toggle label={t('analyse.showBOS')} value={msdSettings.showBOS} onChange={v=>setMsdSettings({...msdSettings,showBOS:v})}/>
+          <Toggle label={t('analyse.showSwings')} value={msdSettings.showSwings} onChange={v=>setMsdSettings({...msdSettings,showSwings:v})}/>
         </>)}
         {activeId==='mp'&&(<>
-          <Slider label="Résolution (bins)" value={mpSettings.bins} min={10} max={60} onChange={v=>setMpSettings({...mpSettings,bins:v})}/>
-          <Toggle label="Afficher histogramme" value={mpSettings.showProfile} onChange={v=>setMpSettings({...mpSettings,showProfile:v})}/>
+          <Slider label={t('analyse.mpBins')} value={mpSettings.bins} min={10} max={60} onChange={v=>setMpSettings({...mpSettings,bins:v})}/>
+          <Toggle label={t('analyse.showProfile')} value={mpSettings.showProfile} onChange={v=>setMpSettings({...mpSettings,showProfile:v})}/>
         </>)}
       </div>
       <div style={{padding:'10px 14px',borderTop:'1px solid #1E2330'}}>
@@ -357,6 +359,7 @@ const LW_MIN_TO_OSC: Record<number, string> = {
 }
 
 export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange}:Props) {
+  const { t } = useTranslation()
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
   const chartApi = useRef<IChartApi|null>(null)
@@ -818,7 +821,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         const delY=ser.priceToCoordinate(d.p1.price)
         const delX=d.type==='hline'?overlayEl.current!.offsetWidth-16:chart.timeScale().timeToCoordinate((d.p2?.time??d.p1.time) as Time)??overlayEl.current!.offsetWidth/2
         if(delY!=null&&Math.hypot(x-delX,y-(delY-18))<12){
-          dbDelete(selectedId).then(()=>{setDrawings(p=>p.filter(dd=>dd.id!==selectedId));setSelectedId(null);toast$('Supprimé')})
+          dbDelete(selectedId).then(()=>{setDrawings(p=>p.filter(dd=>dd.id!==selectedId));setSelectedId(null);toast$(t('analyse.deleted'))})
           return
         }
       }
@@ -867,7 +870,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   useEffect(()=>{
     const handler=(e:KeyboardEvent)=>{
       if((e.key==='Delete'||e.key==='Backspace')&&selectedId&&document.activeElement?.tagName!=='INPUT'){
-        dbDelete(selectedId).then(()=>{setDrawings(p=>p.filter(d=>d.id!==selectedId));setSelectedId(null);toast$('Supprimé')})
+        dbDelete(selectedId).then(()=>{setDrawings(p=>p.filter(d=>d.id!==selectedId));setSelectedId(null);toast$(t('analyse.deleted'))})
       }
       if(e.key==='Escape'){setSelectedId(null);phase.current='idle';firstPt.current=null;setConfirm(null)}
     }
@@ -880,7 +883,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     try{
       const d:Drawing={type:confirm.type,symbol,tf:tf.label,p1:confirm.p1,p2:confirm.p2,label:labelInput||undefined,color,ts:Date.now()}
       const id=await dbSave(d)
-      setDrawings(prev=>[{...d,id},...prev]);setConfirm(null);setLabelInput('');toast$('✓ Sauvegardé')
+      setDrawings(prev=>[{...d,id},...prev]);setConfirm(null);setLabelInput('');toast$(t('common.saved'))
     }catch{toast$('Erreur')}
     setSaving(false)
   }
@@ -893,10 +896,10 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     {id:'rsiDiv', icon:'◇',  label:'RSI Div',     color:'#FF9F0A',          noSettings:true},
   ]
   const TOOLS=[
-    {id:'cursor',icon:'↖',label:'Sélection'},
-    {id:'hline',icon:'─',label:'H. ligne'},
-    {id:'trendline',icon:'↗',label:'Tendance'},
-    {id:'fibo',icon:'◎',label:'Fibonacci'},
+    {id:'cursor',icon:'↖',label:t('analyse.toolSelect')},
+    {id:'hline',icon:'─',label:t('analyse.toolHline')},
+    {id:'trendline',icon:'↗',label:t('analyse.toolTrend')},
+    {id:'fibo',icon:'◎',label:t('analyse.toolFibo')},
     {id:'rect',icon:'▭',label:'Zone'},
     {id:'note',icon:'✎',label:'Note'},
   ]
@@ -978,7 +981,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       {/* Confirm */}
       {confirm&&<div style={{padding:'10px 14px',background:`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.06)`,borderTop:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <span style={{fontSize:11,fontWeight:700,color:'var(--tm-warning)',flexShrink:0}}>
-          {confirm.type==='hline'?`─ @ ${fmtP(confirm.p1.price)}`:confirm.type==='trendline'?'↗ Tendance':confirm.type==='fibo'?'◎ Fibo':confirm.type==='rect'?'▭ Zone':'✎ Note'}
+          {confirm.type==='hline'?`─ @ ${fmtP(confirm.p1.price)}`:confirm.type==='trendline'?t('analyse.confirmTrend'):confirm.type==='fibo'?t('analyse.confirmFibo'):confirm.type==='rect'?t('analyse.confirmRect'):'✎ Note'}
         </span>
         <input autoFocus value={labelInput} onChange={e=>setLabelInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} placeholder={confirm.type==='note'?'Texte…':'Label optionnel…'} style={{flex:1,background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:8,padding:'5px 10px',color:'var(--tm-text-primary)',fontSize:11,minWidth:120}}/>
         <button onClick={handleSave} disabled={saving} style={{padding:'5px 14px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.15)`,border:'1px solid #22C759',color:'var(--tm-profit)'}}>{saving?'…':'💾 Sauvegarder'}</button>
@@ -992,11 +995,11 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
           <div style={{width:3,height:26,borderRadius:2,background:d.color,flexShrink:0}}/>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:11,fontWeight:600,color:'var(--tm-text-primary)'}}>
-              {d.type==='hline'?`─ @ ${fmtP(d.p1.price)}`:d.type==='trendline'?'↗ Tendance':d.type==='fibo'?'◎ Fibo':d.type==='rect'?'▭ Zone':`✎ ${d.label||'Note'}`}
+              {d.type==='hline'?`─ @ ${fmtP(d.p1.price)}`:d.type==='trendline'?t('analyse.confirmTrend'):d.type==='fibo'?t('analyse.confirmFibo'):d.type==='rect'?t('analyse.confirmRect'):`✎ ${d.label||'Note'}`}
             </div>
             <div style={{fontSize:9,color:'var(--tm-text-muted)'}}>{new Date(d.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
           </div>
-          <button onClick={async(e)=>{e.stopPropagation();await dbDelete(d.id);setDrawings(p=>p.filter(x=>x.id!==d.id));if(selectedId===d.id)setSelectedId(null);toast$('Supprimé')}}
+          <button onClick={async(e)=>{e.stopPropagation();await dbDelete(d.id);setDrawings(p=>p.filter(x=>x.id!==d.id));if(selectedId===d.id)setSelectedId(null);toast$(t('analyse.deleted'))}}
             style={{background:`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.1)`,border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.2)',borderRadius:6,color:'var(--tm-loss)',cursor:'pointer',fontSize:10,padding:'3px 8px'}}>✕</button>
         </div>)}
       </div>}

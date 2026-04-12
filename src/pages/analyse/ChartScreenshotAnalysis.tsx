@@ -3,6 +3,7 @@
 // Fix: appel CF correct { imageBase64, prompt } + prompt professionnel + multi-timeframe
 
 import { useState, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
@@ -153,7 +154,8 @@ async function analyzeSingle(base64: string, tfs: string[]): Promise<string> {
 
 async function analyzeMulti(
   images: { base64: string; tf: string }[],
-  onProgress: (msg: string) => void
+  onProgress: (msg: string) => void,
+  synthMsg: string
 ): Promise<string> {
   const tfs = images.map(i => i.tf)
   const fullPrompt = buildSystemPrompt(true) + '\n\n' + buildPrompt(tfs, true)
@@ -178,13 +180,13 @@ async function analyzeMulti(
     }
   }
 
-  if (!partials.length) throw new Error('Toutes les analyses ont échoué')
+  if (!partials.length) throw new Error('allFailed')
 
   // Si une seule image analysée, retourner directement
   if (partials.length === 1) return partials[0]
 
   // Synthèse finale
-  onProgress('Synthèse multi-timeframe...')
+  onProgress(synthMsg)
   const synthesisPrompt = `${buildSystemPrompt(true)}\n\nTu as analysé ${partials.length} graphiques de trading sur différentes unités de temps.\nVoici les analyses individuelles :\n\n${partials.join('\n\n')}\n\nMaintenant, produis une SYNTHÈSE GLOBALE en JSON valide avec TOUS les champs obligatoires, en croisant les informations de chaque UT.`
   return callCF(images[0].base64, synthesisPrompt)
 }
@@ -221,10 +223,11 @@ function Section({ icon, label, content, color }: { icon: string; label: string;
 }
 
 function PlanCard({ plan, isMulti }: { plan: TradePlan; isMulti: boolean }) {
+  const { t } = useTranslation()
   const biaisColor = /hauss/i.test(plan.biais) ? 'var(--tm-profit)' : /baiss/i.test(plan.biais) ? 'var(--tm-loss)' : 'var(--tm-warning)'
   const rows = [
     { label: 'Biais', value: plan.biais, color: biaisColor, bold: true },
-    { label: 'Entrée', value: plan.entree, color: 'var(--tm-accent)' },
+    { label: t('analyse.entry'), value: plan.entree, color: 'var(--tm-accent)' },
     { label: 'Stop Loss', value: plan.stop, color: 'var(--tm-loss)' },
     { label: 'Objectifs', value: plan.objectifs, color: 'var(--tm-profit)' },
     { label: 'Confirmation', value: plan.confirmation, color: 'var(--tm-warning)' },
@@ -257,6 +260,7 @@ function PlanCard({ plan, isMulti }: { plan: TradePlan; isMulti: boolean }) {
 }
 
 function AnalysisResults({ analysis, isMulti }: { analysis: ChartAnalysis; isMulti: boolean }) {
+  const { t } = useTranslation()
   return (
     <div>
       {/* Symbol badge */}
@@ -282,17 +286,17 @@ function AnalysisResults({ analysis, isMulti }: { analysis: ChartAnalysis; isMul
 
       {/* Multi-TF enriched sections */}
       {isMulti && <Section icon="🔗" label="Confluences inter-UT" content={analysis.confluences} color="var(--tm-accent)" />}
-      {isMulti && <Section icon="⚠️" label="Risques identifiés" content={analysis.risques} color="var(--tm-warning)" />}
-      {isMulti && <Section icon="🔄" label="Scénario alternatif" content={analysis.scenario_alternatif} color="var(--tm-purple)" />}
+      {isMulti && <Section icon="⚠️" label={t('analyse.risks')} content={analysis.risques} color="var(--tm-warning)" />}
+      {isMulti && <Section icon="🔄" label={t('analyse.alternativeScenario')} content={analysis.scenario_alternatif} color="var(--tm-purple)" />}
 
       {/* Technical sections */}
-      <Section icon="🧱" label="Structure de marché" content={analysis.structure} color="var(--tm-blue)" />
-      <Section icon="📍" label="Zones clés" content={analysis.zones} color="var(--tm-warning)" />
+      <Section icon="🧱" label={t('analyse.marketStructure')} content={analysis.structure} color="var(--tm-blue)" />
+      <Section icon="📍" label={t('analyse.keyZones')} content={analysis.zones} color="var(--tm-warning)" />
       <Section icon="📈" label="Tendance & Momentum" content={analysis.momentum} color="var(--tm-profit)" />
       <Section icon="🕯️" label="Patterns & Chandeliers" content={analysis.patterns} color="var(--tm-purple)" />
       <Section icon="📊" label="Indicateurs" content={analysis.indicateurs} color="#64D2FF" />
       <Section icon="🧭" label="Lecture Multi-Timeframe" content={analysis.mtf} color="var(--tm-warning)" />
-      <Section icon="🧠" label="Psychologie de marché" content={analysis.psychologie} color="var(--tm-warning)" />
+      <Section icon="🧠" label={t('analyse.marketPsychology')} content={analysis.psychologie} color="var(--tm-warning)" />
     </div>
   )
 }
@@ -300,6 +304,7 @@ function AnalysisResults({ analysis, isMulti }: { analysis: ChartAnalysis; isMul
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string }) {
+  const { t } = useTranslation()
   const [images, setImages]       = useState<TimeframeImage[]>([])
   const [pendingTF, setPendingTF] = useState<TF>('H1')
   const [analysis, setAnalysis]   = useState<ChartAnalysis | null>(null)
@@ -344,7 +349,8 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
       } else {
         raw = await analyzeMulti(
           images.map(i => ({ base64: i.base64, tf: i.tf })),
-          setProgress
+          setProgress,
+          t('analyse.synthesisMTF')
         )
       }
       setRawText(raw)
@@ -352,7 +358,8 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
       setAnalysis(parsed)
       setStatus('done')
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Erreur lors de l\'analyse')
+      const msg = err instanceof Error ? err.message : ''
+      setErrorMsg(msg === 'allFailed' ? t('analyse.allFailed') : msg || t('common.error'))
       setStatus('error')
     }
     setProgress('')
@@ -375,7 +382,7 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Analyse Screenshot IA</div>
             <div style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>
-              {isMulti ? `Multi-timeframe · ${images.length} graphiques · GPT-4o Vision` : 'Upload graphique → GPT-4o Vision → Analyse complète'}
+              {isMulti ? t('analyse.mtfCharts', { count: images.length }) : 'Upload graphique → GPT-4o Vision → Analyse complète'}
             </div>
           </div>
         </div>
