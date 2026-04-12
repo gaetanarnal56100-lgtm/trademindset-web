@@ -1,8 +1,11 @@
 // ProfilPage.tsx — Profil complet : photo, identité, email, mdp, préférences trading, objectifs
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getAuth, updateProfile, updateEmail, updatePassword, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, type User } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
+import { useLanguage } from '@/contexts/LanguageContext'
+import type { Lang } from '@/i18n/config'
 
 // ── Types ────────────────────────────────────────────────────────────────
 interface TradingPrefs {
@@ -92,6 +95,8 @@ function SaveBtn({ onClick, saving, saved, label='Enregistrer' }: { onClick:()=>
 
 // ── Main ─────────────────────────────────────────────────────────────────
 export default function ProfilPage() {
+  const { t } = useTranslation()
+  const { lang, setLang } = useLanguage()
   const auth = getAuth()
   const user = auth.currentUser
   const fileRef = useRef<HTMLInputElement>(null)
@@ -463,6 +468,27 @@ export default function ProfilPage() {
               </div>
             ))}
           </div>
+        </div>
+      </Section>
+
+      {/* ── Langue ────────────────────────────────────────────────────── */}
+      <Section title={t('profil.language')} subtitle={t('profil.languageDesc')} icon="🌐">
+        <div style={{ display:'flex', gap:8 }}>
+          {(['fr','en'] as Lang[]).map(l => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              style={{
+                display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:10, fontSize:13, fontWeight:600,
+                border:'none', cursor:'pointer', transition:'all 0.15s',
+                background: lang === l ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'rgba(255,255,255,0.04)',
+                color: lang === l ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
+                outline: lang === l ? '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.4)' : '1px solid transparent',
+              }}
+            >
+              {l === 'fr' ? '🇫🇷 Français' : '🇬🇧 English'}
+            </button>
+          ))}
         </div>
       </Section>
 

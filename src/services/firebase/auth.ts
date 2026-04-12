@@ -32,7 +32,8 @@ export async function signInWithEmail(email: string, password: string) {
 
 export async function signInWithGoogle() {
   const cred = await signInWithPopup(auth, googleProvider)
-  await ensureUserDoc(cred.user)
+  const lang = localStorage.getItem('tm_lang') ?? 'fr'
+  await ensureUserDoc(cred.user, lang)
   return cred.user
 }
 
@@ -47,12 +48,13 @@ export async function signInWithApple() {
 export async function signUpWithEmail(
   email: string,
   password: string,
-  displayName: string
+  displayName: string,
+  language = 'fr'
 ) {
   const cred = await createUserWithEmailAndPassword(auth, email, password)
   await updateProfile(cred.user, { displayName })
   await sendEmailVerification(cred.user)
-  await ensureUserDoc(cred.user)
+  await ensureUserDoc(cred.user, language)
   return cred.user
 }
 
@@ -76,7 +78,7 @@ export function onAuthChange(callback: (user: User | null) => void) {
 
 // ── User document ──────────────────────────────────────────────────────────
 
-async function ensureUserDoc(user: User) {
+async function ensureUserDoc(user: User, language = 'fr') {
   const ref  = doc(db, 'users', user.uid)
   const snap = await getDoc(ref)
   if (!snap.exists()) {
@@ -86,6 +88,7 @@ async function ensureUserDoc(user: User) {
       displayName: user.displayName || '',
       photoURL:    user.photoURL || null,
       isPremium:   false,
+      language,
       createdAt:   serverTimestamp(),
       updatedAt:   serverTimestamp(),
     })
@@ -102,6 +105,7 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     displayName: d.displayName ?? '',
     photoURL:    d.photoURL    ?? undefined,
     isPremium:   d.isPremium   ?? false,
+    language:    d.language    ?? undefined,
     createdAt:   d.createdAt?.toDate()     ?? new Date(),
   }
 }

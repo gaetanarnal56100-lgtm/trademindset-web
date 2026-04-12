@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import { AssetPriceChart, KlineBar, fmtU } from '@/pages/trades/TradesPage'
@@ -342,13 +343,14 @@ function Week52Bar({ low, high, current }: { low: number; high: number; current:
 }
 
 function NewsSection({ items, loading }: { items: NewsItem[]; loading: boolean }) {
+  const { t } = useTranslation()
   if (loading) return (
     <div style={{ padding:'12px 0', display:'flex', gap:6, alignItems:'center', color:'var(--tm-text-muted)', fontSize:11 }}>
       <div style={{ width:12, height:12, border:'1.5px solid rgba(255,255,255,0.15)', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
-      Chargement des news…
+      {t('assetSheet.loadingNews')}
     </div>
   )
-  if (!items.length) return <div style={{ fontSize:11, color:'var(--tm-text-muted)', padding:'8px 0' }}>Aucune news récente trouvée.</div>
+  if (!items.length) return <div style={{ fontSize:11, color:'var(--tm-text-muted)', padding:'8px 0' }}>{t('assetSheet.noNews')}</div>
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
       {items.map((n, i) => (
@@ -381,6 +383,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, onClose, onOpenAnalysis }: AssetDetailSheetProps) {
+  const { t } = useTranslation()
   const [tf, setTf] = useState('7j')
   const [bars, setBars] = useState<KlineBar[]>([])
   const [stockData, setStockData] = useState<StockFundamentals | null>(null)
@@ -447,8 +450,8 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
             <div style={{ flex:1 }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
                 <span style={{ fontSize:18, fontWeight:800, fontFamily:'JetBrains Mono, monospace', color:'var(--tm-text-primary)' }}>{symbol}</span>
-                {isCrypto && <span style={{ fontSize:9, fontWeight:700, background:'rgba(91,94,244,0.2)', color:'#8B8EF4', border:'1px solid rgba(91,94,244,0.3)', borderRadius:4, padding:'2px 6px' }}>CRYPTO</span>}
-                {!isCrypto && <span style={{ fontSize:9, fontWeight:700, background:'rgba(255,195,0,0.15)', color:'#FFD700', border:'1px solid rgba(255,195,0,0.25)', borderRadius:4, padding:'2px 6px' }}>STOCK</span>}
+                {isCrypto && <span style={{ fontSize:9, fontWeight:700, background:'rgba(91,94,244,0.2)', color:'#8B8EF4', border:'1px solid rgba(91,94,244,0.3)', borderRadius:4, padding:'2px 6px' }}>{t('assetSheet.crypto')}</span>}
+                {!isCrypto && <span style={{ fontSize:9, fontWeight:700, background:'rgba(255,195,0,0.15)', color:'#FFD700', border:'1px solid rgba(255,195,0,0.25)', borderRadius:4, padding:'2px 6px' }}>{t('assetSheet.stock')}</span>}
               </div>
               <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginBottom:8 }}>{name}</div>
               <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
@@ -477,8 +480,8 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
           {rsi != null && (
             <div style={{ display:'flex', gap:6, marginTop:8 }}>
               <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(255,255,255,0.06)', color:'var(--tm-text-muted)' }}>RSI {rsi}</span>
-              {divergence === 'bull' && <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(34,199,89,0.12)', color:'var(--tm-profit)' }}>↗ Divergence Bull</span>}
-              {divergence === 'bear' && <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(255,59,48,0.12)', color:'var(--tm-loss)' }}>↘ Divergence Bear</span>}
+              {divergence === 'bull' && <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(34,199,89,0.12)', color:'var(--tm-profit)' }}>{t('assetSheet.rsiBull')}</span>}
+              {divergence === 'bear' && <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(255,59,48,0.12)', color:'var(--tm-loss)' }}>{t('assetSheet.rsiBear')}</span>}
             </div>
           )}
         </div>
@@ -489,13 +492,13 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
           {/* Graphique prix */}
           <div>
             <div style={{ display:'flex', gap:4, marginBottom:8 }}>
-              {(['1j','7j','1m'] as const).map(t => (
-                <button key={t} onClick={() => setTf(t)} style={{
+              {(['1j','7j','1m'] as const).map(tf_ => (
+                <button key={tf_} onClick={() => setTf(tf_)} style={{
                   padding:'3px 10px', borderRadius:6, fontSize:10, fontWeight:600, cursor:'pointer', border:'none',
-                  background: tf === t ? 'var(--tm-accent, #5B5EF4)22' : 'transparent',
-                  color: tf === t ? 'var(--tm-accent, #5B5EF4)' : 'var(--tm-text-muted)',
-                  outline: tf === t ? '1px solid var(--tm-accent, #5B5EF4)' : '1px solid transparent',
-                }}>{t}</button>
+                  background: tf === tf_ ? 'var(--tm-accent, #5B5EF4)22' : 'transparent',
+                  color: tf === tf_ ? 'var(--tm-accent, #5B5EF4)' : 'var(--tm-text-muted)',
+                  outline: tf === tf_ ? '1px solid var(--tm-accent, #5B5EF4)' : '1px solid transparent',
+                }}>{tf_}</button>
               ))}
               {barsLoad && <div style={{ marginLeft:8, width:14, height:14, border:'1.5px solid rgba(255,255,255,0.1)', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite', alignSelf:'center' }} />}
             </div>
@@ -504,7 +507,7 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
               : !barsLoad && (
                 <div style={{ height:160, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(255,255,255,0.02)', borderRadius:8, border:'1px solid rgba(255,255,255,0.05)', fontSize:11, color:'var(--tm-text-muted)', flexDirection:'column', gap:6 }}>
                   <span style={{ fontSize:18 }}>📊</span>
-                  <span>Graphique disponible sur l'analyse</span>
+                  <span>{t('assetSheet.graphUnavailable')}</span>
                 </div>
               )
             }
@@ -519,19 +522,19 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
             </div>
           ) : fundErr ? (
             <div style={{ padding:'10px 14px', borderRadius:8, background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.15)', fontSize:11, color:'var(--tm-text-muted)' }}>
-              Données fondamentales indisponibles
+              {t('assetSheet.fundamentals')} — {fundErr}
             </div>
           ) : isCrypto && cryptoData ? (
             <>
-              <SectionTitle>Fondamentaux</SectionTitle>
+              <SectionTitle>{t('assetSheet.fundamentals')}</SectionTitle>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
-                <MetricCell label="Market Cap" value={fmtBig(cryptoData.marketCap)} />
-                <MetricCell label="Rang" value={cryptoData.marketCapRank ? `#${cryptoData.marketCapRank}` : '—'} />
-                <MetricCell label="Volume 24h" value={fmtBig(cryptoData.volume24h)} />
-                <MetricCell label="Supply circulante" value={cryptoData.supply ? fmtU(cryptoData.supply) : '—'} />
+                <MetricCell label={t('assetSheet.marketCap')} value={fmtBig(cryptoData.marketCap)} />
+                <MetricCell label={t('assetSheet.rank')} value={cryptoData.marketCapRank ? `#${cryptoData.marketCapRank}` : '—'} />
+                <MetricCell label={t('assetSheet.volume24h')} value={fmtBig(cryptoData.volume24h)} />
+                <MetricCell label={t('assetSheet.circulatingSupply')} value={cryptoData.supply ? fmtU(cryptoData.supply) : '—'} />
               </div>
 
-              <SectionTitle>Performance</SectionTitle>
+              <SectionTitle>{t('assetSheet.performance')}</SectionTitle>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
                 {([['24h', cryptoData.change24h],['7j', cryptoData.change7d],['30j', cryptoData.change30d],['1an', cryptoData.change1y]] as [string, number | null][]).map(([l, v]) => (
                   <MetricCell key={l} label={l} value={fmtPct(v)} color={v == null ? undefined : v >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)'} />
@@ -540,52 +543,52 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
 
               {cryptoData.ath != null && (
                 <>
-                  <SectionTitle>All-Time High</SectionTitle>
+                  <SectionTitle>{t('assetSheet.allTimeHigh')}</SectionTitle>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
                     <MetricCell label="ATH" value={`$${cryptoData.ath >= 1000 ? cryptoData.ath.toFixed(0) : cryptoData.ath.toFixed(2)}`} />
-                    <MetricCell label="Distance ATH" value={fmtPct(cryptoData.athChange)} color="var(--tm-loss)" />
+                    <MetricCell label={t('assetSheet.athDistance')} value={fmtPct(cryptoData.athChange)} color="var(--tm-loss)" />
                   </div>
                 </>
               )}
             </>
           ) : stockData ? (
             <>
-              <SectionTitle>Fondamentaux</SectionTitle>
+              <SectionTitle>{t('assetSheet.fundamentals')}</SectionTitle>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
-                <MetricCell label="Market Cap" value={fmtBig(stockData.marketCap)} />
-                <MetricCell label="P/E Ratio" value={stockData.peRatio != null ? stockData.peRatio.toFixed(1) : '—'} />
-                <MetricCell label="EPS" value={stockData.eps != null ? `$${stockData.eps.toFixed(2)}` : '—'} />
-                <MetricCell label="Beta" value={stockData.beta != null ? stockData.beta.toFixed(2) : '—'} />
+                <MetricCell label={t('assetSheet.marketCap')} value={fmtBig(stockData.marketCap)} />
+                <MetricCell label={t('assetSheet.peRatio')} value={stockData.peRatio != null ? stockData.peRatio.toFixed(1) : '—'} />
+                <MetricCell label={t('assetSheet.eps')} value={stockData.eps != null ? `$${stockData.eps.toFixed(2)}` : '—'} />
+                <MetricCell label={t('assetSheet.beta')} value={stockData.beta != null ? stockData.beta.toFixed(2) : '—'} />
               </div>
 
               {stockData.week52High != null && stockData.week52Low != null && (
                 <>
-                  <SectionTitle>Range 52 semaines</SectionTitle>
+                  <SectionTitle>{t('assetSheet.range52w')}</SectionTitle>
                   <Week52Bar low={stockData.week52Low} high={stockData.week52High} current={stockData.price} />
                 </>
               )}
 
               {(stockData.dividendYield != null || stockData.dividendAnnual != null) && (
                 <>
-                  <SectionTitle>Dividendes</SectionTitle>
+                  <SectionTitle>{t('assetSheet.dividends')}</SectionTitle>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
-                    <MetricCell label="Rendement" value={stockData.dividendYield != null ? `${stockData.dividendYield.toFixed(2)}%` : '—'} color="#FFD700" />
-                    <MetricCell label="Dividende annuel" value={stockData.dividendAnnual != null ? `$${stockData.dividendAnnual.toFixed(2)}` : '—'} />
-                    <MetricCell label="Ex-dividende" value={fmtDateStr(stockData.exDividendDate)} />
-                    <MetricCell label="Volume" value={stockData.volume != null ? fmtU(stockData.volume) : '—'} />
+                    <MetricCell label={t('assetSheet.yield')} value={stockData.dividendYield != null ? `${stockData.dividendYield.toFixed(2)}%` : '—'} color="#FFD700" />
+                    <MetricCell label={t('assetSheet.annualDividend')} value={stockData.dividendAnnual != null ? `$${stockData.dividendAnnual.toFixed(2)}` : '—'} />
+                    <MetricCell label={t('assetSheet.exDividend')} value={fmtDateStr(stockData.exDividendDate)} />
+                    <MetricCell label={t('assetSheet.volume')} value={stockData.volume != null ? fmtU(stockData.volume) : '—'} />
                   </div>
                 </>
               )}
 
               {stockData.earningsDate && (
                 <>
-                  <SectionTitle>Prochain Earnings</SectionTitle>
+                  <SectionTitle>{t('assetSheet.nextEarnings')}</SectionTitle>
                   <div style={{ padding:'12px 16px', background:'rgba(255,195,0,0.06)', borderRadius:8, border:'1px solid rgba(255,195,0,0.2)', display:'flex', gap:12, alignItems:'center' }}>
                     <span style={{ fontSize:22 }}>📅</span>
                     <div>
                       <div style={{ fontSize:13, fontWeight:700, color:'#FFD700' }}>{stockData.earningsDate}</div>
                       <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginTop:2 }}>
-                        EPS estimé : {stockData.epsEstimate != null ? `$${stockData.epsEstimate.toFixed(2)}` : '—'}
+                        {t('assetSheet.epsEstimate')} {stockData.epsEstimate != null ? `$${stockData.epsEstimate.toFixed(2)}` : '—'}
                       </div>
                     </div>
                   </div>
@@ -595,7 +598,7 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
           ) : null}
 
           {/* ── News ──────────────────────────────────────────────────────── */}
-          <SectionTitle>News récentes</SectionTitle>
+          <SectionTitle>{t('assetSheet.recentNews')}</SectionTitle>
           <NewsSection items={news} loading={newsLoad} />
 
         </div>
@@ -611,7 +614,7 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
               boxShadow:'0 4px 16px rgba(91,94,244,0.3)',
             }}
           >
-            📈 Voir l'analyse complète
+            {t('assetSheet.viewFullAnalysis')}
           </button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import XPBar from '@/components/gamification/XPBar'
 import { useState, useEffect } from 'react'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { logout } from '@/services/firebase/auth'
 import { useUser } from '@/hooks/useAuth'
 import { doc, onSnapshot } from 'firebase/firestore'
@@ -12,26 +13,27 @@ import {
   IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconAI, IconMarches, IconPredict,
 } from '@/components/ui/Icons'
 
-const NAV = [
-  { to: '/app',              label: 'Dashboard',  Icon: IconDashboard,  end: true },
-  { to: '/app/trades',     label: 'Trades',     Icon: IconTrades },
-  { to: '/app/analyse',    label: 'Analyse',    Icon: IconAnalyse },
-  { to: '/app/marches',    label: 'Marchés',    Icon: IconMarches },
-  { to: '/app/predict',    label: 'Prédictions',Icon: IconPredict },
-  { to: '/app/journal',    label: 'Journal',    Icon: IconJournal },
-  { to: '/app/calendrier', label: 'Calendrier', Icon: IconCalendrier },
-  { to: '/app/systemes',   label: 'Systèmes',   Icon: IconSystemes },
-]
-const NAV_BOTTOM = [
-  { to: '/app/badges',   label: 'Badges',     Icon: IconStar },
-  { to: '/app/referral', label: 'Parrainage', Icon: IconStar },
-  { to: '/app/profil',   label: 'Profil',     Icon: IconProfil },
-  { to: '/app/settings', label: 'Paramètres', Icon: IconSettings },
-]
-
 export default function Sidebar() {
+  const { t } = useTranslation()
   const user     = useUser()
   const navigate = useNavigate()
+
+  const NAV = [
+    { to: '/app',              label: t('nav.dashboard'),   Icon: IconDashboard,  end: true },
+    { to: '/app/trades',      label: t('nav.trades'),      Icon: IconTrades },
+    { to: '/app/analyse',     label: t('nav.analyse'),     Icon: IconAnalyse },
+    { to: '/app/marches',     label: t('nav.marches'),     Icon: IconMarches },
+    { to: '/app/predict',     label: t('nav.predictions'), Icon: IconPredict },
+    { to: '/app/journal',     label: t('nav.journal'),     Icon: IconJournal },
+    { to: '/app/calendrier',  label: t('nav.calendrier'),  Icon: IconCalendrier },
+    { to: '/app/systemes',    label: t('nav.systemes'),    Icon: IconSystemes },
+  ]
+  const NAV_BOTTOM = [
+    { to: '/app/badges',   label: t('nav.badges'),   Icon: IconStar },
+    { to: '/app/referral', label: t('nav.referral'), Icon: IconStar },
+    { to: '/app/profil',   label: t('nav.profil'),   Icon: IconProfil },
+    { to: '/app/settings', label: t('nav.settings'), Icon: IconSettings },
+  ]
   const [profilePhoto, setProfilePhoto] = useState<string|null>(null)
   const [profileName, setProfileName] = useState<string|null>(null)
   async function handleLogout() { await logout(); navigate('/') }
@@ -98,7 +100,7 @@ export default function Sidebar() {
 
         {/* Coach IA — Coming Soon */}
         <div
-          title="Bientôt disponible"
+          title={t('nav.comingSoon')}
           style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '9px 12px', borderRadius: 10, cursor: 'not-allowed',
@@ -109,7 +111,7 @@ export default function Sidebar() {
           }}
         >
           <IconAI size={16} />
-          <span>Coach IA</span>
+          <span>{t('nav.coachIA')}</span>
           <span style={{
             marginLeft: 'auto',
             fontSize: 9, fontWeight: 700,
@@ -157,7 +159,7 @@ export default function Sidebar() {
             </div>
           </div>
           <NotificationBell />
-          <button onClick={handleLogout} title="Déconnexion" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, color: 'var(--tm-text-muted)', display: 'flex', alignItems: 'center' }}>
+          <button onClick={handleLogout} title={t('nav.logout')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, color: 'var(--tm-text-muted)', display: 'flex', alignItems: 'center' }}>
             <IconLogout size={14} />
           </button>
         </div>

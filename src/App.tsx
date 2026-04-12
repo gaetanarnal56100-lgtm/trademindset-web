@@ -24,6 +24,7 @@ import BadgesPage   from '@/pages/badges/BadgesPage'
 import PredictPage  from '@/pages/predict/PredictPage'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
 import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
+import { LanguageProvider } from '@/contexts/LanguageContext'
 import { useAppStore } from '@/store/appStore'
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
   if (isAuthLoading) return <LoadingScreen />
 
   return (
+    <LanguageProvider>
     <ThemeProvider isPremium={isPremium}>
     <Routes>
       {/* ── Landing page publique ── */}
@@ -75,5 +77,6 @@ export default function App() {
       <Route path="*" element={<Navigate to={isAuthenticated ? '/app' : '/'} replace />} />
     </Routes>
     </ThemeProvider>
+    </LanguageProvider>
   )
 }

@@ -1,11 +1,13 @@
 // src/pages/auth/LoginPage.tsx
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
 import { signInWithEmail, signInWithGoogle } from '@/services/firebase/auth'
 import { IconEye, IconEyeOff, IconGoogle } from '@/components/ui/Icons'
 
 export default function LoginPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -19,7 +21,7 @@ export default function LoginPage() {
       await signInWithEmail(email, password)
       navigate('/app')
     } catch (err: unknown) {
-      toast.error((err as Error).message ?? 'Erreur de connexion')
+      toast.error((err as Error).message ?? t('auth.loginError'))
     } finally {
       setLoading(false)
     }
@@ -31,7 +33,7 @@ export default function LoginPage() {
       await signInWithGoogle()
       navigate('/app')
     } catch (err: unknown) {
-      toast.error((err as Error).message ?? 'Erreur Google')
+      toast.error((err as Error).message ?? t('auth.googleError'))
     } finally {
       setLoading(false)
     }
@@ -40,36 +42,34 @@ export default function LoginPage() {
   return (
     <div className="card animate-slide-up space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-text-primary font-display">Connexion</h1>
-        <p className="text-sm text-text-secondary mt-1">Bienvenue sur TradeMindset</p>
+        <h1 className="text-xl font-bold text-text-primary font-display">{t('auth.loginTitle')}</h1>
+        <p className="text-sm text-text-secondary mt-1">{t('auth.loginSubtitle')}</p>
       </div>
 
-      {/* Google */}
       <button
         onClick={handleGoogle} disabled={loading}
         className="w-full flex items-center justify-center gap-3 bg-bg-tertiary border border-border text-text-primary text-sm font-medium py-2.5 rounded-lg hover:bg-bg-secondary transition-colors disabled:opacity-50"
       >
         <IconGoogle size={18} />
-        Continuer avec Google
+        {t('auth.continueWithGoogle')}
       </button>
 
       <div className="flex items-center gap-3">
         <div className="flex-1 h-px bg-border" />
-        <span className="text-xs text-text-tertiary">ou</span>
+        <span className="text-xs text-text-tertiary">{t('auth.or')}</span>
         <div className="flex-1 h-px bg-border" />
       </div>
 
-      {/* Email form */}
       <form onSubmit={handleEmail} className="space-y-4">
         <div>
-          <label className="input-label">Email</label>
+          <label className="input-label">{t('auth.email')}</label>
           <input
             type="email" value={email} onChange={e => setEmail(e.target.value)}
             className="input" placeholder="trader@email.com" required
           />
         </div>
         <div>
-          <label className="input-label">Mot de passe</label>
+          <label className="input-label">{t('auth.password')}</label>
           <div className="relative">
             <input
               type={showPwd ? 'text' : 'password'}
@@ -95,14 +95,14 @@ export default function LoginPage() {
               <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
           )}
-          {loading ? 'Connexion...' : 'Se connecter'}
+          {loading ? t('auth.loggingIn') : t('auth.loginButton')}
         </button>
       </form>
 
       <p className="text-center text-sm text-text-secondary">
-        Pas encore de compte ?{' '}
+        {t('auth.noAccount')}{' '}
         <Link to="/signup" className="text-brand-cyan hover:underline font-medium">
-          S'inscrire
+          {t('auth.signupLink')}
         </Link>
       </p>
     </div>
