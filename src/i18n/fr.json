@@ -70,7 +70,9 @@
     "delete": "Supprimer",
     "edit": "Modifier",
     "add": "Ajouter",
-    "daysShort": ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"]
+    "daysShort": ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"],
+    "months": ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"],
+    "daysSun": ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"]
   },
   "dashboard": {
     "pnlTotal": "P&L Total",
@@ -160,7 +162,12 @@
     "consecutive": "consécutifs",
     "analyzedPeriod": "Durée analysée",
     "pnlCurve": "Courbe P&L",
-    "chartTab": "Graphique"
+    "chartTab": "Graphique",
+    "winStreak": "Série gagnante",
+    "lossStreak": "Série perdante",
+    "weekAbbr": "Sem.",
+    "winsLabel": "wins",
+    "lossesLabel": "losses"
   },
   "trades": {
     "title": "Trades",

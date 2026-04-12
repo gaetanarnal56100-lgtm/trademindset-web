@@ -85,6 +85,7 @@ function calcEmotions(moods: MoodEntry[], trades: Trade[]) {
 
 // ── Adaptive Calendar Heatmap with tooltip ────────────────────────────────
 function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
+  const { t, i18n } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const [cellSize, setCellSize] = useState(16)
   const [tooltip,setTooltip]=useState<{key:string,pnl:number,date:Date,count:number,symbols:string[],left:number,top:number}|null>(null)
@@ -146,7 +147,7 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
         <>
           {/* Day labels */}
           <div style={{display:'grid',gridTemplateColumns:`repeat(7,${cellSize}px)`,gap:gap,marginBottom:4}}>
-            {['D','L','M','M','J','V','S'].map((l,i)=>(
+            {(t('common.daysSun', {returnObjects:true}) as string[]).map(d => d[0].toUpperCase()).map((l,i)=>(
               <div key={i} style={{fontSize:fs-1,color:'var(--tm-text-muted)',textAlign:'center',fontWeight:600,lineHeight:`${cellSize}px`}}>{l}</div>
             ))}
           </div>
@@ -191,7 +192,7 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
           }}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
               <div style={{fontSize:11,color:'var(--tm-text-secondary)',fontWeight:600}}>
-                {tooltip.date.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})}
+                {tooltip.date.toLocaleDateString(i18n.language,{weekday:'short',day:'numeric',month:'short'})}
               </div>
               {tooltip.key===bestKey&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',background:'rgba(var(--tm-profit-rgb,34,199,89),0.15)',padding:'2px 7px',borderRadius:10}}>Best</div>}
               {tooltip.key===worstKey&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-loss)',background:'rgba(var(--tm-loss-rgb,255,59,48),0.15)',padding:'2px 7px',borderRadius:10}}>Worst</div>}
@@ -208,14 +209,14 @@ function CalendarHeatmap({trades,period}:{trades:Trade[],period:string}) {
 // ── Month Grid for 3M+ periods ────────────────────────────────────────────
 function MonthGrid({ byDay, since, today, maxAbs, bestKey, worstKey, setTooltip, tooltip, days }:
   { byDay: Record<string,{pnl:number,count:number,symbols:string[]}>; since:Date; today:Date; maxAbs:number; bestKey:string|null; worstKey:string|null; setTooltip:any; tooltip:any; days:number }) {
-  
+  const { t, i18n } = useTranslation()
   // Build months array
   const months: { label: string; year: number; month: number; days: { date:Date; key:string; data?:{pnl:number;count:number;symbols:string[]} }[] }[] = []
   const cur = new Date(since)
   cur.setDate(1)
   while (cur <= today || months.length === 0) {
     const m = cur.getMonth(), y = cur.getFullYear()
-    const label = cur.toLocaleDateString('fr-FR', { month:'short' })
+    const label = cur.toLocaleDateString(i18n.language, { month:'short' })
     const monthDays: typeof months[0]['days'] = []
     const d = new Date(y, m, 1)
     while (d.getMonth() === m) {
@@ -255,7 +256,7 @@ function MonthGrid({ byDay, since, today, maxAbs, bestKey, worstKey, setTooltip,
             </div>
             {mi === 0 && (
               <div style={{ display:'grid', gridTemplateColumns:`repeat(7,${cellSz}px)`, gap, marginBottom:2 }}>
-                {['D','L','M','M','J','V','S'].map((l,i)=>(
+                {(t('common.daysSun', {returnObjects:true}) as string[]).map(d => d[0].toUpperCase()).map((l,i)=>(
                   <div key={i} style={{ fontSize:7, color:'var(--tm-text-muted)', textAlign:'center' }}>{l}</div>
                 ))}
               </div>
@@ -297,7 +298,7 @@ interface TimeRange { id: string; name: string; startHour: number; endHour: numb
 
 // ── Advanced Analytics Panel ──────────────────────────────────────────────
 function AdvancedAnalytics({trades}:{trades:Trade[]}) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [tab,setTab]=useState<'analytics'|'metrics'|'calendar'>('analytics')
   const [metricsTab,setMetricsTab]=useState<'month'|'session'|'hour'|'day'>('month')
   const [sessionRanges,setSessionRanges]=useState<TimeRange[]>([
@@ -341,8 +342,8 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
         map[k].value+=tradePnL(t)
       }
       return Object.entries(map).sort(([a],[b])=>a.localeCompare(b)).map(([,v])=>({
-        label:v.date.toLocaleDateString('fr-FR',{weekday:'short'}).slice(0,3),
-        full:v.date.toLocaleDateString('fr-FR',{day:'numeric',month:'short'}),
+        label:v.date.toLocaleDateString(i18n.language,{weekday:'short'}).slice(0,3),
+        full:v.date.toLocaleDateString(i18n.language,{day:'numeric',month:'short'}),
         value:v.value,
       }))
     }
@@ -354,14 +355,14 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
         const k=`${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`
         map[k]=(map[k]||0)+tradePnL(t)
       }
-      return Object.entries(map).sort(([a],[b])=>a.localeCompare(b)).map(([,value],i)=>({label:`S${i+1}`,full:`Sem. ${i+1}`,value}))
+      return Object.entries(map).sort(([a],[b])=>a.localeCompare(b)).map(([,value],i)=>({label:`S${i+1}`,full:`${t('dashboard.weekAbbr')} ${i+1}`,value}))
     }
     // Monthly (default)
     const monthNames = t('common.months', { returnObjects: true }) as string[]
     const map: Record<number,number>={}
     for(const tr of closed){const k=tr.date.getMonth();map[k]=(map[k]||0)+tradePnL(tr)}
     return Array.from({length:12},(_,i)=>i).filter(i=>map[i]!=null).map(i=>({label:monthNames[i][0].toUpperCase(),full:monthNames[i],value:map[i]!}))
-  },[closed,granularity])
+  },[closed,granularity,t,i18n.language])
   const maxAbsM=Math.max(...months.map(m=>Math.abs(m.value)),1)
   const bestM=months.length?months.reduce((a,b)=>b.value>a.value?b:a,months[0]).value:0
   const worstM=months.length?months.reduce((a,b)=>b.value<a.value?b:a,months[0]).value:0
@@ -467,7 +468,7 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
       {tab==='analytics'&&(
         <div>
           <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:12}}>{pLbl.title}</div>
-          {months.length===0?<div style={{textAlign:'center',color:'var(--tm-text-muted)',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
+          {months.length===0?<div style={{textAlign:'center',color:'var(--tm-text-muted)',fontSize:12,padding:'20px 0'}}>{t('common.noData')}</div>:(
             <>
               <div style={{display:'flex',alignItems:'flex-end',gap:4,height:120,marginBottom:10,padding:'0 4px'}}>
                 {months.map((m,i)=>{
@@ -500,14 +501,14 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
         <div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
             <MetricsTabBtn id="month"   label={pLbl.tab}/>
-            <MetricsTabBtn id="session" label="Par session"/>
-            <MetricsTabBtn id="hour"    label="Par heure"/>
-            <MetricsTabBtn id="day"     label="Par jour"/>
+            <MetricsTabBtn id="session" label={t('dashboard.perSession')}/>
+            <MetricsTabBtn id="hour"    label={t('dashboard.perHour')}/>
+            <MetricsTabBtn id="day"     label={t('dashboard.perDay')}/>
           </div>
 
           {metricsTab==='month'&&(
             <div>
-              {months.length===0?<div style={{textAlign:'center',color:'var(--tm-text-muted)',fontSize:12,padding:'20px 0'}}>Pas de données</div>:(
+              {months.length===0?<div style={{textAlign:'center',color:'var(--tm-text-muted)',fontSize:12,padding:'20px 0'}}>{t('common.noData')}</div>:(
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {months.map((m,i)=>{
                     const pct=Math.abs(m.value)/maxAbsM*100
@@ -597,6 +598,7 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
 import ModularDashboard from './modular/ModularDashboard'
 
 export default function DashboardPage() {
+  const { t } = useTranslation()
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [systems, setSystems] = useState<TradingSystem[]>([])
   const [moods,   setMoods]   = useState<MoodEntry[]>([])
@@ -785,7 +787,7 @@ export default function DashboardPage() {
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
           <div>
             <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)'}}>Heatmap</div>
-            <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>Résultat (P&L) · Cliquez sur un jour</div>
+            <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>{t('dashboard.heatmapSubtitle')}</div>
           </div>
           <div style={{display:'flex',gap:5}}>
             {['7j','1M','3M','6M','1A'].map(p=>(
@@ -800,8 +802,8 @@ export default function DashboardPage() {
           {loading?<Skel h={80}/>:<CalendarHeatmap trades={trades} period={period}/>}
         </div>
         {!loading&&<div style={{display:'flex',gap:8,marginTop:10,alignItems:'center',justifyContent:'flex-end'}}>
-          <div style={{width:8,height:8,borderRadius:2,background:'var(--tm-profit)'}}/><span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Gains</span>
-          <div style={{width:8,height:8,borderRadius:2,background:'var(--tm-loss)',marginLeft:8}}/><span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Pertes</span>
+          <div style={{width:8,height:8,borderRadius:2,background:'var(--tm-profit)'}}/><span style={{fontSize:10,color:'var(--tm-text-muted)'}}>{t('trades.gains')}</span>
+          <div style={{width:8,height:8,borderRadius:2,background:'var(--tm-loss)',marginLeft:8}}/><span style={{fontSize:10,color:'var(--tm-text-muted)'}}>{t('trades.losses')}</span>
         </div>}
       </div>
 
@@ -849,15 +851,15 @@ export default function DashboardPage() {
             <div style={{textAlign:'center',padding:'24px 0',color:'var(--tm-text-muted)',fontSize:13}}>Aucun trade</div>
           ):(
             <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              {recent.map(t=>{
-                const pnl=tradePnL(t)
-                return(<div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:10,background:'rgba(255,255,255,0.02)'}}>
-                  <div style={{width:28,height:28,borderRadius:8,background:t.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>{t.type==='Long'?'↑':'↓'}</div>
+              {recent.map(tr=>{
+                const pnl=tradePnL(tr)
+                return(<div key={tr.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:10,background:'rgba(255,255,255,0.02)'}}>
+                  <div style={{width:28,height:28,borderRadius:8,background:tr.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>{tr.type==='Long'?'↑':'↓'}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{t.symbol}</div>
-                    <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{fmtDate(t.date)} · <span style={{color:systemColor(t.systemId)}}>{systemName(t.systemId)}</span></div>
+                    <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{tr.symbol}</div>
+                    <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{fmtDate(tr.date)} · <span style={{color:systemColor(tr.systemId)}}>{systemName(tr.systemId)}</span></div>
                   </div>
-                  {t.status==='open'?(<div style={{fontSize:10,fontWeight:600,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)',padding:'2px 7px',borderRadius:5}}>OUVERT</div>):(<div style={{fontSize:12,fontWeight:700,color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</div>)}
+                  {tr.status==='open'?(<div style={{fontSize:10,fontWeight:600,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)',padding:'2px 7px',borderRadius:5}}>{t('common.open').toUpperCase()}</div>):(<div style={{fontSize:12,fontWeight:700,color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</div>)}
                 </div>)
               })}
             </div>
@@ -865,16 +867,16 @@ export default function DashboardPage() {
         </div>
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:14}}>Statistiques</div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:14}}>{t('dashboard.statistics')}</div>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:10}}>{[1,2,3,4,5].map(i=><Skel key={i}/>)}</div>:(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               {[
-                {label:'Trades fermés',  value:closed.length,              c:'var(--tm-text-primary)'},
-                {label:'Gain moyen',     value:`+$${fmt(s.avgWin)}`,       c:'var(--tm-profit)'},
-                {label:'Perte moyenne',  value:`-$${fmt(s.avgLoss)}`,      c:'var(--tm-loss)'},
-                {label:'Série gagnante', value:`${s.bestStreak} trades`,   c:'var(--tm-warning)'},
-                {label:'Série perdante', value:`${s.worstStreak} trades`,  c:'var(--tm-loss)'},
-                {label:'Streak actuel',  value:s.currentStreak>0?`+${s.currentStreak} wins`:`${Math.abs(s.currentStreak)} losses`, c:s.currentStreak>0?'var(--tm-profit)':'var(--tm-loss)'},
+                {label:t('dashboard.closedTrades'),  value:closed.length,              c:'var(--tm-text-primary)'},
+                {label:t('dashboard.avgGain'),        value:`+$${fmt(s.avgWin)}`,       c:'var(--tm-profit)'},
+                {label:t('dashboard.avgLoss'),        value:`-$${fmt(s.avgLoss)}`,      c:'var(--tm-loss)'},
+                {label:t('dashboard.winStreak'),      value:`${s.bestStreak} trades`,   c:'var(--tm-warning)'},
+                {label:t('dashboard.lossStreak'),     value:`${s.worstStreak} trades`,  c:'var(--tm-loss)'},
+                {label:t('dashboard.currentStreak'),  value:s.currentStreak>0?`+${s.currentStreak} ${t('dashboard.winsLabel')}`:`${Math.abs(s.currentStreak)} ${t('dashboard.lossesLabel')}`, c:s.currentStreak>0?'var(--tm-profit)':'var(--tm-loss)'},
               ].map(({label,value,c})=>(
                 <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <span style={{fontSize:12,color:'var(--tm-text-secondary)'}}>{label}</span>
