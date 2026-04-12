@@ -911,7 +911,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <div style={{width:26,height:26,borderRadius:7,background:'linear-gradient(135deg,#22C759,#00E5FF)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>⚡</div>
-          <div><div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)'}}>Lightweight Charts</div><div style={{fontSize:9,color:'var(--tm-text-muted)'}}>Sauvegarde Firestore · {symbol}</div></div>
+          <div><div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)'}}>Lightweight Charts</div><div style={{fontSize:9,color:'var(--tm-text-muted)'}}>{`${t('analyse.firestoreSave')} · ${symbol}`}</div></div>
         </div>
         {liveP&&<div style={{display:'flex',alignItems:'baseline',gap:5,marginLeft:4}}>
           <span style={{fontSize:15,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{fmtP(liveP)}</span>
@@ -922,13 +922,13 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
           {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>{setTf(t);onTimeframeChange?.(LW_MIN_TO_OSC[t.min]??'1h')}} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===t.label?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.12)`:'transparent',color:tf.label===t.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{t.label}</button>)}
         </div>
         <button onClick={()=>setShowHist(x=>!x)} style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
-          💾 {drawings.length>0?`${drawings.length} dessin${drawings.length>1?'s':''}`:' Dessins'}
+          💾 {drawings.length>0?t('analyse.drawingCount', {count: drawings.length}):' Dessins'}
         </button>
       </div>
 
       {/* Indicateurs + settings */}
       <div style={{padding:'6px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
-        <span style={{fontSize:9,color:'var(--tm-text-muted)',fontWeight:700,flexShrink:0}}>INDICATEURS :</span>
+        <span style={{fontSize:9,color:'var(--tm-text-muted)',fontWeight:700,flexShrink:0}}>{t('analyse.indicators')} :</span>
         {INDS.map(ind=>(
           <div key={ind.id} style={{display:'flex',alignItems:'center',gap:0}}>
             <button onClick={()=>toggleInd(ind.id)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',
@@ -990,7 +990,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
 
       {/* History */}
       {showHist&&<div style={{borderTop:'1px solid #1E2330',maxHeight:200,overflowY:'auto'}}>
-        {drawings.length===0?<div style={{padding:'14px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun dessin pour {symbol} · {tf.label}</div>
+        {drawings.length===0?<div style={{padding:'14px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>{t('analyse.noDrawings', {symbol, tf: tf.label})}</div>
         :drawings.map(d=><div key={d.id} onClick={()=>setSelectedId(d.id===selectedId?null:d.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 14px',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',background:d.id===selectedId?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.05)`:'transparent'}}>
           <div style={{width:3,height:26,borderRadius:2,background:d.color,flexShrink:0}}/>
           <div style={{flex:1,minWidth:0}}>

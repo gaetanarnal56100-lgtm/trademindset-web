@@ -272,7 +272,7 @@ function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario
           <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-loss)', fontFamily:'monospace' }}>${fmtP(scenario.stop||0)}</span>
         </div>
         <div style={{ height:1, background:`${color}20`, margin:'2px 0' }} />
-        <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:2 }}>Objectifs</div>
+        <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:2 }}>{t('analyse.objectives')}</div>
         {([['TP1', scenario.tp1], ['TP2', scenario.tp2], ['TP3', scenario.tp3]] as [string, number|undefined][]).map(([label, tp]) => tp && (
           <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -451,7 +451,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div style={{ width:32, height:32, borderRadius:9, background:'linear-gradient(135deg,#0A85FF,#00E5FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
           <div>
-            <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>Plan de Trade</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('analyse.tradePlan')}</div>
             <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{symbol} · {/USDT$|BTC$|ETH$|BNB$/i.test(symbol) ? '$' : ''}{fmtP(price)}</div>
           </div>
         </div>
@@ -471,7 +471,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
       {expanded && <>
         {/* Context */}
         <div style={{ margin:'0 16px 12px', padding:'10px 12px', background:'rgba(var(--tm-blue-rgb,10,133,255),0.06)', border:'1px solid rgba(var(--tm-blue-rgb,10,133,255),0.15)', borderRadius:10 }}>
-          <span style={{ fontSize:11, fontWeight:600, color:'var(--tm-accent)' }}>Contexte : </span>
+          <span style={{ fontSize:11, fontWeight:600, color:'var(--tm-accent)' }}>{t('analyse.context')} : </span>
           <span style={{ fontSize:11, color:'var(--tm-text-secondary)', lineHeight:1.6 }}>{t(`analyse.${plan.context}`)}</span>
         </div>
 

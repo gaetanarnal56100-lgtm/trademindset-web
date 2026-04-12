@@ -2,6 +2,7 @@
 // WaveTrend + VMC Oscillator — Interactive crosshair + tooltip (TradingView-style)
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import { signalService } from '@/services/notifications/SignalNotificationService'
@@ -410,10 +411,11 @@ function resolveCSSColor(varName: string, fallback: string): string {
 }
 
 export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
+  const { t } = useTranslation()
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
-    const found = TF_OPTIONS.find(t => t.interval === syncInterval)
+    const found = TF_OPTIONS.find(opt => opt.interval === syncInterval)
     if (found) setTf(found)
   }, [syncInterval])
 
@@ -491,8 +493,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
         </div>
       </div>
       <div style={{display:'flex',gap:4,padding:'0 16px 10px',overflowX:'auto',scrollbarWidth:'none'}}>
-        {!syncInterval && TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
-        {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 Synchronisé sur {syncInterval}</span>}
+        {!syncInterval && TF_OPTIONS.map(tfOpt=><button key={tfOpt.label} onClick={()=>setTf(tfOpt)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:tfOpt.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{tfOpt.label === '1J' ? t('analyse.tf1D') : tfOpt.label === '1S' ? t('analyse.tf1W') : tfOpt.label}</button>)}
+        {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 {t('analyse.syncedOn', {interval: syncInterval})}</span>}
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8,flexDirection:'column'}}>
@@ -521,10 +523,11 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
 export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
+  const { t } = useTranslation()
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
     if (!syncInterval) return
-    const found = TF_OPTIONS.find(t => t.interval === syncInterval)
+    const found = TF_OPTIONS.find(opt => opt.interval === syncInterval)
     if (found) setTf(found)
   }, [syncInterval])
 
@@ -613,8 +616,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
         </div>
       </div>
       <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none'}}>
-          {!syncInterval && TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setTf(t)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
-          {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 Synchronisé sur {syncInterval}</span>}
+          {!syncInterval && TF_OPTIONS.map(tfOpt=><button key={tfOpt.label} onClick={()=>setTf(tfOpt)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:tfOpt.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{tfOpt.label === '1J' ? t('analyse.tf1D') : tfOpt.label === '1S' ? t('analyse.tf1W') : tfOpt.label}</button>)}
+          {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 {t('analyse.syncedOn', {interval: syncInterval})}</span>}
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>

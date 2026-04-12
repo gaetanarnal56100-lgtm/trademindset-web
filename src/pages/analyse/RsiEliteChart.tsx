@@ -2,6 +2,7 @@
 // RSI(14) gris · MA orange · zones OB teal / OS violet · divergences avec ligne pointillée + label
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
@@ -326,6 +327,7 @@ function draw(
 
 // ── Main component ─────────────────────────────────────────────────────────
 export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
+  const { t } = useTranslation()
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
   const [maLen,   setMaLen]   = useState(14)
@@ -434,11 +436,11 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
 
   // ── Status label ────────────────────────────────────────────────────────
   const rsiStatus = currRSI === null ? null
-    : currRSI > 70 ? { label: 'Surachat',  color: '#00E5FF' }
-    : currRSI < 25 ? { label: 'Survente',  color: '#FF00FF' }
-    : currRSI > 55 ? { label: 'Haussier',  color: 'var(--tm-profit)' }
-    : currRSI < 45 ? { label: 'Baissier',  color: 'var(--tm-loss)' }
-    : { label: 'Neutre', color: 'var(--tm-text-muted)' }
+    : currRSI > 70 ? { label: t('analyse.overbought'),    color: '#00E5FF' }
+    : currRSI < 25 ? { label: t('analyse.oversold'),      color: '#FF00FF' }
+    : currRSI > 55 ? { label: t('analyse.bullishLabel'),  color: 'var(--tm-profit)' }
+    : currRSI < 45 ? { label: t('analyse.bearishLabel'),  color: 'var(--tm-loss)' }
+    : { label: t('analyse.neutral'), color: 'var(--tm-text-muted)' }
 
   const bulls = pairs.filter(p => p.type==='bull').length
   const bears = pairs.filter(p => p.type==='bear').length
@@ -477,7 +479,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
               color: tf.label===t.label ? '#00E5FF' : '#545B7A',
             }}>{t.label}</button>
           ))}
-          {syncInterval && <span style={{fontSize:9,color:'#545B7A',padding:'3px 0',fontFamily:'monospace'}}>🔗 Synchronisé sur {syncInterval}</span>}
+          {syncInterval && <span style={{fontSize:9,color:'#545B7A',padding:'3px 0',fontFamily:'monospace'}}>🔗 {t('analyse.syncedOn', {interval: syncInterval})}</span>}
         </div>
       </div>
 
@@ -486,8 +488,8 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
         {[
           { color:'#C5C8D6', label:'RSI(14)', dash:false },
           { color:'#F59714', label:`MA(${maLen})`, dash:false },
-          { color:'rgba(0,150,136,0.6)', label:'Surachat >70', dash:true },
-          { color:'rgba(103,58,183,0.6)', label:'Survente <25', dash:true },
+          { color:'rgba(0,150,136,0.6)', label:t('analyse.overbought70'), dash:true },
+          { color:'rgba(103,58,183,0.6)', label:t('analyse.oversold25'), dash:true },
           { color:'#00E5FF', label:'Div. Bear', circle:true },
           { color:'#FF00FF', label:'Div. Bull', circle:true },
         ].map(({ color, label, dash, circle }) => (

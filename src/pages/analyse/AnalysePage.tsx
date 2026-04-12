@@ -413,7 +413,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
       }}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <span style={{fontSize:13,fontWeight:700,color:symbol?'var(--tm-text-primary)':'var(--tm-text-muted)',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
-          {symbol || 'Rechercher un actif…'}
+          {symbol || t('analyse.searchPlaceholder')}
         </span>
         {symbol && history.find(h=>h.symbol===symbol)?.change24h != null && (
           <span style={{fontSize:10,fontWeight:700,color:(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
@@ -1295,15 +1295,15 @@ export default function AnalysePage() {
             <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
               <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(var(--tm-accent-rgb,0,229,255),0.15),rgba(var(--tm-purple-rgb,191,90,242),0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)'}}>📊</div>
               <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Recherchez un actif</div>
-              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche pour lancer l'analyse</div>
+              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>{t('analyse.heroSearchSub')}</div>
             </div>
 
             {/* Accès rapide */}
             <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginBottom:16}}>
               {[
                 {title:'🪙 Crypto',items:[{s:'BTCUSDT',n:'Bitcoin'},{s:'ETHUSDT',n:'Ethereum'},{s:'SOLUSDT',n:'Solana'},{s:'BNBUSDT',n:'BNB'}]},
-                {title:'📈 Actions US',items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
-                {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
+                {title:t('analyse.categoryStocks'),items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
+                {title:t('analyse.categoryForex'),items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
               ].map(cat=>(
                 <div key={cat.title} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden'}}>
                   <div style={{padding:'8px 14px',borderBottom:'1px solid #1E2330'}}>
@@ -1330,7 +1330,7 @@ export default function AnalysePage() {
             {/* Raccourcis */}
             <div style={{display:'flex',justifyContent:'center',gap:16,flexWrap:'wrap'}}>
               {[
-                {label:'Rechercher',keys:'Cliquez la barre'},
+                {label:t('common.search'),keys:'Cliquez la barre'},
                 {label:'Crypto rapide',keys:'BTC, ETH, SOL...'},
                 {label:'Actions',keys:'AAPL, TSLA, NVDA...'},
               ].map(h=>(
@@ -1347,7 +1347,7 @@ export default function AnalysePage() {
             <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
               <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(var(--tm-purple-rgb,191,90,242),0.15),rgba(255,45,85,0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.2)'}}>📸</div>
               <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Analyse Screenshot IA</div>
-              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>Upload une capture de graphique — GPT-4o Vision analyse la structure, les zones clés et génère un plan de trade</div>
+              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>{t('analyse.screenshotHeroSub')}</div>
             </div>
             <ChartScreenshotAnalysis />
           </div>
@@ -1371,7 +1371,7 @@ export default function AnalysePage() {
                 transition:'all 0.15s',
               }}
             >{syncEnabled ? t('analyse.syncEnabled') : t('analyse.syncDisabled')}</button>
-            {syncEnabled && <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>UT: {syncInterval} · zoom/pan partagé</span>}
+            {syncEnabled && <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>{`UT: ${syncInterval} · ${t('analyse.zoomPanShared')}`}</span>}
           </div>
 
           {/* Chart principal LightweightChart */}

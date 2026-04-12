@@ -229,7 +229,7 @@ function PlanCard({ plan, isMulti }: { plan: TradePlan; isMulti: boolean }) {
     { label: 'Biais', value: plan.biais, color: biaisColor, bold: true },
     { label: t('analyse.entry'), value: plan.entree, color: 'var(--tm-accent)' },
     { label: 'Stop Loss', value: plan.stop, color: 'var(--tm-loss)' },
-    { label: 'Objectifs', value: plan.objectifs, color: 'var(--tm-profit)' },
+    { label: t('analyse.objectives'), value: plan.objectifs, color: 'var(--tm-profit)' },
     { label: 'Confirmation', value: plan.confirmation, color: 'var(--tm-warning)' },
     { label: 'Invalidation', value: plan.invalidation, color: 'var(--tm-loss)' },
     ...(isMulti && plan.rr ? [{ label: 'R:R', value: plan.rr, color: '#FFD700' }] : []),
@@ -240,7 +240,7 @@ function PlanCard({ plan, isMulti }: { plan: TradePlan; isMulti: boolean }) {
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span>🎯</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-accent)' }}>Plan de Trade</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-accent)' }}>{t('analyse.tradePlan')}</span>
         {plan.biais && <span style={{ fontSize: 11, fontWeight: 700, color: biaisColor,
           background: `${biaisColor}15`, padding: '1px 9px', borderRadius: 10 }}>{plan.biais}</span>}
         {isMulti && plan.rr && <span style={{ fontSize: 10, color: '#FFD700',
@@ -405,8 +405,8 @@ export default function ChartScreenshotAnalysis({ symbol }: { symbol?: string })
               padding: '36px 20px', textAlign: 'center', cursor: 'pointer',
               background: isDragging ? 'rgba(var(--tm-purple-rgb,191,90,242),0.05)' : 'transparent', transition: 'all 0.2s' }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>🖼️</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tm-text-primary)', marginBottom: 4 }}>Glisser une capture de graphique</div>
-            <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>ou cliquer pour sélectionner · PNG, JPG, WebP</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tm-text-primary)', marginBottom: 4 }}>{t('analyse.dragChart')}</div>
+            <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>{t('analyse.orClickToSelect')}</div>
             <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
               onChange={e => { const f = e.target.files?.[0]; if (f) addImage(f, pendingTF) }} />
           </div>
