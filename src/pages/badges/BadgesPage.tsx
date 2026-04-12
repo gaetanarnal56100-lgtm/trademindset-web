@@ -63,7 +63,7 @@ export default function BadgesPage() {
           { label: t('badges.statLevel'), value: `${level}`, icon: '⚡', color: 'var(--tm-accent, #00E5FF)' },
           { label: t('badges.statXp'), value: profile?.totalXP?.toLocaleString() ?? '0', icon: '💎', color: '#FFD700' },
           { label: t('badges.statBadges'), value: `${earned}/${total}`, icon: '🏅', color: '#22C759' },
-          { label: t('badges.statStreak'), value: `${profile?.currentStreak ?? 0}j`, icon: '🔥', color: '#FF9500' },
+          { label: t('badges.statStreak'), value: `${profile?.currentStreak ?? 0}${t('badges.daysSuffix')}`, icon: '🔥', color: '#FF9500' },
           { label: t('badges.statMultiplier'), value: `×${(profile?.activeMultiplier ?? 1).toFixed(2)}`, icon: '✨', color: '#BF5AF2' },
         ].map(({ label, value, icon, color }) => (
           <div key={label} style={card()}>
@@ -95,8 +95,8 @@ export default function BadgesPage() {
         {/* Category filter */}
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1 }}>
           <FilterChip label={t('common.all')} active={filterCat === 'all'} onClick={() => setFilterCat('all')} />
-          {(Object.entries(CATEGORY_CONFIG) as [BadgeCategory, { label: string; icon: string }][]).map(([key, { label, icon }]) => (
-            <FilterChip key={key} label={`${icon} ${label}`} active={filterCat === key} onClick={() => setFilterCat(key)} />
+          {(Object.entries(CATEGORY_CONFIG) as [BadgeCategory, { label: string; icon: string }][]).map(([key, { icon }]) => (
+            <FilterChip key={key} label={`${icon} ${t('badges.cat.' + key)}`} active={filterCat === key} onClick={() => setFilterCat(key)} />
           ))}
         </div>
       </div>
@@ -104,8 +104,8 @@ export default function BadgesPage() {
       {/* Rarity filter */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, flexWrap: 'wrap' }}>
         <FilterChip label={t('badges.allRarities')} active={filterRarity === 'all'} onClick={() => setFilterRarity('all')} />
-        {(Object.entries(RARITY_CONFIG) as [BadgeRarity, { label: string; color: string }][]).map(([key, { label, color }]) => (
-          <FilterChip key={key} label={label} active={filterRarity === key} onClick={() => setFilterRarity(key)} color={color} />
+        {(Object.entries(RARITY_CONFIG) as [BadgeRarity, { label: string; color: string }][]).map(([key, { color }]) => (
+          <FilterChip key={key} label={t('badges.rarity.' + key)} active={filterRarity === key} onClick={() => setFilterRarity(key)} color={color} />
         ))}
       </div>
 
@@ -140,13 +140,13 @@ export default function BadgesPage() {
                   marginBottom: 4, lineHeight: 1.3,
                   minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {isSecret ? '???' : badge.name}
+                  {isSecret ? '???' : t('badges.names.' + badge.id, { defaultValue: badge.name })}
                 </div>
                 <div style={{
                   fontSize: 9, fontWeight: 700, color: rarity.color,
                   textTransform: 'uppercase', letterSpacing: '0.08em',
                 }}>
-                  {isSecret ? '???' : rarity.label}
+                  {isSecret ? '???' : t('badges.rarity.' + badge.rarity)}
                 </div>
                 {isEarned && (
                   <div style={{ marginTop: 4, fontSize: 9, color: '#22C759', fontWeight: 600 }}>{t('badges.earned')}</div>
@@ -223,13 +223,13 @@ function BadgeModal({ badge, isEarned, onClose }: { badge: BadgeDefinition; isEa
         {/* Icon */}
         <div style={{ textAlign: 'center', marginBottom: 16 }}>
           <div style={{ fontSize: 56, filter: isEarned ? 'none' : 'grayscale(1)', marginBottom: 8 }}>{badge.icon}</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--tm-text-primary, #F0F3FF)', marginBottom: 4 }}>{badge.name}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: rarity.color, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{rarity.label}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--tm-text-primary, #F0F3FF)', marginBottom: 4 }}>{t('badges.names.' + badge.id, { defaultValue: badge.name })}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: rarity.color, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{t('badges.rarity.' + badge.rarity)}</div>
         </div>
 
         {/* Description */}
         <div style={{ fontSize: 13, color: 'var(--tm-text-secondary, #8F94A3)', textAlign: 'center', marginBottom: 20, lineHeight: 1.5 }}>
-          {badge.description}
+          {t('badges.desc.' + badge.id, { defaultValue: badge.description })}
         </div>
 
         {/* Status */}
