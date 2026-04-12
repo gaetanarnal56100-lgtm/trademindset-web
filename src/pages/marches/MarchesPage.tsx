@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
@@ -347,12 +348,13 @@ function CompareBar({
   onRefChange: (v: string) => void; onStrengthChange: (v: StrengthFilter) => void
   totalAll: number; totalStronger: number; totalWeaker: number
 }) {
+  const { t } = useTranslation()
   const hasRef = refKey !== 'none'
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {/* Reference selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Référence</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('marches.reference')}</span>
         {refOptions.map(opt => {
           const active = refKey === opt.value
           return (
@@ -386,12 +388,12 @@ function CompareBar({
       {/* Stronger / Weaker chips — only visible when a reference is active */}
       {hasRef && (
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginRight: 2 }}>Afficher</span>
+          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginRight: 2 }}>{t('marches.show')}</span>
           {([
-            { v: 'stronger' as StrengthFilter, label: `▲ Plus fort`, color: '#22c759', count: totalStronger },
-            { v: 'all'      as StrengthFilter, label: `Tous`,        color: 'var(--tm-text-muted)', count: totalAll },
-            { v: 'weaker'   as StrengthFilter, label: `▼ Plus faible`, color: '#ff3b5c', count: totalWeaker },
-          ] as const).map(({ v, label, color, count }) => {
+            { v: 'stronger' as StrengthFilter, label: t('marches.strongest'), color: '#22c759', count: totalStronger },
+            { v: 'all'      as StrengthFilter, label: t('common.all'),         color: 'var(--tm-text-muted)', count: totalAll },
+            { v: 'weaker'   as StrengthFilter, label: t('marches.weakest'),    color: '#ff3b5c', count: totalWeaker },
+          ] as { v: StrengthFilter; label: string; color: string; count: number }[]).map(({ v, label, color, count }) => {
             const active = strengthFilter === v
             return (
               <button key={v} onClick={() => onStrengthChange(v)} style={{
@@ -525,6 +527,7 @@ function SkeletonGroup({ label, count }: { label: string; count: number }) {
 }
 
 function RefetchBadge() {
+  const { t } = useTranslation()
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10,
@@ -532,7 +535,7 @@ function RefetchBadge() {
       borderRadius: 99, border: '1px solid var(--tm-border-sub)', marginBottom: 8,
     }}>
       <div style={{ width: 10, height: 10, border: '1.5px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      Mise à jour…
+      {t('marches.updating')}
     </div>
   )
 }
@@ -548,46 +551,47 @@ function avgRSI(tokens: TokenRSI[]): number | null {
 // ── Divergence Scanner section ────────────────────────────────────────────────
 
 function DivergenceScanner({ tokens, onTokenClick, timeframe }: { tokens: TokenRSIWithDiv[]; onTokenClick: (sym: string) => void; timeframe: string }) {
-  const bulls = tokens.filter(t => t.divergence === 'bull')
-  const bears = tokens.filter(t => t.divergence === 'bear')
+  const { t } = useTranslation()
+  const bulls = tokens.filter(tok => tok.divergence === 'bull')
+  const bears = tokens.filter(tok => tok.divergence === 'bear')
   if (bulls.length === 0 && bears.length === 0) return null
   return (
     <div style={{ marginBottom: 16, padding: '14px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid #1E2330', borderRadius: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <span style={{ fontSize: 16 }}>🎯</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Divergences RSI détectées</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>{t('marches.rsiDivDetected')}</span>
         <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginLeft: 4 }}>UT {timeframe.toUpperCase()}</span>
         {bulls.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: 'var(--tm-profit)', background: 'rgba(34,199,89,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(34,199,89,0.25)' }}>↗ {bulls.length} BULL</span>}
         {bears.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-loss)', background: 'rgba(255,59,48,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(255,59,48,0.25)', marginLeft: bulls.length ? 4 : 'auto' }}>↘ {bears.length} BEAR</span>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {bulls.map(t => (
-          <button key={t.symbol} onClick={() => onTokenClick(t.symbol)} style={{
+        {bulls.map(tok => (
+          <button key={tok.symbol} onClick={() => onTokenClick(tok.symbol)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
             background: 'rgba(34,199,89,0.08)', border: '1px solid rgba(34,199,89,0.3)',
             color: 'var(--tm-profit)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
           }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              ↗ {t.symbol}
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+              ↗ {tok.symbol}
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {tok.rsi}</span>
             </span>
-            {t.divergenceCandlesAgo !== undefined && (
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>il y a {t.divergenceCandlesAgo} bougie{t.divergenceCandlesAgo > 1 ? 's' : ''}</span>
+            {tok.divergenceCandlesAgo !== undefined && (
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>{t('marches.candlesAgo', { count: tok.divergenceCandlesAgo })}</span>
             )}
           </button>
         ))}
-        {bears.map(t => (
-          <button key={t.symbol} onClick={() => onTokenClick(t.symbol)} style={{
+        {bears.map(tok => (
+          <button key={tok.symbol} onClick={() => onTokenClick(tok.symbol)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
             background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.3)',
             color: 'var(--tm-loss)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
           }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              ↘ {t.symbol}
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {t.rsi}</span>
+              ↘ {tok.symbol}
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {tok.rsi}</span>
             </span>
-            {t.divergenceCandlesAgo !== undefined && (
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>il y a {t.divergenceCandlesAgo} bougie{t.divergenceCandlesAgo > 1 ? 's' : ''}</span>
+            {tok.divergenceCandlesAgo !== undefined && (
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>{t('marches.candlesAgo', { count: tok.divergenceCandlesAgo })}</span>
             )}
           </button>
         ))}
@@ -599,6 +603,7 @@ function DivergenceScanner({ tokens, onTokenClick, timeframe }: { tokens: TokenR
 // ── Stocks tab ────────────────────────────────────────────────────────────────
 
 function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
+  const { t } = useTranslation()
   const [groupData,     setGroupData]     = useState<Record<string, TokenRSIWithDiv[]>>({})
   const [groupProgress, setGroupProgress] = useState<Record<string, { done: number; total: number }>>({})
   const [loadedGroups,  setLoadedGroups]  = useState<Set<string>>(new Set())
@@ -692,7 +697,7 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         <FilterPills
           label="Indice"
           options={[
-            { value: 'all',    label: 'Tous' },
+            { value: 'all',    label: t('common.all') },
             { value: 'us',     label: '🇺🇸 US' },
             { value: 'europe', label: '🇪🇺 Europe' },
             { value: 'cac40',  label: '🇫🇷 CAC 40' },
@@ -737,20 +742,21 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 // ── Crypto tab ────────────────────────────────────────────────────────────────
 
 function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
+  const { t } = useTranslation()
   const [tokens,    setTokens]    = useState<TokenRSIWithDiv[]>([])
   const [loading,   setLoading]   = useState(true)
   const [timeframe, setTimeframe] = useState<Timeframe>('1d')
   const [subset,    setSubset]    = useState<CryptoSubset>('all')
   const [refKey,    setRefKey]    = useState<CryptoRef>('none')
   const [strength,  setStrength]  = useState<StrengthFilter>('all')
-  const [status,    setStatus]    = useState('Récupération du top 200 Binance…')
+  const [status,    setStatus]    = useState('')
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     ;(async () => {
       try {
-        setStatus('Récupération du top 200 Binance par volume…')
+        setStatus(t('marches.fetchingBinance'))
         const symbols = await getTopCryptoSymbols(200)
         if (cancelled) return
         setStatus(`Calcul RSI + VMC (${timeframe.toUpperCase()}) pour ${symbols.length} crypto…`)
@@ -820,9 +826,9 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
       {/* Filters */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         <FilterPills
-          label="Afficher"
+          label={t('marches.show')}
           options={[
-            { value: 'all',   label: 'Tous (200)' },
+            { value: 'all',   label: t('marches.allCount', { count: 200 }) },
             { value: 'top50', label: 'Top 50' },
             { value: 'alts',  label: 'Alts (hors BTC/ETH)' },
           ]}
@@ -859,6 +865,7 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 type Tab = 'crypto' | 'actions'
 
 export default function MarchesPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<Tab>('crypto')
   const navigate = useNavigate()
   const cryptoShareRef = useRef<HTMLDivElement>(null)
@@ -893,7 +900,7 @@ export default function MarchesPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <span style={{ fontSize: 20 }}>🌡️</span>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tm-text-primary)', margin: 0, fontFamily: 'Syne, sans-serif' }}>Marchés</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tm-text-primary)', margin: 0, fontFamily: 'Syne, sans-serif' }}>{t('nav.marches')}</h1>
           </div>
           <p style={{ fontSize: 13, color: 'var(--tm-text-muted)', margin: 0 }}>
             Vue globale RSI & VMC — Top 200 crypto par volume · {STOCK_GROUPS.reduce((s, g) => s + g.symbols.length, 0)} actions mondiales

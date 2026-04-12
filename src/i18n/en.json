@@ -435,7 +435,15 @@
     "bullDiv": "↗ Bull Divergence",
     "bearDiv": "↘ Bear Divergence",
     "noDiv": "No divergence detected",
-    "currentTf": "Current timeframe"
+    "currentTf": "Current timeframe",
+    "reference": "Reference",
+    "show": "Show",
+    "strongest": "▲ Strongest",
+    "weakest": "▼ Weakest",
+    "updating": "Updating…",
+    "rsiDivDetected": "RSI Divergences detected",
+    "fetchingBinance": "Fetching top 200 Binance by volume…",
+    "allCount": "All ({{count}})"
   },
   "alerts": {
     "title": "Alerts & Signals",
@@ -609,7 +617,25 @@
     "languageDesc": "Choose the application language",
     "save": "Save",
     "saved": "✓ Saved",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "identitySub": "Photo, display name",
+    "bioSub": "Describe yourself as a trader",
+    "emailVerifSub": "A verification email will be sent",
+    "newEmailPlaceholder": "new@email.com",
+    "updating": "Updating...",
+    "min6Chars": "Min. 6 characters",
+    "tradingPrefsSub": "Capital, market, session",
+    "riskManagementSub": "Limits and protection rules",
+    "objectives": "Goals",
+    "objectivesSub": "Set your monthly targets",
+    "objectivesSummary": "Goals Summary",
+    "imageTooLarge": "Image too large (max 500 KB)",
+    "wrongPassword": "Incorrect password",
+    "emailTaken": "This email is already in use",
+    "invalidEmail": "Invalid email",
+    "reauthRequired": "Log in again and retry",
+    "minChars": "Minimum 6 characters",
+    "wrongCurrentPassword": "Current password incorrect"
   },
   "systemes": {
     "title": "Systems",
@@ -642,7 +668,12 @@
     "statXp": "Total XP",
     "statBadges": "Badges",
     "statStreak": "Streak",
-    "statMultiplier": "XP Multi"
+    "statMultiplier": "XP Multi",
+    "prestige": "Prestige",
+    "profileFrame": "Profile frame",
+    "theme": "Theme",
+    "badgeTitle": "Title",
+    "feature": "Feature"
   },
   "referral": {
     "title": "🎁 Referral",

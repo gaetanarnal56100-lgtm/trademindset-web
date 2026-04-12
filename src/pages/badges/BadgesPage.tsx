@@ -85,7 +85,7 @@ export default function BadgesPage() {
         </div>
         {profile && profile.prestigeLevel > 0 && (
           <div style={{ marginTop: 8, fontSize: 11, color: '#BF5AF2', fontWeight: 600 }}>
-            {'⭐'.repeat(profile.prestigeLevel)} Prestige {profile.prestigeLevel}
+            {'⭐'.repeat(profile.prestigeLevel)} {t('badges.prestige')} {profile.prestigeLevel}
           </div>
         )}
       </div>
@@ -249,10 +249,10 @@ function BadgeModal({ badge, isEarned, onClose }: { badge: BadgeDefinition; isEa
           <RewardRow icon="⚡" label={`+${rewards.xp} XP`} />
           {rewards.proDays && <RewardRow icon="👑" label={t('badges.proDays', { count: rewards.proDays })} />}
           {rewards.xpMultiplier && <RewardRow icon="✨" label={t('badges.xpMultiplier', { n: rewards.xpMultiplier })} />}
-          {rewards.frame && <RewardRow icon="🖼️" label={`Cadre profil : ${rewards.frame}`} />}
-          {rewards.theme && <RewardRow icon="🎨" label={`Thème : ${rewards.theme}`} />}
-          {rewards.title && <RewardRow icon="📛" label={`Titre : ${rewards.title}`} />}
-          {rewards.feature && <RewardRow icon="🔓" label={`Feature : ${rewards.feature}`} />}
+          {rewards.frame && <RewardRow icon="🖼️" label={`${t('badges.profileFrame')}: ${rewards.frame}`} />}
+          {rewards.theme && <RewardRow icon="🎨" label={`${t('badges.theme')}: ${rewards.theme}`} />}
+          {rewards.title && <RewardRow icon="📛" label={`${t('badges.badgeTitle')}: ${rewards.title}`} />}
+          {rewards.feature && <RewardRow icon="🔓" label={`${t('badges.feature')}: ${rewards.feature}`} />}
         </div>
 
         {/* Seasonal tag */}

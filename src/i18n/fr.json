@@ -435,7 +435,15 @@
     "bullDiv": "↗ Divergence Bull",
     "bearDiv": "↘ Divergence Bear",
     "noDiv": "Aucune divergence détectée",
-    "currentTf": "Timeframe actuel"
+    "currentTf": "Timeframe actuel",
+    "reference": "Référence",
+    "show": "Afficher",
+    "strongest": "▲ Plus fort",
+    "weakest": "▼ Plus faible",
+    "updating": "Mise à jour…",
+    "rsiDivDetected": "Divergences RSI détectées",
+    "fetchingBinance": "Récupération du top 200 Binance par volume…",
+    "allCount": "Tous ({{count}})"
   },
   "alerts": {
     "title": "Alertes & Signaux",
@@ -609,7 +617,25 @@
     "languageDesc": "Choisissez la langue de l'application",
     "save": "Enregistrer",
     "saved": "✓ Sauvegardé",
-    "saving": "Enregistrement..."
+    "saving": "Enregistrement...",
+    "identitySub": "Photo, nom d'affichage",
+    "bioSub": "Décrivez-vous en tant que trader",
+    "emailVerifSub": "Un email de vérification sera envoyé",
+    "newEmailPlaceholder": "nouveau@email.com",
+    "updating": "Modification...",
+    "min6Chars": "Min. 6 caractères",
+    "tradingPrefsSub": "Capital, marché, session",
+    "riskManagementSub": "Limites et règles de protection",
+    "objectives": "Objectifs",
+    "objectivesSub": "Fixez vos targets mensuels",
+    "objectivesSummary": "Récapitulatif objectifs",
+    "imageTooLarge": "Image trop lourde (max 500 Ko)",
+    "wrongPassword": "Mot de passe incorrect",
+    "emailTaken": "Cet email est déjà utilisé",
+    "invalidEmail": "Email invalide",
+    "reauthRequired": "Reconnectez-vous puis réessayez",
+    "minChars": "Minimum 6 caractères",
+    "wrongCurrentPassword": "Mot de passe actuel incorrect"
   },
   "systemes": {
     "title": "Systèmes",
@@ -642,7 +668,12 @@
     "statXp": "XP Total",
     "statBadges": "Badges",
     "statStreak": "Streak",
-    "statMultiplier": "Multi XP"
+    "statMultiplier": "Multi XP",
+    "prestige": "Prestige",
+    "profileFrame": "Cadre profil",
+    "theme": "Thème",
+    "badgeTitle": "Titre",
+    "feature": "Feature"
   },
   "referral": {
     "title": "🎁 Parrainage",
