@@ -1,6 +1,7 @@
 // src/pages/predict/PredictPage.tsx — Predict & Earn
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useUser } from '@/hooks/useAuth'
 import { callAwardXP } from '@/services/gamification/prestigeEngine'
 import {
@@ -19,9 +20,6 @@ import { db } from '@/services/firebase/config'
 
 // ── Constantes ─────────────────────────────────────────────────
 const TIMEFRAMES: PredictionTimeframe[] = ['1h', '4h', '24h', '3d', '7d']
-const TF_LABEL: Record<PredictionTimeframe, string> = {
-  '1h': '1 heure', '4h': '4 heures', '24h': '24 heures', '3d': '3 jours', '7d': '7 jours',
-}
 
 /** Fenêtre de fermeture : entre 10 min et 2h avant la résolution */
 const LOCK_MIN_MS = 10 * 60 * 1000        // 10 minutes
@@ -93,8 +91,8 @@ function nextResolveAt(tf: PredictionTimeframe): Date {
 }
 
 /** Formate un diff en ms en chaîne lisible (avec secondes) */
-function fmtDiff(diff: number): string {
-  if (diff <= 0) return 'En cours de résolution…'
+function fmtDiff(diff: number, resolvingLabel: string): string {
+  if (diff <= 0) return resolvingLabel
   const d = Math.floor(diff / 86_400_000)
   const h = Math.floor((diff % 86_400_000) / 3_600_000)
   const m = Math.floor((diff % 3_600_000) / 60_000)
@@ -133,8 +131,8 @@ function fmtPrice(n: number): string {
   return n.toLocaleString('fr-FR', { minimumFractionDigits: 6, maximumFractionDigits: 8 })
 }
 
-function fmtCountdown(resolveAt: Timestamp): string {
-  return fmtDiff(resolveAt.toMillis() - Date.now())
+function fmtCountdown(resolveAt: Timestamp, resolvingLabel: string): string {
+  return fmtDiff(resolveAt.toMillis() - Date.now(), resolvingLabel)
 }
 
 function anonymize(name?: string): string {
@@ -152,9 +150,11 @@ function resultEmoji(isCorrect: boolean, accuracy: number): string {
 
 // ── Community histogram (SVG inline) ──────────────────────────
 function PredictionHistogram({ preds, currentPrice }: { preds: Prediction[]; currentPrice: number | null }) {
+  const { t } = useTranslation()
+
   if (preds.length < 2) return (
     <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--tm-text-muted)', fontSize: 12 }}>
-      Pas encore assez de prédictions pour afficher la distribution
+      {t('predict.histogramEmpty')}
     </div>
   )
 
@@ -218,7 +218,7 @@ function PredictionHistogram({ preds, currentPrice }: { preds: Prediction[]; cur
         ))}
       </svg>
       <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', textAlign: 'center', marginTop: 2 }}>
-        {preds.length} prédiction{preds.length > 1 ? 's' : ''} · moy. {fmtPrice(prices.reduce((a, b) => a + b, 0) / prices.length)}
+        {t('predict.histogramFooter', { count: preds.length, avg: fmtPrice(prices.reduce((a, b) => a + b, 0) / prices.length) })}
       </div>
     </div>
   )
@@ -227,8 +227,8 @@ function PredictionHistogram({ preds, currentPrice }: { preds: Prediction[]; cur
 // ── Toast simple ───────────────────────────────────────────────
 function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
   useEffect(() => {
-    const t = setTimeout(onClose, 3500)
-    return () => clearTimeout(t)
+    const timer = setTimeout(onClose, 3500)
+    return () => clearTimeout(timer)
   }, [onClose])
   return (
     <div style={{
@@ -255,6 +255,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
   virtualUSDT: number | null
   onBalanceChange: (delta: number) => void
 }) {
+  const { t } = useTranslation()
   const [assetType, setAssetType] = useState<AssetType>('crypto')
   const [symbol, setSymbol]       = useState<string>('BTC')
   const [search, setSearch]       = useState('')
@@ -275,6 +276,14 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
   const [countdown, setCountdown]     = useState('')
   const [isLocked, setIsLocked]       = useState(false)
 
+  const tfLabels: Record<PredictionTimeframe, string> = {
+    '1h':  t('predict.tfLabel_1h'),
+    '4h':  t('predict.tfLabel_4h'),
+    '24h': t('predict.tfLabel_24h'),
+    '3d':  t('predict.tfLabel_3d'),
+    '7d':  t('predict.tfLabel_7d'),
+  }
+
   // Recalcule résolution + heure de lock quand le timeframe change
   useEffect(() => {
     const rd = nextResolveAt(timeframe)
@@ -288,12 +297,12 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
       const now  = Date.now()
       const diff = resolveDate.getTime() - now
       setIsLocked(now >= lockAt.getTime() && now < resolveDate.getTime())
-      setCountdown(fmtDiff(diff))
+      setCountdown(fmtDiff(diff, t('predict.resolvingCountdown')))
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [resolveDate, lockAt])
+  }, [resolveDate, lockAt, t])
 
   // Seul le crypto top 10 est disponible ; actions = coming soon
   const activeSymbols = assetType === 'crypto' ? CRYPTO_SYMBOLS : []
@@ -338,16 +347,16 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
       const lockedPrice = assetType === 'crypto'
         ? await fetchCryptoPrice(symbol)
         : await fetchStockPrice(symbol)
-      if (!lockedPrice) throw new Error('Impossible de récupérer le prix')
+      if (!lockedPrice) throw new Error(t('predict.errorPrice'))
 
       // Vérification côté client : si on est en période de lock, on refuse
       if (Date.now() >= lockAt.getTime()) {
-        throw new Error('Les paris sont fermés pour ce round')
+        throw new Error(t('predict.errorBetsClosed'))
       }
       const resolveAt = Timestamp.fromDate(resolveDate)
       // Déduction USDT virtuel avant création (pour bloquer si solde insuffisant)
       if (stake > 0) {
-        if ((virtualUSDT ?? 0) < stake) throw new Error(`Solde insuffisant (${virtualUSDT ?? 0} USDT)`)
+        if ((virtualUSDT ?? 0) < stake) throw new Error(t('predict.errorInsufficientBalance', { balance: virtualUSDT ?? 0 }))
         await updateVirtualBalance(uid, -stake)
         onBalanceChange(-stake)
       }
@@ -384,17 +393,17 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
         predictionLastDate:     d.predictionLastDate ?? '',
       }
       const newBadges = await checkAndAwardPredictionBadges(uid, stats)
-      const stakeMsg = stake > 0 ? ` · 💰 -${stake} USDT misés` : ''
+      const stakeMsg = stake > 0 ? t('predict.toastStake', { stake }) : ''
       if (newBadges.length > 0) {
-        onToast(`🏆 Badge${newBadges.length > 1 ? 's' : ''} débloqué${newBadges.length > 1 ? 's' : ''} : ${newBadges.map(b => b.icon + ' ' + b.name).join(', ')}`)
+        onToast(t('predict.toastBadge', { count: newBadges.length, badges: newBadges.map(b => b.icon + ' ' + b.name).join(', ') }))
       } else {
-        onToast(`✅ Prédiction soumise · +3 XP${stakeMsg} · Résolution le ${fmtTime(resolveDate)}`)
+        onToast(t('predict.toastSubmitted', { stake: stakeMsg, time: fmtTime(resolveDate) }))
       }
       setStake(0)
       setStakeOpen(false)
       onPredictionCreated()
     } catch (e) {
-      onToast(`❌ Erreur : ${(e as Error).message}`)
+      onToast(t('predict.errorGeneric', { message: (e as Error).message }))
     } finally {
       setSubmitting(false)
     }
@@ -406,7 +415,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Asset type toggle */}
         <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>TYPE D'ACTIF</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>{t('predict.sectionAssetType')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
             {/* Crypto — disponible */}
             <button onClick={() => { setAssetType('crypto'); setSymbol('BTC'); setSearch('') }} style={{
@@ -415,10 +424,10 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
               background: assetType === 'crypto' ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'var(--tm-bg-tertiary)',
               color: assetType === 'crypto' ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
             }}>
-              ₿ Crypto
+              {t('predict.crypto')}
             </button>
             {/* Actions — coming soon */}
-            <div title="Bientôt disponible" style={{
+            <div title={t('predict.comingSoonLabel')} style={{
               flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'not-allowed', fontSize: 13, fontWeight: 600,
               border: '1px solid var(--tm-border)',
               background: 'var(--tm-bg-tertiary)',
@@ -426,34 +435,34 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
               opacity: 0.6,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}>
-              📈 Actions
+              {t('predict.stocks')}
               <span style={{
                 fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99,
                 background: 'linear-gradient(135deg,#BF5AF222,#0A85FF22)',
                 border: '1px solid #BF5AF244', color: '#BF5AF2',
                 letterSpacing: '0.06em', textTransform: 'uppercase',
-              }}>Soon</span>
+              }}>{t('predict.comingSoon')}</span>
             </div>
           </div>
         </div>
 
         {/* Asset selector */}
         <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>ACTIF</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>{t('predict.sectionAsset')}</div>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher…"
+            placeholder={t('predict.searchPlaceholder')}
             style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--tm-border)', background: 'var(--tm-bg-tertiary)', color: 'var(--tm-text-primary)', fontSize: 13, outline: 'none', marginBottom: 10, boxSizing: 'border-box' }}
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
             {/* Actifs disponibles */}
-            {filtered.map(s => (
-              <button key={s} onClick={() => { setSymbol(s); setSearch('') }} style={{
+            {filtered.map(sym => (
+              <button key={sym} onClick={() => { setSymbol(sym); setSearch('') }} style={{
                 padding: '4px 10px', borderRadius: 20, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                border: `1px solid ${symbol === s ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
-                background: symbol === s ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'var(--tm-bg-tertiary)',
-                color: symbol === s ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
-              }}>{s}</button>
+                border: `1px solid ${symbol === sym ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
+                background: symbol === sym ? 'rgba(var(--tm-accent-rgb,0,229,255),0.12)' : 'var(--tm-bg-tertiary)',
+                color: symbol === sym ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
+              }}>{sym}</button>
             ))}
             {/* Séparateur + coming soon (si pas de recherche) */}
             {!search && comingSoonSymbols.length > 0 && (
@@ -465,17 +474,17 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
                     background: 'linear-gradient(135deg,#BF5AF222,#0A85FF22)',
                     border: '1px solid #BF5AF244', color: '#BF5AF2',
                     letterSpacing: '0.07em', textTransform: 'uppercase',
-                  }}>Bientôt disponible</span>
+                  }}>{t('predict.comingSoonLabel')}</span>
                   <div style={{ flex: 1, height: 1, background: 'var(--tm-border)' }} />
                 </div>
-                {comingSoonSymbols.map(s => (
-                  <div key={s} title="Bientôt disponible" style={{
+                {comingSoonSymbols.map(sym => (
+                  <div key={sym} title={t('predict.comingSoonLabel')} style={{
                     padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
                     border: '1px solid var(--tm-border)',
                     background: 'var(--tm-bg-tertiary)',
                     color: 'var(--tm-text-muted)',
                     opacity: 0.45, cursor: 'not-allowed',
-                  }}>{s}</div>
+                  }}>{sym}</div>
                 ))}
               </>
             )}
@@ -484,7 +493,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
 
         {/* Timeframe */}
         <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>HORIZON DE PRÉDICTION</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 10 }}>{t('predict.sectionTimeframe')}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {TIMEFRAMES.map(tf => {
               const rDate  = nextResolveAt(tf)
@@ -493,7 +502,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
               const locked = now >= lAt.getTime() && now < rDate.getTime()
               return (
                 <button key={tf} onClick={() => setTimeframe(tf)}
-                  title={`Résolution : ${fmtTime(rDate)}`}
+                  title={`${t('predict.resolutionTime')}${fmtTime(rDate)}`}
                   style={{
                     flex: 1, minWidth: 60, padding: '7px 4px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
                     border: `1px solid ${timeframe === tf ? (locked ? 'var(--tm-loss)' : 'var(--tm-accent)') : 'var(--tm-border)'}`,
@@ -508,30 +517,30 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
             })}
           </div>
           <div style={{ marginTop: 8, fontSize: 10, color: 'var(--tm-text-muted)' }}>
-            Résolution : <span style={{ color: isLocked ? 'var(--tm-loss)' : 'var(--tm-text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>{fmtTime(resolveDate)}</span>
-            {isLocked && <span style={{ color: 'var(--tm-loss)', marginLeft: 8 }}>· 🔒 Paris fermés</span>}
+            {t('predict.resolutionTime')}<span style={{ color: isLocked ? 'var(--tm-loss)' : 'var(--tm-text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>{fmtTime(resolveDate)}</span>
+            {isLocked && <span style={{ color: 'var(--tm-loss)', marginLeft: 8 }}>{t('predict.betsClosed')}</span>}
           </div>
         </div>
 
         {/* Prix actuel + saisie */}
         <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '14px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)' }}>PRIX ACTUEL — {symbol}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)' }}>{t('predict.sectionCurrentPrice', { symbol })}</div>
             {priceLoading
-              ? <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>Chargement…</div>
+              ? <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>{t('predict.priceLoading')}</div>
               : currentPrice !== null
               ? <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{fmtPrice(currentPrice)}</div>
-              : <div style={{ fontSize: 12, color: 'var(--tm-loss)' }}>Indisponible</div>
+              : <div style={{ fontSize: 12, color: 'var(--tm-loss)' }}>{t('predict.priceUnavailable')}</div>
             }
           </div>
 
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 8 }}>MA PRÉDICTION DANS {TF_LABEL[timeframe].toUpperCase()}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 8 }}>{t('predict.sectionMyPrediction', { timeframe: tfLabels[timeframe].toUpperCase() })}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <input
               type="number"
               value={predictedPrice}
               onChange={e => setPredictedPrice(e.target.value)}
-              placeholder="Prix prédit…"
+              placeholder={t('predict.pricePlaceholder')}
               style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: `1px solid ${direction === 'up' ? 'var(--tm-profit)' : 'var(--tm-loss)'}`, background: 'var(--tm-bg-tertiary)', color: 'var(--tm-text-primary)', fontSize: 16, outline: 'none', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}
             />
             {predictedPrice && currentPrice && (
@@ -553,10 +562,10 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
         {/* Community insights */}
         <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '14px 16px' }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>🌍</span> Communauté — {symbol} · {timeframe}
+            <span>{t('predict.communityTitle', { symbol, timeframe })}</span>
           </div>
           {commLoading ? (
-            <div style={{ fontSize: 12, color: 'var(--tm-text-muted)', textAlign: 'center', padding: '10px 0' }}>Chargement…</div>
+            <div style={{ fontSize: 12, color: 'var(--tm-text-muted)', textAlign: 'center', padding: '10px 0' }}>{t('predict.loadingSpinner')}</div>
           ) : (
             <PredictionHistogram preds={communityPreds} currentPrice={currentPrice} />
           )}
@@ -569,12 +578,12 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
             style={{ width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           >
             <span style={{ fontSize: 12, fontWeight: 700, color: stakeOpen ? '#FF9F0A' : 'var(--tm-text-secondary)' }}>
-              💰 Miser des USDT virtuels
+              {t('predict.stakeTitle')}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {virtualUSDT != null && (
                 <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--tm-text-muted)' }}>
-                  Solde: {virtualUSDT.toLocaleString('fr-FR')} USDT
+                  {t('predict.stakeBalance', { balance: virtualUSDT.toLocaleString('fr-FR') })}
                 </span>
               )}
               <span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>{stakeOpen ? '▲' : '▼'}</span>
@@ -607,20 +616,20 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
                 {stake > 0 && (
                   <button onClick={() => setStake(0)}
                     style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--tm-border)', background: 'var(--tm-bg-tertiary)', color: 'var(--tm-text-muted)', fontSize: 11, cursor: 'pointer' }}>
-                    Annuler
+                    {t('predict.stakeCancel')}
                   </button>
                 )}
               </div>
               {/* Résumé */}
               {stake > 0 ? (
                 <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--tm-text-primary)', background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.2)', borderRadius: 8, padding: '8px 10px' }}>
-                  <span style={{ color: 'var(--tm-text-secondary)' }}>Mise: </span>
+                  <span style={{ color: 'var(--tm-text-secondary)' }}>{t('predict.stakeLabel')}</span>
                   <span style={{ color: '#FF9F0A', fontWeight: 700 }}>{stake} USDT</span>
-                  <span style={{ color: 'var(--tm-text-secondary)' }}> → Gain potentiel: </span>
+                  <span style={{ color: 'var(--tm-text-secondary)' }}>{t('predict.stakePotential')}</span>
                   <span style={{ color: 'var(--tm-profit)', fontWeight: 700 }}>+{(stake * 0.9).toFixed(0)} USDT</span>
                 </div>
               ) : (
-                <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Aucune mise — déplace le slider pour miser (odds ×1.9)</div>
+                <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>{t('predict.stakeNone')}</div>
               )}
             </div>
           )}
@@ -628,13 +637,13 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
 
         {/* XP preview card */}
         <div style={{ background: 'linear-gradient(135deg, rgba(var(--tm-accent-rgb,0,229,255),0.06), rgba(191,90,242,0.06))', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)', borderRadius: 12, padding: '12px 14px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', marginBottom: 8 }}>⚡ XP potentiel</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', marginBottom: 8 }}>{t('predict.xpPotential')}</div>
           {[
-            { label: 'Soumission',         xp: '+3 XP',  color: 'var(--tm-text-secondary)' },
-            { label: 'Direction correcte', xp: '+5 XP',  color: 'var(--tm-profit)' },
-            { label: 'Précision ≤1%',      xp: '+8 XP',  color: 'var(--tm-profit)' },
-            { label: 'Précision ≤0,5%',    xp: '+15 XP', color: '#FFD700' },
-            { label: 'Précision ≤0,1%',    xp: '+30 XP', color: 'var(--tm-purple)' },
+            { label: t('predict.xpSubmit'),     xp: '+3 XP',  color: 'var(--tm-text-secondary)' },
+            { label: t('predict.xpCorrectDir'), xp: '+5 XP',  color: 'var(--tm-profit)' },
+            { label: t('predict.xpAcc1'),       xp: '+8 XP',  color: 'var(--tm-profit)' },
+            { label: t('predict.xpAcc05'),      xp: '+15 XP', color: '#FFD700' },
+            { label: t('predict.xpAcc01'),      xp: '+30 XP', color: 'var(--tm-purple)' },
           ].map(({ label, xp, color }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>{label}</span>
@@ -642,7 +651,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
             </div>
           ))}
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Max possible</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)' }}>{t('predict.xpMax')}</span>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-purple)', fontFamily: 'JetBrains Mono, monospace' }}>+61 XP</span>
           </div>
         </div>
@@ -656,7 +665,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
           borderRadius: 10, padding: '10px 14px',
         }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: isLocked ? 'var(--tm-loss)' : 'var(--tm-accent)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-            {isLocked ? '🔒 Paris verrouillés' : '⏱ Résolution prévue'}
+            {isLocked ? t('predict.lockTimerTitle') : t('predict.resolveTimerTitle')}
           </div>
           <div style={{ fontSize: 11, color: 'var(--tm-text-secondary)', marginBottom: 6 }}>
             {fmtTime(resolveDate)}
@@ -666,7 +675,7 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
           </div>
           {isLocked && (
             <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginTop: 6 }}>
-              Les paris se ferment à un moment aléatoire avant la résolution pour garantir l'équité.
+              {t('predict.fairnessNote')}
             </div>
           )}
         </div>
@@ -694,12 +703,12 @@ function PredictTab({ uid, displayName, onToast, onPredictionCreated, virtualUSD
           }}
         >
           {submitting
-            ? 'Envoi…'
+            ? t('predict.submitting')
             : isLocked
-            ? '🔒 Paris fermés — résolution imminente'
+            ? t('predict.submitLocked')
             : canSubmit
-            ? `🎯 Soumettre ma prédiction · +3 XP`
-            : 'Sélectionne un actif et un prix'}
+            ? t('predict.submitReady')
+            : t('predict.submitSelectAsset')}
         </button>
       </div>
     </div>
@@ -716,6 +725,7 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
   virtualUSDT: number | null
   onBalanceChange: (delta: number) => void
 }) {
+  const { t } = useTranslation()
   const [preds, setPreds]         = useState<Prediction[]>([])
   const [loading, setLoading]     = useState(true)
   const [resolving, setResolving] = useState(false)
@@ -753,17 +763,23 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
         if (totalBalanceChange !== 0) onBalanceChange(totalBalanceChange)
 
         for (const s of summaries) {
-          const xpMsg = s.xpEarned > 0 ? ` · +${s.xpEarned + 5} XP` : ''
+          const xpMsg = s.xpEarned > 0 ? t('predict.toastXp', { xp: s.xpEarned + 5 }) : ''
           const usdtMsg = s.balanceChange !== 0
-            ? ` · ${s.balanceChange > 0 ? '+' : ''}${s.balanceChange.toFixed(0)} USDT`
+            ? t('predict.toastUsdt', { sign: s.balanceChange > 0 ? '+' : '', amount: Math.abs(s.balanceChange).toFixed(0) })
             : ''
           onToast(
-            `${resultEmoji(s.isCorrect, s.accuracy)} ${s.prediction.symbol} résolu — ` +
-            `${s.isCorrect ? 'Correct ✓' : 'Incorrect ✗'} · Précision ${s.accuracy.toFixed(2)}%${xpMsg}${usdtMsg}`,
+            t('predict.toastResolved', {
+              emoji: resultEmoji(s.isCorrect, s.accuracy),
+              symbol: s.prediction.symbol,
+              verdict: s.isCorrect ? t('predict.toastCorrect') : t('predict.toastWrong'),
+              accuracy: s.accuracy.toFixed(2),
+              xp: xpMsg,
+              usdt: usdtMsg,
+            })
           )
         }
         if (newBadges.length > 0) {
-          onToast(`🏆 Nouveau badge : ${newBadges.map(b => b.icon + ' ' + b.name).join(', ')}`)
+          onToast(t('predict.toastNewBadge', { badges: newBadges.map(b => b.icon + ' ' + b.name).join(', ') }))
         }
         await load()
       }
@@ -783,17 +799,18 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
     <div style={{ textAlign: 'center', padding: 48, color: 'var(--tm-text-muted)' }}>
       <div style={{ width: 24, height: 24, border: '2px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      Chargement…
+      {t('predict.loadingSpinner')}
     </div>
   )
+
   const handleClaim = async () => {
     setClaiming(true)
     const ok = await claimDailyRefill(uid)
     if (ok) {
       onBalanceChange(200)
-      onToast('💸 +200 USDT virtuels réclamés !')
+      onToast(t('predict.toastClaimed'))
     } else {
-      onToast('ℹ️ Recharge déjà utilisée aujourd\'hui ou solde suffisant')
+      onToast(t('predict.toastAlreadyClaimed'))
     }
     setClaiming(false)
   }
@@ -803,26 +820,26 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
       {/* Bannière recharge (solde bas) */}
       {virtualUSDT != null && virtualUSDT < 50 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
-          <span style={{ fontSize: 12, color: '#FF9F0A' }}>💸 Solde bas ({virtualUSDT} USDT) — récupère ta recharge quotidienne !</span>
+          <span style={{ fontSize: 12, color: '#FF9F0A' }}>{t('predict.lowBalanceBanner', { balance: virtualUSDT })}</span>
           <button onClick={handleClaim} disabled={claiming}
             style={{ padding: '5px 12px', borderRadius: 8, border: 'none', background: '#FF9F0A', color: '#000', fontSize: 11, fontWeight: 700, cursor: claiming ? 'default' : 'pointer', opacity: claiming ? 0.7 : 1 }}>
-            {claiming ? '…' : '+200 USDT'}
+            {claiming ? t('predict.claiming') : t('predict.claimButton')}
           </button>
         </div>
       )}
       {resolving && (
         <div style={{ background: 'rgba(var(--tm-accent-rgb,0,229,255),0.05)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--tm-accent)' }}>
-          ⏳ Résolution des prédictions expirées en cours…
+          {t('predict.resolvingBanner')}
         </div>
       )}
 
       {/* Actives */}
       {pending.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>⏳ Prédictions actives ({pending.length})</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>{t('predict.activePredictions', { count: pending.length })}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {pending.map(p => (
-              <PredCard key={p.id} pred={p} />
+            {pending.map(pred => (
+              <PredCard key={pred.id} pred={pred} />
             ))}
           </div>
         </div>
@@ -832,11 +849,11 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
       {resolved.length > 0 && (
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>
-            ✅ Historique ({resolved.length})
+            {t('predict.historyTitle', { count: resolved.length })}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {resolved.map(p => (
-              <PredCard key={p.id} pred={p} />
+            {resolved.map(pred => (
+              <PredCard key={pred.id} pred={pred} />
             ))}
           </div>
         </div>
@@ -844,8 +861,8 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
 
       {preds.length === 0 && (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--tm-text-muted)', fontSize: 14 }}>
-          Aucune prédiction pour l'instant.<br />
-          <span style={{ fontSize: 12 }}>Rendez-vous dans l'onglet 🎯 Prédire !</span>
+          {t('predict.noPredictions')}<br />
+          <span style={{ fontSize: 12 }}>{t('predict.noPredictionsHint')}</span>
         </div>
       )}
     </div>
@@ -853,6 +870,7 @@ function MyPredictionsTab({ uid, onToast, refreshKey, virtualUSDT, onBalanceChan
 }
 
 function PredCard({ pred }: { pred: Prediction }) {
+  const { t } = useTranslation()
   const isPending  = pred.status === 'pending'
   const isResolved = pred.status === 'resolved'
   const isExpired  = pred.status === 'expired'
@@ -862,14 +880,14 @@ function PredCard({ pred }: { pred: Prediction }) {
 
   // Live countdown pour les prédictions actives
   const predLockAt = computeLockAt(pred.resolveAt.toDate())
-  const [liveCountdown, setLiveCountdown] = useState(() => isPending ? fmtCountdown(pred.resolveAt) : '')
+  const [liveCountdown, setLiveCountdown] = useState(() => isPending ? fmtCountdown(pred.resolveAt, '…') : '')
   const [liveIsLocked, setLiveIsLocked]   = useState(() => isPending && Date.now() >= predLockAt.getTime())
   useEffect(() => {
     if (!isPending) return
     const tick = () => {
       const now  = Date.now()
       const diff = pred.resolveAt.toMillis() - now
-      setLiveCountdown(fmtDiff(diff))
+      setLiveCountdown(fmtDiff(diff, '…'))
       setLiveIsLocked(now >= predLockAt.getTime() && now < pred.resolveAt.toMillis())
     }
     tick()
@@ -906,7 +924,7 @@ function PredCard({ pred }: { pred: Prediction }) {
               </span>
             )}
             {isExpired && (
-              <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', background: 'var(--tm-bg-tertiary)', padding: '1px 6px', borderRadius: 4 }}>Expiré</span>
+              <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', background: 'var(--tm-bg-tertiary)', padding: '1px 6px', borderRadius: 4 }}>{t('predict.expired')}</span>
             )}
             {isResolved && pred.xpEarned != null && pred.xpEarned > 0 && (
               <span style={{ fontSize: 10, color: 'var(--tm-profit)', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>+{pred.xpEarned + 5} XP</span>
@@ -915,14 +933,14 @@ function PredCard({ pred }: { pred: Prediction }) {
 
           {/* Prix */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace', flexWrap: 'wrap' }}>
-            <span>Base: {fmtPrice(pred.currentPrice)}</span>
+            <span>{t('predict.priceBase', { price: fmtPrice(pred.currentPrice) })}</span>
             <span style={{ color: dirColor }}>→ {fmtPrice(pred.predictedPrice)}</span>
             {isResolved && pred.actualPrice != null && (
-              <span style={{ color: resColor }}>Réel: {fmtPrice(pred.actualPrice)}</span>
+              <span style={{ color: resColor }}>{t('predict.priceReal', { price: fmtPrice(pred.actualPrice) })}</span>
             )}
             {isPending && (
               <span style={{ color: 'var(--tm-text-muted)', opacity: 0.7 }}>
-                · résolution {fmtTime(pred.resolveAt.toDate())}
+                {t('predict.resolution', { time: fmtTime(pred.resolveAt.toDate()) })}
               </span>
             )}
           </div>
@@ -932,7 +950,7 @@ function PredCard({ pred }: { pred: Prediction }) {
             <div style={{ marginTop: 5, fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>
               {isPending && (
                 <span style={{ color: '#FF9F0A' }}>
-                  💰 Mise: {pred.stake} USDT → Gain potentiel: +{(pred.stake * 0.9).toFixed(0)} USDT
+                  {t('predict.stakeLabel')}{pred.stake} USDT{t('predict.stakePotential')}+{(pred.stake * 0.9).toFixed(0)} USDT
                 </span>
               )}
               {isResolved && pred.balanceChange != null && pred.balanceChange !== 0 && (
@@ -956,7 +974,10 @@ function PredCard({ pred }: { pred: Prediction }) {
                     }} />
                   </div>
                   <div style={{ fontSize: 9, color: 'var(--tm-text-muted)', marginTop: 2 }}>
-                    Précision: {pred.accuracy.toFixed(2)}% d'écart · {pred.isCorrect ? 'Bonne direction ✓' : 'Mauvaise direction ✗'}
+                    {t('predict.accuracyLabel', {
+                      pct: pred.accuracy.toFixed(2),
+                      dir: pred.isCorrect ? t('predict.dirCorrect') : t('predict.dirWrong'),
+                    })}
                   </div>
                 </div>
               </div>
@@ -972,6 +993,7 @@ function PredCard({ pred }: { pred: Prediction }) {
 // ONGLET 3 — Communauté
 // ═══════════════════════════════════════════════════════════════
 function CommunityTab({ uid }: { uid: string }) {
+  const { t } = useTranslation()
   const [preds, setPreds]   = useState<Prediction[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -995,7 +1017,7 @@ function CommunityTab({ uid }: { uid: string }) {
     return Object.entries(counts)
       .sort((a, b) => b[1].cnt - a[1].cnt)
       .slice(0, 10)
-      .map(([symbol, { cnt, bull }]) => ({ symbol, cnt, bullPct: Math.round(bull / cnt * 100) }))
+      .map(([sym, { cnt, bull }]) => ({ symbol: sym, cnt, bullPct: Math.round(bull / cnt * 100) }))
   }, [recent])
 
   // Sentiment global
@@ -1005,9 +1027,9 @@ function CommunityTab({ uid }: { uid: string }) {
 
   // Top prévisionnistes (sur prédictions résolues uniquement)
   const topPredictors = useMemo(() => {
-    const resolved = preds.filter(p => p.status === 'resolved' && p.accuracy != null)
+    const resolvedPreds = preds.filter(p => p.status === 'resolved' && p.accuracy != null)
     const byUid: Record<string, { cnt: number; correct: number; totalAcc: number; name: string }> = {}
-    resolved.forEach(p => {
+    resolvedPreds.forEach(p => {
       if (!byUid[p.uid]) byUid[p.uid] = { cnt: 0, correct: 0, totalAcc: 0, name: p.displayName ?? '???' }
       byUid[p.uid].cnt++
       if (p.isCorrect) byUid[p.uid].correct++
@@ -1023,7 +1045,7 @@ function CommunityTab({ uid }: { uid: string }) {
   if (loading) return (
     <div style={{ textAlign: 'center', padding: 48, color: 'var(--tm-text-muted)' }}>
       <div style={{ width: 24, height: 24, border: '2px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-      Chargement…
+      {t('predict.loadingSpinner')}
     </div>
   )
 
@@ -1031,7 +1053,7 @@ function CommunityTab({ uid }: { uid: string }) {
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       {/* Sentiment global */}
       <div style={{ gridColumn: '1 / -1', background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '16px 20px' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>🌡️ Sentiment communautaire (24h)</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>{t('predict.sentimentTitle')}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-profit)', minWidth: 50 }}>▲ {globalBull}%</span>
           <div style={{ flex: 1, height: 14, background: 'var(--tm-border)', borderRadius: 7, overflow: 'hidden', position: 'relative' }}>
@@ -1039,14 +1061,14 @@ function CommunityTab({ uid }: { uid: string }) {
           </div>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-loss)', minWidth: 50, textAlign: 'right' }}>{100 - globalBull}% ▼</span>
         </div>
-        <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginTop: 8 }}>{recent.length} prédiction{recent.length > 1 ? 's' : ''} dans les dernières 24h</div>
+        <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginTop: 8 }}>{t('predict.sentimentCount', { count: recent.length })}</div>
       </div>
 
       {/* Top actifs */}
       <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '16px 20px' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>🔥 Actifs les plus prédits (24h)</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>{t('predict.topAssetsTitle')}</div>
         {topAssets.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>Aucune prédiction récente</div>
+          <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>{t('predict.noRecentPreds')}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {topAssets.map(({ symbol, cnt, bullPct }, idx) => (
@@ -1056,7 +1078,7 @@ function CommunityTab({ uid }: { uid: string }) {
                 <div style={{ flex: 1, height: 6, background: 'var(--tm-border)', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ width: `${bullPct}%`, height: '100%', background: bullPct >= 50 ? 'var(--tm-profit)' : 'var(--tm-loss)', borderRadius: 3, transition: 'width 0.4s' }} />
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', width: 50, textAlign: 'right' }}>{cnt} pred.</span>
+                <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', width: 50, textAlign: 'right' }}>{t('predict.predCount', { count: cnt })}</span>
               </div>
             ))}
           </div>
@@ -1065,21 +1087,21 @@ function CommunityTab({ uid }: { uid: string }) {
 
       {/* Classement prévisionnistes */}
       <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border)', borderRadius: 12, padding: '16px 20px' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>🏆 Meilleurs prévisionnistes</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', marginBottom: 12 }}>{t('predict.topPredictorsTitle')}</div>
         {topPredictors.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>Pas encore assez de données</div>
+          <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>{t('predict.noData')}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {topPredictors.map(({ uid: puid, name, cnt, winRate, avgAcc }, idx) => (
               <div key={puid} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 14 }}>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: puid === uid ? 'var(--tm-accent)' : 'var(--tm-text-primary)', flex: 1 }}>
-                  {name}{puid === uid ? ' (moi)' : ''}
+                  {name}{puid === uid ? t('predict.me') : ''}
                 </span>
                 <span style={{ fontSize: 11, fontWeight: 700, color: winRate >= 60 ? 'var(--tm-profit)' : 'var(--tm-text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>
                   {winRate}%
                 </span>
-                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>{cnt} pred.</span>
+                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>{t('predict.predCount', { count: cnt })}</span>
               </div>
             ))}
           </div>
@@ -1093,6 +1115,7 @@ function CommunityTab({ uid }: { uid: string }) {
 // PAGE PRINCIPALE
 // ═══════════════════════════════════════════════════════════════
 export default function PredictPage() {
+  const { t } = useTranslation()
   const user = useUser()
   const [tab, setTab]           = useState<Tab>('predict')
   const [toast, setToast]       = useState<string | null>(null)
@@ -1127,9 +1150,9 @@ export default function PredictPage() {
   if (!user) return null
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'predict',   label: '🎯 Prédire' },
-    { id: 'mine',      label: '📋 Mes prédictions' },
-    { id: 'community', label: '🌍 Communauté' },
+    { id: 'predict',   label: t('predict.tabPredict') },
+    { id: 'mine',      label: t('predict.tabMine') },
+    { id: 'community', label: t('predict.tabCommunity') },
   ]
 
   return (
@@ -1138,19 +1161,19 @@ export default function PredictPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tm-text-primary)', margin: 0, fontFamily: 'Syne, sans-serif' }}>
-            Predict & Earn
+            {t('predict.pageTitle')}
           </h1>
           <p style={{ fontSize: 13, color: 'var(--tm-text-secondary)', margin: '3px 0 0' }}>
-            Prédis les prix · Gagne de l'XP · Compare-toi à la communauté
+            {t('predict.pageSubtitle')}
           </p>
         </div>
         {/* Stats rapides */}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {[
-            { label: 'USDT virtuel', value: virtualUSDT != null ? `${virtualUSDT.toLocaleString('fr-FR')}` : '—', icon: '💰', highlight: virtualUSDT != null && virtualUSDT < 50 },
-            { label: 'Prédictions', value: userStats.predictionsTotal, icon: '🎯', highlight: false },
-            { label: 'Streak correct', value: userStats.predictionStreak, icon: '🔥', highlight: false },
-            { label: 'Meilleure précision', value: userStats.predictionBestAccuracy < 100 ? `${userStats.predictionBestAccuracy.toFixed(1)}%` : '—', icon: '💎', highlight: false },
+            { label: t('predict.statVirtualUSDT'), value: virtualUSDT != null ? `${virtualUSDT.toLocaleString('fr-FR')}` : '—', icon: '💰', highlight: virtualUSDT != null && virtualUSDT < 50 },
+            { label: t('predict.statPredictions'), value: userStats.predictionsTotal, icon: '🎯', highlight: false },
+            { label: t('predict.statStreak'), value: userStats.predictionStreak, icon: '🔥', highlight: false },
+            { label: t('predict.statBestAccuracy'), value: userStats.predictionBestAccuracy < 100 ? `${userStats.predictionBestAccuracy.toFixed(1)}%` : '—', icon: '💎', highlight: false },
           ].map(({ label, value, icon, highlight }) => (
             <div key={label} style={{ background: 'var(--tm-bg-secondary)', border: `1px solid ${highlight ? 'rgba(255,159,10,0.4)' : 'var(--tm-border)'}`, borderRadius: 10, padding: '8px 14px', textAlign: 'center' }}>
               <div style={{ fontSize: 18 }}>{icon}</div>
@@ -1163,14 +1186,14 @@ export default function PredictPage() {
 
       {/* Onglets */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--tm-bg-secondary)', padding: 4, borderRadius: 12, border: '1px solid var(--tm-border)', width: 'fit-content' }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
+        {tabs.map(tabItem => (
+          <button key={tabItem.id} onClick={() => setTab(tabItem.id)} style={{
             padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-            background: tab === t.id ? 'var(--tm-accent)' : 'transparent',
-            color: tab === t.id ? 'var(--tm-bg)' : 'var(--tm-text-secondary)',
+            background: tab === tabItem.id ? 'var(--tm-accent)' : 'transparent',
+            color: tab === tabItem.id ? 'var(--tm-bg)' : 'var(--tm-text-secondary)',
             transition: 'all 0.15s',
           }}>
-            {t.label}
+            {tabItem.label}
           </button>
         ))}
       </div>

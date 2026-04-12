@@ -303,27 +303,11 @@ const SECRET: BadgeDefinition[] = [
 ]
 
 // ═══════════════════════════════════════════════════════════════
-// CATÉGORIE 15 — PRÉDICTIONS (10)
-// ═══════════════════════════════════════════════════════════════
-const PREDICTION: BadgeDefinition[] = [
-  b('pred_first',      'Première Prédiction',     'Soumettre ta première prédiction de prix',         '🎯', 'prediction', 'common',    { type: 'predictionsTotal',       value: 1  }),
-  b('pred_10',         'Apprenti Prévisionniste',  '10 prédictions soumises',                          '📊', 'prediction', 'rare',      { type: 'predictionsTotal',       value: 10 }),
-  b('pred_50',         'Analyste Confirmé',        '50 prédictions soumises',                          '🔮', 'prediction', 'epic',      { type: 'predictionsTotal',       value: 50 }),
-  b('pred_correct_1',  'Bonne Direction',          'Première prédiction de direction correcte',        '✅', 'prediction', 'common',    { type: 'predictionsCorrect',     value: 1  }),
-  b('pred_correct_10', 'Lecteur de Marchés',       '10 directions correctes',                          '📈', 'prediction', 'rare',      { type: 'predictionsCorrect',     value: 10 }),
-  b('pred_correct_50', 'Maître de Prédiction',     '50 directions correctes',                          '🏆', 'prediction', 'legendary', { type: 'predictionsCorrect',     value: 50 }),
-  b('pred_streak_5',   'Série de 5',               "5 bonnes prédictions d'affilée",                  '🔥', 'prediction', 'epic',      { type: 'predictionStreak',       value: 5  }),
-  b('pred_streak_10',  "L'Oracle",                 "10 bonnes prédictions d'affilée",                 '🌟', 'prediction', 'legendary', { type: 'predictionStreak',       value: 10 }, { title: "L'Oracle" }),
-  b('pred_oracle',     'Dans le Mille',            "Prédiction à moins de 1% d'écart",               '💎', 'prediction', 'epic',      { type: 'predictionBestAccuracy', value: 1  }),
-  b('pred_daily_7',    'Semaine du Prophète',      'Prédire 7 jours consécutifs',                     '📅', 'prediction', 'rare',      { type: 'predictionDailyStreak',  value: 7  }),
-]
-
-// ═══════════════════════════════════════════════════════════════
 // EXPORT — Tous les badges avec ordre automatique
 // ═══════════════════════════════════════════════════════════════
 const ALL_CATEGORIES = [
   VOLUME, WINRATE, STREAK, JOURNAL, RISK, MARKET, PNL,
-  SOCIAL, CHALLENGE, PRESTIGE, COACH_IA, SEASONAL, HUMOR, SECRET, PREDICTION,
+  SOCIAL, CHALLENGE, PRESTIGE, COACH_IA, SEASONAL, HUMOR, SECRET,
 ]
 
 let orderCounter = 0
@@ -357,7 +341,7 @@ export const CATEGORY_CONFIG: Record<BadgeCategory, { label: string; icon: strin
   prestige:  { label: 'Prestige',      icon: '⭐' },
   coachIA:   { label: 'Coach IA',      icon: '🤖' },
   seasonal:  { label: 'Saisonniers',   icon: '🎄' },
-  humor:      { label: 'Humour',        icon: '💀' },
-  secret:     { label: 'Secrets',       icon: '🔮' },
-  prediction: { label: 'Prédictions',   icon: '🎯' },
+  humor:     { label: 'Humour',        icon: '💀' },
+  secret:    { label: 'Secrets',       icon: '🔮' },
+  prediction: { label: 'Prédictions',  icon: '🎯' },
 }

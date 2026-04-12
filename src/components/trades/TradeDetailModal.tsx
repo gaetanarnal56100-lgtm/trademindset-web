@@ -3,6 +3,7 @@
 // Sections : Header P&L, Métriques, Détails, Avancé, Graphique prix, Actions
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { updateTrade, deleteTrade, createTrade, tradePnL, type Trade, type TradingSystem, type Exchange } from '@/services/firestore'
 import toast from 'react-hot-toast'
 
@@ -26,6 +27,7 @@ function fmtDate(d: Date) {
 function fmtPct(n: number) { return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%` }
 
 export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted }: TradeDetailModalProps) {
+  const { t } = useTranslation()
   const pnl       = tradePnL(trade)
   const isProfit  = pnl >= 0
   const system    = systems.find(s => s.id === trade.systemId)
@@ -55,7 +57,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
     setDeleting(true)
     try {
       await deleteTrade(trade.id)
-      toast.success('Trade supprimé')
+      toast.success(t('trades.deleted'))
       onDeleted?.()
       onClose()
     } catch {
@@ -76,7 +78,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
         session: trade.session, tags: trade.tags ?? [],
         status: 'open' as const,
       })
-      toast.success('Trade dupliqué')
+      toast.success(t('trades.duplicated'))
     } catch {
       toast.error('Erreur lors de la duplication')
     }
@@ -163,7 +165,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
                     color: trade.status === 'open' ? 'var(--tm-warning)' : 'var(--tm-text-muted)',
                     border: `1px solid ${trade.status === 'open' ? 'rgba(var(--tm-warning-rgb,255,149,0),0.3)' : 'var(--tm-border)'}`,
                   }}>
-                    {trade.status === 'open' ? '● OUVERT' : '✓ FERMÉ'}
+                    {trade.status === 'open' ? t('trades.openStatus').toUpperCase() : t('trades.closedStatus').toUpperCase()}
                   </span>
                 </div>
               </div>
@@ -187,7 +189,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
             {[
               { label:'P&L Net',        value: `${pnl >= 0?'+':''}$${Math.abs(pnl).toFixed(2)}`,  color:accentColor,            icon:'💰' },
               { label:'ROI',            value: roi !== null ? fmtPct(roi) : '—',                    color: roi && roi>=0 ? 'var(--tm-profit)' : 'var(--tm-loss)', icon:'📈' },
-              { label:'Prix d\'entrée', value: fmtPrice(trade.entryPrice),                          color:'var(--tm-accent)',      icon:'↓' },
+              { label:t('trades.entryPrice'), value: fmtPrice(trade.entryPrice),                          color:'var(--tm-accent)',      icon:'↓' },
               { label:'Prix de sortie', value: fmtPrice(trade.exitPrice),                           color: isProfit ? 'var(--tm-profit)' : 'var(--tm-loss)', icon:'↑' },
             ].map(({ label, value, color, icon }) => (
               <div key={label} style={{ background:'var(--tm-bg-card)', borderRadius:12, padding:'12px 14px' }}>
@@ -206,13 +208,13 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
             {trade.quantity  != null && <Row label="Quantité"    value={trade.quantity.toFixed(6)} />}
             {trade.leverage   > 1     && <Row label="Levier"     value={`${trade.leverage}×`} highlight />}
             {exchange &&               <Row label="Exchange"     value={exchange.name} />}
-            <Row label="Rôle ordre"   value={trade.orderRole} />
+            <Row label={t('trades.orderRole')}   value={trade.orderRole} />
             <Row label="Session"      value={trade.session} />
             {trade.notes &&           <Row label="Notes"         value={trade.notes} />}
           </Section>
 
           {/* ── ADVANCED METRICS ── */}
-          <Section title="Métriques avancées">
+          <Section title={t('trades.advancedMetrics')}>
             {priceChange !== null && trade.entryPrice && (
               <Row
                 label="Variation de prix"
@@ -228,7 +230,7 @@ export function TradeDetailModal({ trade, systems, exchanges, onClose, onDeleted
               />
             )}
             {estimatedFees && (
-              <Row label="Frais estimés" value={`$${estimatedFees.amount.toFixed(4)} (${estimatedFees.rate.toFixed(3)}%)`} />
+              <Row label={t('trades.estimatedFees')} value={`$${estimatedFees.amount.toFixed(4)} (${estimatedFees.rate.toFixed(3)}%)`} />
             )}
             {exchange && (
               <>
@@ -356,6 +358,7 @@ function PriceVisualization({ entry, exit, type }: { entry: number; exit: number
 function EditTradeModal({ trade, systems, exchanges, onClose }: {
   trade: Trade; systems: TradingSystem[]; exchanges: Exchange[]; onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [exitPrice, setExitPrice] = useState(trade.exitPrice?.toString() ?? '')
   const [notes,     setNotes]     = useState(trade.notes ?? '')
   const [status,    setStatus]    = useState<'open'|'closed'>(trade.status)
@@ -378,7 +381,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
         notes,
         flashPnLNet: pnlNet,
       })
-      toast.success('Trade mis à jour')
+      toast.success(t('trades.updated'))
       onClose()
     } catch {
       toast.error('Erreur lors de la sauvegarde')
@@ -420,7 +423,7 @@ function EditTradeModal({ trade, systems, exchanges, onClose }: {
                   background: status===s ? (s==='open'?'rgba(var(--tm-warning-rgb,255,149,0),0.2)':'rgba(var(--tm-profit-rgb,34,199,89),0.2)') : 'transparent',
                   color: status===s ? (s==='open'?'var(--tm-warning)':'var(--tm-profit)') : 'var(--tm-text-muted)',
                 }}>
-                  {s === 'open' ? '● Ouvert' : '✓ Fermé'}
+                  {s === 'open' ? t('trades.openStatus') : t('trades.closedStatus')}
                 </button>
               ))}
             </div>

@@ -1,8 +1,10 @@
 // src/pages/landing/LandingPage.tsx
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
 // ── Mock dashboard card ───────────────────────────────────────
 function MockDashboard() {
+  const { t } = useTranslation()
   const trades = [
     { sym: 'BTC/USDT', side: 'LONG', pnl: +248.50, pct: +3.12 },
     { sym: 'ETH/USDT', side: 'LONG', pnl: -82.00,  pct: -1.45 },
@@ -37,10 +39,10 @@ function MockDashboard() {
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
         {[
-          { label: 'P&L mois', value: '+4 218 $', color: '#4CAF50' },
-          { label: 'Win rate', value: '68.4%', color: '#00E5FF' },
-          { label: 'Trades', value: '47', color: 'rgba(255,255,255,0.7)' },
-          { label: 'Streak', value: '🔥 7', color: '#FFD60A' },
+          { label: t('landing.mock.pnlMonth'), value: '+4 218 $', color: '#4CAF50' },
+          { label: t('landing.mock.winRate'), value: '68.4%', color: '#00E5FF' },
+          { label: t('landing.mock.trades'), value: '47', color: 'rgba(255,255,255,0.7)' },
+          { label: t('landing.mock.streak'), value: '🔥 7', color: '#FFD60A' },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
@@ -51,21 +53,21 @@ function MockDashboard() {
 
       {/* Trade list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {trades.map((t, i) => (
+        {trades.map((item, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.04)' }}>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: t.pnl > 0 ? 'rgba(76,175,80,0.12)' : 'rgba(244,67,54,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: t.pnl > 0 ? '#4CAF50' : '#F44336', flexShrink: 0 }}>
-              {t.pnl > 0 ? '▲' : '▼'}
+            <div style={{ width: 28, height: 28, borderRadius: 7, background: item.pnl > 0 ? 'rgba(76,175,80,0.12)' : 'rgba(244,67,54,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: item.pnl > 0 ? '#4CAF50' : '#F44336', flexShrink: 0 }}>
+              {item.pnl > 0 ? '▲' : '▼'}
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.8)', fontFamily: 'JetBrains Mono, monospace' }}>{t.sym}</div>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>{t.side}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.8)', fontFamily: 'JetBrains Mono, monospace' }}>{item.sym}</div>
+              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>{item.side}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: t.pnl > 0 ? '#4CAF50' : '#F44336', fontFamily: 'JetBrains Mono, monospace' }}>
-                {t.pnl > 0 ? '+' : ''}{t.pnl.toFixed(2)} $
+              <div style={{ fontSize: 11, fontWeight: 700, color: item.pnl > 0 ? '#4CAF50' : '#F44336', fontFamily: 'JetBrains Mono, monospace' }}>
+                {item.pnl > 0 ? '+' : ''}{item.pnl.toFixed(2)} $
               </div>
-              <div style={{ fontSize: 9, color: t.pct > 0 ? 'rgba(76,175,80,0.7)' : 'rgba(244,67,54,0.7)' }}>
-                {t.pct > 0 ? '+' : ''}{t.pct.toFixed(2)}%
+              <div style={{ fontSize: 9, color: item.pct > 0 ? 'rgba(76,175,80,0.7)' : 'rgba(244,67,54,0.7)' }}>
+                {item.pct > 0 ? '+' : ''}{item.pct.toFixed(2)}%
               </div>
             </div>
           </div>
@@ -75,7 +77,7 @@ function MockDashboard() {
       {/* XP bar mock */}
       <div style={{ marginTop: 12, padding: '8px 10px', background: 'rgba(0,229,255,0.05)', borderRadius: 10, border: '1px solid rgba(0,229,255,0.1)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-          <span style={{ fontSize: 10, color: 'rgba(0,229,255,0.7)', fontWeight: 600 }}>⚡ Niveau 14 — Expert</span>
+          <span style={{ fontSize: 10, color: 'rgba(0,229,255,0.7)', fontWeight: 600 }}>{t('landing.mock.level')}</span>
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'JetBrains Mono, monospace' }}>2 840 / 3 500 XP</span>
         </div>
         <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
@@ -86,76 +88,78 @@ function MockDashboard() {
   )
 }
 
-const FEATURES = [
-  {
-    icon: '📓',
-    title: 'Journal IA',
-    desc: 'Enregistrez chaque trade avec vos émotions. L\'IA identifie vos patterns comportementaux et les biais qui coûtent de l\'argent.',
-    color: '#00E5FF',
-    grad: 'from-cyan',
-  },
-  {
-    icon: '🧠',
-    title: 'Analyse comportementale',
-    desc: 'FOMO, revenge trading, overconfidence — détectez et corrigez vos biais avant qu\'ils ne frappent.',
-    color: '#BF5AF2',
-    grad: 'from-purple',
-  },
-  {
-    icon: '📊',
-    title: 'Statistiques avancées',
-    desc: 'Win rate, expectancy, profit factor, max drawdown — tous vos KPIs sur un seul écran, en temps réel.',
-    color: '#FF9F0A',
-    grad: 'from-orange',
-  },
-  {
-    icon: '🎯',
-    title: 'Predict & Earn',
-    desc: 'Prédisez les prix des cryptos, gagnez de l\'XP pour chaque bonne prédiction et montez dans le classement.',
-    color: '#30D158',
-    grad: 'from-green',
-  },
-  {
-    icon: '🏆',
-    title: 'Gamification XP',
-    desc: 'Niveaux, badges, streaks, titres. Chaque bonne habitude est récompensée. La discipline devient addictive.',
-    color: '#FFD60A',
-    grad: 'from-yellow',
-  },
-  {
-    icon: '🌍',
-    title: 'Marchés & Alertes',
-    desc: 'Suivez cryptos et actions en live, configurez des alertes de prix et ne manquez plus aucun mouvement.',
-    color: '#FF6B6B',
-    grad: 'from-red',
-  },
-]
-
-const TESTIMONIALS = [
-  {
-    quote: "En 3 mois, j'ai augmenté mon win rate de 52% à 71%. L'analyse IA a identifié que je coupais mes winners trop tôt après une perte. Game changer.",
-    author: 'Thomas M.',
-    role: 'Trader Crypto — 4 ans d\'expérience',
-    avatar: 'T',
-    color: '#00E5FF',
-  },
-  {
-    quote: "Le journal m'a montré que mes pires trades arrivent le lundi matin. Simple, mais je ne l'aurais jamais vu sans les données. J'évite maintenant de trader ce jour-là.",
-    author: 'Sarah K.',
-    role: 'Swing trader — Actions US',
-    avatar: 'S',
-    color: '#BF5AF2',
-  },
-  {
-    quote: "La gamification, c'est exactement ce qu'il me fallait pour tenir la discipline. J'ai 47 jours de streak de journal. Avant, j'abandonnais après une semaine.",
-    author: 'Alexis B.',
-    role: 'Day trader — Forex & Indices',
-    avatar: 'A',
-    color: '#FFD60A',
-  },
-]
-
 export default function LandingPage() {
+  const { t } = useTranslation()
+
+  const FEATURES = [
+    {
+      icon: '📓',
+      title: t('landing.features.journal.title'),
+      desc: t('landing.features.journal.desc'),
+      color: '#00E5FF',
+    },
+    {
+      icon: '🧠',
+      title: t('landing.features.behavioral.title'),
+      desc: t('landing.features.behavioral.desc'),
+      color: '#BF5AF2',
+    },
+    {
+      icon: '📊',
+      title: t('landing.features.stats.title'),
+      desc: t('landing.features.stats.desc'),
+      color: '#FF9F0A',
+    },
+    {
+      icon: '🎯',
+      title: t('landing.features.predict.title'),
+      desc: t('landing.features.predict.desc'),
+      color: '#30D158',
+    },
+    {
+      icon: '🏆',
+      title: t('landing.features.gamification.title'),
+      desc: t('landing.features.gamification.desc'),
+      color: '#FFD60A',
+    },
+    {
+      icon: '🌍',
+      title: t('landing.features.markets.title'),
+      desc: t('landing.features.markets.desc'),
+      color: '#FF6B6B',
+    },
+  ]
+
+  const TESTIMONIALS = [
+    {
+      quote: t('landing.testimonials.thomas.quote'),
+      author: t('landing.testimonials.thomas.author'),
+      role: t('landing.testimonials.thomas.role'),
+      avatar: 'T',
+      color: '#00E5FF',
+    },
+    {
+      quote: t('landing.testimonials.sarah.quote'),
+      author: t('landing.testimonials.sarah.author'),
+      role: t('landing.testimonials.sarah.role'),
+      avatar: 'S',
+      color: '#BF5AF2',
+    },
+    {
+      quote: t('landing.testimonials.alexis.quote'),
+      author: t('landing.testimonials.alexis.author'),
+      role: t('landing.testimonials.alexis.role'),
+      avatar: 'A',
+      color: '#FFD60A',
+    },
+  ]
+
+  const HOW_STEPS = [
+    { num: '01', title: t('landing.how.step1.title'), desc: t('landing.how.step1.desc'), icon: '📝', color: '#00E5FF' },
+    { num: '02', title: t('landing.how.step2.title'), desc: t('landing.how.step2.desc'), icon: '🧠', color: '#BF5AF2' },
+    { num: '03', title: t('landing.how.step3.title'), desc: t('landing.how.step3.desc'), icon: '🏆', color: '#FFD60A' },
+  ]
+
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", overflowX: 'hidden' }}>
 
@@ -194,7 +198,7 @@ export default function LandingPage() {
               marginBottom: 28, cursor: 'default',
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00E5FF', boxShadow: '0 0 6px #00E5FF', display: 'inline-block' }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tm-accent)', letterSpacing: '0.05em' }}>Journal de trading professionnel</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tm-accent)', letterSpacing: '0.05em' }}>{t('landing.hero.badge')}</span>
             </div>
 
             <h1 style={{
@@ -206,17 +210,17 @@ export default function LandingPage() {
               color: 'var(--tm-text-primary)',
               marginBottom: 24,
             }}>
-              Journalisez.{' '}
+              {t('landing.hero.h1Line1')}{' '}
               <br />
               <span style={{
                 background: 'linear-gradient(135deg, #00E5FF 0%, #0A85FF 50%, #BF5AF2 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
-              }}>Analysez.</span>
+              }}>{t('landing.hero.h1Line2')}</span>
               {' '}
               <br />
-              Progressez.
+              {t('landing.hero.h1Line3')}
             </h1>
 
             <p style={{
@@ -226,7 +230,7 @@ export default function LandingPage() {
               marginBottom: 36,
               maxWidth: 480,
             }}>
-              TradeMindset combine journal de trading, analyse comportementale par IA et gamification pour transformer vos habitudes et booster vos performances.
+              {t('landing.hero.subtitle')}
             </p>
 
             {/* CTA buttons */}
@@ -241,7 +245,7 @@ export default function LandingPage() {
                 background: 'linear-gradient(135deg, #00E5FF, #0A85FF)',
                 boxShadow: '0 0 30px rgba(0,229,255,0.3), 0 8px 24px rgba(10,133,255,0.3)',
               }}>
-                Commencer gratuitement
+                {t('landing.hero.ctaPrimary')}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
               </Link>
               <Link to="/login" style={{
@@ -254,16 +258,20 @@ export default function LandingPage() {
                 background: 'rgba(255,255,255,0.04)',
                 border: '1px solid rgba(255,255,255,0.1)',
               }}>
-                Se connecter
+                {t('landing.hero.ctaSecondary')}
               </Link>
             </div>
 
             {/* Trust line */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              {['Gratuit', 'Sans carte bancaire', 'Données sécurisées'].map(t => (
-                <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              {[
+                t('landing.hero.trust1'),
+                t('landing.hero.trust2'),
+                t('landing.hero.trust3'),
+              ].map(item => (
+                <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4CAF50" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-                  <span style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>{t}</span>
+                  <span style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>{item}</span>
                 </div>
               ))}
             </div>
@@ -281,9 +289,9 @@ export default function LandingPage() {
       <section style={{ padding: '100px 24px' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 14 }}>Comment ça marche</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 14 }}>{t('landing.how.label')}</div>
             <h2 style={{ fontSize: 'clamp(28px, 4vw, 46px)', fontWeight: 900, fontFamily: 'Syne, sans-serif', letterSpacing: '-0.025em', color: 'var(--tm-text-primary)', lineHeight: 1.1, margin: 0 }}>
-              De la prise de trade à la progression,<br />en 3 étapes
+              {t('landing.how.title')}
             </h2>
           </div>
 
@@ -291,11 +299,7 @@ export default function LandingPage() {
             {/* Connector line */}
             <div style={{ position: 'absolute', top: 36, left: '16.5%', right: '16.5%', height: 1, background: 'linear-gradient(90deg, rgba(0,229,255,0.3), rgba(191,90,242,0.3))', pointerEvents: 'none' }} />
 
-            {[
-              { num: '01', title: 'Journalisez vos trades', desc: 'Saisissez chaque trade avec setup, émotion, screenshot. L\'IA analyse immédiatement pour détecter les patterns.', icon: '📝', color: '#00E5FF' },
-              { num: '02', title: 'Recevez vos insights IA', desc: 'Biais identifiés, corrélations émotion–P&L, recommandations personnalisées pour votre style de trading.', icon: '🧠', color: '#BF5AF2' },
-              { num: '03', title: 'Progressez & Gagnez de l\'XP', desc: 'Badges, niveaux, streaks. Chaque bonne habitude est récompensée. La discipline devient un jeu.', icon: '🏆', color: '#FFD60A' },
-            ].map(({ num, title, desc, icon, color }) => (
+            {HOW_STEPS.map(({ num, title, desc, icon, color }) => (
               <div key={num} style={{ padding: '0 24px', textAlign: 'center', position: 'relative' }}>
                 <div style={{
                   width: 72, height: 72, borderRadius: 20,
@@ -325,9 +329,9 @@ export default function LandingPage() {
       }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 60 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 14 }}>Fonctionnalités</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 14 }}>{t('landing.features.label')}</div>
             <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 42px)', fontWeight: 900, fontFamily: 'Syne, sans-serif', letterSpacing: '-0.025em', color: 'var(--tm-text-primary)', margin: 0 }}>
-              Tout ce dont un trader sérieux a besoin
+              {t('landing.features.title')}
             </h2>
           </div>
 
@@ -380,9 +384,9 @@ export default function LandingPage() {
       <section style={{ padding: '100px 24px' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 60 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 14 }}>Témoignages</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 14 }}>{t('landing.testimonials.label')}</div>
             <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 42px)', fontWeight: 900, fontFamily: 'Syne, sans-serif', letterSpacing: '-0.025em', color: 'var(--tm-text-primary)', margin: 0 }}>
-              Ce que disent nos traders
+              {t('landing.testimonials.title')}
             </h2>
           </div>
 
@@ -444,14 +448,14 @@ export default function LandingPage() {
             color: 'var(--tm-text-primary)',
             marginBottom: 20,
           }}>
-            Prêt à trader avec{' '}
+            {t('landing.cta.titleBefore')}{' '}
             <span style={{ background: 'linear-gradient(135deg, #00E5FF, #BF5AF2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              discipline
+              {t('landing.cta.titleHighlight')}
             </span>
-            {' '}?
+            {' '}{t('landing.cta.titleAfter')}
           </h2>
           <p style={{ fontSize: 17, lineHeight: 1.75, color: 'var(--tm-text-secondary)', marginBottom: 40 }}>
-            Rejoignez 2 000+ traders qui améliorent leurs performances chaque semaine grâce à TradeMindset.
+            {t('landing.cta.subtitle')}
           </p>
           <Link to="/signup" style={{
             textDecoration: 'none',
@@ -463,11 +467,11 @@ export default function LandingPage() {
             background: 'linear-gradient(135deg, #00E5FF, #0A85FF)',
             boxShadow: '0 0 50px rgba(0,229,255,0.35), 0 12px 32px rgba(10,133,255,0.3)',
           }}>
-            Créer mon compte gratuit
+            {t('landing.cta.button')}
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           </Link>
           <p style={{ marginTop: 18, fontSize: 12, color: 'var(--tm-text-muted)' }}>
-            Gratuit · Aucune carte bancaire · Données 100% privées
+            {t('landing.cta.footnote')}
           </p>
         </div>
       </section>
@@ -487,8 +491,8 @@ export default function LandingPage() {
           <span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>© {new Date().getFullYear()}</span>
         </div>
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-          <Link to="/login" style={{ fontSize: 12, color: 'var(--tm-text-muted)', textDecoration: 'none' }}>Se connecter</Link>
-          <Link to="/signup" style={{ fontSize: 12, color: 'var(--tm-accent)', textDecoration: 'none', fontWeight: 600 }}>Commencer</Link>
+          <Link to="/login" style={{ fontSize: 12, color: 'var(--tm-text-muted)', textDecoration: 'none' }}>{t('landing.footer.login')}</Link>
+          <Link to="/signup" style={{ fontSize: 12, color: 'var(--tm-accent)', textDecoration: 'none', fontWeight: 600 }}>{t('landing.footer.signup')}</Link>
         </div>
       </footer>
 

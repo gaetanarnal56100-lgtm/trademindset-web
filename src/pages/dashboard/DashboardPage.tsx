@@ -1,5 +1,6 @@
 // DashboardPage.tsx — Dashboard enrichi v2 (heatmap compact + interactif + analytics tabs)
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/services/firebase/config'
@@ -73,12 +74,12 @@ function emotionScore(state: string): number {
 function calcEmotions(moods: MoodEntry[], trades: Trade[]) {
   if(!moods.length)return null
   const avg=moods.reduce((a,m)=>a+emotionScore(m.emotionalState),0)/moods.length
-  const avgState=avg>=3.5?'Confiant':avg>=2.5?'Neutre':avg>=1.5?'Stressé':'Impulsif'
+  const avgState=avg>=3.5?'confident':avg>=2.5?'neutral':avg>=1.5?'stressed':'impulsive'
   const sorted=[...trades].filter(t=>t.status==='closed').sort((a,b)=>safeTime(b.date)-safeTime(a.date))
   let consec=0;for(const t of sorted){if(tradePnL(t)<0)consec++;else break}
-  const risk=consec>=3?'Élevé':consec>=2?'Prudence':'Faible'
-  const impact=avg>=3.5?'Positif':avg>=2.5?'Neutre':'Négatif'
-  const advice=consec>=3?'Pause recommandée':avg>=3.5?'Continuer':'Réduire la taille'
+  const risk=consec>=3?'riskHigh':consec>=2?'riskCaution':'riskLow'
+  const impact=avg>=3.5?'positive':avg>=2.5?'neutral':'negative'
+  const advice=consec>=3?'pauseRecommended':avg>=3.5?'continue':'reduceSize'
   return{avgState,risk,impact,advice,consec,entries:moods.length}
 }
 
@@ -296,6 +297,7 @@ interface TimeRange { id: string; name: string; startHour: number; endHour: numb
 
 // ── Advanced Analytics Panel ──────────────────────────────────────────────
 function AdvancedAnalytics({trades}:{trades:Trade[]}) {
+  const { t } = useTranslation()
   const [tab,setTab]=useState<'analytics'|'metrics'|'calendar'>('analytics')
   const [metricsTab,setMetricsTab]=useState<'month'|'session'|'hour'|'day'>('month')
   const [sessionRanges,setSessionRanges]=useState<TimeRange[]>([
@@ -306,8 +308,8 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
   const [hourRanges,setHourRanges]=useState<TimeRange[]>([
     {id:'h1',name:'Matin',      startHour:6,  endHour:9},
     {id:'h2',name:'Milieu',     startHour:9,  endHour:12},
-    {id:'h3',name:'Après-midi', startHour:12, endHour:15},
-    {id:'h4',name:'Fin journée',startHour:15, endHour:18},
+    {id:'h3',name:'afternoon', startHour:12, endHour:15},
+    {id:'h4',name:'evening',   startHour:15, endHour:18},
   ])
   const [editing,setEditing]=useState<'session'|'hour'|null>(null)
   const [editDraft,setEditDraft]=useState<TimeRange[]>([])
@@ -324,10 +326,10 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
   const granularity=tradingSpanDays<14?'day' as const:tradingSpanDays<60?'week' as const:'month' as const
 
   const pLbl=granularity==='day'
-    ?{title:'Performance par Jour',   best:'Meilleur jour',     worst:'Pire jour',     avg:'Moyenne/jour',  tab:'Par jour'}
+    ?{title:t('dashboard.tradingDayPerf'),  best:t('dashboard.bestDay'),   worst:t('dashboard.worstDay'),  avg:t('dashboard.avgDay'),  tab:t('dashboard.perDay')}
     :granularity==='week'
-    ?{title:'Performance par Semaine',best:'Meilleure semaine', worst:'Pire semaine',  avg:'Moyenne/sem.',  tab:'Par semaine'}
-    :{title:'Performance par Mois',  best:'Meilleur mois',     worst:'Pire mois',     avg:'Moyenne/mois',  tab:'Par mois'}
+    ?{title:t('dashboard.tradingWeekPerf'), best:t('dashboard.bestWeek'),  worst:t('dashboard.worstWeek'), avg:t('dashboard.avgWeek'), tab:t('dashboard.perWeek')}
+    :{title:t('dashboard.tradingMonthPerf'),best:t('dashboard.bestMonth'), worst:t('dashboard.worstMonth'),avg:t('dashboard.avgMonth'),tab:t('dashboard.perMonth')}
 
   const months=useMemo(()=>{
     if(granularity==='day'){
@@ -355,10 +357,10 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
       return Object.entries(map).sort(([a],[b])=>a.localeCompare(b)).map(([,value],i)=>({label:`S${i+1}`,full:`Sem. ${i+1}`,value}))
     }
     // Monthly (default)
-    const map: Record<string,number>={}
-    for(const t of closed){const k=t.date.toLocaleDateString('fr-FR',{month:'short'});map[k]=(map[k]||0)+tradePnL(t)}
-    const order=['jan.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']
-    return order.filter(m=>map[m]!=null).map(m=>({label:m[0].toUpperCase(),full:m,value:map[m]!}))
+    const monthNames = t('common.months', { returnObjects: true }) as string[]
+    const map: Record<number,number>={}
+    for(const tr of closed){const k=tr.date.getMonth();map[k]=(map[k]||0)+tradePnL(tr)}
+    return Array.from({length:12},(_,i)=>i).filter(i=>map[i]!=null).map(i=>({label:monthNames[i][0].toUpperCase(),full:monthNames[i],value:map[i]!}))
   },[closed,granularity])
   const maxAbsM=Math.max(...months.map(m=>Math.abs(m.value)),1)
   const bestM=months.length?months.reduce((a,b)=>b.value>a.value?b:a,months[0]).value:0

@@ -1,5 +1,6 @@
 // SettingsPage.tsx — Paramètres v2 : export/import, suppression données, suppression compte
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ThemeSelector } from '@/components/ui/ThemeSelector'
 import { ExchangeManager } from '@/pages/exchanges/ExchangesPage'
 import { getAuth, signOut, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth'
@@ -166,6 +167,7 @@ function Section({ title, subtitle, icon, children }: { title: string; subtitle?
 
 // ── Main Component ───────────────────────────────────────────────────────
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const auth = getAuth()
   const user = auth.currentUser
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -253,13 +255,13 @@ export default function SettingsPage() {
         const validKeys = ['trades', 'systems', 'moods', 'exchanges']
         const found = validKeys.filter(k => Array.isArray(parsed[k]) && parsed[k].length > 0)
         if (found.length === 0) {
-          setImportError('Fichier invalide : aucune collection trouvée (trades, systems, moods, exchanges)')
+          setImportError(t('settings.invalidFile'))
           return
         }
         setPreviewData(parsed)
         setPreviewName(file.name)
       } catch {
-        setImportError('Fichier JSON invalide')
+        setImportError(t('settings.invalidJson'))
       }
     }
     reader.readAsText(file)
@@ -338,16 +340,16 @@ export default function SettingsPage() {
 
       {/* Header */}
       <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontSize:24, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne,sans-serif' }}>Paramètres</h1>
-        <p style={{ fontSize:13, color:'var(--tm-text-muted)', margin:'4px 0 0' }}>Compte · Données · Export · Import</p>
+        <h1 style={{ fontSize:24, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne,sans-serif' }}>{t('settings.title')}</h1>
+        <p style={{ fontSize:13, color:'var(--tm-text-muted)', margin:'4px 0 0' }}>{t('settings.subtitle')}</p>
       </div>
 
       {/* ── Account ──────────────────────────────────────────────────── */}
-      <Section title="Thème" subtitle="Apparence de l'interface" icon="🎨">
+      <Section title={t('settings.themeSection')} subtitle={t('settings.themeSubtitle')} icon="🎨">
         <ThemeSelector />
       </Section>
 
-      <Section title="Compte" subtitle="Informations de connexion" icon="👤">
+      <Section title={t('settings.accountSection')} subtitle={t('settings.accountSubtitle')} icon="👤">
         <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:16 }}>
           <div style={{ width:52, height:52, borderRadius:'50%', background:'linear-gradient(135deg,#00E5FF,#0A85FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:700, color:'var(--tm-bg)', flexShrink:0, overflow:'hidden' }}>
             {profilePhoto ? (
@@ -361,7 +363,7 @@ export default function SettingsPage() {
             <div style={{ fontSize:13, color:'var(--tm-text-secondary)' }}>{user?.email}</div>
           </div>
           <button onClick={() => signOut(auth)} style={{ padding:'8px 18px', borderRadius:10, border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)', background:'rgba(var(--tm-loss-rgb,255,59,48),0.08)', color:'var(--tm-loss)', fontSize:12, fontWeight:600, cursor:'pointer', flexShrink:0 }}>
-            Déconnexion
+            {t('nav.logout')}
           </button>
         </div>
         {/* UID */}
@@ -372,7 +374,7 @@ export default function SettingsPage() {
       </Section>
 
       {/* ── Data Overview ────────────────────────────────────────────── */}
-      <Section title="Vos données" subtitle={`${totalItems} éléments au total`} icon="📦">
+      <Section title={t('settings.dataSection')} subtitle={t('settings.dataCount', { count: totalItems })} icon="📦">
         {loadingStats ? (
           <div style={{ display:'flex', alignItems:'center', gap:10, color:'var(--tm-text-muted)', fontSize:12 }}>
             <div style={{ width:16, height:16, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
@@ -397,15 +399,15 @@ export default function SettingsPage() {
       </Section>
 
       {/* ── Exchanges ─────────────────────────────────────────────────── */}
-      <Section title="Exchanges" subtitle="Gérer vos exchanges de trading" icon="🔗">
+      <Section title={t('settings.exchangesSection')} subtitle={t('settings.exchangesSubtitle')} icon="🔗">
         <ExchangeManager />
       </Section>
 
       {/* ── Export ────────────────────────────────────────────────────── */}
-      <Section title="Exporter les données" subtitle="Télécharger toutes vos données en JSON" icon="📤">
+      <Section title={t('settings.exportSection')} subtitle={t('settings.exportDesc')} icon="📤">
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
           <div style={{ fontSize:12, color:'var(--tm-text-secondary)', lineHeight:1.6, flex:1 }}>
-            Exporte tous vos trades, systèmes, moods et exchanges dans un fichier JSON réimportable.
+            {t('settings.exportDesc')}
           </div>
           <button onClick={handleExport} disabled={exporting} style={{
             padding:'10px 24px', borderRadius:12, border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.3)',
@@ -415,12 +417,12 @@ export default function SettingsPage() {
           }}>
             {exporting ? (
               <><div style={{ width:14, height:14, border:'2px solid #3D4254', borderTopColor:'var(--tm-profit)', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} /> Export...</>
-            ) : '📥 Exporter tout'}
+            ) : t('settings.exportButton')}
           </button>
         </div>
         {exportDone && exportStats && (
           <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)', border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-profit)', marginBottom:4 }}>✓ Export réussi</div>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-profit)', marginBottom:4 }}>{t('settings.exportSuccess')}</div>
             <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>
               {Object.entries(exportStats).map(([k, v]) => `${v} ${k}`).join(' · ')}
             </div>
@@ -429,7 +431,7 @@ export default function SettingsPage() {
       </Section>
 
       {/* ── Import ────────────────────────────────────────────────────── */}
-      <Section title="Importer des données" subtitle="Restaurer depuis un fichier de sauvegarde" icon="📥">
+      <Section title={t('settings.importSection')} subtitle={t('settings.importDesc')} icon="📥">
         <div style={{ marginBottom:12 }}>
           <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginBottom:8 }}>MODE D'IMPORT</div>
           <div style={{ display:'flex', gap:8 }}>
@@ -511,7 +513,7 @@ export default function SettingsPage() {
         )}
         {importDone && importStats && (
           <div style={{ marginTop:12, padding:'12px 16px', background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)', border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.2)', borderRadius:10, animation:'fadeIn 0.3s ease-out' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-profit)', marginBottom:4 }}>✓ Import réussi</div>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-profit)', marginBottom:4 }}>{t('settings.importSuccess')}</div>
             <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{Object.entries(importStats).map(([k, v]) => `${v} ${k}`).join(' · ')}</div>
           </div>
         )}

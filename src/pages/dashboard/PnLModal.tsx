@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import { tradePnL, type Trade } from '@/services/firestore'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -50,9 +51,9 @@ const P_DAYS: Record<Period,number> = {
 }
 const P_LBL: Record<Period,string> = {
   '1J':'1J','2J':'2J','3J':'3J','5J':'5J','1S':'1S','2S':'2S','3S':'3S',
-  '1M':'1M','2M':'2M','3M':'3M','6M':'6M','YTD':'YTD','1A':'1A','2A':'2A','ALL':'Tout',
+  '1M':'1M','2M':'2M','3M':'3M','6M':'6M','YTD':'YTD','1A':'1A','2A':'2A','ALL':'ALL',
 }
-const TF_LBL: Record<TF,string> = { TRADE:'Par trade', DAY:'Jour', WEEK:'Semaine', MONTH:'Mois' }
+// TF_LBL is now built dynamically with t() inside components
 
 // ── Data ───────────────────────────────────────────────────────────────────
 interface Pt { date:Date; cum:number; pnl:number; dd:number; peak:number; sym:string; dir:string; n:number }
@@ -251,6 +252,7 @@ function renderChart(
 
 // ── Tooltip ────────────────────────────────────────────────────────────────
 function Tooltip({ pt, x, W, isModal }: { pt:Pt; x:number; W:number; isModal:boolean }) {
+  const { t } = useTranslation()
   const tW=210, left=Math.min(x+16, W-tW-8), top=isModal?24:8
   return (
     <div style={{position:'absolute',left,top,width:tW,background:'var(--tm-bg-secondary)',border:'1px solid #2A2F3E',
@@ -263,7 +265,7 @@ function Tooltip({ pt, x, W, isModal }: { pt:Pt; x:number; W:number; isModal:boo
       </div>
       {[
         {l:'P&L', v:fmtK(pt.pnl), c:pt.pnl>=0?'var(--tm-profit)':'var(--tm-loss)', sz:16},
-        {l:'Cumulé', v:fmtK(pt.cum), c:'var(--tm-text-primary)', sz:13},
+        {l:t('dashboard.cumulative'), v:fmtK(pt.cum), c:'var(--tm-text-primary)', sz:13},
         ...(pt.dd>0?[{l:'Drawdown', v:`-${pt.dd.toFixed(1)}%`, c:'var(--tm-warning)', sz:12}]:[]),
         ...(pt.n>1?[{l:'Trades', v:String(pt.n), c:'var(--tm-text-secondary)', sz:11}]:[]),
       ].map(({l,v,c,sz},i,a)=>(
@@ -281,6 +283,11 @@ function Tooltip({ pt, x, W, isModal }: { pt:Pt; x:number; W:number; isModal:boo
 // ── Period + TF controls ───────────────────────────────────────────────────
 function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, setShowDots,
   zoom, resetZoom, isZoomed, showEmotion, setShowEmotion, hasMoods }: any) {
+  const { t } = useTranslation()
+  const TF_LBL: Record<TF,string> = {
+    TRADE: t('dashboard.perTrade'), DAY: t('dashboard.perDay2'),
+    WEEK: t('dashboard.perWeek2'), MONTH: t('dashboard.perMonth2'),
+  }
   return (
     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
       {/* Grouped period */}
@@ -336,7 +343,7 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
         <button onClick={()=>setShowEmotion((x:boolean)=>!x)} style={{display:'flex',alignItems:'center',gap:5,
           padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:500,cursor:'pointer',
           border:`1px solid ${showEmotion?'#BF5AF250':'var(--tm-border)'}`,background:showEmotion?`rgba(${resolveCSSColor('var(--tm-purple-rgb','191,90,242')},0.1)`:'transparent',color:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}>
-          <div style={{width:7,height:7,borderRadius:1,background:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}/>Émotion
+          <div style={{width:7,height:7,borderRadius:1,background:showEmotion?'var(--tm-purple)':'var(--tm-text-muted)'}}/>{t('dashboard.emotion')}
         </button>
       )}
 
@@ -344,7 +351,7 @@ function PeriodBar({ period, setPeriod, tf, setTf, showDD, setShowDD, showDots, 
         <button onClick={resetZoom} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 9px',
           borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',
           border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.4)',background:`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.08)`,color:'var(--tm-accent)'}}>
-          ↺ Dézoom
+          ↺ {t('dashboard.unzoom')}
         </button>
       )}
     </div>
@@ -448,6 +455,7 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
   controls:React.ReactNode; onFullscreen?:()=>void;
   emotionData?: { date: Date; score: number; label: string; color: string }[]
 }) {
+  const { t } = useTranslation()
   const { canvasRef,wrapRef,W,H,hIdx,zoom,isZoomed,resetZoom,tDotX,
     onMove,onDown,onUp,onLeave,cursor } = useChart(pts,showDD,showDots,isModal,emotionData)
   const hovered = hIdx!==null?pts[hIdx]:null
@@ -463,14 +471,14 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
               background:'var(--tm-bg-tertiary)',color:'var(--tm-text-secondary)',transition:'all 0.15s',whiteSpace:'nowrap'}}
             onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.cssText+=';border-color:#00E5FF;color:#00E5FF'}}
             onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.cssText+=';border-color:#2A2F3E;color:#8F94A3'}}>
-            ⛶ Plein écran
+            ⛶ {t('dashboard.fullscreen')}
           </button>
         )}
       </div>
 
       {pts.length<2?(
         <div style={{height:H,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:13}}>
-          Pas encore assez de trades fermés
+          {t('dashboard.notEnoughTrades')}
         </div>
       ):(
         <div ref={wrapRef} style={{position:'relative',userSelect:'none',flex:isModal?1:undefined}}>
@@ -480,7 +488,7 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
             style={{display:'block',width:'100%',height:H,cursor}}/>
           {!isModal&&pts.length>1&&(
             <div style={{position:'absolute',bottom:38,right:8,fontSize:9,color:'var(--tm-text-muted)'}}>
-              {isZoomed?`${zoom.e-zoom.s+1} pts · `:''}glisser pour zoomer
+              {isZoomed?`${zoom.e-zoom.s+1} pts · `:''}{ t('dashboard.dragToZoom') }
             </div>
           )}
           {hovered&&tDotX!==null&&<Tooltip pt={hovered} x={tDotX} W={W} isModal={isModal}/>}
@@ -492,37 +500,39 @@ function ChartWidget({ pts, showDD, showDots, isModal, controls, onFullscreen, e
 
 // ── Stats grid ─────────────────────────────────────────────────────────────
 function StatsGrid({ pts }: { pts:Pt[] }) {
+  const { t } = useTranslation()
   const s=computeStats(pts)
-  if(!s) return <div style={{color:'var(--tm-text-muted)',textAlign:'center',padding:40}}>Pas de données</div>
+  if(!s) return <div style={{color:'var(--tm-text-muted)',textAlign:'center',padding:40}}>{t('common.noData')}</div>
   return (
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(155px,1fr))',gap:8}}>
-      <SB label="P&L Total"       value={fmtK(s.total)}                   color={s.total>=0?'var(--tm-profit)':'var(--tm-loss)'} sub={`${s.count} trades`}/>
-      <SB label="Win Rate"         value={`${(s.wr*100).toFixed(1)}%`}     color={s.wr>=0.5?'var(--tm-profit)':'var(--tm-warning)'} sub={`${s.wins}W / ${s.losses}L`}/>
-      <SB label="Profit Factor"    value={isFinite(s.pf)?s.pf.toFixed(2):'∞'} color={s.pf>=1.5?'var(--tm-profit)':s.pf>=1?'var(--tm-warning)':'var(--tm-loss)'} sub={`G:${fmtK(s.gp,0)} P:${fmtK(-s.gl,0)}`}/>
-      <SB label="Payoff Ratio"     value={s.payoff.toFixed(2)}             color={s.payoff>=1.5?'var(--tm-profit)':s.payoff>=1?'var(--tm-warning)':'var(--tm-loss)'} sub="moy win/loss"/>
-      <SB label="Expectancy"       value={fmtK(s.exp)}                     color={s.exp>=0?'var(--tm-profit)':'var(--tm-loss)'} sub="par trade"/>
-      <SB label="Max Drawdown"     value={`${s.maxDD.toFixed(1)}%`}        color={s.maxDD>20?'var(--tm-loss)':s.maxDD>10?'var(--tm-warning)':'var(--tm-profit)'} sub={s.maxDDPt?fmtD(s.maxDDPt.date):undefined}/>
-      <SB label="Meilleur trade"   value={fmtK(s.best)}                    color="var(--tm-profit)" sub={s.bestPt?`${s.bestPt.sym} · ${fmtD(s.bestPt.date)}`:undefined}/>
-      <SB label="Pire trade"       value={fmtK(s.worst)}                   color="var(--tm-loss)" sub={s.worstPt?`${s.worstPt.sym} · ${fmtD(s.worstPt.date)}`:undefined}/>
-      <SB label="Série gagnante"   value={`+${s.bStrk}`}                   color="var(--tm-profit)" sub="consécutifs"/>
-      <SB label="Série perdante"   value={`${s.wStrk}`}                    color="var(--tm-loss)" sub="consécutifs"/>
-      <SB label="Série actuelle"   value={s.cur>=0?`+${s.cur}`:`${s.cur}`} color={s.cur>=0?'var(--tm-profit)':'var(--tm-loss)'}/>
-      <SB label="Moy. gain"        value={fmtK(s.avgW)}                    color="var(--tm-profit)"/>
-      <SB label="Moy. perte"       value={fmtK(s.avgL)}                    color="var(--tm-loss)"/>
-      <SB label="Recovery Factor"  value={s.rf.toFixed(2)}                 color={s.rf>=2?'var(--tm-profit)':s.rf>=1?'var(--tm-warning)':'var(--tm-loss)'}/>
-      <SB label="Durée analysée"   value={`${s.days}j`}                    color="var(--tm-text-secondary)"/>
+      <SB label={t('dashboard.pnlTotal')}       value={fmtK(s.total)}                   color={s.total>=0?'var(--tm-profit)':'var(--tm-loss)'} sub={`${s.count} trades`}/>
+      <SB label="Win Rate"                       value={`${(s.wr*100).toFixed(1)}%`}     color={s.wr>=0.5?'var(--tm-profit)':'var(--tm-warning)'} sub={`${s.wins}W / ${s.losses}L`}/>
+      <SB label="Profit Factor"                  value={isFinite(s.pf)?s.pf.toFixed(2):'∞'} color={s.pf>=1.5?'var(--tm-profit)':s.pf>=1?'var(--tm-warning)':'var(--tm-loss)'} sub={`G:${fmtK(s.gp,0)} P:${fmtK(-s.gl,0)}`}/>
+      <SB label="Payoff Ratio"                   value={s.payoff.toFixed(2)}             color={s.payoff>=1.5?'var(--tm-profit)':s.payoff>=1?'var(--tm-warning)':'var(--tm-loss)'} sub={t('dashboard.avgWinLoss')}/>
+      <SB label="Expectancy"                     value={fmtK(s.exp)}                     color={s.exp>=0?'var(--tm-profit)':'var(--tm-loss)'} sub={t('dashboard.perTrade')}/>
+      <SB label="Max Drawdown"                   value={`${s.maxDD.toFixed(1)}%`}        color={s.maxDD>20?'var(--tm-loss)':s.maxDD>10?'var(--tm-warning)':'var(--tm-profit)'} sub={s.maxDDPt?fmtD(s.maxDDPt.date):undefined}/>
+      <SB label={t('trades.bestTrade')}          value={fmtK(s.best)}                    color="var(--tm-profit)" sub={s.bestPt?`${s.bestPt.sym} · ${fmtD(s.bestPt.date)}`:undefined}/>
+      <SB label={t('trades.worstTrade')}         value={fmtK(s.worst)}                   color="var(--tm-loss)" sub={s.worstPt?`${s.worstPt.sym} · ${fmtD(s.worstPt.date)}`:undefined}/>
+      <SB label={t('dashboard.winningStreak')}   value={`+${s.bStrk}`}                   color="var(--tm-profit)" sub={t('dashboard.consecutive')}/>
+      <SB label={t('dashboard.losingStreak')}    value={`${s.wStrk}`}                    color="var(--tm-loss)" sub={t('dashboard.consecutive')}/>
+      <SB label={t('dashboard.currentStreak')}   value={s.cur>=0?`+${s.cur}`:`${s.cur}`} color={s.cur>=0?'var(--tm-profit)':'var(--tm-loss)'}/>
+      <SB label={t('trades.avgWin')}             value={fmtK(s.avgW)}                    color="var(--tm-profit)"/>
+      <SB label={t('trades.avgLoss')}            value={fmtK(s.avgL)}                    color="var(--tm-loss)"/>
+      <SB label="Recovery Factor"                value={s.rf.toFixed(2)}                 color={s.rf>=2?'var(--tm-profit)':s.rf>=1?'var(--tm-warning)':'var(--tm-loss)'}/>
+      <SB label={t('dashboard.analyzedPeriod')} value={`${s.days}j`}                    color="var(--tm-text-secondary)"/>
     </div>
   )
 }
 
 // ── Trades table ───────────────────────────────────────────────────────────
 function TradesTable({ pts }: { pts:Pt[] }) {
+  const { t } = useTranslation()
   return (
     <div style={{overflowX:'auto'}}>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
         <thead>
           <tr style={{borderBottom:'1px solid #2A2F3E'}}>
-            {['#','Date','Symbole','Direction','P&L','Cumulé','Drawdown','Trades'].map(h=>(
+            {['#',t('trades.date'),t('dashboard.tableSymbol'),t('dashboard.tableDir'),'P&L',t('dashboard.cumulative'),'Drawdown',t('nav.trades')].map(h=>(
               <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:9,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600}}>{h}</th>
             ))}
           </tr>
@@ -558,6 +568,7 @@ function TradesTable({ pts }: { pts:Pt[] }) {
 
 // ── Modal portal ───────────────────────────────────────────────────────────
 function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLike[]; onClose:()=>void }) {
+  const { t } = useTranslation()
   const [period, setPeriod] = useState<Period>('ALL')
   const [tf,     setTf]     = useState<TF>('TRADE')
   const [showDD, setShowDD] = useState(true)
@@ -604,7 +615,7 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
         <div style={{padding:'18px 28px',borderBottom:'1px solid #1E2330',display:'flex',
           alignItems:'center',gap:20,flexShrink:0}}>
           <div>
-            <div style={{fontSize:11,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>Courbe P&L</div>
+            <div style={{fontSize:11,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>{t('dashboard.pnlCurve')}</div>
             <div style={{fontSize:30,fontWeight:800,color:isPos?'var(--tm-profit)':'var(--tm-loss)',
               fontFamily:'JetBrains Mono,monospace',lineHeight:1}}>
               {stats?fmtK(stats.total):'—'}
@@ -629,16 +640,16 @@ function Modal({ trades, moods = [], onClose }: { trades:Trade[]; moods?:MoodLik
           <button onClick={onClose} style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8,
             padding:'8px 16px',borderRadius:8,cursor:'pointer',border:'1px solid #2A2F3E',
             background:'var(--tm-bg-tertiary)',color:'var(--tm-text-secondary)',fontSize:12,fontWeight:600}}>
-            Esc ✕ Fermer
+            Esc ✕ {t('common.close')}
           </button>
         </div>
 
         {/* Tabs */}
         <div style={{padding:'0 28px',borderBottom:'1px solid #1E2330',display:'flex',flexShrink:0}}>
-          {([['chart','📈 Graphique'],['stats','📊 Statistiques'],['trades','📋 Trades']] as [typeof tab,string][]).map(([t,l])=>(
-            <button key={t} onClick={()=>setTab(t)} style={{padding:'14px 20px',background:'none',border:'none',
-              borderBottom:`2px solid ${tab===t?'var(--tm-accent)':'transparent'}`,cursor:'pointer',
-              color:tab===t?'var(--tm-accent)':'var(--tm-text-muted)',fontSize:13,fontWeight:tab===t?600:400,transition:'all 0.15s'}}>
+          {([[`chart`,`📈 ${t('dashboard.chartTab')}`],[`stats`,`📊 ${t('dashboard.statistics')}`],[`trades`,`📋 ${t('nav.trades')}`]] as [typeof tab,string][]).map(([tabId,l])=>(
+            <button key={tabId} onClick={()=>setTab(tabId as typeof tab)} style={{padding:'14px 20px',background:'none',border:'none',
+              borderBottom:`2px solid ${tab===tabId?'var(--tm-accent)':'transparent'}`,cursor:'pointer',
+              color:tab===tabId?'var(--tm-accent)':'var(--tm-text-muted)',fontSize:13,fontWeight:tab===tabId?600:400,transition:'all 0.15s'}}>
               {l}
             </button>
           ))}
