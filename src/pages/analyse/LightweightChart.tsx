@@ -399,6 +399,9 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const [hoverPoint, setHoverPoint] = useState<{x:number;y:number;price:number;time:number}|null>(null)
   const [toast,    setToast]    = useState<string|null>(null)
   const [saving,   setSaving]   = useState(false)
+  const [sharing,  setSharing]  = useState(false)
+  const [shareOk,  setShareOk]  = useState(false)
+  const chartContainerRef = useRef<HTMLDivElement>(null)
   const [confirm,  setConfirm]  = useState<{type:ToolId;p1:DrawingPoint;p2?:DrawingPoint}|null>(null)
   const [labelInput, setLabelInput] = useState('')
   const [settingsOpen, setSettingsOpen] = useState<string|null>(null)
@@ -888,6 +891,53 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     setSaving(false)
   }
 
+  // ── Share chart ─────────────────────────────────────────────────────────
+  const handleShareChart = async () => {
+    const el = chartContainerRef.current
+    if (!el || sharing) return
+    setSharing(true)
+    try {
+      let blob: Blob | null = null
+      // Try the largest canvas first (LW chart canvas)
+      const canvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
+      const cv = canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]
+      if (cv && cv.width > 0) {
+        blob = await new Promise<Blob | null>(res => cv.toBlob(res, 'image/png'))
+      } else {
+        const { toPng } = await import('html-to-image')
+        const dataUrl = await toPng(el, {
+          quality: 1, pixelRatio: 2,
+          backgroundColor: '#0D1117',
+          filter: (node) => !(node instanceof HTMLButtonElement && node.dataset.shareBtn),
+        })
+        blob = await (await fetch(dataUrl)).blob()
+      }
+      if (!blob) return
+      const filename = `trademindset-${symbol}-${tf.label}.png`
+      // 1. Clipboard
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        setShareOk(true); setTimeout(() => setShareOk(false), 2500)
+        return
+      } catch { /* fallback */ }
+      // 2. Web Share (mobile)
+      if (navigator.share && navigator.canShare) {
+        const file = new File([blob], filename, { type: 'image/png' })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: `TradeMindset — ${symbol}`, files: [file] })
+          setShareOk(true); setTimeout(() => setShareOk(false), 2500)
+          return
+        }
+      }
+      // 3. Download fallback
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
+      URL.revokeObjectURL(url)
+      setShareOk(true); setTimeout(() => setShareOk(false), 2500)
+    } catch (err) { console.warn('share chart failed', err) }
+    finally { setSharing(false) }
+  }
+
   const INDS=[
     {id:'smc',    icon:'🏦', label:'SMC',         color:'var(--tm-blue)',    noSettings:false},
     {id:'msd',    icon:'📊', label:'Structure',   color:'var(--tm-profit)', noSettings:false},
@@ -898,14 +948,14 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const TOOLS=[
     {id:'cursor',icon:'↖',label:t('analyse.toolSelect')},
     {id:'hline',icon:'─',label:t('analyse.toolHline')},
-    {id:'trendline',icon:'↗',label:t('analyse.toolTrend')},
+    {id:'trendline',icon:'╱',label:t('analyse.toolLine')},
     {id:'fibo',icon:'◎',label:t('analyse.toolFibo')},
     {id:'rect',icon:'▭',label:'Zone'},
     {id:'note',icon:'✎',label:'Note'},
   ]
 
   return(
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative'}}>
+    <div ref={chartContainerRef} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative'}}>
 
       {/* Header */}
       <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -923,6 +973,21 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         </div>
         <button onClick={()=>setShowHist(x=>!x)} style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
           💾 {drawings.length>0?t('analyse.drawingCount', {count: drawings.length}):' Dessins'}
+        </button>
+        {/* Share chart */}
+        <button
+          data-share-btn="1"
+          onClick={handleShareChart}
+          disabled={sharing}
+          title={t('analyse.shareChart')}
+          style={{
+            padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:sharing?'wait':'pointer',
+            border:`1px solid ${shareOk?'var(--tm-profit)':'var(--tm-border)'}`,
+            background:shareOk?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:'transparent',
+            color:shareOk?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0,
+            transition:'all 0.2s',
+          }}>
+          {shareOk?'✓ Copié':'📤'}
         </button>
       </div>
 

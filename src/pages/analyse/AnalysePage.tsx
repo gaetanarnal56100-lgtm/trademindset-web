@@ -211,24 +211,46 @@ async function searchBinanceCrypto(query: string): Promise<SearchResult[]> {
 }
 
 // Symboles Yahoo Finance connus (Forex, Indices, Matières premières) — bypass recherche Finnhub
-const YAHOO_KNOWN: SearchResult[] = [
-  {symbol:'EURUSD=X', name:'EUR/USD',         type:'forex', exchange:'Forex',      icon:'💱'},
-  {symbol:'GBPUSD=X', name:'GBP/USD',         type:'forex', exchange:'Forex',      icon:'💱'},
-  {symbol:'USDJPY=X', name:'USD/JPY',         type:'forex', exchange:'Forex',      icon:'💱'},
-  {symbol:'GC=F',     name:'Or (Gold)',        type:'forex', exchange:'COMEX',      icon:'🥇'},
-  {symbol:'SI=F',     name:'Argent (Silver)',  type:'forex', exchange:'COMEX',      icon:'🥈'},
-  {symbol:'CL=F',     name:'Pétrole WTI',     type:'forex', exchange:'NYMEX',      icon:'🛢️'},
-  {symbol:'^FCHI',    name:'CAC 40',           type:'stock', exchange:'Paris',      icon:'📊'},
-  {symbol:'^GDAXI',   name:'DAX 40',           type:'stock', exchange:'Frankfurt',  icon:'📊'},
-  {symbol:'^FTSE',    name:'FTSE 100',         type:'stock', exchange:'London',     icon:'📊'},
-  {symbol:'^GSPC',    name:'S&P 500',          type:'stock', exchange:'NYSE',       icon:'📊'},
-  {symbol:'^IXIC',    name:'Nasdaq Composite', type:'stock', exchange:'NASDAQ',     icon:'📊'},
-  {symbol:'^DJI',     name:'Dow Jones',        type:'stock', exchange:'NYSE',       icon:'📊'},
+// aliases = mots-clés en FR/EN pour la recherche floue
+interface KnownAsset extends SearchResult { aliases: string[] }
+const YAHOO_KNOWN: KnownAsset[] = [
+  {symbol:'EURUSD=X', name:'EUR/USD',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['euro','dollar','eur','usd','eurusd']},
+  {symbol:'GBPUSD=X', name:'GBP/USD',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['pound','sterling','gbp','cable']},
+  {symbol:'USDJPY=X', name:'USD/JPY',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['yen','japan','jpy']},
+  {symbol:'USDCHF=X', name:'USD/CHF',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['franc','swiss','chf']},
+  {symbol:'AUDUSD=X', name:'AUD/USD',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['aussie','aud','australia']},
+  {symbol:'GC=F',     name:'Or / Gold',        type:'forex', exchange:'COMEX',      icon:'🥇', aliases:['gold','or','xau','gld','metal']},
+  {symbol:'SI=F',     name:'Argent / Silver',  type:'forex', exchange:'COMEX',      icon:'🥈', aliases:['silver','argent','xag']},
+  {symbol:'CL=F',     name:'Pétrole WTI',      type:'forex', exchange:'NYMEX',      icon:'🛢️', aliases:['oil','petrol','petroleum','crude','brent','wti','petrole']},
+  {symbol:'PL=F',     name:'Platine / Platinum',type:'forex',exchange:'NYMEX',      icon:'⬜', aliases:['platinum','platine','xpt']},
+  {symbol:'^FCHI',    name:'CAC 40',           type:'stock', exchange:'Paris',      icon:'🇫🇷', aliases:['cac','france','paris','fchi']},
+  {symbol:'^GDAXI',   name:'DAX 40',           type:'stock', exchange:'Frankfurt',  icon:'🇩🇪', aliases:['dax','germany','allemagne','frankfurt']},
+  {symbol:'^FTSE',    name:'FTSE 100',         type:'stock', exchange:'London',     icon:'🇬🇧', aliases:['ftse','uk','london','england']},
+  {symbol:'^GSPC',    name:'S&P 500',          type:'stock', exchange:'NYSE',       icon:'🇺🇸', aliases:['sp500','sp','s&p','spx','snp','usa']},
+  {symbol:'^IXIC',    name:'Nasdaq',           type:'stock', exchange:'NASDAQ',     icon:'💻', aliases:['nasdaq','tech','ixic','ndx','qqq']},
+  {symbol:'^DJI',     name:'Dow Jones',        type:'stock', exchange:'NYSE',       icon:'📊', aliases:['dow','djia','jones']},
+  {symbol:'^N225',    name:'Nikkei 225',       type:'stock', exchange:'Tokyo',      icon:'🇯🇵', aliases:['nikkei','japan','japon','tokyo']},
+  {symbol:'^HSI',     name:'Hang Seng',        type:'stock', exchange:'HKEx',       icon:'🇭🇰', aliases:['hangseng','hongkong','hong kong','hsi']},
 ]
 function searchYahooKnown(q: string): SearchResult[] {
-  const uq = q.toUpperCase().trim()
-  return YAHOO_KNOWN.filter(s => s.symbol.toUpperCase().includes(uq) || s.name.toUpperCase().includes(uq))
+  const uq = q.toLowerCase().trim()
+  if (!uq) return []
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return YAHOO_KNOWN.filter(({ aliases, ...s }) =>
+    s.symbol.toLowerCase().includes(uq) ||
+    s.name.toLowerCase().includes(uq) ||
+    aliases.some(a => a.includes(uq))
+  ).map(({ aliases: _a, ...s }) => s)
 }
+
+// Assets non-crypto affichés par défaut dans la liste populaire
+const POPULAR_NONCRPYTO: SearchResult[] = [
+  {symbol:'GC=F',  name:'Or / Gold',   type:'forex', exchange:'COMEX', icon:'🥇'},
+  {symbol:'CL=F',  name:'Pétrole WTI', type:'forex', exchange:'NYMEX', icon:'🛢️'},
+  {symbol:'^GSPC', name:'S&P 500',     type:'stock', exchange:'NYSE',  icon:'🇺🇸'},
+  {symbol:'^FCHI', name:'CAC 40',      type:'stock', exchange:'Paris', icon:'🇫🇷'},
+  {symbol:'^IXIC', name:'Nasdaq',      type:'stock', exchange:'NASDAQ',icon:'💻'},
+]
 
 // Cloud Functions — uniquement pour actions et forex (évite de brûler des tokens sur les cryptos)
 async function searchNonCrypto(query: string): Promise<SearchResult[]> {
@@ -267,13 +289,16 @@ async function searchNonCrypto(query: string): Promise<SearchResult[]> {
   return []
 }
 
+// Default popular list: top cryptos + Gold/Oil/S&P/CAC/Nasdaq
+const DEFAULT_POPULAR: SearchResult[] = [...POPULAR_NONCRPYTO, ...CRYPTO_POPULAR]
+
 function useSymbolSearch(q: string) {
-  const [results, setResults] = useState<SearchResult[]>(CRYPTO_POPULAR)
+  const [results, setResults] = useState<SearchResult[]>(DEFAULT_POPULAR)
   const [loading, setLoading] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout>|null>(null)
 
   useEffect(() => {
-    if (!q.trim()) { setResults(CRYPTO_POPULAR); return }
+    if (!q.trim()) { setResults(DEFAULT_POPULAR); return }
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       setLoading(true)
