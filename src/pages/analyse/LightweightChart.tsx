@@ -86,7 +86,7 @@ async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Cand
     1:'1m',5:'5m',15:'15m',30:'30m',60:'1h',120:'1h',240:'1h',1440:'1d',10080:'1wk'
   }
   const TF_TO_YH_RANGE: Record<number,string> = {
-    1:'1d',5:'5d',15:'5d',30:'1mo',60:'1mo',120:'3mo',240:'3mo',1440:'1y',10080:'2y'
+    1:'1d',5:'5d',15:'5d',30:'1mo',60:'1mo',120:'3mo',240:'3mo',1440:'2y',10080:'5y'
   }
   const yhInterval = TF_TO_YH_INTERVAL[min] || '1d'
   const yhRange    = TF_TO_YH_RANGE[min]    || '1y'
@@ -156,7 +156,7 @@ function calcSMC(candles:Candle[],sw=10):SMCResult{
     if(candles[i].close<lPL&&lPL<999999){for(let j=i-1;j>=Math.max(0,i-sw*2);j--){if(candles[j].close>candles[j].open){bearOBs.push({top:Math.max(candles[j].open,candles[j].close),btm:Math.min(candles[j].open,candles[j].close),idx:j});lPL=999999;break}}}
   }
   const cp=candles[n-1].close
-  return{bullOBs:bullOBs.filter(o=>o.top>cp*0.93).slice(-4),bearOBs:bearOBs.filter(o=>o.btm<cp*1.07).slice(-4),bullFVGs:bullFVGs.filter(f=>f.top>cp*0.90).slice(-4),bearFVGs:bearFVGs.filter(f=>f.btm<cp*1.10).slice(-4)}
+  return{bullOBs:bullOBs.filter(o=>o.top>cp*0.60).slice(-12),bearOBs:bearOBs.filter(o=>o.btm<cp*1.40).slice(-12),bullFVGs:bullFVGs.filter(f=>f.top>cp*0.60).slice(-12),bearFVGs:bearFVGs.filter(f=>f.btm<cp*1.40).slice(-12)}
 }
 
 interface MSDResult{swingHighs:{idx:number;price:number;type:'HH'|'LH'}[];swingLows:{idx:number;price:number;type:'HL'|'LL'}[];bosLines:{from:number;to:number;price:number;type:'BOS'|'CHoCH';dir:'bull'|'bear'}[]}
@@ -238,7 +238,12 @@ function calcRSIDiv(candles:Candle[],rsiPeriod=14,pivotLen=5,lookback=60):RSIDiv
 
 // ── Indicator settings types ──────────────────────────────────────────────
 interface VMCSettings{smoothLen:number;signalMult:number;upThreshold:number;loThreshold:number;ribbonMin:number;rsiLen:number;stochSmooth:number;mfiWeight:number}
-interface SMCSettings{swingLen:number;showOBBull:boolean;showOBBear:boolean;showFVGBull:boolean;showFVGBear:boolean;obCount:number;fvgCount:number;mitigatedOB:boolean}
+interface SMCSettings{swingLen:number;showOBBull:boolean;showOBBear:boolean;showFVGBull:boolean;showFVGBear:boolean;obCount:number;fvgCount:number;mitigatedOB:boolean;mtfEnabled:boolean;mtfTf:string}
+const SMC_MTF_TFS=[
+  {label:'4H',  min:'240'},
+  {label:'1D',  min:'1440'},
+  {label:'1W',  min:'10080'},
+]
 interface MSDSettings{swingLen:number;showBOS:boolean;showSwings:boolean}
 interface MPSettings{bins:number;showProfile:boolean}
 interface BollingerSettings{len:number;mult:number;showMiddle:boolean}
@@ -246,12 +251,12 @@ interface VolumeSettings{opacity:number}
 interface VegasTunnel{enabled:boolean;color:string;fillOpacity:number}
 interface VegasSettings{tunnels:VegasTunnel[]}
 const VEGAS_TFS = [
-  {label:'5m',  min:5,    binance:'5m',  yh:'5m',  yhRange:'5d'   },
-  {label:'15m', min:15,   binance:'15m', yh:'15m', yhRange:'5d'   },
-  {label:'1H',  min:60,   binance:'1h',  yh:'1h',  yhRange:'1mo'  },
-  {label:'4H',  min:240,  binance:'4h',  yh:'4h',  yhRange:'3mo'  },
-  {label:'1J',  min:1440, binance:'1d',  yh:'1d',  yhRange:'1y'   },
-  {label:'3J',  min:4320, binance:'3d',  yh:'1wk', yhRange:'2y'   },
+  {label:'5m',  min:5,    binance:'5m',  yh:'5m',  yhRange:'5d',  limit:500},
+  {label:'15m', min:15,   binance:'15m', yh:'15m', yhRange:'5d',  limit:500},
+  {label:'1H',  min:60,   binance:'1h',  yh:'1h',  yhRange:'3mo', limit:500},
+  {label:'4H',  min:240,  binance:'4h',  yh:'4h',  yhRange:'1y',  limit:500},
+  {label:'1J',  min:1440, binance:'1d',  yh:'1d',  yhRange:'3y',  limit:500},
+  {label:'3J',  min:4320, binance:'3d',  yh:'1wk', yhRange:'5y',  limit:500},
 ]
 const VEGAS_DEFAULTS:VegasTunnel[]=[
   {enabled:true, color:'#40e0d0', fillOpacity:0.08},
@@ -340,15 +345,25 @@ interface SettingsPanelProps {
 }
 function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSettings,msdSettings,setMsdSettings,mpSettings,setMpSettings,bbSettings,setBbSettings,vegasSettings,setVegasSettings,volSettings,setVolSettings,onClose}:SettingsPanelProps) {
   const { t } = useTranslation()
-  const Slider = ({label,value,min,max,step=1,onChange}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void}) => (
-    <div style={{marginBottom:10}}>
-      <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-        <span style={{fontSize:10,color:'var(--tm-text-secondary)'}}>{label}</span>
-        <span style={{fontSize:10,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{value}</span>
+  const Slider = ({label,value,min,max,step=1,onChange}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void}) => {
+    const dec=()=>onChange(parseFloat(Math.max(min,value-step).toFixed(10)))
+    const inc=()=>onChange(parseFloat(Math.min(max,value+step).toFixed(10)))
+    const btnStyle:React.CSSProperties={width:22,height:22,borderRadius:4,border:'1px solid #2A2F3E',background:'var(--tm-bg)',color:'var(--tm-text-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,flexShrink:0,userSelect:'none'}
+    return(
+      <div style={{marginBottom:10}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+          <span style={{fontSize:10,color:'var(--tm-text-secondary)'}}>{label}</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <button onClick={dec} style={btnStyle}>−</button>
+          <input type="number" min={min} max={max} step={step} value={value}
+            onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))onChange(Math.max(min,Math.min(max,v)))}}
+            style={{flex:1,textAlign:'center',background:'var(--tm-bg)',border:'1px solid #2A2F3E',borderRadius:4,color:'var(--tm-text-primary)',fontSize:11,fontWeight:700,fontFamily:'JetBrains Mono',padding:'3px 0',minWidth:0,outline:'none'}}/>
+          <button onClick={inc} style={btnStyle}>+</button>
+        </div>
       </div>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(+e.target.value)} style={{width:'100%',accentColor:'var(--tm-blue)',height:3}}/>
-    </div>
-  )
+    )
+  }
   const Toggle = ({label,value,onChange}:{label:string;value:boolean;onChange:(v:boolean)=>void}) => (
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
       <span style={{fontSize:10,color:'var(--tm-text-secondary)'}}>{label}</span>
@@ -404,6 +419,25 @@ function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSe
           <Slider label="Nb FVG affichés" value={smcSettings.fvgCount} min={1} max={12} onChange={v=>setSmcSettings({...smcSettings,fvgCount:v})}/>
           <Toggle label="FVG+ (Bullish)" value={smcSettings.showFVGBull} onChange={v=>setSmcSettings({...smcSettings,showFVGBull:v})}/>
           <Toggle label="FVG- (Bearish)" value={smcSettings.showFVGBear} onChange={v=>setSmcSettings({...smcSettings,showFVGBear:v})}/>
+          <Section title="Multi-Timeframe (MTF)"/>
+          <Toggle label="Afficher zones HTF" value={smcSettings.mtfEnabled} onChange={v=>setSmcSettings({...smcSettings,mtfEnabled:v})}/>
+          {smcSettings.mtfEnabled&&(
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,color:'var(--tm-text-secondary)',marginBottom:6}}>Timeframe supérieur</div>
+              <div style={{display:'flex',gap:4}}>
+                {SMC_MTF_TFS.map(tf=>(
+                  <button key={tf.min} onClick={()=>setSmcSettings({...smcSettings,mtfTf:tf.min})}
+                    style={{flex:1,padding:'4px 0',borderRadius:5,fontSize:10,fontWeight:600,cursor:'pointer',
+                      border:`1px solid ${smcSettings.mtfTf===tf.min?'var(--tm-blue)':'#2A2F3E'}`,
+                      background:smcSettings.mtfTf===tf.min?'rgba(10,133,255,0.15)':'transparent',
+                      color:smcSettings.mtfTf===tf.min?'var(--tm-blue)':'var(--tm-text-muted)'}}>
+                    {tf.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{fontSize:8,color:'var(--tm-text-muted)',marginTop:6,lineHeight:1.5}}>Zones HTF en bandes pleine largeur · bordure tiretée · label [TF]</div>
+            </div>
+          )}
         </>)}
 
         {activeId==='msd'&&(<>
@@ -538,7 +572,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
 
   // Indicator settings
   const [vmcS, setVmcS] = useState<VMCSettings>({smoothLen:10,signalMult:1.75,upThreshold:35,loThreshold:-35,ribbonMin:5,rsiLen:14,stochSmooth:2,mfiWeight:0.4})
-  const [smcS, setSmcS] = useState<SMCSettings>({swingLen:10,showOBBull:true,showOBBear:true,showFVGBull:true,showFVGBear:true,obCount:4,fvgCount:5,mitigatedOB:false})
+  const [smcS, setSmcS] = useState<SMCSettings>({swingLen:10,showOBBull:true,showOBBear:true,showFVGBull:true,showFVGBear:true,obCount:4,fvgCount:5,mitigatedOB:false,mtfEnabled:false,mtfTf:'1440'})
   const [msdS, setMsdS] = useState<MSDSettings>({swingLen:5,showBOS:true,showSwings:true})
   const [mpS,  setMpS]  = useState<MPSettings>({bins:30,showProfile:true})
   const [bbS,  setBbS]  = useState<BollingerSettings>({len:20,mult:2,showMiddle:true})
@@ -547,6 +581,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
 
   // Computed results
   const [smcResult,    setSmcResult]    = useState<SMCResult|null>(null)
+  const [smcMtfResult, setSmcMtfResult] = useState<SMCResult|null>(null)
   const [msdResult,    setMsdResult]    = useState<MSDResult|null>(null)
   const [vmcResult,    setVmcResult]    = useState<VMCResult|null>(null)
   const [mpResult,     setMpResult]     = useState<MPResult|null>(null)
@@ -562,6 +597,16 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
 
   // Recalculate when settings change
   useEffect(()=>{const c=candlesRef.current;if(c.length)setSmcResult(calcSMC(c,smcS.swingLen))},[smcS.swingLen])
+  // Fetch Higher TF candles for SMC MTF overlay
+  useEffect(()=>{
+    if(!indOn.smc||!smcS.mtfEnabled){setSmcMtfResult(null);return}
+    let cancelled=false
+    const mtfMin=parseInt(smcS.mtfTf)
+    fetchCandles(symbol,isCrypto,mtfMin)
+      .then(c=>{if(!cancelled&&c.length)setSmcMtfResult(calcSMC(c,smcS.swingLen))})
+      .catch(()=>{if(!cancelled)setSmcMtfResult(null)})
+    return()=>{cancelled=true}
+  },[indOn.smc,smcS.mtfEnabled,smcS.mtfTf,symbol,isCrypto,smcS.swingLen])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setMsdResult(calcMSD(c,msdS.swingLen))},[msdS.swingLen])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setVmcResult(calcVMC(c,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold,vmcS.rsiLen,vmcS.stochSmooth,vmcS.mfiWeight))},[vmcS])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setMpResult(calcMP(c,mpS.bins))},[mpS.bins])
@@ -597,7 +642,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
             const s=symbol.toUpperCase()
             for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
               try{
-                const r=await fetch(`${base}/klines?symbol=${s}&interval=${vtf.binance}&limit=500`)
+                const r=await fetch(`${base}/klines?symbol=${s}&interval=${vtf.binance}&limit=${vtf.limit}`)
                 if(r.ok){const d=await r.json();if(Array.isArray(d)&&d.length>10){raw=d.map((k:unknown[])=>({time:Math.floor(Number(k[0])/1000),close:+String(k[4])}));break}}
               }catch{}
               if(raw.length)break
@@ -605,7 +650,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
           } else {
             const fn=httpsCallable<Record<string,unknown>,{s:string;candles:{t:number;c:number}[]}>(fbFn,'fetchYahooCandles')
             try{
-              const res=await fn({symbol:symbol.toUpperCase(),interval:vtf.yh,range:vtf.yhRange})
+              const res=await fn({symbol:symbol.toUpperCase(),interval:vtf.yh,range:vtf.yhRange,limit:vtf.limit})
               if(res.data.s==='ok')raw=res.data.candles.map(c=>({time:c.t,close:c.c}))
             }catch{}
           }
@@ -1020,36 +1065,61 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     // ── CVD (Cumulative Volume Delta) ─────────────────────────────────
     if(indOn.cvd&&cvdResult&&cvdResult.length&&isCrypto){
       ctx.save()
-      const cvdH=ch*0.14  // 14% of canvas height for CVD strip
+      const cvdH=ch*0.16
       const cvdTop=ch-cvdH-2
-      // background
-      ctx.fillStyle='rgba(13,17,23,0.72)';ctx.fillRect(0,cvdTop,chartAreaW,cvdH)
-      // CVD line aligned to visible candles
+      ctx.fillStyle='rgba(13,17,23,0.82)';ctx.fillRect(0,cvdTop,chartAreaW,cvdH)
+      // border top
+      ctx.strokeStyle='#1E2330';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,cvdTop);ctx.lineTo(chartAreaW,cvdTop);ctx.stroke()
       const visCandles=candles.map((c,i)=>({c,cvd:cvdResult[i]??0})).filter(({c})=>{
         const x=toX(c.time);return x!=null&&x>=0&&x<=chartAreaW
       })
-      if(visCandles.length>1){
+      if(visCandles.length>2){
         const minCvd=Math.min(...visCandles.map(v=>v.cvd))
         const maxCvd=Math.max(...visCandles.map(v=>v.cvd))
         const rng=maxCvd-minCvd||1
-        const toCvdY=(v:number)=>cvdTop+cvdH*0.9-((v-minCvd)/rng)*(cvdH*0.8)
-        // Zero line
-        const zeroY=toCvdY(0)
-        ctx.strokeStyle='#2A2F3E';ctx.lineWidth=0.5;ctx.setLineDash([3,3])
-        ctx.beginPath();ctx.moveTo(0,zeroY);ctx.lineTo(chartAreaW,zeroY);ctx.stroke();ctx.setLineDash([])
-        // Fill and line
-        const last=visCandles[visCandles.length-1]
-        const bullCvd=last.cvd>=visCandles[0].cvd
+        const toCvdY=(v:number)=>cvdTop+cvdH*0.88-((v-minCvd)/rng)*(cvdH*0.76)
+        // Bull/Bear determination: trend over last 20% of visible candles
+        const lookback=Math.max(3,Math.round(visCandles.length*0.2))
+        const recentSlice=visCandles.slice(-lookback)
+        const cvdTrendUp=recentSlice[recentSlice.length-1].cvd>recentSlice[0].cvd
+        // Price vs CVD divergence
+        const priceUp=recentSlice[recentSlice.length-1].c.close>recentSlice[0].c.close
+        const divergence=cvdTrendUp!==priceUp
+        // Fill area under curve
         ctx.beginPath()
         visCandles.forEach(({c,cvd},i)=>{
           const x=toX(c.time)!,y=toCvdY(cvd)
           i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)
         })
-        ctx.strokeStyle=bullCvd?'#22C75990':'#FF3B3090';ctx.lineWidth=1.5;ctx.stroke()
-        // Label
+        ctx.lineTo(toX(visCandles[visCandles.length-1].c.time)!,cvdTop+cvdH)
+        ctx.lineTo(toX(visCandles[0].c.time)!,cvdTop+cvdH)
+        ctx.closePath()
+        ctx.fillStyle=cvdTrendUp?'rgba(34,199,89,0.07)':'rgba(255,59,48,0.07)';ctx.fill()
+        // CVD line
+        ctx.beginPath()
+        visCandles.forEach(({c,cvd},i)=>{
+          const x=toX(c.time)!,y=toCvdY(cvd)
+          i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)
+        })
+        ctx.strokeStyle=cvdTrendUp?'#22C759B0':'#FF3B30B0';ctx.lineWidth=1.5;ctx.stroke()
+        // Labels
         ctx.font='bold 8px JetBrains Mono, monospace'
-        ctx.fillStyle=bullCvd?'#22C759':'#FF3B30'
-        ctx.fillText(`CVD ${bullCvd?'▲':'▼'}`,4,cvdTop+10)
+        // CVD label + direction
+        ctx.fillStyle=cvdTrendUp?'#22C759':'#FF3B30'
+        ctx.fillText(`CVD`,4,cvdTop+10)
+        ctx.fillStyle=cvdTrendUp?'#22C759':'#FF3B30'
+        ctx.fillText(cvdTrendUp?'▲ ACHETEURS':'▼ VENDEURS',28,cvdTop+10)
+        // Divergence warning
+        if(divergence){
+          ctx.fillStyle='#FFD60A'
+          ctx.fillText('⚠ DIV',cw/2-16,cvdTop+10)
+        }
+        // Current CVD value
+        const lastCvd=visCandles[visCandles.length-1].cvd
+        const cvdStr=lastCvd>=0?`+${(lastCvd/1e6).toFixed(1)}M`:`${(lastCvd/1e6).toFixed(1)}M`
+        const tw=ctx.measureText(cvdStr).width
+        ctx.fillStyle=cvdTrendUp?'#22C759':'#FF3B30'
+        ctx.fillText(cvdStr,chartAreaW-tw-4,cvdTop+10)
       }
       ctx.restore()
     }
@@ -1083,6 +1153,45 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
           ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.07)`;ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.5)`;ctx.setLineDash([4,3])
           ctx.fillRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.setLineDash([])
           ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-warning','#FF9500');ctx.fillText('FVG ↓',x+4,Math.min(y1,y2)+12)
+        })
+    }
+
+    // ── SMC MTF (Higher TF OB/FVG overlay) ───────────────────────────
+    if(indOn.smc&&smcS.mtfEnabled&&smcMtfResult){
+      const tfEntry=SMC_MTF_TFS.find(t=>t.min===smcS.mtfTf)
+      const tfLbl=tfEntry?.label??'HTF'
+      const drawMtfZone=(top:number,btm:number,fill:string,border:string,lbl:string)=>{
+        const y1=toY(top),y2=toY(btm);if(y1==null||y2==null)return
+        ctx.fillStyle=fill
+        ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
+        ctx.strokeStyle=border;ctx.lineWidth=1.2;ctx.setLineDash([6,3])
+        ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
+        ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=border
+        ctx.fillText(`[${tfLbl}] ${lbl}`,4,Math.min(y1,y2)+12)
+      }
+      if(smcS.showOBBull)
+        smcMtfResult.bullOBs.slice(0,smcS.obCount).forEach(ob=>drawMtfZone(ob.top,ob.btm,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.06)`,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.55)`,'Bull OB'))
+      if(smcS.showOBBear)
+        smcMtfResult.bearOBs.slice(0,smcS.obCount).forEach(ob=>drawMtfZone(ob.top,ob.btm,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.06)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.55)`,'Bear OB'))
+      if(smcS.showFVGBull)
+        smcMtfResult.bullFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
+          const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+          ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.05)`
+          ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
+          ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.4)`;ctx.lineWidth=1;ctx.setLineDash([6,4])
+          ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
+          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-profit','#22C759')
+          ctx.fillText(`[${tfLbl}] FVG ↑`,4,Math.min(y1,y2)+12)
+        })
+      if(smcS.showFVGBear)
+        smcMtfResult.bearFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
+          const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+          ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.05)`
+          ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
+          ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.4)`;ctx.lineWidth=1;ctx.setLineDash([6,4])
+          ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
+          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-warning','#FF9500')
+          ctx.fillText(`[${tfLbl}] FVG ↓`,4,Math.min(y1,y2)+12)
         })
     }
 
@@ -1151,7 +1260,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       rsiDivResult.bullDivs.forEach(p=>drawDiv(p,true))
       rsiDivResult.bearDivs.forEach(p=>drawDiv(p,false))
     }
-  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
+  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,smcMtfResult,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
 
   // RAF loop for smooth redraw on any viewport change
   useEffect(()=>{

@@ -108,7 +108,7 @@ export function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLev
 
 // ── VMC Oscillator ─────────────────────────────────────────────────────────
 interface VMCResult { sig:number[]; sigSignal:number[]; momentum:number[]; bullConfirm:boolean; bearConfirm:boolean; ribbonBull:boolean; ribbonBear:boolean; compression:boolean; status:string; emas:number[][] }
-export function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'='swing'): VMCResult {
+export function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'='swing', smoothMult=1.75): VMCResult {
   const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL',emas:[]}
   if (candles.length<60) return EMPTY
   const close=candles.map(c=>c.c), high=candles.map(c=>c.h), low=candles.map(c=>c.l), vol=candles.map(c=>c.v)
@@ -128,7 +128,7 @@ export function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'
   const stoch=computeStoch(rsi,rsiLen)
   const mfiW=0.40,stochW=0.40,denom=1+mfiW+stochW
   const core=rsi.map((r,i)=>(r+mfiW*mfi[i]+stochW*stoch[i])/denom)
-  const emaFast=emaArr(core,2),emaSlow=emaArr(core,Math.round(2*1.75))
+  const emaFast=emaArr(core,2),emaSlow=emaArr(core,Math.max(2,Math.round(2*smoothMult)))
   const transform=(arr:number[])=>arr.map(v=>{const tmp=(v/100-0.5)*2;return 100*(tmp>=0?1:-1)*Math.pow(Math.abs(tmp),0.75)})
   const sig=transform(emaFast),sigSignal=transform(emaSlow)
   const momentum=sig.map((s,i)=>s-sigSignal[i])
@@ -532,6 +532,53 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
+// ── VMC Settings panel (inline) ───────────────────────────────────────────
+interface VMCOscParams {preset:'scalping'|'swing'|'position'; obLevel:number; osLevel:number; smoothMult:number}
+function VMCSettingsPanel({params,setParams,onClose}:{params:VMCOscParams;setParams:(p:VMCOscParams)=>void;onClose:()=>void}) {
+  const Num=({label,value,min,max,step=1,onChange}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void})=>{
+    const btnSt:React.CSSProperties={width:22,height:22,borderRadius:4,border:'1px solid #2A2F3E',background:'#0D1117',color:'#E6EDF3',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,flexShrink:0}
+    return(
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:10,color:'#8B949E',marginBottom:4}}>{label}</div>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <button onClick={()=>onChange(parseFloat(Math.max(min,value-step).toFixed(10)))} style={btnSt}>−</button>
+          <input type="number" value={value} min={min} max={max} step={step}
+            onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))onChange(Math.max(min,Math.min(max,v)))}}
+            style={{flex:1,textAlign:'center',background:'#0D1117',border:'1px solid #2A2F3E',borderRadius:4,color:'#E6EDF3',fontSize:11,fontWeight:700,fontFamily:'JetBrains Mono',padding:'3px 0',minWidth:0,outline:'none'}}/>
+          <button onClick={()=>onChange(parseFloat(Math.min(max,value+step).toFixed(10)))} style={btnSt}>+</button>
+        </div>
+      </div>
+    )
+  }
+  return(
+    <div style={{position:'absolute',top:0,right:0,bottom:0,width:220,background:'#0D1117',borderLeft:'1px solid #1E2330',zIndex:30,display:'flex',flexDirection:'column',boxShadow:'-4px 0 20px rgba(0,0,0,0.6)'}}>
+      <div style={{padding:'10px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+        <span style={{fontSize:11,fontWeight:700,color:'#E6EDF3'}}>⚙ VMC Oscillator</span>
+        <button onClick={onClose} style={{background:'transparent',border:'none',color:'#6B7280',cursor:'pointer',fontSize:15}}>✕</button>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'10px 12px'}}>
+        <div style={{fontSize:9,fontWeight:700,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>Preset</div>
+        <div style={{display:'flex',gap:4,marginBottom:12}}>
+          {(['scalping','swing','position'] as const).map(p=>(
+            <button key={p} onClick={()=>setParams({...params,preset:p})} style={{flex:1,padding:'4px 0',borderRadius:5,fontSize:9,fontWeight:700,cursor:'pointer',border:`1px solid ${params.preset===p?'var(--tm-warning)':'#2A2F3E'}`,background:params.preset===p?'rgba(245,151,20,0.15)':'transparent',color:params.preset===p?'#F59714':'#6B7280',textTransform:'capitalize'}}>{p}</button>
+          ))}
+        </div>
+        <div style={{fontSize:9,fontWeight:700,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,paddingBottom:4,borderBottom:'1px solid #1E2330'}}>Niveaux</div>
+        <Num label="Seuil Overbought" value={params.obLevel} min={10} max={80} onChange={v=>setParams({...params,obLevel:v})}/>
+        <Num label="Seuil Oversold (négatif)" value={params.osLevel} min={-80} max={-5} onChange={v=>setParams({...params,osLevel:v})}/>
+        <div style={{fontSize:9,fontWeight:700,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,paddingBottom:4,borderBottom:'1px solid #1E2330',marginTop:4}}>Signal</div>
+        <Num label="Lissage signal (×)" value={params.smoothMult} min={1.1} max={5} step={0.05} onChange={v=>setParams({...params,smoothMult:v})}/>
+        <div style={{fontSize:9,color:'#6B7280',marginTop:8,lineHeight:1.5}}>
+          <b style={{color:'#8B949E'}}>Scalping</b> — seuils larges · rapide<br/>
+          <b style={{color:'#8B949E'}}>Swing</b> — équilibré (recommandé)<br/>
+          <b style={{color:'#8B949E'}}>Position</b> — seuils serrés · long terme
+        </div>
+      </div>
+      <div style={{padding:'8px 12px',borderTop:'1px solid #1E2330',fontSize:9,color:'#6B7280',textAlign:'center',flexShrink:0}}>Modifications en temps réel</div>
+    </div>
+  )
+}
+
 export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=230, autoHeight=false }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number; autoHeight?: boolean }) {
   const { t } = useTranslation()
   const [tf, setTf] = useState(TF_OPTIONS[3])
@@ -546,7 +593,10 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
   const [status,  setStatus]  = useState<'idle'|'loading'|'error'>('idle')
   const [errorMsg,setErrorMsg]= useState('')
   const [nextRefreshVMC, setNextRefreshVMC] = useState(0)
-  const obLevel=35, osLevel=-25
+  const [showSettings, setShowSettings] = useState(false)
+  const [vmcParams, setVmcParams] = useState<VMCOscParams>({preset:'swing', obLevel:35, osLevel:-25, smoothMult:1.75})
+  const obLevel = vmcParams.obLevel
+  const osLevel = vmcParams.osLevel
 
   // ── Viewport ───────────────────────────────────────────────────────────
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
@@ -579,10 +629,10 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
   useEffect(() => { const ms=TF_REFRESH_MS[tf.interval]||3600000; setNextRefreshVMC(ms/1000); const t=setInterval(()=>setNextRefreshVMC(x=>x<=1?ms/1000:x-1),1000); return()=>clearInterval(t) }, [tf])
   useEffect(() => {
     if (candles.length < 60) return
-    const r = calcVMCOscillator(candles, 'swing'); setResult(r)
+    const r = calcVMCOscillator(candles, vmcParams.preset, vmcParams.smoothMult); setResult(r)
     const sig=r.sig[r.sig.length-1]??0, mom=r.momentum[r.momentum.length-1]??0
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
-  }, [candles, symbol, tf.label])
+  }, [candles, symbol, tf.label, vmcParams])
 
   const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
   const statusColor=result?.status==='BUY'?'var(--tm-profit)':result?.status==='SELL'?'var(--tm-loss)':result?.status==='OVERBOUGHT'?'var(--tm-loss)':result?.status==='OVERSOLD'?'var(--tm-profit)':'var(--tm-text-secondary)'
@@ -608,20 +658,22 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
   )
 
   return (
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden', ...(autoHeight && {height:'100%',display:'flex',flexDirection:'column'})}}>
+    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',position:'relative', ...(autoHeight && {height:'100%',display:'flex',flexDirection:'column'})}}>
+      {showSettings&&<VMCSettingsPanel params={vmcParams} setParams={setVmcParams} onClose={()=>setShowSettings(false)}/>}
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',flexShrink:0}}>
         <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'white'}}>V</div>
-        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
+        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol} · {vmcParams.preset}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
           <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefreshVMC/60)}:{String(nextRefreshVMC%60).padStart(2,'0')}</span>
         </div>
         {result&&<div style={{fontSize:10,fontWeight:700,color:statusColor,background:`${statusColor}20`,padding:'2px 10px',borderRadius:20,border:`1px solid ${statusColor}50`}}>{result.status}</div>}
-        {result?.ribbonBull&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.3)'}}>BULL</div>}
-        {result?.ribbonBear&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-loss)',background:`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)'}}>BEAR</div>}
+        {result?.ribbonBull&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.3)'}}>▲ BULL</div>}
+        {result?.ribbonBear&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-loss)',background:`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)'}}>▼ BEAR</div>}
         {result?.compression&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-warning)',background:`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.3)'}}>⟳ COMP</div>}
-        <div style={{marginLeft:'auto',display:'flex',gap:10,alignItems:'center'}}>
+        <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
           {result&&<div style={{display:'flex',gap:10,fontSize:11,fontFamily:'monospace'}}><span style={{color:'#37D7FF'}}>sig: {lastSig.toFixed(1)}</span><span style={{color:lastMom>=0?'var(--tm-profit)':'var(--tm-loss)'}}>mom: {lastMom>=0?'+':''}{lastMom.toFixed(1)}</span></div>}
+          <button onClick={()=>setShowSettings(s=>!s)} title="Paramètres VMC" style={{background:showSettings?'rgba(245,151,20,0.15)':'var(--tm-bg-tertiary)',border:`1px solid ${showSettings?'#F59714':'#2A2F3E'}`,borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:showSettings?'#F59714':'var(--tm-text-secondary)'}}>⚙</button>
           <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
