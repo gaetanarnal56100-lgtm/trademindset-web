@@ -334,9 +334,18 @@ function useInteractiveCanvas(
   const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
   const [canvasW,  setCanvasW]  = useState(800)
+  const [sizeKey,  setSizeKey]  = useState(0)  // bumped by ResizeObserver → triggers redraw
   const dragRef = useRef<{x:number; vp:Viewport}|null>(null)
   const vpRef   = useRef<Viewport>(viewport)
   vpRef.current = viewport
+
+  // ── ResizeObserver: redraw when canvas is resized (e.g. autoHeight + panel drag) ──
+  useEffect(() => {
+    const c = ref.current; if (!c) return
+    const ro = new ResizeObserver(() => setSizeKey(k => k + 1))
+    ro.observe(c)
+    return () => ro.disconnect()
+  }, [])
 
   // ── Redraw ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -350,7 +359,7 @@ function useInteractiveCanvas(
     ctx.scale(dpr, dpr); ctx.clearRect(0, 0, cssW, cssH)
     draw(ctx, cssW, cssH, hoverIdx)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, hoverIdx])
+  }, [...deps, hoverIdx, sizeKey])
 
   // ── Wheel zoom ─────────────────────────────────────────────────────────
   const onViewportChangeRef = useRef(onViewportChange)
@@ -410,7 +419,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=180 }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=180, autoHeight=false }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number; autoHeight?: boolean }) {
   const { t } = useTranslation()
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
@@ -469,7 +478,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
       drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714','rgba(34,199,89,0.5)','rgba(255,59,48,0.5)',dots,undefined,hi,viewStart,viewEnd,extCrosshairSlot,chartAreaRatio)
-    }, [result, viewStart, viewEnd, extCrosshairSlot, chartAreaRatio], viewSize, viewport, setViewport,
+    }, [result, viewStart, viewEnd, extCrosshairSlot, chartAreaRatio, chartHeight], viewSize, viewport, setViewport,
     onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined,
     chartAreaRatio ?? 0.93
   )
@@ -478,8 +487,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
   const badge = !result?null:wt1Last>obLevel?{label:'Overbought',color:'var(--tm-loss)'}:wt1Last<osLevel?{label:'Oversold',color:'var(--tm-profit)'}:result.signals[result.signals.length-1]==='smartBull'?{label:'Smart Bullish',color:'var(--tm-accent)'}:result.signals[result.signals.length-1]==='bull'?{label:'Bullish Reversal',color:'var(--tm-profit)'}:result.signals[result.signals.length-1]==='smartBear'?{label:'Smart Bearish',color:'var(--tm-loss)'}:result.signals[result.signals.length-1]==='bear'?{label:'Bearish Reversal',color:'var(--tm-loss)'}:{label:'Neutral',color:'var(--tm-text-secondary)'}
 
   return (
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
-      <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden', ...(autoHeight && {height:'100%',display:'flex',flexDirection:'column'})}}>
+      <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',flexShrink:0}}>
         <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>〜</div>
         <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
@@ -492,11 +501,12 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
           <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
-      <div style={{display:'flex',gap:4,padding:'0 16px 10px',overflowX:'auto',scrollbarWidth:'none'}}>
+      <div style={{display:'flex',gap:4,padding:'0 16px 10px',overflowX:'auto',scrollbarWidth:'none',flexShrink:0}}>
         {!syncInterval && TF_OPTIONS.map(tfOpt=><button key={tfOpt.label} onClick={()=>setTf(tfOpt)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:tfOpt.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{tfOpt.label === '1J' ? t('analyse.tf1D') : tfOpt.label === '1S' ? t('analyse.tf1W') : tfOpt.label}</button>)}
         {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 {t('analyse.syncedOn', {interval: syncInterval})}</span>}
       </div>
-      <div style={{padding:'0 16px 16px',position:'relative'}}>
+      {/* Canvas area — flex:1 when autoHeight so it fills remaining space */}
+      <div style={autoHeight ? {flex:1,overflow:'hidden',padding:'0 16px',position:'relative',minHeight:0,display:'flex',flexDirection:'column'} : {padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8,flexDirection:'column'}}>
           <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
         </div>}
@@ -504,25 +514,25 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={chartHeight}
+        <canvas ref={canvasRef} width={800} height={autoHeight ? undefined : chartHeight}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{width:'100%',height:chartHeight,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
+          style={{width:'100%', height: autoHeight ? '100%' : chartHeight, display:'block', flex: autoHeight ? 1 : undefined, minHeight: autoHeight ? 0 : undefined, borderRadius:8, cursor:'crosshair', userSelect:'none'}}/>
         {hoverIdx !== null && result && result.wt1.length > 0 && (
           <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt" viewStart={viewStart} viewEnd={viewEnd}/>
         )}
-        <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
+        {!autoHeight && <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'WT1'},{color:'var(--tm-warning)',label:'WT2'},{color:'var(--tm-profit)',label:'Momentum +'},{color:'var(--tm-loss)',label:'Momentum −'},{color:'var(--tm-accent)',label:'● Smart'}].map(({color,label})=>(
             <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{label}</span></div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   )
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=230 }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=230, autoHeight=false }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number; autoHeight?: boolean }) {
   const { t } = useTranslation()
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
@@ -592,14 +602,14 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,vmcExtCrosshairSlot,chartAreaRatio)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, vmcExtCrosshairSlot, chartAreaRatio], vmcViewSize, viewport, setViewport,
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, vmcExtCrosshairSlot, chartAreaRatio, chartHeight], vmcViewSize, viewport, setViewport,
     onViewportChange ? (vp:Viewport) => onViewportChange(vp.from, vp.to) : undefined,
     chartAreaRatio ?? 0.93
   )
 
   return (
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
-      <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden', ...(autoHeight && {height:'100%',display:'flex',flexDirection:'column'})}}>
+      <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',flexShrink:0}}>
         <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'white'}}>V</div>
         <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
@@ -615,11 +625,12 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
           <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
-      <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none'}}>
+      <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none',flexShrink:0}}>
           {!syncInterval && TF_OPTIONS.map(tfOpt=><button key={tfOpt.label} onClick={()=>setTf(tfOpt)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:tfOpt.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:tfOpt.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{tfOpt.label === '1J' ? t('analyse.tf1D') : tfOpt.label === '1S' ? t('analyse.tf1W') : tfOpt.label}</button>)}
           {syncInterval && <span style={{fontSize:9,color:'var(--tm-text-muted)',padding:'3px 0',fontFamily:'monospace'}}>🔗 {t('analyse.syncedOn', {interval: syncInterval})}</span>}
       </div>
-      <div style={{padding:'0 16px 16px',position:'relative'}}>
+      {/* Canvas area — flex:1 when autoHeight so it fills remaining space */}
+      <div style={autoHeight ? {flex:1,overflow:'hidden',padding:'0 16px',position:'relative',minHeight:0,display:'flex',flexDirection:'column'} : {padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>
           <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
         </div>}
@@ -627,18 +638,18 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={chartHeight}
+        <canvas ref={canvasRef} width={800} height={autoHeight ? undefined : chartHeight}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{width:'100%',height:chartHeight,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
+          style={{width:'100%', height: autoHeight ? '100%' : chartHeight, display:'block', flex: autoHeight ? 1 : undefined, minHeight: autoHeight ? 0 : undefined, borderRadius:8, cursor:'crosshair', userSelect:'none'}}/>
         {hoverIdx !== null && result && result.sig.length > 0 && (
           <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc" viewStart={vmcViewStart} viewEnd={vmcViewEnd}/>
         )}
-        <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
+        {!autoHeight && <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
           {[{color:'#37D7FF',label:'VMC Sig'},{color:'var(--tm-warning)',label:'Signal'},{color:'var(--tm-profit)',label:'Mom +'},{color:'var(--tm-loss)',label:'Mom −'},{color:'var(--tm-warning)',label:`OB:${obLevel}`},{color:'var(--tm-profit)',label:`OS:${osLevel}`}].map(({color,label})=>(
             <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{label}</span></div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   )

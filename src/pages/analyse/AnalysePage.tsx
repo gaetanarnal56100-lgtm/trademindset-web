@@ -1098,15 +1098,6 @@ function ChartAndOscillators({
     window.addEventListener('mouseup', onUp)
   }
 
-  // Compute pixel heights from percentages (fullscreen mode)
-  const totalPx = typeof window !== 'undefined' ? window.innerHeight - 36 : 800
-  const px = {
-    main: Math.round(totalPx * panelHeights.main / 100),
-    wt:   Math.round(totalPx * panelHeights.wt  / 100),
-    vmc:  Math.round(totalPx * panelHeights.vmc / 100),
-    rsi:  Math.round(totalPx * panelHeights.rsi / 100),
-  }
-
   const DIVIDER = <div
     style={{height:5,background:'#1E2330',cursor:'row-resize',flexShrink:0,position:'relative'}}
     onMouseEnter={e=>(e.currentTarget.style.background='var(--tm-accent)')}
@@ -1132,7 +1123,8 @@ function ChartAndOscillators({
     </div>
   )
 
-  const panels = (
+  // Normal (non-fullscreen) panels — fixed heights, no autoHeight
+  const normalPanels = (
     <>
       <ChartLayout
         symbol={symbol} isCrypto={isCrypto}
@@ -1140,29 +1132,54 @@ function ChartAndOscillators({
         onVisibleRangeChange={syncEnabled ? (f,to) => setSyncRange({from:f,to}) : undefined}
         syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
         onCrosshairChange={handleCrosshairChange}
-        chartHeight={fullscreen ? px.main : 430}
+        chartHeight={430}
       />
-      {showWT && <>
-        {fullscreen && React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag('main','wt',e)})}
-        <WaveTrendChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={fullscreen?px.wt:180} />
-      </>}
-      {showVMC && <>
-        {fullscreen && React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag('wt','vmc',e)})}
-        <VMCOscillatorChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={fullscreen?px.vmc:230} />
-      </>}
-      {showRSI && <>
-        {fullscreen && React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag('vmc','rsi',e)})}
-        <RsiEliteChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={fullscreen?px.rsi:240} />
-      </>}
+      {showWT && <WaveTrendChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={180} />}
+      {showVMC && <VMCOscillatorChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={230} />}
+      {showRSI && <RsiEliteChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={240} />}
     </>
   )
 
   if (fullscreen) {
+    // Determine the "previous visible panel" for each divider's drag source
+    const prevOf = (panel: 'wt'|'vmc'|'rsi'): keyof typeof panelHeights => {
+      if (panel === 'wt')  return 'main'
+      if (panel === 'vmc') return showWT ? 'wt' : 'main'
+      return showVMC ? 'vmc' : showWT ? 'wt' : 'main'
+    }
     return (
       <div style={{position:'fixed',inset:0,zIndex:9999,background:'var(--tm-bg)',display:'flex',flexDirection:'column'}}>
         {controlBar}
         <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-          {panels}
+          {/* Main chart panel */}
+          <div style={{flex:panelHeights.main,overflow:'hidden',minHeight:60,display:'flex',flexDirection:'column'}}>
+            <ChartLayout
+              symbol={symbol} isCrypto={isCrypto}
+              onTimeframeChange={setSyncInterval}
+              onVisibleRangeChange={syncEnabled ? (f,to) => setSyncRange({from:f,to}) : undefined}
+              syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
+              onCrosshairChange={handleCrosshairChange}
+              autoHeight
+            />
+          </div>
+          {showWT && <>
+            {React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag('main','wt',e)})}
+            <div style={{flex:panelHeights.wt,overflow:'hidden',minHeight:50,display:'flex',flexDirection:'column'}}>
+              <WaveTrendChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} autoHeight />
+            </div>
+          </>}
+          {showVMC && <>
+            {React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag(prevOf('vmc'),'vmc',e)})}
+            <div style={{flex:panelHeights.vmc,overflow:'hidden',minHeight:50,display:'flex',flexDirection:'column'}}>
+              <VMCOscillatorChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} autoHeight />
+            </div>
+          </>}
+          {showRSI && <>
+            {React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag(prevOf('rsi'),'rsi',e)})}
+            <div style={{flex:panelHeights.rsi,overflow:'hidden',minHeight:40,display:'flex',flexDirection:'column'}}>
+              <RsiEliteChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} autoHeight />
+            </div>
+          </>}
         </div>
       </div>
     )
@@ -1172,20 +1189,21 @@ function ChartAndOscillators({
     <div style={{marginBottom:16}}>
       <div style={{border:'1px solid var(--tm-border)',borderRadius:10,overflow:'hidden'}}>
         {controlBar}
-        {panels}
+        {normalPanels}
       </div>
     </div>
   )
 }
 
 // ── ChartLayout — LightweightChart uniquement (zoom/pan sync bidirectionnel) ──
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, syncRangeIn, onCrosshairChange, chartHeight }: {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, syncRangeIn, onCrosshairChange, chartHeight, autoHeight }: {
   symbol: string; isCrypto: boolean
   onTimeframeChange?: (interval: string) => void
   onVisibleRangeChange?: (from: number, to: number) => void
   syncRangeIn?: {from: number; to: number} | null
   onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
   chartHeight?: number
+  autoHeight?: boolean
 }) {
   return (
     <LightweightChart
@@ -1196,6 +1214,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
       syncRangeIn={syncRangeIn}
       onCrosshairChange={onCrosshairChange}
       chartHeight={chartHeight}
+      autoHeight={autoHeight}
     />
   )
 }

@@ -326,7 +326,7 @@ function draw(
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=240 }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number }) {
+export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=240, autoHeight=false }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number; autoHeight?: boolean }) {
   const { t } = useTranslation()
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
@@ -368,7 +368,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
     const container = containerRef.current
     if (!canvas || !container || rsiArr.length < 2) return
     const cssW = container.clientWidth
-    const cssH = 240
+    const cssH = container.clientHeight || 240
     const curVp = vp ?? vpRef.current
     const n = rsiArr.length
     const startIdx = Math.max(0, Math.floor(curVp.from * n))
@@ -422,8 +422,8 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
 
   // Redraw quand data ou viewport change
   useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, viewport) }, [rsi, rsiMA, pairs, maLen, redraw, viewport])
-  // Redraw quand le crosshair externe ou le ratio change (60fps max depuis LW)
-  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, undefined, crosshairFrac ?? null) }, [crosshairFrac, chartAreaRatio]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Redraw quand le crosshair externe, le ratio ou la hauteur change (60fps max depuis LW)
+  useEffect(() => { redraw(rsi, rsiMA, pairs, maLen, undefined, crosshairFrac ?? null) }, [crosshairFrac, chartAreaRatio, chartHeight]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Resize observer ────────────────────────────────────────────────────
   useEffect(() => {
@@ -446,9 +446,9 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
   const bears = pairs.filter(p => p.type==='bear').length
 
   return (
-    <div style={{ background: '#0D1117', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ background: '#0D1117', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden', ...(autoHeight && { height: '100%', display: 'flex', flexDirection: 'column' }) }}>
       {/* Header */}
-      <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, borderBottom: '1px solid #1E2330' }}>
+      <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, borderBottom: '1px solid #1E2330', ...(autoHeight && { flexShrink: 0 }) }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: '#8B949E', letterSpacing: '0.05em', textTransform: 'uppercase' }}>RSI Elite</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: '#C5C8D6', fontFamily: 'JetBrains Mono, monospace' }}>{symbol}</span>
@@ -484,7 +484,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
       </div>
 
       {/* Legend strip */}
-      <div style={{ padding: '5px 16px', display: 'flex', gap: 14, background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+      <div style={{ padding: '5px 16px', display: 'flex', gap: 14, background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.03)', ...(autoHeight && { flexShrink: 0 }) }}>
         {[
           { color:'#C5C8D6', label:'RSI(14)', dash:false },
           { color:'#F59714', label:`MA(${maLen})`, dash:false },
@@ -504,7 +504,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
       </div>
 
       {/* Canvas */}
-      <div ref={containerRef} style={{ position:'relative', width:'100%', background:'#0D1117' }}>
+      <div ref={containerRef} style={{ position:'relative', width:'100%', background:'#0D1117', ...(autoHeight ? { flex: 1, overflow: 'hidden', minHeight: 0 } : {}) }}>
         {loading && (
           <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(13,17,23,0.75)', zIndex:2 }}>
             <div style={{ width:20, height:20, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'rsiSpin 0.7s linear infinite' }} />
@@ -515,7 +515,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
             <div style={{ fontSize:22, marginBottom:6 }}>⚠️</div>{error}
           </div>
         )}
-        <canvas ref={canvasRef} style={{ display:'block', width:'100%', height:chartHeight, cursor:'crosshair', userSelect:'none' }}
+        <canvas ref={canvasRef} style={{ display:'block', width:'100%', height: autoHeight ? '100%' : chartHeight, cursor:'crosshair', userSelect:'none' }}
           onWheel={e => {
             e.preventDefault()
             const rect = canvasRef.current!.getBoundingClientRect()

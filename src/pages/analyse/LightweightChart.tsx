@@ -20,6 +20,7 @@ interface Props {
   syncRangeIn?: {from: number; to: number} | null
   onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
   chartHeight?: number  // override default 430px (used in fullscreen)
+  autoHeight?: boolean  // fill flex parent instead of fixed height
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -359,7 +360,7 @@ const LW_MIN_TO_OSC: Record<number, string> = {
   1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 240:'4h', 1440:'1d', 10080:'1w',
 }
 
-export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,chartHeight=430}:Props) {
+export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,chartHeight=430,autoHeight=false}:Props) {
   const { t } = useTranslation()
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
@@ -371,6 +372,8 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const onRangeRef         = useRef(onVisibleRangeChange)
   const onCrosshairRef     = useRef(onCrosshairChange)
   useEffect(() => { onCrosshairRef.current = onCrosshairChange }, [onCrosshairChange])
+  const autoHeightRef      = useRef(autoHeight)
+  useEffect(() => { autoHeightRef.current = autoHeight }, [autoHeight])
   // Anti-loop: store the logical range we last set programmatically.
   // When LW echoes back that exact range, we swallow it (it's not a user action).
   // Any range that differs by more than eps = real user interaction → forward to oscillators.
@@ -443,7 +446,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     const bord = resolveCSSColor('--tm-border',      '#2A2F3E')
     const bsub = resolveCSSColor('--tm-border-sub',  '#1E2330')
     const c=createChart(el,{
-      width:el.clientWidth,height:430,
+      width:el.clientWidth,height:chartHeight,
       layout:{background:{color:bg},textColor:'#6B7280',fontSize:11,fontFamily:'JetBrains Mono, monospace'},
       grid:{vertLines:{color:'#1E233028'},horzLines:{color:'#1E233028'}},
       crosshair:{mode:CrosshairMode.Normal,vertLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:bord},horzLine:{color:'#555C7060',style:LineStyle.Solid,width:1,labelBackgroundColor:bord}},
@@ -505,7 +508,9 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       priceLineVisible:false,
     })
     const ro=new ResizeObserver(()=>{
-      c.applyOptions({width:el.clientWidth})
+      const opts: {width:number; height?:number} = {width:el.clientWidth}
+      if (autoHeightRef.current && el.clientHeight > 0) opts.height = el.clientHeight
+      c.applyOptions(opts)
       // Réémet areaRatio après resize pour que les oscillateurs se recalibrent
       const { areaRatio } = getAreaRatio()
       onCrosshairRef.current?.({ frac: -1, areaRatio })  // frac -1 = resize event (pas de crosshair)
@@ -515,10 +520,17 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
-  // Sync chart height when prop changes (fullscreen resize)
+  // Sync chart height when prop changes (non-autoHeight mode)
   useEffect(()=>{
-    if(chartApi.current) chartApi.current.applyOptions({height:chartHeight})
-  },[chartHeight])
+    if(chartApi.current && !autoHeight) chartApi.current.applyOptions({height:chartHeight})
+  },[chartHeight,autoHeight])
+
+  // When switching to autoHeight, immediately sync dimensions from DOM
+  useEffect(()=>{
+    if(!autoHeight||!chartApi.current||!chartEl.current)return
+    const el=chartEl.current
+    if(el.clientHeight>0) chartApi.current.applyOptions({width:el.clientWidth,height:el.clientHeight})
+  },[autoHeight])
 
   // ── Load candles ─────────────────────────────────────────────────────
   const load=useCallback(async()=>{
@@ -962,10 +974,10 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   ]
 
   return(
-    <div ref={chartContainerRef} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative'}}>
+    <div ref={chartContainerRef} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative',...(autoHeight&&{height:'100%',display:'flex',flexDirection:'column'})}}>
 
       {/* Header */}
-      <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+      <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',...(autoHeight&&{flexShrink:0})}}>
         <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
           <div style={{width:26,height:26,borderRadius:7,background:'linear-gradient(135deg,#22C759,#00E5FF)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>⚡</div>
           <div><div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)'}}>Lightweight Charts</div><div style={{fontSize:9,color:'var(--tm-text-muted)'}}>{`${t('analyse.firestoreSave')} · ${symbol}`}</div></div>
@@ -999,7 +1011,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       </div>
 
       {/* Indicateurs + settings */}
-      <div style={{padding:'6px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+      <div style={{padding:'6px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',...(autoHeight&&{flexShrink:0})}}>
         <span style={{fontSize:9,color:'var(--tm-text-muted)',fontWeight:700,flexShrink:0}}>{t('analyse.indicators')} :</span>
         {INDS.map(ind=>(
           <div key={ind.id} style={{display:'flex',alignItems:'center',gap:0}}>
@@ -1021,7 +1033,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       </div>
 
       {/* Outils dessin */}
-      <div style={{padding:'5px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+      <div style={{padding:'5px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',...(autoHeight&&{flexShrink:0})}}>
         {TOOLS.map(t=><button key={t.id} onClick={()=>{setTool(t.id as ToolId);phase.current='idle';firstPt.current=null;setSelectedId(null)}} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tool===t.id?'var(--tm-warning)':'var(--tm-border)'}`,background:tool===t.id?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.12)`:'transparent',color:tool===t.id?'var(--tm-warning)':'var(--tm-text-muted)'}}>{t.icon} {t.label}</button>)}
         <div style={{width:1,height:14,background:'var(--tm-border)',margin:'0 4px'}}/>
         {/* Magnet */}
@@ -1033,7 +1045,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       </div>
 
       {/* Chart */}
-      <div style={{position:'relative',background:'var(--tm-bg)'}} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} onClick={handleClick}>
+      <div style={{position:'relative',background:'var(--tm-bg)',...(autoHeight&&{flex:1,overflow:'hidden',minHeight:0})}} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} onClick={handleClick}>
         {loading&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'#0D111790',zIndex:4}}><div style={{width:24,height:24,border:'2px solid #1E2330',borderTopColor:'var(--tm-profit)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>}
         {!loading&&fetchError&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--tm-bg)',zIndex:4,gap:10}}>
           <span style={{fontSize:28}}>📊</span>
@@ -1041,7 +1053,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
           <span style={{fontSize:11,color:'var(--tm-text-muted)',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Essayez: AAPL · TSLA · MSFT · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40) · BTC-USD</span>
           <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.1)`,border:'1px solid #00E5FF',color:'var(--tm-accent)',cursor:'pointer',fontSize:11}}>Réessayer</button>
         </div>}
-        <div ref={chartEl} style={{width:'100%',height:chartHeight}}/>
+        <div ref={chartEl} style={{width:'100%',height:autoHeight?'100%':chartHeight}}/>
         <canvas ref={overlayEl} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2,pointerEvents:'none'}}/>
         {/* Settings panel */}
         {settingsOpen&&<SettingsPanel activeId={settingsOpen} vmcSettings={vmcS} setVmcSettings={setVmcS} smcSettings={smcS} setSmcSettings={setSmcS} msdSettings={msdS} setMsdSettings={setMsdS} mpSettings={mpS} setMpSettings={setMpS} onClose={()=>setSettingsOpen(null)}/>}
