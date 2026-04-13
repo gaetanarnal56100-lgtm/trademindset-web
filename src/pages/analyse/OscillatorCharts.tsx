@@ -410,7 +410,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=180 }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number }) {
   const { t } = useTranslation()
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
@@ -504,10 +504,10 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={180}
+        <canvas ref={canvasRef} width={800} height={chartHeight}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{width:'100%',height:180,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
+          style={{width:'100%',height:chartHeight,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
         {hoverIdx !== null && result && result.wt1.length > 0 && (
           <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt" viewStart={viewStart} viewEnd={viewEnd}/>
         )}
@@ -522,7 +522,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onViewportC
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=230 }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number }) {
   const { t } = useTranslation()
   const [tf, setTf] = useState(TF_OPTIONS[3])
   useEffect(() => {
@@ -627,10 +627,10 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onViewp
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={230}
+        <canvas ref={canvasRef} width={800} height={chartHeight}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{width:'100%',height:230,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
+          style={{width:'100%',height:chartHeight,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
         {hoverIdx !== null && result && result.sig.length > 0 && (
           <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc" viewStart={vmcViewStart} viewEnd={vmcViewEnd}/>
         )}

@@ -19,6 +19,7 @@ interface Props {
   onVisibleRangeChange?: (from: number, to: number) => void
   syncRangeIn?: {from: number; to: number} | null
   onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
+  chartHeight?: number  // override default 430px (used in fullscreen)
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -358,7 +359,7 @@ const LW_MIN_TO_OSC: Record<number, string> = {
   1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 240:'4h', 1440:'1d', 10080:'1w',
 }
 
-export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange}:Props) {
+export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,chartHeight=430}:Props) {
   const { t } = useTranslation()
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
@@ -511,7 +512,13 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     })
     ro.observe(el)
     return()=>{ro.disconnect();c.remove();chartApi.current=null;seriesR.current=null}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
+
+  // Sync chart height when prop changes (fullscreen resize)
+  useEffect(()=>{
+    if(chartApi.current) chartApi.current.applyOptions({height:chartHeight})
+  },[chartHeight])
 
   // ── Load candles ─────────────────────────────────────────────────────
   const load=useCallback(async()=>{
@@ -1034,7 +1041,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
           <span style={{fontSize:11,color:'var(--tm-text-muted)',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Essayez: AAPL · TSLA · MSFT · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40) · BTC-USD</span>
           <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.1)`,border:'1px solid #00E5FF',color:'var(--tm-accent)',cursor:'pointer',fontSize:11}}>Réessayer</button>
         </div>}
-        <div ref={chartEl} style={{width:'100%',height:430}}/>
+        <div ref={chartEl} style={{width:'100%',height:chartHeight}}/>
         <canvas ref={overlayEl} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2,pointerEvents:'none'}}/>
         {/* Settings panel */}
         {settingsOpen&&<SettingsPanel activeId={settingsOpen} vmcSettings={vmcS} setVmcSettings={setVmcS} smcSettings={smcS} setSmcSettings={setSmcS} msdSettings={msdS} setMsdSettings={setMsdS} mpSettings={mpS} setMpSettings={setMpS} onClose={()=>setSettingsOpen(null)}/>}

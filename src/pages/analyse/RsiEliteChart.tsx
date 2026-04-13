@@ -326,7 +326,7 @@ function draw(
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number }) {
+export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, visibleRange, onViewportChange, crosshairFrac, chartAreaRatio, chartHeight=240 }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from:number, to:number) => void; crosshairFrac?: number|null; chartAreaRatio?: number; chartHeight?: number }) {
   const { t } = useTranslation()
   const [symbol,  setSymbol]  = useState(initialSymbol)
   const [tf,      setTf]      = useState(TF_OPTIONS[1])   // 1H
@@ -515,7 +515,7 @@ export default function RsiEliteChart({ symbol: initialSymbol, syncInterval, vis
             <div style={{ fontSize:22, marginBottom:6 }}>⚠️</div>{error}
           </div>
         )}
-        <canvas ref={canvasRef} style={{ display:'block', width:'100%', height:240, cursor:'crosshair', userSelect:'none' }}
+        <canvas ref={canvasRef} style={{ display:'block', width:'100%', height:chartHeight, cursor:'crosshair', userSelect:'none' }}
           onWheel={e => {
             e.preventDefault()
             const rect = canvasRef.current!.getBoundingClientRect()
