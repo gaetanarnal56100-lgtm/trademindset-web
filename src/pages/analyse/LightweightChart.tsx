@@ -1262,14 +1262,11 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     }
   },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,smcMtfResult,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
 
-  // RAF loop for smooth redraw on any viewport change
+  // RAF loop — redraws overlay canvas every frame (canvas ops are fast, ensures
+  // indicators appear immediately after data load regardless of LW internal state)
   useEffect(()=>{
-    let raf:number;let lastKey=''
-    const loop=()=>{
-      const c=chartApi.current;const s=seriesR.current
-      if(c&&s){try{const r=c.timeScale().getVisibleLogicalRange();const y=s.priceToCoordinate(candlesRef.current[candlesRef.current.length-1]?.close||0)??0;const k=JSON.stringify(r)+'|'+Math.round(y);if(k!==lastKey){lastKey=k;render()}}catch{}}
-      raf=requestAnimationFrame(loop)
-    }
+    let raf:number
+    const loop=()=>{raf=requestAnimationFrame(loop);render()}
     raf=requestAnimationFrame(loop);return()=>cancelAnimationFrame(raf)
   },[render])
 
