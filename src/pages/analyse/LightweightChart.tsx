@@ -122,12 +122,13 @@ function lowest(d:number[],l:number):number[]{return d.map((_,i)=>i<l-1?d[i]:Mat
 
 // ── Indicator calculations ────────────────────────────────────────────────
 interface VMCResult{sig:number[];sigSignal:number[];mom:number[];isBull:boolean[];isBear:boolean[];buySignals:number[];sellSignals:number[]}
-function calcVMC(candles:Candle[],smoothLen=10,signalMult=1.75,upT=35,loT=-35):VMCResult{
+function calcVMC(candles:Candle[],smoothLen=10,signalMult=1.75,upT=35,loT=-35,rsiLen=14,stochSmooth=2,mfiWeight=0.4):VMCResult{
   const cl=candles.map(c=>c.close),hlc3=candles.map(c=>(c.high+c.low+c.close)/3)
-  const rv=rsiCalc(cl,14),rH=highest(rv,14),rL=lowest(rv,14)
-  const stoch=sma(rv.map((r,i)=>rH[i]===rL[i]?0:(r-rL[i])/(rH[i]-rL[i])*100),2)
+  const rv=rsiCalc(cl,rsiLen),rH=highest(rv,rsiLen),rL=lowest(rv,rsiLen)
+  const stoch=sma(rv.map((r,i)=>rH[i]===rL[i]?0:(r-rL[i])/(rH[i]-rL[i])*100),Math.max(1,stochSmooth))
   const mfi=hlc3.map((_,i)=>i===0?50:hlc3[i]>hlc3[i-1]?60:hlc3[i]<hlc3[i-1]?40:50)
-  const core=hlc3.map((_,i)=>(rv[i]+0.4*mfi[i]+0.4*stoch[i])/1.8)
+  const w=Math.max(0.1,Math.min(0.9,mfiWeight))
+  const core=hlc3.map((_,i)=>(rv[i]+w*mfi[i]+w*stoch[i])/(1+2*w))
   const tf=(v:number)=>{const t=(v/100-0.5)*2;return 100*Math.sign(t)*Math.pow(Math.abs(t),0.75)}
   const sig=ema(core,smoothLen).map(tf),ss=ema(core,Math.round(smoothLen*signalMult)).map(tf),mom=sig.map((s,i)=>s-ss[i])
   const lens=[20,25,30,35,40,45,50,55];const emas=lens.map(l=>ema(cl,l))
@@ -236,10 +237,56 @@ function calcRSIDiv(candles:Candle[],rsiPeriod=14,pivotLen=5,lookback=60):RSIDiv
 }
 
 // ── Indicator settings types ──────────────────────────────────────────────
-interface VMCSettings{smoothLen:number;signalMult:number;upThreshold:number;loThreshold:number;ribbonMin:number}
-interface SMCSettings{swingLen:number;showOB:boolean;showFVG:boolean;obCount:number}
+interface VMCSettings{smoothLen:number;signalMult:number;upThreshold:number;loThreshold:number;ribbonMin:number;rsiLen:number;stochSmooth:number;mfiWeight:number}
+interface SMCSettings{swingLen:number;showOBBull:boolean;showOBBear:boolean;showFVGBull:boolean;showFVGBear:boolean;obCount:number;fvgCount:number;mitigatedOB:boolean}
 interface MSDSettings{swingLen:number;showBOS:boolean;showSwings:boolean}
 interface MPSettings{bins:number;showProfile:boolean}
+interface BollingerSettings{len:number;mult:number;showMiddle:boolean}
+interface VolumeSettings{opacity:number}
+interface VegasTunnel{enabled:boolean;color:string;fillOpacity:number}
+interface VegasSettings{tunnels:VegasTunnel[]}
+const VEGAS_TFS = [
+  {label:'5m',  min:5,    binance:'5m',  yh:'5m',  yhRange:'5d'   },
+  {label:'15m', min:15,   binance:'15m', yh:'15m', yhRange:'5d'   },
+  {label:'1H',  min:60,   binance:'1h',  yh:'1h',  yhRange:'1mo'  },
+  {label:'4H',  min:240,  binance:'4h',  yh:'4h',  yhRange:'3mo'  },
+  {label:'1J',  min:1440, binance:'1d',  yh:'1d',  yhRange:'1y'   },
+  {label:'3J',  min:4320, binance:'3d',  yh:'1wk', yhRange:'2y'   },
+]
+const VEGAS_DEFAULTS:VegasTunnel[]=[
+  {enabled:true, color:'#40e0d0', fillOpacity:0.08},
+  {enabled:true, color:'#ffffff', fillOpacity:0.06},
+  {enabled:true, color:'#e65100', fillOpacity:0.08},
+  {enabled:true, color:'#b71c1c', fillOpacity:0.08},
+  {enabled:true, color:'#ffeb3b', fillOpacity:0.06},
+  {enabled:true, color:'#00ced1', fillOpacity:0.06},
+]
+
+// ── New indicator calculations ────────────────────────────────────────────
+interface BBPoint{upper:number;middle:number;lower:number}
+function calcBBAligned(candles:Candle[],len=20,mult=2):{upper:number;middle:number;lower:number}[]{
+  const cl=candles.map(c=>c.close),n=cl.length
+  return cl.map((_,i)=>{
+    if(i<len-1)return{upper:cl[i],middle:cl[i],lower:cl[i]}
+    const sl=cl.slice(i-len+1,i+1)
+    const m=sl.reduce((a,b)=>a+b,0)/len
+    const sd=Math.sqrt(sl.reduce((a,b)=>a+(b-m)**2,0)/len)
+    return{upper:m+mult*sd,middle:m,lower:m-mult*sd}
+  })
+}
+function calcCVD(candles:Candle[]):number[]{
+  const delta=candles.map(c=>{
+    const vol=c.volume||0
+    if(c.close>c.open)return vol
+    if(c.close<c.open)return-vol
+    const body=Math.abs(c.close-c.open),range=c.high-c.low||1
+    return vol*(c.close>=(c.high+c.low)/2?1:-1)*(1-body/range*0.5)
+  })
+  const cvd:number[]=[]
+  let sum=0
+  for(const d of delta){sum+=d;cvd.push(sum)}
+  return cvd
+}
 
 // ── VMC Panel ─────────────────────────────────────────────────────────────
 function VMCPanel({vmcResult,settings}:{vmcResult:VMCResult;settings:VMCSettings}) {
@@ -286,9 +333,12 @@ interface SettingsPanelProps {
   smcSettings: SMCSettings; setSmcSettings: (s:SMCSettings)=>void
   msdSettings: MSDSettings; setMsdSettings: (s:MSDSettings)=>void
   mpSettings:  MPSettings;  setMpSettings:  (s:MPSettings)=>void
+  bbSettings:  BollingerSettings; setBbSettings: (s:BollingerSettings)=>void
+  vegasSettings: VegasSettings; setVegasSettings: (s:VegasSettings)=>void
+  volSettings: VolumeSettings; setVolSettings: (s:VolumeSettings)=>void
   onClose: ()=>void
 }
-function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSettings,msdSettings,setMsdSettings,mpSettings,setMpSettings,onClose}:SettingsPanelProps) {
+function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSettings,msdSettings,setMsdSettings,mpSettings,setMpSettings,bbSettings,setBbSettings,vegasSettings,setVegasSettings,volSettings,setVolSettings,onClose}:SettingsPanelProps) {
   const { t } = useTranslation()
   const Slider = ({label,value,min,max,step=1,onChange}:{label:string;value:number;min:number;max:number;step?:number;onChange:(v:number)=>void}) => (
     <div style={{marginBottom:10}}>
@@ -296,8 +346,7 @@ function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSe
         <span style={{fontSize:10,color:'var(--tm-text-secondary)'}}>{label}</span>
         <span style={{fontSize:10,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{value}</span>
       </div>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(+e.target.value)}
-        style={{width:'100%',accentColor:'var(--tm-blue)',height:3}}/>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(+e.target.value)} style={{width:'100%',accentColor:'var(--tm-blue)',height:3}}/>
     </div>
   )
   const Toggle = ({label,value,onChange}:{label:string;value:boolean;onChange:(v:boolean)=>void}) => (
@@ -308,40 +357,114 @@ function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSe
       </div>
     </div>
   )
+  const ColorRow = ({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}) => (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+      <span style={{fontSize:10,color:'var(--tm-text-secondary)'}}>{label}</span>
+      <input type="color" value={value} onChange={e=>onChange(e.target.value)} style={{width:28,height:20,border:'none',background:'transparent',cursor:'pointer',padding:0}}/>
+    </div>
+  )
+  const Section = ({title}:{title:string}) => (
+    <div style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,marginTop:4,paddingBottom:4,borderBottom:'1px solid #1E2330'}}>{title}</div>
+  )
+  const titleMap: Record<string,string> = {
+    vmc:'〜 VMC', smc:'🏦 SMC', msd:'📊 Structure', mp:'📈 Mkt Profile',
+    bb:'〰 Bollinger', vol:'📊 Volume', cvd:'⚡ CVD', vegas:'🌐 MTF Vegas',
+  }
   return(
-    <div style={{position:'absolute',top:0,right:0,bottom:0,width:240,background:'var(--tm-bg-secondary)',borderLeft:'1px solid #1E2330',zIndex:20,display:'flex',flexDirection:'column'}}>
-      <div style={{padding:'12px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)'}}>
-          {activeId==='vmc'?'〜 VMC':activeId==='smc'?'🏦 SMC':activeId==='msd'?'📊 Structure':'📈 Mkt Profile'}
-        </span>
+    <div style={{position:'absolute',top:0,right:0,bottom:0,width:260,background:'var(--tm-bg-secondary)',borderLeft:'1px solid #1E2330',zIndex:20,display:'flex',flexDirection:'column',boxShadow:'-4px 0 20px rgba(0,0,0,0.5)'}}>
+      <div style={{padding:'12px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+        <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)'}}>{titleMap[activeId]??activeId}</span>
         <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--tm-text-muted)',cursor:'pointer',fontSize:16,padding:'0 4px'}}>✕</button>
       </div>
       <div style={{flex:1,overflowY:'auto',padding:'12px 14px'}}>
+
         {activeId==='vmc'&&(<>
-          <Slider label="Lissage VMC" value={vmcSettings.smoothLen} min={3} max={30} onChange={v=>setVmcSettings({...vmcSettings,smoothLen:v})}/>
-          <Slider label="Multiplicateur signal" value={vmcSettings.signalMult} min={1.1} max={3} step={0.05} onChange={v=>setVmcSettings({...vmcSettings,signalMult:v})}/>
-          <Slider label="Seuil haut" value={vmcSettings.upThreshold} min={10} max={80} onChange={v=>setVmcSettings({...vmcSettings,upThreshold:v})}/>
-          <Slider label={t('analyse.lowThreshold')} value={vmcSettings.loThreshold} min={-80} max={-10} onChange={v=>setVmcSettings({...vmcSettings,loThreshold:v})}/>
-          <Slider label={t('analyse.ribbonMin')} value={vmcSettings.ribbonMin} min={3} max={7} onChange={v=>setVmcSettings({...vmcSettings,ribbonMin:v})}/>
+          <Section title="Signal"/>
+          <Slider label="Lissage VMC" value={vmcSettings.smoothLen} min={3} max={40} onChange={v=>setVmcSettings({...vmcSettings,smoothLen:v})}/>
+          <Slider label="Multiplicateur signal" value={vmcSettings.signalMult} min={1.1} max={4} step={0.05} onChange={v=>setVmcSettings({...vmcSettings,signalMult:v})}/>
+          <Section title="Calcul RSI"/>
+          <Slider label="Période RSI" value={vmcSettings.rsiLen} min={5} max={30} onChange={v=>setVmcSettings({...vmcSettings,rsiLen:v})}/>
+          <Slider label="Lissage Stoch" value={vmcSettings.stochSmooth} min={1} max={8} onChange={v=>setVmcSettings({...vmcSettings,stochSmooth:v})}/>
+          <Slider label="Poids MFI" value={vmcSettings.mfiWeight} min={0.1} max={0.8} step={0.05} onChange={v=>setVmcSettings({...vmcSettings,mfiWeight:v})}/>
+          <Section title="Niveaux"/>
+          <Slider label="Seuil haut (OB)" value={vmcSettings.upThreshold} min={10} max={80} onChange={v=>setVmcSettings({...vmcSettings,upThreshold:v})}/>
+          <Slider label="Seuil bas (OS)" value={vmcSettings.loThreshold} min={-80} max={-10} onChange={v=>setVmcSettings({...vmcSettings,loThreshold:v})}/>
+          <Section title="Ribbon"/>
+          <Slider label="Consensus EMAs min" value={vmcSettings.ribbonMin} min={3} max={7} onChange={v=>setVmcSettings({...vmcSettings,ribbonMin:v})}/>
         </>)}
+
         {activeId==='smc'&&(<>
-          <Slider label={t('analyse.swingLen')} value={smcSettings.swingLen} min={3} max={30} onChange={v=>setSmcSettings({...smcSettings,swingLen:v})}/>
-          <Slider label={t('analyse.obCount')} value={smcSettings.obCount} min={1} max={8} onChange={v=>setSmcSettings({...smcSettings,obCount:v})}/>
-          <Toggle label={t('analyse.showOB')} value={smcSettings.showOB} onChange={v=>setSmcSettings({...smcSettings,showOB:v})}/>
-          <Toggle label={t('analyse.showFVG')} value={smcSettings.showFVG} onChange={v=>setSmcSettings({...smcSettings,showFVG:v})}/>
+          <Section title="Order Blocks"/>
+          <Slider label="Swing length" value={smcSettings.swingLen} min={3} max={30} onChange={v=>setSmcSettings({...smcSettings,swingLen:v})}/>
+          <Slider label="Nb OB affichés" value={smcSettings.obCount} min={1} max={10} onChange={v=>setSmcSettings({...smcSettings,obCount:v})}/>
+          <Toggle label="OB Bullish" value={smcSettings.showOBBull} onChange={v=>setSmcSettings({...smcSettings,showOBBull:v})}/>
+          <Toggle label="OB Bearish" value={smcSettings.showOBBear} onChange={v=>setSmcSettings({...smcSettings,showOBBear:v})}/>
+          <Toggle label="OB mitigés" value={smcSettings.mitigatedOB} onChange={v=>setSmcSettings({...smcSettings,mitigatedOB:v})}/>
+          <Section title="Fair Value Gaps"/>
+          <Slider label="Nb FVG affichés" value={smcSettings.fvgCount} min={1} max={12} onChange={v=>setSmcSettings({...smcSettings,fvgCount:v})}/>
+          <Toggle label="FVG+ (Bullish)" value={smcSettings.showFVGBull} onChange={v=>setSmcSettings({...smcSettings,showFVGBull:v})}/>
+          <Toggle label="FVG- (Bearish)" value={smcSettings.showFVGBear} onChange={v=>setSmcSettings({...smcSettings,showFVGBear:v})}/>
         </>)}
+
         {activeId==='msd'&&(<>
           <Slider label={t('analyse.swingLen')} value={msdSettings.swingLen} min={3} max={20} onChange={v=>setMsdSettings({...msdSettings,swingLen:v})}/>
           <Toggle label={t('analyse.showBOS')} value={msdSettings.showBOS} onChange={v=>setMsdSettings({...msdSettings,showBOS:v})}/>
           <Toggle label={t('analyse.showSwings')} value={msdSettings.showSwings} onChange={v=>setMsdSettings({...msdSettings,showSwings:v})}/>
         </>)}
+
         {activeId==='mp'&&(<>
-          <Slider label={t('analyse.mpBins')} value={mpSettings.bins} min={10} max={60} onChange={v=>setMpSettings({...mpSettings,bins:v})}/>
-          <Toggle label={t('analyse.showProfile')} value={mpSettings.showProfile} onChange={v=>setMpSettings({...mpSettings,showProfile:v})}/>
+          <Slider label={t('analyse.mpBins')} value={mpSettings.bins} min={10} max={80} onChange={v=>setMpSettings({...mpSettings,bins:v})}/>
+          <Toggle label="Afficher histogramme" value={mpSettings.showProfile} onChange={v=>setMpSettings({...mpSettings,showProfile:v})}/>
         </>)}
+
+        {activeId==='bb'&&(<>
+          <Slider label="Période" value={bbSettings.len} min={5} max={100} onChange={v=>setBbSettings({...bbSettings,len:v})}/>
+          <Slider label="Multiplicateur σ" value={bbSettings.mult} min={0.5} max={4} step={0.1} onChange={v=>setBbSettings({...bbSettings,mult:v})}/>
+          <Toggle label="Afficher SMA centrale" value={bbSettings.showMiddle} onChange={v=>setBbSettings({...bbSettings,showMiddle:v})}/>
+        </>)}
+
+        {activeId==='vol'&&(<>
+          <Slider label="Opacité" value={volSettings.opacity} min={10} max={80} onChange={v=>setVolSettings({...volSettings,opacity:v})}/>
+          <div style={{fontSize:9,color:'var(--tm-text-muted)',marginTop:8,lineHeight:1.5}}>Volume visible dans la partie basse du graphique. Vert = haussier · Rouge = baissier</div>
+        </>)}
+
+        {activeId==='cvd'&&(<>
+          <div style={{fontSize:9,color:'var(--tm-text-muted)',lineHeight:1.6}}>
+            <b style={{color:'var(--tm-text-secondary)'}}>Cumulative Volume Delta</b><br/>
+            Différence cumulée entre volume acheteur et vendeur.<br/>
+            ↑ CVD + prix ↑ = confirmation haussière<br/>
+            ↑ Prix + ↓ CVD = divergence baissière (attention)<br/>
+            <span style={{color:'#FF9500'}}>Crypto uniquement</span>
+          </div>
+        </>)}
+
+        {activeId==='vegas'&&(<>
+          <Section title="Tunnels actifs"/>
+          {VEGAS_TFS.map((tf,i)=>(
+            <div key={tf.label} style={{marginBottom:12,padding:'8px',background:'rgba(255,255,255,0.03)',borderRadius:6,border:`1px solid ${vegasSettings.tunnels[i]?.enabled?vegasSettings.tunnels[i].color+'40':'#1E2330'}`}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                <span style={{fontSize:10,fontWeight:700,color:vegasSettings.tunnels[i]?.enabled?vegasSettings.tunnels[i].color:'var(--tm-text-muted)'}}>{tf.label}</span>
+                <div onClick={()=>{const t=[...vegasSettings.tunnels];t[i]={...t[i],enabled:!t[i].enabled};setVegasSettings({...vegasSettings,tunnels:t})}}
+                  style={{width:32,height:17,borderRadius:9,background:vegasSettings.tunnels[i]?.enabled?'var(--tm-blue)':'var(--tm-border)',cursor:'pointer',position:'relative',transition:'background 0.2s'}}>
+                  <div style={{position:'absolute',top:2,left:vegasSettings.tunnels[i]?.enabled?16:2,width:13,height:13,borderRadius:'50%',background:'var(--tm-text-primary)',transition:'left 0.2s'}}/>
+                </div>
+              </div>
+              {vegasSettings.tunnels[i]?.enabled&&(
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:9,color:'var(--tm-text-muted)'}}>Couleur</span>
+                  <input type="color" value={vegasSettings.tunnels[i].color} onChange={e=>{const t=[...vegasSettings.tunnels];t[i]={...t[i],color:e.target.value};setVegasSettings({...vegasSettings,tunnels:t})}} style={{width:24,height:18,border:'none',background:'transparent',cursor:'pointer',padding:0}}/>
+                  <span style={{fontSize:9,color:'var(--tm-text-muted)'}}>Opacité fill</span>
+                  <input type="range" min={0.01} max={0.3} step={0.01} value={vegasSettings.tunnels[i].fillOpacity} onChange={e=>{const t=[...vegasSettings.tunnels];t[i]={...t[i],fillOpacity:+e.target.value};setVegasSettings({...vegasSettings,tunnels:t})}} style={{flex:1,accentColor:'var(--tm-blue)',height:3}}/>
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{fontSize:9,color:'var(--tm-text-muted)',marginTop:8,lineHeight:1.5}}>EMA 144 / 169 / 233 sur chaque unité de temps. Les tunnels supérieurs au TF actuel n'ont pas de signaux.</div>
+        </>)}
+
       </div>
-      <div style={{padding:'10px 14px',borderTop:'1px solid #1E2330'}}>
-        <div style={{fontSize:9,color:'var(--tm-text-muted)',textAlign:'center'}}>Les modifications s'appliquent en temps réel</div>
+      <div style={{padding:'10px 14px',borderTop:'1px solid #1E2330',flexShrink:0}}>
+        <div style={{fontSize:9,color:'var(--tm-text-muted)',textAlign:'center'}}>Modifications en temps réel</div>
       </div>
     </div>
   )
@@ -411,13 +534,16 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const [settingsOpen, setSettingsOpen] = useState<string|null>(null)
 
   // Indicator toggles
-  const [indOn, setIndOn] = useState<Record<string,boolean>>({smc:false,msd:false,vmc:false,mp:false,rsiDiv:false})
+  const [indOn, setIndOn] = useState<Record<string,boolean>>({smc:false,msd:false,vmc:false,mp:false,rsiDiv:false,bb:false,vol:false,cvd:false,vegas:false})
 
   // Indicator settings
-  const [vmcS, setVmcS] = useState<VMCSettings>({smoothLen:10,signalMult:1.75,upThreshold:35,loThreshold:-35,ribbonMin:5})
-  const [smcS, setSmcS] = useState<SMCSettings>({swingLen:10,showOB:true,showFVG:true,obCount:4})
+  const [vmcS, setVmcS] = useState<VMCSettings>({smoothLen:10,signalMult:1.75,upThreshold:35,loThreshold:-35,ribbonMin:5,rsiLen:14,stochSmooth:2,mfiWeight:0.4})
+  const [smcS, setSmcS] = useState<SMCSettings>({swingLen:10,showOBBull:true,showOBBear:true,showFVGBull:true,showFVGBear:true,obCount:4,fvgCount:5,mitigatedOB:false})
   const [msdS, setMsdS] = useState<MSDSettings>({swingLen:5,showBOS:true,showSwings:true})
   const [mpS,  setMpS]  = useState<MPSettings>({bins:30,showProfile:true})
+  const [bbS,  setBbS]  = useState<BollingerSettings>({len:20,mult:2,showMiddle:true})
+  const [volS, setVolS] = useState<VolumeSettings>({opacity:35})
+  const [vegasS, setVegasS] = useState<VegasSettings>({tunnels:[...VEGAS_DEFAULTS.map(t=>({...t}))]})
 
   // Computed results
   const [smcResult,    setSmcResult]    = useState<SMCResult|null>(null)
@@ -425,12 +551,79 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const [vmcResult,    setVmcResult]    = useState<VMCResult|null>(null)
   const [mpResult,     setMpResult]     = useState<MPResult|null>(null)
   const [rsiDivResult, setRsiDivResult] = useState<RSIDivResult|null>(null)
+  const [bbResult,     setBbResult]     = useState<BBPoint[]|null>(null)
+  const [cvdResult,    setCvdResult]    = useState<number[]|null>(null)
+  const [vegasData,    setVegasData]    = useState<{time:number;e1:number;e2:number;e3:number}[][]>([])
+
+  // Refs for price-axis width (to avoid SMC/VP zones overlapping it)
+  const priceAxisWRef = useRef(60)
+  // Volume series ref
+  const volSeriesRef  = useRef<ISeriesApi<'Histogram'>|null>(null)
 
   // Recalculate when settings change
   useEffect(()=>{const c=candlesRef.current;if(c.length)setSmcResult(calcSMC(c,smcS.swingLen))},[smcS.swingLen])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setMsdResult(calcMSD(c,msdS.swingLen))},[msdS.swingLen])
-  useEffect(()=>{const c=candlesRef.current;if(c.length)setVmcResult(calcVMC(c,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold))},[vmcS])
+  useEffect(()=>{const c=candlesRef.current;if(c.length)setVmcResult(calcVMC(c,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold,vmcS.rsiLen,vmcS.stochSmooth,vmcS.mfiWeight))},[vmcS])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setMpResult(calcMP(c,mpS.bins))},[mpS.bins])
+  useEffect(()=>{const c=candlesRef.current;if(c.length)setBbResult(calcBBAligned(c,bbS.len,bbS.mult))},[bbS])
+
+  // Toggle volume series visibility + update opacity when settings change
+  useEffect(()=>{
+    if(!volSeriesRef.current)return
+    volSeriesRef.current.applyOptions({visible:indOn.vol})
+    // Refresh bar colors to reflect new opacity
+    if(indOn.vol&&candlesRef.current.length){
+      const alpha=Math.round((volS.opacity/100)*255).toString(16).padStart(2,'0')
+      volSeriesRef.current.setData(candlesRef.current.map(c=>({
+        time:c.time as Time,
+        value:c.volume||0,
+        color:c.close>=c.open?`#22C759${alpha}`:`#FF3B30${alpha}`
+      })))
+    }
+  },[indOn.vol,volS.opacity])
+
+  // Fetch MTF Vegas data when enabled or symbol/isCrypto changes
+  useEffect(()=>{
+    if(!indOn.vegas){setVegasData([]);return}
+    let cancelled=false
+    const fetchAll=async()=>{
+      const results:{time:number;e1:number;e2:number;e3:number}[][]=[]
+      for(let ti=0;ti<VEGAS_TFS.length;ti++){
+        const vtf=VEGAS_TFS[ti]
+        if(!vegasS.tunnels[ti]?.enabled){results.push([]);continue}
+        try{
+          let raw:{time:number;close:number}[]=[]
+          if(isCrypto){
+            const s=symbol.toUpperCase()
+            for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
+              try{
+                const r=await fetch(`${base}/klines?symbol=${s}&interval=${vtf.binance}&limit=500`)
+                if(r.ok){const d=await r.json();if(Array.isArray(d)&&d.length>10){raw=d.map((k:unknown[])=>({time:Math.floor(Number(k[0])/1000),close:+String(k[4])}));break}}
+              }catch{}
+              if(raw.length)break
+            }
+          } else {
+            const fn=httpsCallable<Record<string,unknown>,{s:string;candles:{t:number;c:number}[]}>(fbFn,'fetchYahooCandles')
+            try{
+              const res=await fn({symbol:symbol.toUpperCase(),interval:vtf.yh,range:vtf.yhRange})
+              if(res.data.s==='ok')raw=res.data.candles.map(c=>({time:c.t,close:c.c}))
+            }catch{}
+          }
+          if(cancelled)return
+          if(raw.length>=144){
+            const cl=raw.map(r=>r.close)
+            const e1a=ema(cl,144),e2a=ema(cl,169),e3a=ema(cl,233)
+            // Only keep last 300 points to avoid overcrowding
+            const pts=raw.slice(-300).map((r,i)=>{const base=raw.length-300;return{time:r.time,e1:e1a[base+i],e2:e2a[base+i],e3:e3a[base+i]}})
+            results.push(pts)
+          } else results.push([])
+        }catch{results.push([])}
+      }
+      if(!cancelled)setVegasData(results)
+    }
+    fetchAll()
+    return()=>{cancelled=true}
+  },[indOn.vegas, symbol, isCrypto, vegasS.tunnels])
 
   // Drawing state
   const phase   = useRef<'idle'|'first'>('idle')
@@ -487,7 +680,8 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       if (now - lastCrosshairMs < 16) return  // ~60fps
       lastCrosshairMs = now
       if (param.point != null && param.logical != null) {
-        const { tsW, areaRatio } = getAreaRatio()
+        const { tsW, psW, areaRatio } = getAreaRatio()
+        priceAxisWRef.current = psW
         if (tsW > 0) {
           // frac = position 0-1 dans la zone chart uniquement (hors price axis)
           // → slot s sur totalSlots : frac = s/totalSlots (sans facteur areaRatio)
@@ -507,12 +701,22 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       wickUpColor:profit+'90',wickDownColor:loss+'90',
       priceLineVisible:false,
     })
+    // Volume histogram — bottom 14% of chart, initially hidden
+    const vs=c.addHistogramSeries({
+      color:'#26a69a',
+      priceFormat:{type:'volume'},
+      priceScaleId:'vol_scale',
+    })
+    vs.applyOptions({visible:false})
+    c.priceScale('vol_scale').applyOptions({scaleMargins:{top:0.86,bottom:0},borderVisible:false,visible:false})
+    volSeriesRef.current=vs
     const ro=new ResizeObserver(()=>{
       const opts: {width:number; height?:number} = {width:el.clientWidth}
       if (autoHeightRef.current && el.clientHeight > 0) opts.height = el.clientHeight
       c.applyOptions(opts)
-      // Réémet areaRatio après resize pour que les oscillateurs se recalibrent
-      const { areaRatio } = getAreaRatio()
+      // Capture price axis width for clipping indicator zones
+      const { psW, areaRatio } = getAreaRatio()
+      priceAxisWRef.current = psW
       onCrosshairRef.current?.({ frac: -1, areaRatio })  // frac -1 = resize event (pas de crosshair)
     })
     ro.observe(el)
@@ -552,9 +756,21 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       chartApi.current?.timeScale().fitContent()
       setSmcResult(calcSMC(candles,smcS.swingLen))
       setMsdResult(calcMSD(candles,msdS.swingLen))
-      setVmcResult(calcVMC(candles,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold))
+      setVmcResult(calcVMC(candles,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold,vmcS.rsiLen,vmcS.stochSmooth,vmcS.mfiWeight))
       setMpResult(calcMP(candles,mpS.bins))
       setRsiDivResult(calcRSIDiv(candles))
+      setBbResult(calcBBAligned(candles,bbS.len,bbS.mult))
+      setCvdResult(calcCVD(candles))
+      // Populate volume histogram series
+      if(volSeriesRef.current){
+        volSeriesRef.current.setData(candles.map(c=>({
+          time:c.time as Time,
+          value:c.volume||0,
+          color:c.close>=c.open?`rgba(34,199,89,0.${Math.round((volS.opacity/100)*99).toString().padStart(2,'0')})`:
+                                `rgba(255,59,48,0.${Math.round((volS.opacity/100)*99).toString().padStart(2,'0')})`
+        })))
+        volSeriesRef.current.applyOptions({visible:indOn.vol})
+      }
       setFetchError(null)
     }
     setLoading(false)
@@ -713,22 +929,161 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       }
     }
 
+    // chartAreaW = canvas width minus price axis (to avoid zone overlap with price axis)
+    const chartAreaW = cw - priceAxisWRef.current - 4
+
+    // ── MTF Vegas ─────────────────────────────────────────────────────
+    if(indOn.vegas&&vegasData.length){
+      ctx.save()
+      for(let ti=0;ti<VEGAS_TFS.length;ti++){
+        const tun=vegasS.tunnels[ti]
+        if(!tun?.enabled)continue
+        const pts=vegasData[ti]
+        if(!pts?.length)continue
+        const col=tun.color
+        // Build coordinate arrays
+        const coordE1:{x:number;y:number}[]=[],coordE3:{x:number;y:number}[]=[]
+        for(const p of pts){
+          const x=toX(p.time),y1=toY(p.e1),y3=toY(p.e3)
+          if(x==null||x<0||x>chartAreaW)continue
+          if(y1!=null)coordE1.push({x,y:y1})
+          if(y3!=null)coordE3.push({x,y:y3})
+        }
+        if(coordE1.length<2)continue
+        // Fill between e1 and e3
+        ctx.beginPath()
+        coordE1.forEach((pt,i)=>i===0?ctx.moveTo(pt.x,pt.y):ctx.lineTo(pt.x,pt.y))
+        ;[...coordE3].reverse().forEach(pt=>ctx.lineTo(pt.x,pt.y))
+        ctx.closePath()
+        ctx.fillStyle=col+(Math.round(tun.fillOpacity*255).toString(16).padStart(2,'0'))
+        ctx.fill()
+        // Draw e1, e2, e3 lines
+        for(let li=0;li<3;li++){
+          const key:('e1'|'e2'|'e3')=['e1','e2','e3'][li] as 'e1'|'e2'|'e3'
+          ctx.beginPath()
+          let first=true
+          for(const p of pts){
+            const x=toX(p.time),y=toY(p[key])
+            if(x==null||y==null||x<0||x>chartAreaW)continue
+            if(first){ctx.moveTo(x,y);first=false}else ctx.lineTo(x,y)
+          }
+          ctx.strokeStyle=col
+          ctx.lineWidth=li===1?1.2:1.5
+          ctx.globalAlpha=li===1?0.55:0.9
+          ctx.stroke()
+          ctx.globalAlpha=1
+        }
+      }
+      ctx.restore()
+    }
+
+    // ── Bollinger Bands ───────────────────────────────────────────────
+    if(indOn.bb&&bbResult&&bbResult.length){
+      ctx.save()
+      // Fill area
+      const upper:number[]=[],lower:number[]=[],xs:number[]=[]
+      candles.forEach((c,i)=>{
+        const bb=bbResult[i];if(!bb)return
+        const x=toX(c.time),yu=toY(bb.upper),yl=toY(bb.lower)
+        if(x==null||yu==null||yl==null)return
+        xs.push(x);upper.push(yu);lower.push(yl)
+      })
+      if(xs.length>1){
+        ctx.beginPath()
+        xs.forEach((x,i)=>i===0?ctx.moveTo(x,upper[i]):ctx.lineTo(x,upper[i]))
+        ;[...xs].reverse().forEach((x,i)=>ctx.lineTo(x,[...lower].reverse()[i]))
+        ctx.closePath()
+        ctx.fillStyle='rgba(0,229,255,0.04)';ctx.fill()
+        // Upper band
+        ctx.beginPath()
+        xs.forEach((x,i)=>i===0?ctx.moveTo(x,upper[i]):ctx.lineTo(x,upper[i]))
+        ctx.strokeStyle='#00E5FF80';ctx.lineWidth=1.2;ctx.setLineDash([]);ctx.stroke()
+        // Lower band
+        ctx.beginPath()
+        xs.forEach((x,i)=>i===0?ctx.moveTo(x,lower[i]):ctx.lineTo(x,lower[i]))
+        ctx.strokeStyle='#00E5FF80';ctx.lineWidth=1.2;ctx.stroke()
+        // Middle SMA
+        if(bbS.showMiddle){
+          ctx.beginPath()
+          candles.forEach((c,i)=>{
+            const bb=bbResult[i];if(!bb)return
+            const x=toX(c.time),y=toY(bb.middle)
+            if(x==null||y==null)return
+            ctx.lineTo(x,y)
+          })
+          ctx.strokeStyle='#00E5FF40';ctx.lineWidth=0.8;ctx.setLineDash([4,4]);ctx.stroke();ctx.setLineDash([])
+        }
+      }
+      ctx.restore()
+    }
+
+    // ── CVD (Cumulative Volume Delta) ─────────────────────────────────
+    if(indOn.cvd&&cvdResult&&cvdResult.length&&isCrypto){
+      ctx.save()
+      const cvdH=ch*0.14  // 14% of canvas height for CVD strip
+      const cvdTop=ch-cvdH-2
+      // background
+      ctx.fillStyle='rgba(13,17,23,0.72)';ctx.fillRect(0,cvdTop,chartAreaW,cvdH)
+      // CVD line aligned to visible candles
+      const visCandles=candles.map((c,i)=>({c,cvd:cvdResult[i]??0})).filter(({c})=>{
+        const x=toX(c.time);return x!=null&&x>=0&&x<=chartAreaW
+      })
+      if(visCandles.length>1){
+        const minCvd=Math.min(...visCandles.map(v=>v.cvd))
+        const maxCvd=Math.max(...visCandles.map(v=>v.cvd))
+        const rng=maxCvd-minCvd||1
+        const toCvdY=(v:number)=>cvdTop+cvdH*0.9-((v-minCvd)/rng)*(cvdH*0.8)
+        // Zero line
+        const zeroY=toCvdY(0)
+        ctx.strokeStyle='#2A2F3E';ctx.lineWidth=0.5;ctx.setLineDash([3,3])
+        ctx.beginPath();ctx.moveTo(0,zeroY);ctx.lineTo(chartAreaW,zeroY);ctx.stroke();ctx.setLineDash([])
+        // Fill and line
+        const last=visCandles[visCandles.length-1]
+        const bullCvd=last.cvd>=visCandles[0].cvd
+        ctx.beginPath()
+        visCandles.forEach(({c,cvd},i)=>{
+          const x=toX(c.time)!,y=toCvdY(cvd)
+          i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)
+        })
+        ctx.strokeStyle=bullCvd?'#22C75990':'#FF3B3090';ctx.lineWidth=1.5;ctx.stroke()
+        // Label
+        ctx.font='bold 8px JetBrains Mono, monospace'
+        ctx.fillStyle=bullCvd?'#22C759':'#FF3B30'
+        ctx.fillText(`CVD ${bullCvd?'▲':'▼'}`,4,cvdTop+10)
+      }
+      ctx.restore()
+    }
+
     // ── SMC ───────────────────────────────────────────────────────────
     if(indOn.smc&&smcResult){
       const drawZone=(top:number,btm:number,idx:number,fill:string,border:string,lbl:string)=>{
         const t=candles[idx]?.time;const x=t?toX(t)??0:0;const y1=toY(top),y2=toY(btm);if(y1==null||y2==null)return
+        const zoneW=Math.max(0,chartAreaW-x)  // stop before price axis
         ctx.fillStyle=fill;ctx.strokeStyle=border;ctx.lineWidth=1
-        ctx.fillRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1))
+        ctx.fillRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1))
+        ctx.strokeRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1))
         ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=border;ctx.fillText(lbl,x+4,Math.min(y1,y2)+12)
       }
-      if(smcS.showOB){
+      if(smcS.showOBBull)
         smcResult.bullOBs.slice(0,smcS.obCount).forEach(ob=>drawZone(ob.top,ob.btm,ob.idx,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.10)`,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.75)`,'Bull OB'))
+      if(smcS.showOBBear)
         smcResult.bearOBs.slice(0,smcS.obCount).forEach(ob=>drawZone(ob.top,ob.btm,ob.idx,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.10)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.75)`,'Bear OB'))
-      }
-      if(smcS.showFVG){
-        smcResult.bullFVGs.forEach(fvg=>{const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return;ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.07)`;ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.5)`;ctx.setLineDash([4,3]);ctx.fillRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.setLineDash([]);ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-profit','#22C759');ctx.fillText('FVG ↑',x+4,Math.min(y1,y2)+12)})
-        smcResult.bearFVGs.forEach(fvg=>{const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return;ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.07)`;ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.5)`;ctx.setLineDash([4,3]);ctx.fillRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),cw-x,Math.abs(y2-y1));ctx.setLineDash([]);ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-warning','#FF9500');ctx.fillText('FVG ↓',x+4,Math.min(y1,y2)+12)})
-      }
+      if(smcS.showFVGBull)
+        smcResult.bullFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
+          const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+          const zoneW=Math.max(0,chartAreaW-x)
+          ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.07)`;ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.5)`;ctx.setLineDash([4,3])
+          ctx.fillRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.setLineDash([])
+          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-profit','#22C759');ctx.fillText('FVG ↑',x+4,Math.min(y1,y2)+12)
+        })
+      if(smcS.showFVGBear)
+        smcResult.bearFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
+          const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+          const zoneW=Math.max(0,chartAreaW-x)
+          ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.07)`;ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.5)`;ctx.setLineDash([4,3])
+          ctx.fillRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.setLineDash([])
+          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-warning','#FF9500');ctx.fillText('FVG ↓',x+4,Math.min(y1,y2)+12)
+        })
     }
 
     // ── MSD ───────────────────────────────────────────────────────────
@@ -758,16 +1113,16 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       vmcResult.sellSignals.forEach(idx=>{const c=candles[idx+off];if(!c)return;const x=toX(c.time),y=toY(c.high);if(x==null||y==null)return;ctx.fillStyle=resolveCSSColor('--tm-loss','#FF3B30');ctx.beginPath();ctx.moveTo(x,y-24);ctx.lineTo(x-6,y-14);ctx.lineTo(x+6,y-14);ctx.closePath();ctx.fill()})
     }
 
-    // ── Market Profile histogram ──────────────────────────────────────
+    // ── Market Profile histogram (clipped to chart area) ──────────────
     if(indOn.mp&&mpResult&&mpS.showProfile){
       const maxV=Math.max(...mpResult.profile.map(b=>b.vol))
-      const barMaxW=60
+      const barMaxW=Math.min(50,chartAreaW*0.08)  // max 8% of chart area
       mpResult.profile.forEach(b=>{
         const y=toY(b.price);if(y==null)return
         const bw=(b.vol/maxV)*barMaxW
         const isMid=Math.abs(b.price-mpResult!.poc)<(mpResult!.vah-mpResult!.val)*0.08
         ctx.fillStyle=isMid?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.4)`:`rgba(${b.price>mpResult!.poc?'34,199,89':'100,120,200'},0.25)`
-        ctx.fillRect(cw-bw-2,y-2,bw,4)
+        ctx.fillRect(chartAreaW-bw,y-2,bw,4)  // anchored to chart area right edge
       })
     }
 
@@ -781,14 +1136,11 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         if(x1==null||x2==null||y1==null||y2==null)return
         const col=isBull?'#22C759':'#FF3B30'
         ctx.save()
-        // Dotted line connecting pivots
         ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.globalAlpha=0.8
         ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.setLineDash([])
-        // Circles at both pivot prices
         ctx.fillStyle=col;ctx.globalAlpha=0.9
         ctx.beginPath();ctx.arc(x1,y1,4,0,Math.PI*2);ctx.fill()
         ctx.beginPath();ctx.arc(x2,y2,4,0,Math.PI*2);ctx.fill()
-        // Label on the right pivot
         ctx.font='bold 9px JetBrains Mono, monospace';ctx.globalAlpha=1
         const lbl=isBull?'REG BULL':'REG BEAR'
         const tw=ctx.measureText(lbl).width+8
@@ -799,7 +1151,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       rsiDivResult.bullDivs.forEach(p=>drawDiv(p,true))
       rsiDivResult.bearDivs.forEach(p=>drawDiv(p,false))
     }
-  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice])
+  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
 
   // RAF loop for smooth redraw on any viewport change
   useEffect(()=>{
@@ -958,10 +1310,14 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   }
 
   const INDS=[
+    {id:'vegas',  icon:'🌐', label:'MTF Vegas',   color:'#40e0d0',          noSettings:false},
+    {id:'bb',     icon:'〰', label:'Bollinger',   color:'#00E5FF',          noSettings:false},
+    {id:'vol',    icon:'📊', label:'Volume',      color:'var(--tm-profit)', noSettings:false},
+    ...(isCrypto?[{id:'cvd', icon:'⚡', label:'CVD', color:'#FF9F0A', noSettings:false}]:[]),
     {id:'smc',    icon:'🏦', label:'SMC',         color:'var(--tm-blue)',    noSettings:false},
     {id:'msd',    icon:'📊', label:'Structure',   color:'var(--tm-profit)', noSettings:false},
     {id:'vmc',    icon:'〜', label:'VMC',         color:'var(--tm-purple)', noSettings:false},
-    {id:'mp',     icon:'📈', label:'Mkt Profile', color:'var(--tm-warning)',noSettings:false},
+    {id:'mp',     icon:'📈', label:'Vol Profile', color:'var(--tm-warning)',noSettings:false},
     {id:'rsiDiv', icon:'◇',  label:'RSI Div',     color:'#FF9F0A',          noSettings:true},
   ]
   const TOOLS=[
@@ -1056,7 +1412,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         <div ref={chartEl} style={{width:'100%',height:autoHeight?'100%':chartHeight}}/>
         <canvas ref={overlayEl} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2,pointerEvents:'none'}}/>
         {/* Settings panel */}
-        {settingsOpen&&<SettingsPanel activeId={settingsOpen} vmcSettings={vmcS} setVmcSettings={setVmcS} smcSettings={smcS} setSmcSettings={setSmcS} msdSettings={msdS} setMsdSettings={setMsdS} mpSettings={mpS} setMpSettings={setMpS} onClose={()=>setSettingsOpen(null)}/>}
+        {settingsOpen&&<SettingsPanel activeId={settingsOpen} vmcSettings={vmcS} setVmcSettings={setVmcS} smcSettings={smcS} setSmcSettings={setSmcS} msdSettings={msdS} setMsdSettings={setMsdS} mpSettings={mpS} setMpSettings={setMpS} bbSettings={bbS} setBbSettings={setBbS} vegasSettings={vegasS} setVegasSettings={setVegasS} volSettings={volS} setVolSettings={setVolS} onClose={()=>setSettingsOpen(null)}/>}
       </div>
 
       {/* VMC Panel */}
