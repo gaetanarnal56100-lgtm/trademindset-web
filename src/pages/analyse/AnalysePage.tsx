@@ -19,6 +19,20 @@ function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
 
+// Normalise un symbole forex saisi librement → format Yahoo Finance
+// "EUR/CAD" → "EURCAD=X" | "eurusd" → "EURUSD=X" | "GC=F" → "GC=F" (inchangé)
+function normalizeForexSymbol(raw: string): string {
+  const s = raw.trim().toUpperCase()
+  // Déjà format Yahoo (=X, =F, ^, lettre.PA…) → inchangé
+  if (s.includes('=') || s.startsWith('^') || s.includes('.')) return s
+  // Déjà crypto → inchangé
+  if (isCryptoSymbol(s)) return s
+  // Pair forex avec séparateur "EUR/CAD", "EUR-CAD", "EUR CAD" → "EURCAD=X"
+  const clean = s.replace(/[\s/\-_]+/g, '')
+  if (/^[A-Z]{6}$/.test(clean)) return clean + '=X'
+  return s
+}
+
 // ── Share / Screenshot wrapper ──────────────────────────────────────────
 function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
   const { t } = useTranslation()
@@ -1074,6 +1088,14 @@ export default function AnalysePage() {
   const [syncRangeFromOsc, setSyncRangeFromOsc] = useState<{from:number;to:number}|null>(null)
   // Toggle synchronisation UT + viewport entre LightweightChart et oscillateurs
   const [syncEnabled, setSyncEnabled] = useState(true)
+  // Fullscreen TradingView-like mode
+  const [fullscreen, setFullscreen] = useState(false)
+  // Panels visibles en fullscreen (hauteurs relatives en %)
+  const [panelHeights, setPanelHeights] = useState({ main: 55, wt: 18, vmc: 18, rsi: 9 })
+  const [showWT,  setShowWT]  = useState(true)
+  const [showVMC, setShowVMC] = useState(true)
+  const [showRSI, setShowRSI] = useState(true)
+  const dragRef = useRef<{panel: string; startY: number; startH: number; nextH: number} | null>(null)
   const [crosshairFrac,    setCrosshairFrac]    = useState<number|null>(null)
   const [chartAreaRatio,   setChartAreaRatio]   = useState<number>(0.93) // 0.93 = approximation initiale
 
@@ -1307,7 +1329,7 @@ export default function AnalysePage() {
             {!symbol ? t('analyse.searchToBegin') : isCrypto ? t('analyse.cryptoSubtitle') : t('analyse.nonCryptoSubtitle')}
           </p>
         </div>
-        <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+        <SymbolSearch symbol={symbol} onSelect={s=>{const ns=normalizeForexSymbol(s);setSymbol(ns);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
       </div>
 
       {/* État vide — deux colonnes : recherche | analyse photo */}
@@ -1381,69 +1403,108 @@ export default function AnalysePage() {
       )}
 
       {/* ══ CHART + OSCILLATEURS COLLÉS ══ */}
-      {symbol && (
-        <div style={{marginBottom:16}}>
-          {/* Barre de contrôle sync UT */}
-          <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 12px',marginBottom:4,background:'var(--tm-bg-secondary)',border:'1px solid var(--tm-border)',borderRadius:10}}>
-            <span style={{fontSize:11,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>🔗 Sync UT &amp; viewport</span>
-            <button
-              onClick={() => setSyncEnabled(p => !p)}
-              style={{
-                padding:'3px 12px',borderRadius:20,fontSize:10,fontWeight:600,cursor:'pointer',
-                border:`1px solid ${syncEnabled ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
-                background: syncEnabled ? 'rgba(0,229,255,0.12)' : 'var(--tm-bg-tertiary)',
-                color: syncEnabled ? 'var(--tm-accent)' : 'var(--tm-text-muted)',
-                transition:'all 0.15s',
-              }}
-            >{syncEnabled ? t('analyse.syncEnabled') : t('analyse.syncDisabled')}</button>
+      {symbol && (() => {
+        // Helper : drag resize entre deux panels
+        const startDrag = (panel: string, nextPanel: string, e: React.MouseEvent) => {
+          e.preventDefault()
+          const startY = e.clientY
+          const startH = panelHeights[panel as keyof typeof panelHeights]
+          const nextH  = panelHeights[nextPanel as keyof typeof panelHeights]
+          const onMove = (ev: MouseEvent) => {
+            const totalH = window.innerHeight * 0.92
+            const delta = ((ev.clientY - startY) / totalH) * 100
+            const newH = Math.max(10, Math.min(80, startH + delta))
+            const newNext = Math.max(5, nextH - (newH - startH))
+            setPanelHeights(prev => ({ ...prev, [panel]: newH, [nextPanel]: newNext }))
+          }
+          const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+          window.addEventListener('mousemove', onMove)
+          window.addEventListener('mouseup', onUp)
+        }
+
+        const controlBar = (
+          <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',background:'var(--tm-bg-secondary)',border:'1px solid var(--tm-border)',borderBottom:'none',borderRadius: fullscreen ? 0 : '10px 10px 0 0',flexWrap:'wrap'}}>
+            <span style={{fontSize:10,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace',flexShrink:0}}>🔗 Sync</span>
+            <button onClick={() => setSyncEnabled(p => !p)} style={{padding:'2px 10px',borderRadius:20,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${syncEnabled ? 'var(--tm-accent)' : 'var(--tm-border)'}`,background: syncEnabled ? 'rgba(0,229,255,0.12)' : 'transparent',color: syncEnabled ? 'var(--tm-accent)' : 'var(--tm-text-muted)',transition:'all 0.15s'}}>
+              {syncEnabled ? t('analyse.syncEnabled') : t('analyse.syncDisabled')}
+            </button>
             {syncEnabled && <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>{`UT: ${syncInterval} · ${t('analyse.zoomPanShared')}`}</span>}
+            {/* Panel toggles */}
+            <div style={{marginLeft:'auto',display:'flex',gap:4,alignItems:'center'}}>
+              {([['WT','showWT',showWT,setShowWT],['VMC','showVMC',showVMC,setShowVMC],['RSI','showRSI',showRSI,setShowRSI]] as [string,string,boolean,React.Dispatch<React.SetStateAction<boolean>>][]).map(([label,,on,setter])=>(
+                <button key={label} onClick={()=>setter(p=>!p)} style={{padding:'2px 8px',borderRadius:5,fontSize:9,fontWeight:700,cursor:'pointer',border:`1px solid ${on?'var(--tm-accent)':'var(--tm-border)'}`,background:on?'rgba(0,229,255,0.1)':'transparent',color:on?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s'}}>{label}</button>
+              ))}
+              <div style={{width:1,height:12,background:'var(--tm-border)',margin:'0 2px'}}/>
+              {/* Fullscreen toggle */}
+              <button
+                onClick={() => setFullscreen(f => !f)}
+                title={fullscreen ? 'Quitter plein écran' : 'Plein écran TradingView'}
+                style={{padding:'2px 8px',borderRadius:5,fontSize:11,cursor:'pointer',border:`1px solid ${fullscreen?'var(--tm-profit)':'var(--tm-border)'}`,background:fullscreen?'rgba(34,199,89,0.1)':'transparent',color:fullscreen?'var(--tm-profit)':'var(--tm-text-muted)',transition:'all 0.15s'}}
+              >{fullscreen ? '⊠' : '⛶'}</button>
+            </div>
           </div>
+        )
 
-          {/* Chart principal LightweightChart */}
-          <ChartLayout
-            symbol={symbol}
-            isCrypto={isCryptoSymbol(symbol)}
-            onTimeframeChange={setSyncInterval}
-            onVisibleRangeChange={syncEnabled ? (from, to) => setSyncRange({ from, to }) : undefined}
-            syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
-            onCrosshairChange={handleCrosshairChange}
-          />
+        const chartContent = (
+          <div style={{display:'flex',flexDirection:'column',height:fullscreen?'100%':'auto',overflow:'hidden'}}>
+            {/* Main chart */}
+            <div style={{flex: fullscreen ? `0 0 ${panelHeights.main}%` : '0 0 auto', overflow:'hidden', minHeight: fullscreen ? 0 : undefined}}>
+              <ChartLayout
+                symbol={symbol}
+                isCrypto={isCryptoSymbol(symbol)}
+                onTimeframeChange={setSyncInterval}
+                onVisibleRangeChange={syncEnabled ? (from, to) => setSyncRange({ from, to }) : undefined}
+                syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
+                onCrosshairChange={handleCrosshairChange}
+              />
+            </div>
 
-          {/* Oscillateurs collés directement sous la chart, sync bidirectionnelle */}
-          <div style={{display:'flex',flexDirection:'column',gap:0,marginTop:0}}>
-            <ShareWrapper label="WaveTrend">
-              <WaveTrendChart
-                symbol={symbol}
-                syncInterval={syncEnabled ? syncInterval : undefined}
-                visibleRange={syncEnabled ? syncRange : null}
-                onViewportChange={syncEnabled ? handleOscViewport : undefined}
-                crosshairFrac={crosshairFrac}
-                chartAreaRatio={chartAreaRatio}
-              />
-            </ShareWrapper>
-            <ShareWrapper label="VMC">
-              <VMCOscillatorChart
-                symbol={symbol}
-                syncInterval={syncEnabled ? syncInterval : undefined}
-                visibleRange={syncEnabled ? syncRange : null}
-                onViewportChange={syncEnabled ? handleOscViewport : undefined}
-                crosshairFrac={crosshairFrac}
-                chartAreaRatio={chartAreaRatio}
-              />
-            </ShareWrapper>
-            <ShareWrapper label="RSI Elite">
-              <RsiEliteChart
-                symbol={symbol}
-                syncInterval={syncEnabled ? syncInterval : undefined}
-                visibleRange={syncEnabled ? syncRange : null}
-                onViewportChange={syncEnabled ? handleOscViewport : undefined}
-                crosshairFrac={crosshairFrac}
-                chartAreaRatio={chartAreaRatio}
-              />
-            </ShareWrapper>
+            {/* WaveTrend */}
+            {showWT && <>
+              {fullscreen && <div onMouseDown={e=>startDrag('main','wt',e)} style={{height:4,background:'var(--tm-border)',cursor:'row-resize',flexShrink:0,'&:hover':{background:'var(--tm-accent)'}} as React.CSSProperties} />}
+              <div style={{flex: fullscreen ? `0 0 ${panelHeights.wt}%` : '0 0 auto', overflow:'hidden', minHeight: fullscreen ? 0 : undefined}}>
+                <WaveTrendChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} />
+              </div>
+            </>}
+
+            {/* VMC */}
+            {showVMC && <>
+              {fullscreen && <div onMouseDown={e=>startDrag('wt','vmc',e)} style={{height:4,background:'var(--tm-border)',cursor:'row-resize',flexShrink:0} as React.CSSProperties} />}
+              <div style={{flex: fullscreen ? `0 0 ${panelHeights.vmc}%` : '0 0 auto', overflow:'hidden', minHeight: fullscreen ? 0 : undefined}}>
+                <VMCOscillatorChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} />
+              </div>
+            </>}
+
+            {/* RSI */}
+            {showRSI && <>
+              {fullscreen && <div onMouseDown={e=>startDrag('vmc','rsi',e)} style={{height:4,background:'var(--tm-border)',cursor:'row-resize',flexShrink:0} as React.CSSProperties} />}
+              <div style={{flex: fullscreen ? `0 0 ${panelHeights.rsi}%` : '0 0 auto', overflow:'hidden', minHeight: fullscreen ? 0 : undefined}}>
+                <RsiEliteChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} />
+              </div>
+            </>}
           </div>
-        </div>
-      )}
+        )
+
+        if (fullscreen) {
+          return (
+            <div style={{position:'fixed',inset:0,zIndex:9999,background:'var(--tm-bg)',display:'flex',flexDirection:'column'}}>
+              {controlBar}
+              <div style={{flex:1,overflow:'hidden',minHeight:0}}>
+                {chartContent}
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <div style={{marginBottom:16}}>
+            {controlBar}
+            <div style={{border:'1px solid var(--tm-border)',borderTop:'none',borderRadius:'0 0 10px 10px',overflow:'hidden'}}>
+              {chartContent}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Plan de Trade IA — tous les actifs */}
       {symbol && <ShareWrapper label="Trade Plan">
