@@ -420,7 +420,9 @@ function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) =>
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function MTFDashboard({ symbol }: { symbol: string }) {
+export type { MTFSnapshot, MTFReading }
+
+export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: string; onSnapshotReady?: (snap: MTFSnapshot) => void }) {
   const [snap,        setSnap]        = useState<MTFSnapshot | null>(null)
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
@@ -432,6 +434,7 @@ export default function MTFDashboard({ symbol }: { symbol: string }) {
     try {
       const s = await computeMTF(symbol)
       setSnap(s)
+      onSnapshotReady?.(s)
       // Signal detection
       signalService.checkMTF(symbol, s.globalSignal, s.confluence, s.globalScore)
     } catch(e) { setError((e as Error).message) }

@@ -106,49 +106,120 @@ function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53)
 }
 
 // ── VMC Oscillator ─────────────────────────────────────────────────────────
-interface VMCResult { sig:number[]; sigSignal:number[]; momentum:number[]; bullConfirm:boolean; bearConfirm:boolean; ribbonBull:boolean; ribbonBear:boolean; compression:boolean; status:string; emas:number[][] }
-function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'='swing'): VMCResult {
-  const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL',emas:[]}
+interface VMCResult {
+  sig:number[]; sigSignal:number[]; momentum:number[]; bullConfirm:boolean; bearConfirm:boolean
+  ribbonBull:boolean; ribbonBear:boolean; compression:boolean; status:string; emas:number[][]
+  vpi:number[]; vpiStrongBull:boolean; vpiStrongBear:boolean; vpiBreakout:boolean
+  smartCompressionArr:boolean[]; smartCompressionActive:boolean; breakoutCandidate:boolean
+  obLevel:number; osLevel:number; rrScore:number
+}
+function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'|'custom'='custom'): VMCResult {
+  const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL',emas:[],vpi:[],vpiStrongBull:false,vpiStrongBear:false,vpiBreakout:false,smartCompressionArr:[],smartCompressionActive:false,breakoutCandidate:false,obLevel:40,osLevel:-40,rrScore:0}
   if (candles.length<60) return EMPTY
-  const close=candles.map(c=>c.c), high=candles.map(c=>c.h), low=candles.map(c=>c.l), vol=candles.map(c=>c.v)
-  const thresholds=preset==='scalping'?[40,-30]:preset==='swing'?[35,-25]:[30,-20]
+  const close=candles.map(c=>c.c), vol=candles.map(c=>c.v)
+  // Thresholds: PERSONNALISÉ upT=40, loT=-40 (default from Pine Script)
+  const [upT, loT]=preset==='scalping'?[40,-30]:preset==='swing'?[35,-25]:preset==='position'?[30,-20]:[40,-40]
   const hlc3=candles.map(c=>(c.h+c.l+c.c)/3)
+  const n=candles.length
+
+  // RSI(14) on hlc3
   const rsiLen=14
   const gains=hlc3.map((v,i)=>i===0?0:Math.max(v-hlc3[i-1],0))
   const losses=hlc3.map((v,i)=>i===0?0:Math.max(hlc3[i-1]-v,0))
   const agArr=emaArr(gains,rsiLen),alArr=emaArr(losses,rsiLen)
   const rsi=agArr.map((g,i)=>alArr[i]===0?100:100-100/(1+g/alArr[i]))
-  const n=candles.length, tp=candles.map(c=>(c.h+c.l+c.c)/3)
+
+  // MFI(7) on hlc3 — hardcoded 7 in Pine Script core
+  const tp=hlc3
   const pmf=new Array(n).fill(0),nmf=new Array(n).fill(0)
   for(let i=1;i<n;i++){const raw=tp[i]*vol[i];if(tp[i]>tp[i-1])pmf[i]=raw;else if(tp[i]<tp[i-1])nmf[i]=raw}
   const sPMF=rollingSum(pmf,7),sNMF=rollingSum(nmf,7)
   const mfi=sPMF.map((p,i)=>{const d=p+sNMF[i];return d===0?50:p/d*100})
-  const computeStoch=(src:number[],len:number)=>{const out=src.map((v,i)=>{const win=src.slice(Math.max(0,i-len+1),i+1);const mn=Math.min(...win),mx=Math.max(...win);return mx-mn===0?50:(v-mn)/(mx-mn)*100});return emaArr(out,2)}
+
+  // Stoch of RSI
+  const computeStoch=(src:number[],len:number)=>{
+    const out=src.map((v,i)=>{const win=src.slice(Math.max(0,i-len+1),i+1);const mn=Math.min(...win),mx=Math.max(...win);return mx-mn===0?50:(v-mn)/(mx-mn)*100})
+    return emaArr(out,2)
+  }
   const stoch=computeStoch(rsi,rsiLen)
+
+  // Core: (rsi + 0.4*mfi + 0.4*stoch) / 1.8
   const mfiW=0.40,stochW=0.40,denom=1+mfiW+stochW
   const core=rsi.map((r,i)=>(r+mfiW*mfi[i]+stochW*stoch[i])/denom)
-  const emaFast=emaArr(core,2),emaSlow=emaArr(core,Math.round(2*1.75))
+
+  // Transform: same as Pine Script
   const transform=(arr:number[])=>arr.map(v=>{const tmp=(v/100-0.5)*2;return 100*(tmp>=0?1:-1)*Math.pow(Math.abs(tmp),0.75)})
-  const sig=transform(emaFast),sigSignal=transform(emaSlow)
+
+  // smoothLen=10, sigSignal=round(10*1.75)=18  — matches Pine Script defaults
+  const smoothLen=10, sigSmoothLen=Math.round(smoothLen*1.75)  // 18
+  const sig=transform(emaArr(core,smoothLen))
+  const sigSignal=transform(emaArr(core,sigSmoothLen))
   const momentum=sig.map((s,i)=>s-sigSignal[i])
+
+  // EMA ribbon [20,25,30,35,40,45,50,55]
   const periods=[20,25,30,35,40,45,50,55]
   const emas=periods.map(p=>emaArr(close,p))
   const last=close.length-1
   const ribbonBull=periods.slice(0,-1).every((_,i)=>emas[i][last]>emas[i+1][last])
   const ribbonBear=periods.slice(0,-1).every((_,i)=>emas[i][last]<emas[i+1][last])
+
+  // Cross signals
   const crossUp=last>=1&&sig[last-1]<=sigSignal[last-1]&&sig[last]>sigSignal[last]
   const crossDn=last>=1&&sig[last-1]>=sigSignal[last-1]&&sig[last]<sigSignal[last]
-  const bullConfirm=crossUp&&sig[last]<thresholds[1]
-  const bearConfirm=crossDn&&sig[last]>thresholds[0]
+  const bullConfirm=crossUp&&sig[last]<loT
+  const bearConfirm=crossDn&&sig[last]>upT
+
+  // Spread/compression
   const spread=Math.abs(emas[0][last]-emas[7][last])/Math.max(close[last],1e-9)*100
   const spreadPrev=last>=1?Math.abs(emas[0][last-1]-emas[7][last-1])/Math.max(close[last-1],1e-9)*100:spread+1
-  const compression=spread<=0.30&&spread<spreadPrev&&sig[last]<=thresholds[1]
+  const compression=spread<=0.30&&spread<spreadPrev&&sig[last]<=loT
+
+  // ── VPI (Période=14, Lissage=3, Seuil=30) ─────────────────────────────
+  const vpiLen=14,vpiSmLen=3,vpiThreshold=30
+  const bullVol=candles.map(c=>c.c>c.o?c.v:c.c===c.o?c.v/2:0)
+  const bearVol=candles.map(c=>c.c<c.o?c.v:c.c===c.o?c.v/2:0)
+  // SMA via rollingSum/vpiLen — same as Pine ta.sma
+  const avgBull=rollingSum(bullVol,vpiLen).map(s=>s/vpiLen)
+  const avgBear=rollingSum(bearVol,vpiLen).map(s=>s/vpiLen)
+  const rawVPI=avgBull.map((b,i)=>{const tot=b+avgBear[i];return tot>0?((b-avgBear[i])/tot)*100:0})
+  const vpi=emaArr(rawVPI,vpiSmLen)
+  const vpiLast=vpi[last]??0
+  const vpiStrongBull=vpiLast>vpiThreshold, vpiStrongBear=vpiLast<-vpiThreshold
+
+  // Volume spike (avg 20 bars)
+  const avgVol20=rollingSum(vol,20).map(s=>s/20)
+  const volumeSpike=vol.map((v,i)=>v>avgVol20[i]*1.5)
+  const vpiBreakout=volumeSpike[last]&&Math.abs(vpiLast)>vpiThreshold*0.7
+
+  // ── Smart Compression (ATR Wilder×0.5, ≥3 bars) ───────────────────────
+  const atrLen=14
+  const trArr=candles.map((c,i)=>{if(i===0)return c.h-c.l;const p=candles[i-1];return Math.max(c.h-c.l,Math.abs(c.h-p.c),Math.abs(c.l-p.c))})
+  // Wilder's RMA
+  const atr=[trArr[0]]
+  for(let i=1;i<n;i++) atr.push((atr[i-1]*(atrLen-1)+trArr[i])/atrLen)
+  const compressionATRmult=0.5, compressionBars=3
+  const rangeArr=candles.map(c=>c.h-c.l)
+  const isCompressedBar=rangeArr.map((r,i)=>r<atr[i]*compressionATRmult)
+  const compressCount=new Array(n).fill(0)
+  for(let i=0;i<n;i++) compressCount[i]=isCompressedBar[i]?(i>0?compressCount[i-1]+1:1):0
+  // ribbonTight: spread < 0.6% (approx of thick < stripHeight*0.3 from Pine)
+  const ribbonTight=spread<0.6
+  const smartCompressionArr=compressCount.map((cc,i)=>cc>=compressionBars&&Math.abs(sig[i])>20&&ribbonTight)
+  const smartCompressionActive=smartCompressionArr[last]
+  const rangeExpanding=last>=1?rangeArr[last]>rangeArr[last-1]*1.3:false
+  const breakoutCandidate=(last>=1?smartCompressionArr[last-1]:false)&&rangeExpanding&&volumeSpike[last]
+
+  // rrScore = (sig > sigSignal ? 1 : 0) + (sig > 0 ? 1 : 0) + (vpi > 0 ? 1 : 0)
+  const rrScore=(sig[last]>sigSignal[last]?1:0)+(sig[last]>0?1:0)+(vpiLast>0?1:0)
+
+  // Status
   let status='NEUTRAL'
-  if(bullConfirm&&(ribbonBull||compression)&&momentum[last]>=0)status='BUY'
-  else if(bearConfirm&&(ribbonBear||compression)&&momentum[last]<=0)status='SELL'
-  else if(sig[last]>thresholds[0])status='OVERBOUGHT'
-  else if(sig[last]<thresholds[1])status='OVERSOLD'
-  return{sig,sigSignal,momentum,bullConfirm,bearConfirm,ribbonBull,ribbonBear,compression,status,emas}
+  if(bullConfirm&&(ribbonBull||compression)&&momentum[last]>=0) status='BUY'
+  else if(bearConfirm&&(ribbonBear||compression)&&momentum[last]<=0) status='SELL'
+  else if(sig[last]>upT) status='OVERBOUGHT'
+  else if(sig[last]<loT) status='OVERSOLD'
+
+  return{sig,sigSignal,momentum,bullConfirm,bearConfirm,ribbonBull,ribbonBear,compression,status,emas,vpi,vpiStrongBull,vpiStrongBear,vpiBreakout,smartCompressionArr,smartCompressionActive,breakoutCandidate,obLevel:upT,osLevel:loT,rrScore}
 }
 
 // ── Draw ribbon strip ─────────────────────────────────────────────────────
@@ -185,7 +256,7 @@ function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:
 }
 
 // ── Draw oscillator ───────────────────────────────────────────────────────
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number) {
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,vpiData?:number[],compressionArr?:boolean[]) {
   // Resolve canvas-unsafe CSS vars to real colors
   const resolvedSignal = signalColor.startsWith('var(') ? resolveCSSColor(signalColor.replace(/^var\((.+)\)$/,'$1'),'#F59714') : signalColor
   const resolvedBg = resolveCSSColor('--tm-bg','#0D1117')
@@ -222,9 +293,25 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   const barW=W/m.length
   h.forEach((v,i)=>{const x=xp(i),y=v>=0?yp(v):yp(0),bH=Math.abs(yp(v)-yp(0));ctx.fillStyle=v>=0?histBullColor:histBearColor;ctx.fillRect(x-barW/2+0.5,y,barW-1,bH||1)})
 
+  // VPI overlay (vpi*0.8, same scale as VMC — matches Pine: plot(vpi * 0.8))
+  if(vpiData){
+    const vSlice=vpiData.slice(startIdx,endIdx)
+    const yZero=yp(0)
+    ctx.save(); ctx.globalAlpha=0.22
+    vSlice.forEach((v,i)=>{const sv=v*0.8;const x=xp(i),y=sv>=0?yp(sv):yZero,bH=Math.abs(yp(sv)-yZero);ctx.fillStyle=sv>=0?'rgba(34,199,89,1)':'rgba(255,59,48,1)';ctx.fillRect(x-barW/2+0.5,y,barW-1,bH||1)})
+    ctx.globalAlpha=1; ctx.restore()
+  }
+
   // Signal & Main lines
   ctx.beginPath();ctx.strokeStyle=resolvedSignal;ctx.lineWidth=1.2;s.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
   ctx.beginPath();ctx.strokeStyle=mainColor;ctx.lineWidth=2;m.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));ctx.stroke()
+
+  // Smart compression markers: orange circle at bottom of chart
+  if(compressionArr){
+    const compSlice=compressionArr.slice(startIdx,endIdx)
+    const yBottom=oscH-6
+    compSlice.forEach((active,i)=>{if(!active)return;ctx.beginPath();ctx.arc(xp(i),yBottom,4,0,Math.PI*2);ctx.fillStyle='rgba(255,149,0,0.85)';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=0.8;ctx.stroke()})
+  }
 
   // Signal dots (remapped from absolute indices to view-relative)
   if(dots){dots.filter(d=>d.i>=startIdx&&d.i<endIdx).forEach(d=>{const i=d.i-startIdx;const cx=xp(i),cy=yp(m[i]);const color=d.type.includes('bull')||d.type==='smartBull'?accent:lossC;const isSmart=d.type.includes('smart');ctx.beginPath();ctx.arc(cx,cy,isSmart?5:3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(isSmart){ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})}
@@ -365,7 +452,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -420,6 +507,11 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol:
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
   const badge = !result?null:wt1Last>obLevel?{label:'Overbought',color:'var(--tm-loss)'}:wt1Last<osLevel?{label:'Oversold',color:'var(--tm-profit)'}:result.signals[result.signals.length-1]==='smartBull'?{label:'Smart Bullish',color:'var(--tm-accent)'}:result.signals[result.signals.length-1]==='bull'?{label:'Bullish Reversal',color:'var(--tm-profit)'}:result.signals[result.signals.length-1]==='smartBear'?{label:'Smart Bearish',color:'var(--tm-loss)'}:result.signals[result.signals.length-1]==='bear'?{label:'Bearish Reversal',color:'var(--tm-loss)'}:{label:'Neutral',color:'var(--tm-text-secondary)'}
 
+  // Expose status for PDF export
+  useEffect(() => {
+    if (badge && result) onStatusReady?.(badge.label, wt1Last, wt2Last)
+  }, [badge?.label, wt1Last, wt2Last]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
@@ -464,7 +556,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange }: { symbol:
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, sig: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -472,7 +564,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
-  const obLevel=35, osLevel=-25
+  // obLevel/osLevel are dynamic from result (default PERSONNALISÉ: 40/-40)
+  const obLevel=result?.obLevel??40, osLevel=result?.osLevel??-40
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -487,7 +580,7 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
 
   useEffect(() => {
     if (candles.length < 60) return
-    const r = calcVMCOscillator(candles, 'swing'); setResult(r)
+    const r = calcVMCOscillator(candles, 'custom'); setResult(r)
     const sig = r.sig[r.sig.length-1]??0, mom = r.momentum[r.momentum.length-1]??0
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
   }, [candles, symbol, tf.label])
@@ -510,6 +603,11 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
   const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
   const statusColor=result?.status==='BUY'?'var(--tm-profit)':result?.status==='SELL'?'var(--tm-loss)':result?.status==='OVERBOUGHT'?'var(--tm-loss)':result?.status==='OVERSOLD'?'var(--tm-profit)':'var(--tm-text-secondary)'
 
+  // Expose status for PDF export
+  useEffect(() => {
+    if (result?.status) onStatusReady?.(result.status, lastSig)
+  }, [result?.status, lastSig]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Compute VMC cross dots (bull/bear in extreme zones, like WaveTrend)
   const vmcDots: {i:number;type:string}[] = result ? result.sig.flatMap((v,i) => {
     if(i===0) return []
@@ -525,8 +623,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd], vmcViewSize, viewport, setViewport
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr)
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel], vmcViewSize, viewport, setViewport
   )
 
   return (
@@ -542,8 +640,17 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
         {result?.ribbonBull&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.3)'}}>BULL</div>}
         {result?.ribbonBear&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-loss)',background:`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.3)'}}>BEAR</div>}
         {result?.compression&&<div style={{fontSize:9,fontWeight:700,color:'var(--tm-warning)',background:`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.12)`,padding:'1px 7px',borderRadius:10,border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.3)'}}>⟳ COMP</div>}
+        {result?.vpiStrongBull&&<div style={{fontSize:9,fontWeight:700,color:'#00E5FF',background:'rgba(0,229,255,0.10)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(0,229,255,0.3)'}}>VPI ↑</div>}
+        {result?.vpiStrongBear&&<div style={{fontSize:9,fontWeight:700,color:'#FF453A',background:'rgba(255,69,58,0.10)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(255,69,58,0.3)'}}>VPI ↓</div>}
+        {result?.smartCompressionActive&&<div style={{fontSize:9,fontWeight:700,color:'#FF9500',background:'rgba(255,149,0,0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(255,149,0,0.4)'}}>⚡ SQUEEZE</div>}
+        {result?.breakoutCandidate&&<div style={{fontSize:9,fontWeight:700,color:'#FFD60A',background:'rgba(255,214,10,0.12)',padding:'1px 7px',borderRadius:10,border:'1px solid rgba(255,214,10,0.4)'}}>💥 BREAKOUT</div>}
         <div style={{marginLeft:'auto',display:'flex',gap:10,alignItems:'center'}}>
-          {result&&<div style={{display:'flex',gap:10,fontSize:11,fontFamily:'monospace'}}><span style={{color:'#37D7FF'}}>sig: {lastSig.toFixed(1)}</span><span style={{color:lastMom>=0?'var(--tm-profit)':'var(--tm-loss)'}}>mom: {lastMom>=0?'+':''}{lastMom.toFixed(1)}</span></div>}
+          {result&&<div style={{display:'flex',gap:8,fontSize:11,fontFamily:'monospace',flexWrap:'wrap'}}>
+            <span style={{color:'#37D7FF'}}>sig: {lastSig.toFixed(1)}</span>
+            <span style={{color:lastMom>=0?'var(--tm-profit)':'var(--tm-loss)'}}>mom: {lastMom>=0?'+':''}{lastMom.toFixed(1)}</span>
+            <span style={{color:'rgba(34,199,89,0.9)'}}>VPI: {(result.vpi[result.vpi.length-1]??0).toFixed(1)}</span>
+            <span style={{color:'var(--tm-text-muted)'}}>RR: {result.rrScore}/3</span>
+          </div>}
           <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
@@ -566,7 +673,7 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange }: { sym
           <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc" viewStart={vmcViewStart} viewEnd={vmcViewEnd}/>
         )}
         <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
-          {[{color:'#37D7FF',label:'VMC Sig'},{color:'var(--tm-warning)',label:'Signal'},{color:'var(--tm-profit)',label:'Mom +'},{color:'var(--tm-loss)',label:'Mom −'},{color:'var(--tm-warning)',label:`OB:${obLevel}`},{color:'var(--tm-profit)',label:`OS:${osLevel}`}].map(({color,label})=>(
+          {[{color:'#37D7FF',label:'VMC Sig'},{color:'var(--tm-warning)',label:'Signal'},{color:'var(--tm-profit)',label:'Mom +'},{color:'var(--tm-loss)',label:'Mom −'},{color:'rgba(34,199,89,0.5)',label:'VPI'},{color:'#FF9500',label:'⚡Squeeze'},{color:'var(--tm-warning)',label:`OB:${obLevel}`},{color:'var(--tm-profit)',label:`OS:${osLevel}`}].map(({color,label})=>(
             <div key={label} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:color}}/><span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{label}</span></div>
           ))}
         </div>

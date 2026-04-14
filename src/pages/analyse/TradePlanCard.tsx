@@ -39,6 +39,8 @@ interface GPTSections {
   scoreExplanation: string
 }
 
+export type { TradePlanData, GPTSections, TradeScenario }
+
 interface Props {
   symbol: string
   price: number
@@ -46,6 +48,7 @@ interface Props {
   mtfSignal?: string
   wtStatus?: string
   vmcStatus?: string
+  onPlanReady?: (plan: TradePlanData, gptSections: GPTSections | null) => void
 }
 
 // ── Formatters ─────────────────────────────────────────────────────────────
@@ -359,7 +362,7 @@ function CollapsibleSection({ icon, label, color, preview, children }: { icon: s
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, mtfSignal = 'NEUTRAL', wtStatus = 'Neutral', vmcStatus = 'NEUTRAL' }: Props) {
+export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, mtfSignal = 'NEUTRAL', wtStatus = 'Neutral', vmcStatus = 'NEUTRAL', onPlanReady }: Props) {
   const [plan,      setPlan]      = useState<TradePlanData|null>(null)
   const [price,     setPrice]     = useState(0)
   const [aiRaw,     setAiRaw]     = useState('')
@@ -406,7 +409,9 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
 
   useEffect(() => {
     if (price <= 0) return
-    setPlan(generateScenarios(price, mtfScore, wtStatus, vmcStatus))
+    const newPlan = generateScenarios(price, mtfScore, wtStatus, vmcStatus)
+    setPlan(newPlan)
+    onPlanReady?.(newPlan, null)
   }, [symbol, price, mtfScore, wtStatus, vmcStatus])
 
   const loadAI = useCallback(async () => {
@@ -415,7 +420,9 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
     const text = await enrichWithAI(symbol, price, plan, mtfSignal, wtStatus, vmcStatus)
     if (text) {
       setAiRaw(text)
-      setSections(parseGPTSections(text))
+      const parsed = parseGPTSections(text)
+      setSections(parsed)
+      if (plan) onPlanReady?.(plan, parsed)
     }
     setAiLoading(false)
   }, [plan, symbol, price, mtfSignal, wtStatus, vmcStatus, aiLoading])

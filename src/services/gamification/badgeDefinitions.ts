@@ -7,7 +7,7 @@ export type BadgeRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic' | 
 export type BadgeCategory =
   | 'volume' | 'winrate' | 'streak' | 'journal' | 'risk'
   | 'market' | 'pnl' | 'social' | 'challenge' | 'prestige'
-  | 'coachIA' | 'seasonal' | 'humor' | 'secret'
+  | 'coachIA' | 'seasonal' | 'humor' | 'secret' | 'prediction'
 
 export interface BadgeReward {
   xp: number
@@ -343,4 +343,5 @@ export const CATEGORY_CONFIG: Record<BadgeCategory, { label: string; icon: strin
   seasonal:  { label: 'Saisonniers',   icon: '🎄' },
   humor:     { label: 'Humour',        icon: '💀' },
   secret:    { label: 'Secrets',       icon: '🔮' },
+  prediction: { label: 'Prédictions',  icon: '🎯' },
 }

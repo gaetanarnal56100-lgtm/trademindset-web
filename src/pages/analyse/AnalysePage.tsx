@@ -2,15 +2,20 @@
 // Miroir exact de LiquidityCVDStackView.swift + MarketContextService.swift
 // 3 modes : Micro / Structure / Dérivés + Derivatives Confluence Card + vraie recherche
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
+import type { MTFSnapshot } from './MTFDashboard'
 import { WaveTrendChart, VMCOscillatorChart, RSIChart } from './OscillatorCharts'
 import TradePlanCard from './TradePlanCard'
+import type { TradePlanData, GPTSections } from './TradePlanCard'
 import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
+import type { LightweightChartHandle } from './LightweightChart'
 import KeyLevelsCard from './KeyLevelsCard'
+import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
+import type { AnalysisPDFData } from './AnalysisPDFExport'
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
@@ -816,7 +821,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
   type PanelType = 'tv' | 'lw'
   type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
 
@@ -833,13 +838,24 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
 
   const isSplit = ['tv-lw','lw-tv','tv-tv','lw-lw'].includes(mode)
 
-  const renderPanel = (type: PanelType, key: string) => (
-    <div key={key} style={{ minWidth: 0, flex: 1 }}>
-      {type === 'tv'
-        ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
-        : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />}
-    </div>
-  )
+  const firstLwPanel = useRef(false)
+  const renderPanel = (type: PanelType, key: string) => {
+    if (type === 'lw' && !firstLwPanel.current) {
+      firstLwPanel.current = true
+      return (
+        <div key={key} style={{ minWidth: 0, flex: 1 }}>
+          <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />
+        </div>
+      )
+    }
+    return (
+      <div key={key} style={{ minWidth: 0, flex: 1 }}>
+        {type === 'tv'
+          ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
+          : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />}
+      </div>
+    )
+  }
 
   const panels: [PanelType, PanelType] | [PanelType] =
     mode === 'tv'    ? ['tv'] :
@@ -898,6 +914,108 @@ export default function AnalysePage() {
   const [syncInterval, setSyncInterval] = useState<string>('1h')
   const [syncRange,    setSyncRange]    = useState<{from:number;to:number}|null>(null)
 
+  // ── PDF export state ──────────────────────────────────────────────────────
+  const lwChartRef   = useRef<LightweightChartHandle>(null)
+  const livePriceRef = useRef(0)  // mirrors price state for use in callbacks
+  const [pdfMtfSnap, setPdfMtfSnap]   = useState<MTFSnapshot | null>(null)
+  const [pdfLevels,  setPdfLevels]    = useState<KeyLevel[]>([])
+  const [pdfLevelsPrice, setPdfLevelsPrice] = useState(0)
+  const [pdfPlan,    setPdfPlan]      = useState<TradePlanData | null>(null)
+  const [pdfGpt,     setPdfGpt]       = useState<GPTSections | null>(null)
+  const [pdfWtStatus,  setPdfWtStatus]  = useState('')
+  const [pdfWtValues,  setPdfWtValues]  = useState<{wt1:number;wt2:number}|null>(null)
+  const [pdfVmcStatus, setPdfVmcStatus] = useState('')
+  const [pdfGenerating, setPdfGenerating] = useState(false)
+
+  const handleExportPDF = useCallback(async () => {
+    if (pdfGenerating || !symbol) return
+    setPdfGenerating(true)
+    try {
+      const { generateAnalysisPDF } = await import('./AnalysisPDFExport')
+      // Try to get chart screenshot
+      let chartImg: string | null = null
+      try { chartImg = lwChartRef.current?.takeScreenshot() ?? null } catch { /* ignore */ }
+
+      const data: AnalysisPDFData = {
+        symbol,
+        price: livePriceRef.current || pdfLevelsPrice,
+        timestamp: new Date(),
+        mtfSnap: pdfMtfSnap ? {
+          readings: pdfMtfSnap.readings.map(r => ({
+            tf: r.tf,
+            rsi: r.rsi,
+            rsiNorm: r.rsiNorm,
+            vmc: r.vmc,
+            score: r.score,
+            signal: r.signal,
+            divergence: r.divergence,
+          })),
+          globalRSI: pdfMtfSnap.globalRSI,
+          globalVMC: pdfMtfSnap.globalVMC,
+          globalScore: pdfMtfSnap.globalScore,
+          globalSignal: pdfMtfSnap.globalSignal,
+          confluence: pdfMtfSnap.confluence,
+          isTurningUp: pdfMtfSnap.isTurningUp,
+          isTurningDown: pdfMtfSnap.isTurningDown,
+        } : undefined,
+        keyLevels: pdfLevels.map(l => ({
+          price: l.price,
+          type: l.type,
+          label: l.label,
+          strength: l.strength,
+          touches: l.touches,
+        })),
+        tradePlan: pdfPlan ? {
+          bull: {
+            entry: pdfPlan.bull.entry,
+            stop: pdfPlan.bull.stop,
+            tp1: pdfPlan.bull.tp1,
+            tp2: pdfPlan.bull.tp2,
+            tp3: pdfPlan.bull.tp3,
+            tp1RR: pdfPlan.bull.tp1RR,
+            tp2RR: pdfPlan.bull.tp2RR,
+            tp3RR: pdfPlan.bull.tp3RR,
+            signalStrength: pdfPlan.bull.signalStrength,
+            entryType: pdfPlan.bull.entryType,
+          },
+          bear: {
+            entry: pdfPlan.bear.entry,
+            stop: pdfPlan.bear.stop,
+            tp1: pdfPlan.bear.tp1,
+            tp2: pdfPlan.bear.tp2,
+            tp3: pdfPlan.bear.tp3,
+            tp1RR: pdfPlan.bear.tp1RR,
+            tp2RR: pdfPlan.bear.tp2RR,
+            tp3RR: pdfPlan.bear.tp3RR,
+            signalStrength: pdfPlan.bear.signalStrength,
+            entryType: pdfPlan.bear.entryType,
+          },
+          globalScore: pdfPlan.globalScore,
+          bullProb: pdfPlan.bullProb,
+          riskLevel: pdfPlan.riskLevel,
+          context: pdfPlan.context,
+        } : undefined,
+        gptSections: pdfGpt ? {
+          riskLines: pdfGpt.riskLines,
+          timingLines: pdfGpt.timingLines,
+          technicalLines: pdfGpt.technicalLines,
+          infoLines: pdfGpt.infoLines,
+          fundamentalLines: pdfGpt.fundamentalLines,
+          scoreExplanation: pdfGpt.scoreExplanation,
+        } : undefined,
+        wtStatus: pdfWtStatus || undefined,
+        wtValues: pdfWtValues ?? undefined,
+        vmcStatus: pdfVmcStatus || undefined,
+        chartImageDataUrl: chartImg,
+      }
+      generateAnalysisPDF(data)
+    } catch (e) {
+      console.error('PDF generation failed:', e)
+    } finally {
+      setPdfGenerating(false)
+    }
+  }, [symbol, pdfLevelsPrice, pdfMtfSnap, pdfLevels, pdfPlan, pdfGpt, pdfWtStatus, pdfWtValues, pdfVmcStatus, pdfGenerating])
+
   // CVD state
   const [connected, setConnected] = useState(false)
   const [tps,       setTps]       = useState(0)
@@ -946,7 +1064,7 @@ export default function AnalysePage() {
       ws.onmessage=(e)=>{
         try{const d=JSON.parse(e.data);if(d.e!=='aggTrade')return
           const p=parseFloat(d.p),q=parseFloat(d.q),vol=p*q;if(vol<100)return
-          tpsCnt.current++;priceRef.current=p;setPrice(p)
+          tpsCnt.current++;priceRef.current=p;livePriceRef.current=p;setPrice(p)
           const tick:Tick={ts:Date.now(),price:p,vol,isBuy:!d.m}
           tickBuf.current.push(tick);if(tickBuf.current.length>2000)tickBuf.current.shift()
           const delta=tick.isBuy?vol:-vol
@@ -1093,7 +1211,40 @@ export default function AnalysePage() {
             {!symbol ? 'Recherchez un actif pour commencer' : isCrypto ? 'Liquidation Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Plan de Trade'}
           </p>
         </div>
-        <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+          {symbol && (
+            <button
+              onClick={handleExportPDF}
+              disabled={pdfGenerating}
+              title="Exporter le rapport d'analyse complet en PDF"
+              style={{
+                display:'flex',alignItems:'center',gap:7,
+                padding:'8px 16px',borderRadius:10,
+                background: pdfGenerating ? 'rgba(13,17,23,0.8)' : 'linear-gradient(135deg,rgba(0,229,255,0.12),rgba(191,90,242,0.12))',
+                border:'1px solid rgba(0,229,255,0.35)',
+                color:'var(--tm-accent)',cursor: pdfGenerating ? 'wait' : 'pointer',
+                fontSize:12,fontWeight:600,
+                transition:'all 0.15s',flexShrink:0,
+                opacity: pdfGenerating ? 0.7 : 1,
+              }}
+            >
+              {pdfGenerating ? (
+                <>
+                  <div style={{width:14,height:14,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}} />
+                  Génération…
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                  Exporter PDF
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* État vide — deux colonnes : recherche | analyse photo */}
@@ -1167,12 +1318,14 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} />}
+      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} />}
 
       {/* Oscillateurs synchronisés sous le chart */}
       {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
-        <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
-        <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+        <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+          onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
+        <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+          onStatusReady={(status)=>setPdfVmcStatus(status)} />
         <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
       </div>}
 
@@ -1181,24 +1334,25 @@ export default function AnalysePage() {
       {symbol && <ShareWrapper label="Trade Plan">
         <TradePlanCard
           symbol={symbol}
-          price={0}
-          mtfScore={0}
-          mtfSignal="NEUTRAL"
-          wtStatus="Neutral"
-          vmcStatus="NEUTRAL"
+          price={price || 0}
+          mtfScore={pdfMtfSnap?.globalScore ?? 0}
+          mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
+          wtStatus={pdfWtStatus || 'Neutral'}
+          vmcStatus={pdfVmcStatus || 'NEUTRAL'}
+          onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
         />
       </ShareWrapper>}
 
       {/* MTF Dashboard — tous les actifs */}
       {symbol && <ShareWrapper label="MTF Dashboard">
-        <MTFDashboard symbol={symbol} />
+        <MTFDashboard symbol={symbol} onSnapshotReady={snap => setPdfMtfSnap(snap)} />
       </ShareWrapper>}
 
       {/* WaveTrend + VMC + RSI sont maintenant affichés directement sous le chart (ci-dessus) */}
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-        <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} /></ShareWrapper>
+        <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} onLevelsReady={(lvls, p) => { setPdfLevels(lvls); setPdfLevelsPrice(p) }} /></ShareWrapper>
         <ChartScreenshotAnalysis symbol={symbol} />
       </div>}
 

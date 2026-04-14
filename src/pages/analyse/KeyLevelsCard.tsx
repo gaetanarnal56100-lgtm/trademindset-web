@@ -20,9 +20,12 @@ interface KeyLevel {
   touches?: number
 }
 
+export type { KeyLevel }
+
 interface Props {
   symbol: string
   currentPrice?: number
+  onLevelsReady?: (levels: KeyLevel[], price: number) => void
 }
 
 // ── Candle Fetcher ────────────────────────────────────────────────────────
@@ -203,7 +206,7 @@ function LevelRow({ level, currentPrice }: { level: KeyLevel; currentPrice: numb
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: Props) {
+export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0, onLevelsReady }: Props) {
   const [levels,       setLevels]       = useState<KeyLevel[]>([])
   const [currentPrice, setCurrentPrice] = useState(0)
   const [status,       setStatus]       = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
@@ -244,6 +247,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0 }: P
       const computed = calcKeyLevels(candles, price)
       setLevels(computed)
       setStatus('done')
+      onLevelsReady?.(computed, price)
     }
 
     run()

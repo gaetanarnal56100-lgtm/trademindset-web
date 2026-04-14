@@ -1,6 +1,6 @@
 // LightweightChart.tsx v5 — Canvas drawings + Magnet + Indicator settings
 // Compatible lightweight-charts 4.1.x
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { createChart, IChartApi, ISeriesApi, CrosshairMode, Time, LineStyle } from 'lightweight-charts'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, Timestamp } from 'firebase/firestore'
@@ -294,11 +294,25 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange}:Props) {
+export interface LightweightChartHandle {
+  takeScreenshot: () => string | null
+}
+
+const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange}, forwardedRef) {
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
   const chartApi = useRef<IChartApi|null>(null)
   const seriesR  = useRef<ISeriesApi<'Candlestick'>|null>(null)
+
+  useImperativeHandle(forwardedRef, () => ({
+    takeScreenshot: () => {
+      if (!chartApi.current) return null
+      try {
+        const canvas = chartApi.current.takeScreenshot()
+        return canvas.toDataURL('image/png')
+      } catch { return null }
+    }
+  }))
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef = useRef<Candle[]>([])
   const mpLinesRef = useRef<any[]>([])
@@ -854,4 +868,6 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
-}
+})
+
+export default LightweightChart
