@@ -3,39 +3,26 @@
 // 3 modes : Micro / Structure / Dérivés + Derivatives Confluence Card + vraie recherche
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { useTranslation } from 'react-i18next'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
-import { WaveTrendChart, VMCOscillatorChart } from './OscillatorCharts'
-import { backgroundMonitor } from '@/services/notifications/BackgroundSignalMonitor'
-import RsiEliteChart from './RsiEliteChart'
+import type { MTFSnapshot } from './MTFDashboard'
+import { WaveTrendChart, VMCOscillatorChart, RSIChart } from './OscillatorCharts'
 import TradePlanCard from './TradePlanCard'
+import type { TradePlanData, GPTSections } from './TradePlanCard'
 import LiveChart from './LiveChart'
 import LightweightChart from './LightweightChart'
+import type { LightweightChartHandle } from './LightweightChart'
 import KeyLevelsCard from './KeyLevelsCard'
+import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
+import type { AnalysisPDFData } from './AnalysisPDFExport'
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
 
-// Normalise un symbole forex saisi librement → format Yahoo Finance
-// "EUR/CAD" → "EURCAD=X" | "eurusd" → "EURUSD=X" | "GC=F" → "GC=F" (inchangé)
-function normalizeForexSymbol(raw: string): string {
-  const s = raw.trim().toUpperCase()
-  // Déjà format Yahoo (=X, =F, ^, lettre.PA…) → inchangé
-  if (s.includes('=') || s.startsWith('^') || s.includes('.')) return s
-  // Déjà crypto → inchangé
-  if (isCryptoSymbol(s)) return s
-  // Pair forex avec séparateur "EUR/CAD", "EUR-CAD", "EUR CAD" → "EURCAD=X"
-  const clean = s.replace(/[\s/\-_]+/g, '')
-  if (/^[A-Z]{6}$/.test(clean)) return clean + '=X'
-  return s
-}
-
 // ── Share / Screenshot wrapper ──────────────────────────────────────────
 function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
-  const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [hover, setHover] = useState(false)
@@ -138,7 +125,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
             backdropFilter:'blur(8px)', transition:'all 0.15s',
             opacity: loading ? 0.8 : 1,
           }}>
-          {copied ? t('common.copied') : loading ? t('common.capturing') : t('common.share')}
+          {copied ? '✓ Copié' : loading ? '⏳ Capture…' : '↗ Partager'}
         </button>
       )}
     </div>
@@ -225,46 +212,24 @@ async function searchBinanceCrypto(query: string): Promise<SearchResult[]> {
 }
 
 // Symboles Yahoo Finance connus (Forex, Indices, Matières premières) — bypass recherche Finnhub
-// aliases = mots-clés en FR/EN pour la recherche floue
-interface KnownAsset extends SearchResult { aliases: string[] }
-const YAHOO_KNOWN: KnownAsset[] = [
-  {symbol:'EURUSD=X', name:'EUR/USD',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['euro','dollar','eur','usd','eurusd']},
-  {symbol:'GBPUSD=X', name:'GBP/USD',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['pound','sterling','gbp','cable']},
-  {symbol:'USDJPY=X', name:'USD/JPY',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['yen','japan','jpy']},
-  {symbol:'USDCHF=X', name:'USD/CHF',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['franc','swiss','chf']},
-  {symbol:'AUDUSD=X', name:'AUD/USD',          type:'forex', exchange:'Forex',      icon:'💱', aliases:['aussie','aud','australia']},
-  {symbol:'GC=F',     name:'Or / Gold',        type:'forex', exchange:'COMEX',      icon:'🥇', aliases:['gold','or','xau','gld','metal']},
-  {symbol:'SI=F',     name:'Argent / Silver',  type:'forex', exchange:'COMEX',      icon:'🥈', aliases:['silver','argent','xag']},
-  {symbol:'CL=F',     name:'Pétrole WTI',      type:'forex', exchange:'NYMEX',      icon:'🛢️', aliases:['oil','petrol','petroleum','crude','brent','wti','petrole']},
-  {symbol:'PL=F',     name:'Platine / Platinum',type:'forex',exchange:'NYMEX',      icon:'⬜', aliases:['platinum','platine','xpt']},
-  {symbol:'^FCHI',    name:'CAC 40',           type:'stock', exchange:'Paris',      icon:'🇫🇷', aliases:['cac','france','paris','fchi']},
-  {symbol:'^GDAXI',   name:'DAX 40',           type:'stock', exchange:'Frankfurt',  icon:'🇩🇪', aliases:['dax','germany','allemagne','frankfurt']},
-  {symbol:'^FTSE',    name:'FTSE 100',         type:'stock', exchange:'London',     icon:'🇬🇧', aliases:['ftse','uk','london','england']},
-  {symbol:'^GSPC',    name:'S&P 500',          type:'stock', exchange:'NYSE',       icon:'🇺🇸', aliases:['sp500','sp','s&p','spx','snp','usa']},
-  {symbol:'^IXIC',    name:'Nasdaq',           type:'stock', exchange:'NASDAQ',     icon:'💻', aliases:['nasdaq','tech','ixic','ndx','qqq']},
-  {symbol:'^DJI',     name:'Dow Jones',        type:'stock', exchange:'NYSE',       icon:'📊', aliases:['dow','djia','jones']},
-  {symbol:'^N225',    name:'Nikkei 225',       type:'stock', exchange:'Tokyo',      icon:'🇯🇵', aliases:['nikkei','japan','japon','tokyo']},
-  {symbol:'^HSI',     name:'Hang Seng',        type:'stock', exchange:'HKEx',       icon:'🇭🇰', aliases:['hangseng','hongkong','hong kong','hsi']},
+const YAHOO_KNOWN: SearchResult[] = [
+  {symbol:'EURUSD=X', name:'EUR/USD',         type:'forex', exchange:'Forex',      icon:'💱'},
+  {symbol:'GBPUSD=X', name:'GBP/USD',         type:'forex', exchange:'Forex',      icon:'💱'},
+  {symbol:'USDJPY=X', name:'USD/JPY',         type:'forex', exchange:'Forex',      icon:'💱'},
+  {symbol:'GC=F',     name:'Or (Gold)',        type:'forex', exchange:'COMEX',      icon:'🥇'},
+  {symbol:'SI=F',     name:'Argent (Silver)',  type:'forex', exchange:'COMEX',      icon:'🥈'},
+  {symbol:'CL=F',     name:'Pétrole WTI',     type:'forex', exchange:'NYMEX',      icon:'🛢️'},
+  {symbol:'^FCHI',    name:'CAC 40',           type:'stock', exchange:'Paris',      icon:'📊'},
+  {symbol:'^GDAXI',   name:'DAX 40',           type:'stock', exchange:'Frankfurt',  icon:'📊'},
+  {symbol:'^FTSE',    name:'FTSE 100',         type:'stock', exchange:'London',     icon:'📊'},
+  {symbol:'^GSPC',    name:'S&P 500',          type:'stock', exchange:'NYSE',       icon:'📊'},
+  {symbol:'^IXIC',    name:'Nasdaq Composite', type:'stock', exchange:'NASDAQ',     icon:'📊'},
+  {symbol:'^DJI',     name:'Dow Jones',        type:'stock', exchange:'NYSE',       icon:'📊'},
 ]
 function searchYahooKnown(q: string): SearchResult[] {
-  const uq = q.toLowerCase().trim()
-  if (!uq) return []
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  return YAHOO_KNOWN.filter(({ aliases, ...s }) =>
-    s.symbol.toLowerCase().includes(uq) ||
-    s.name.toLowerCase().includes(uq) ||
-    aliases.some(a => a.includes(uq))
-  ).map(({ aliases: _a, ...s }) => s)
+  const uq = q.toUpperCase().trim()
+  return YAHOO_KNOWN.filter(s => s.symbol.toUpperCase().includes(uq) || s.name.toUpperCase().includes(uq))
 }
-
-// Assets non-crypto affichés par défaut dans la liste populaire
-const POPULAR_NONCRPYTO: SearchResult[] = [
-  {symbol:'GC=F',  name:'Or / Gold',   type:'forex', exchange:'COMEX', icon:'🥇'},
-  {symbol:'CL=F',  name:'Pétrole WTI', type:'forex', exchange:'NYMEX', icon:'🛢️'},
-  {symbol:'^GSPC', name:'S&P 500',     type:'stock', exchange:'NYSE',  icon:'🇺🇸'},
-  {symbol:'^FCHI', name:'CAC 40',      type:'stock', exchange:'Paris', icon:'🇫🇷'},
-  {symbol:'^IXIC', name:'Nasdaq',      type:'stock', exchange:'NASDAQ',icon:'💻'},
-]
 
 // Cloud Functions — uniquement pour actions et forex (évite de brûler des tokens sur les cryptos)
 async function searchNonCrypto(query: string): Promise<SearchResult[]> {
@@ -303,16 +268,13 @@ async function searchNonCrypto(query: string): Promise<SearchResult[]> {
   return []
 }
 
-// Default popular list: top cryptos + Gold/Oil/S&P/CAC/Nasdaq
-const DEFAULT_POPULAR: SearchResult[] = [...POPULAR_NONCRPYTO, ...CRYPTO_POPULAR]
-
 function useSymbolSearch(q: string) {
-  const [results, setResults] = useState<SearchResult[]>(DEFAULT_POPULAR)
+  const [results, setResults] = useState<SearchResult[]>(CRYPTO_POPULAR)
   const [loading, setLoading] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout>|null>(null)
 
   useEffect(() => {
-    if (!q.trim()) { setResults(DEFAULT_POPULAR); return }
+    if (!q.trim()) { setResults(CRYPTO_POPULAR); return }
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       setLoading(true)
@@ -381,7 +343,6 @@ async function fetchPriceSummary(symbol: string): Promise<{price:number;change24
 }
 
 function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: string) => void }) {
-  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
@@ -452,7 +413,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
       }}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <span style={{fontSize:13,fontWeight:700,color:symbol?'var(--tm-text-primary)':'var(--tm-text-muted)',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
-          {symbol || t('analyse.searchPlaceholder')}
+          {symbol || 'Rechercher un actif…'}
         </span>
         {symbol && history.find(h=>h.symbol===symbol)?.change24h != null && (
           <span style={{fontSize:10,fontWeight:700,color:(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
@@ -484,8 +445,8 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           {showHistory && (
             <>
               <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{t('analyse.history')}</span>
-                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>{t('analyse.clearAll')}</button>
+                <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🕐 Historique</span>
+                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer tout</button>
               </div>
               <div style={{maxHeight:320, overflowY:'auto'}}>
                 {history.map(entry => (
@@ -499,7 +460,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'baseline',gap:6}}>
                         <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</span>
-                        {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>{t('analyse.activeIndicator')}</span>}
+                        {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>● actif</span>}
                       </div>
                       <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
                     </div>
@@ -523,10 +484,10 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           {/* Résultats de recherche */}
           {q && (
             <>
-              {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{t('analyse.results')}</div>}
+              {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Résultats</div>}
               <div style={{maxHeight:300,overflowY:'auto'}}>
                 {results.length === 0 ? (
-                  <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>{t('analyse.noResults', {query: q})}</div>
+                  <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun résultat pour "{q}"</div>
                 ) : results.map(r => (
                   <button key={r.symbol} onClick={()=>handleSelect(r)}
                     style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
@@ -547,7 +508,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           {/* Populaires si pas de query et pas d'historique */}
           {!q && !history.length && (
             <>
-              <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{t('analyse.popular')}</div>
+              <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>⭐ Populaires</div>
               <div style={{maxHeight:280,overflowY:'auto'}}>
                 {results.map(r => (
                   <button key={r.symbol} onClick={()=>handleSelect(r)}
@@ -713,163 +674,61 @@ function DerivativesConfluenceCard({ symbol }: { symbol: string }) {
   )
 }
 
-// ── Axes helper — réutilisé par CVDChart et WhaleTrendChart ──────────────────
-function drawAxes(
-  ctx: CanvasRenderingContext2D, W: number, H: number,
-  PAD_L: number, PAD_R: number, PAD_T: number, PAD_B: number,
-  minV: number, maxV: number, timestamps: number[]
-) {
-  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B
-  const toY = (v: number) => PAD_T + (1 - (v - minV) / ((maxV - minV) || 1)) * cH
-  // Bandes latérales
-  ctx.fillStyle = '#060A10'
-  ctx.fillRect(0, 0, PAD_L, H)
-  ctx.fillRect(0, PAD_T + cH, W, PAD_B)
-  // Y grid + labels
-  ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
-  for (let i = 0; i <= 4; i++) {
-    const v = minV + ((maxV - minV) / 4) * i
-    const y = Math.round(toY(v)) + 0.5
-    ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(PAD_L + 1, y); ctx.lineTo(W - PAD_R, y); ctx.stroke()
-    ctx.setLineDash([])
-    ctx.strokeStyle = '#3A4A5C'
-    ctx.beginPath(); ctx.moveTo(PAD_L - 4, y); ctx.lineTo(PAD_L, y); ctx.stroke()
-    ctx.fillStyle = '#8899BB'; ctx.fillText(fmtU(v), PAD_L - 7, y + 3)
-  }
-  // Ligne zéro
-  const zY = Math.round(toY(0)) + 0.5
-  if (zY > PAD_T && zY < PAD_T + cH) {
-    const zc = maxV >= 0 ? '#22C75960' : '#FF3B3060'
-    ctx.setLineDash([5, 4]); ctx.strokeStyle = zc; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(PAD_L, zY); ctx.lineTo(W - PAD_R, zY); ctx.stroke()
-    ctx.setLineDash([])
-    ctx.fillStyle = maxV >= 0 ? '#22C759' : '#FF3B30'
-    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
-    ctx.fillText('0', PAD_L - 7, zY + 3)
-  }
-  // Axe Y vertical
-  ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.moveTo(PAD_L + 0.5, PAD_T); ctx.lineTo(PAD_L + 0.5, PAD_T + cH + 4); ctx.stroke()
-  // X axis labels
-  if (timestamps.length >= 2) {
-    const span = timestamps[timestamps.length - 1] - timestamps[0]
-    const multiDay = span > 86_400_000
-    const xN = Math.min(7, timestamps.length - 1)
-    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
-    for (let i = 0; i <= xN; i++) {
-      const idx = Math.round((i / xN) * (timestamps.length - 1))
-      const x = Math.round(PAD_L + (idx / (timestamps.length - 1)) * cW) + 0.5
-      const d = new Date(timestamps[idx])
-      const hh = d.getHours().toString().padStart(2, '0')
-      const mm = d.getMinutes().toString().padStart(2, '0')
-      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + cH); ctx.stroke()
-      ctx.setLineDash([])
-      ctx.strokeStyle = '#3A4A5C'
-      ctx.beginPath(); ctx.moveTo(x, PAD_T + cH); ctx.lineTo(x, PAD_T + cH + 4); ctx.stroke()
-      ctx.fillStyle = '#8899BB'
-      if (multiDay) {
-        ctx.fillText(`${d.getDate()}/${d.getMonth()+1}`, x, PAD_T + cH + 13)
-        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 24)
-      } else {
-        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 14)
-      }
-    }
-  }
-  // Axe X horizontal
-  ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.moveTo(PAD_L, PAD_T + cH + 0.5); ctx.lineTo(W - PAD_R, PAD_T + cH + 0.5); ctx.stroke()
-}
-
 // ── Charts ─────────────────────────────────────────────────────────────────
 function CVDChart({ pts, segs }: { pts: CVDPt[]; segs: Seg[] }) {
-  const { t } = useTranslation()
   const ref = useRef<HTMLCanvasElement>(null)
-  const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 210
-  useEffect(() => {
-    const c = ref.current; if (!c || pts.length < 2) return
-    const dpr = window.devicePixelRatio || 1, W = c.offsetWidth || 700, H = H_C
-    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr)
-    const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
-    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
-    const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B
-    // Value range
-    let minV = 0, maxV = 0
-    for (const s of segs) for (const p of pts) { if (p[s] < minV) minV = p[s]; if (p[s] > maxV) maxV = p[s] }
-    const vPad = (maxV - minV) * 0.08; minV -= vPad; maxV += vPad
-    const range = maxV - minV || 1
-    const toX = (i: number) => PAD_L + (i / (pts.length - 1)) * cW
-    const toY = (v: number) => PAD_T + (1 - (v - minV) / range) * cH
-    const zY = toY(0)
-    // Draw axes first (behind fills)
-    drawAxes(ctx, W, H, PAD_L, PAD_R, PAD_T, PAD_B, minV, maxV, pts.map(p => p.t))
-    // Clip chart area
-    ctx.save(); ctx.beginPath(); ctx.rect(PAD_L + 1, PAD_T, cW - 1, cH); ctx.clip()
-    // Area fills + lines
-    for (const seg of segs) {
-      const cfg = SEG_CFG[seg]
-      const last = pts[pts.length - 1][seg]
-      ctx.beginPath()
-      pts.forEach((p, i) => { const x = toX(i), y = toY(p[seg]); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-      ctx.lineTo(toX(pts.length - 1), zY); ctx.lineTo(toX(0), zY); ctx.closePath()
-      const grad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + cH)
-      grad.addColorStop(0, cfg.color + (last >= 0 ? '40' : '08')); grad.addColorStop(1, cfg.color + '02')
-      ctx.fillStyle = grad; ctx.fill()
-      ctx.beginPath()
-      pts.forEach((p, i) => { const x = toX(i), y = toY(p[seg]); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-      ctx.strokeStyle = seg === 'whales' ? cfg.color : cfg.color + 'CC'
-      ctx.lineWidth = seg === 'whales' ? 2 : 1.5; ctx.stroke()
+  useEffect(()=>{
+    const c=ref.current; if(!c||pts.length<2)return
+    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=160
+    c.width=W*dpr;c.height=H*dpr
+    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
+    ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
+    let minV=0,maxV=0
+    for(const s of segs)for(const p of pts){if(p[s]<minV)minV=p[s];if(p[s]>maxV)maxV=p[s]}
+    const range=maxV-minV||1
+    const zY=H-((-minV)/range)*H
+    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
+    ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
+    for(const seg of segs){
+      const cfg=SEG_CFG[seg]
+      ctx.beginPath();pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p[seg]-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
+      const last=pts[pts.length-1][seg];ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
+      const grad=ctx.createLinearGradient(0,0,0,H)
+      grad.addColorStop(0,cfg.color+(last>=0?'40':'05'));grad.addColorStop(1,cfg.color+'02')
+      ctx.fillStyle=grad;ctx.fill()
+      ctx.beginPath();ctx.strokeStyle=seg==='whales'?cfg.color:cfg.color+'CC';ctx.lineWidth=seg==='whales'?2:1.5
+      pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p[seg]-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
     }
-    ctx.restore()
-  }, [pts, segs])
-  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>{t('analyse.awaitingData')}...</div>
-  return <canvas ref={ref} style={{ width: '100%', height: H_C, borderRadius: 8, display: 'block' }} />
+  },[pts,segs])
+  if(pts.length<2)return<div style={{height:160,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--tm-text-muted)',fontSize:12,background:'#080C14',borderRadius:8}}>En attente du flux...</div>
+  return<canvas ref={ref} style={{width:'100%',height:160,borderRadius:8,display:'block'}}/>
 }
 
-function WhaleTrendChart({ pts }: { pts: WhaleTrendPt[] }) {
-  const { t } = useTranslation()
-  const ref = useRef<HTMLCanvasElement>(null)
-  const PAD_L = 62, PAD_R = 10, PAD_T = 10, PAD_B = 28, H_C = 220
-  useEffect(() => {
-    const c = ref.current; if (!c || pts.length < 2) return
-    const dpr = window.devicePixelRatio || 1, W = c.offsetWidth || 700, H = H_C
-    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr)
-    const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
-    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
-    const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B
-    const cvd = pts.map(p => p.cum), ema = pts.map(p => p.ema)
-    let minV = Math.min(...cvd, ...ema), maxV = Math.max(...cvd, ...ema)
-    const vPad = (maxV - minV) * 0.1; minV -= vPad; maxV += vPad
-    const range = maxV - minV || 1
-    const toX = (i: number) => PAD_L + (i / (pts.length - 1)) * cW
-    const toY = (v: number) => PAD_T + (1 - (v - minV) / range) * cH
-    const zY = toY(0)
-    // Draw axes
-    drawAxes(ctx, W, H, PAD_L, PAD_R, PAD_T, PAD_B, minV, maxV, pts.map(p => p.t))
-    // Clip chart area
-    ctx.save(); ctx.beginPath(); ctx.rect(PAD_L + 1, PAD_T, cW - 1, cH); ctx.clip()
-    // CVD area fill
-    const last = cvd[cvd.length - 1]
-    const color = last >= 0 ? '#22C759' : '#FF3B30'
-    ctx.beginPath()
-    pts.forEach((p, i) => { const x = toX(i), y = toY(p.cum); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-    ctx.lineTo(toX(pts.length - 1), zY); ctx.lineTo(toX(0), zY); ctx.closePath()
-    const grad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + cH)
-    grad.addColorStop(0, color + '30'); grad.addColorStop(1, color + '03')
-    ctx.fillStyle = grad; ctx.fill()
-    // CVD line
-    ctx.beginPath(); ctx.strokeStyle = 'rgba(200,200,255,0.9)'; ctx.lineWidth = 1.8
-    pts.forEach((p, i) => { const x = toX(i), y = toY(p.cum); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-    ctx.stroke()
-    // EMA line
-    ctx.beginPath(); ctx.strokeStyle = '#FFA726'; ctx.lineWidth = 1.2
-    pts.forEach((p, i) => { const x = toX(i), y = toY(p.ema); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-    ctx.stroke()
-    ctx.restore()
-  }, [pts])
-  if (pts.length < 2) return <div style={{ height: H_C, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>{t('analyse.awaitingData')}…</div>
-  return <canvas ref={ref} style={{ width: '100%', height: H_C, borderRadius: 8, display: 'block' }} />
+function WhaleTrendChart({pts}:{pts:WhaleTrendPt[]}){
+  const ref=useRef<HTMLCanvasElement>(null)
+  useEffect(()=>{
+    const c=ref.current;if(!c||pts.length<2)return
+    const dpr=window.devicePixelRatio||1,W=c.offsetWidth||700,H=180
+    c.width=W*dpr;c.height=H*dpr
+    const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr)
+    ctx.fillStyle='#080C14';ctx.fillRect(0,0,W,H)
+    const cvd=pts.map(p=>p.cum),ema=pts.map(p=>p.ema)
+    const minV=Math.min(...cvd,...ema),maxV=Math.max(...cvd,...ema),range=maxV-minV||1
+    const zY=H-((-minV)/range)*H
+    ctx.setLineDash([3,3]);ctx.strokeStyle=resolveCSSColor('--tm-border','#2A2F3E');ctx.lineWidth=1
+    ctx.beginPath();ctx.moveTo(0,zY);ctx.lineTo(W,zY);ctx.stroke();ctx.setLineDash([])
+    const last=cvd[cvd.length-1]
+    const color=last>=0?resolveCSSColor('--tm-profit','#22C759'):resolveCSSColor('--tm-loss','#FF3B30')
+    ctx.beginPath();pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.cum-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)})
+    ctx.lineTo(W,zY);ctx.lineTo(0,zY);ctx.closePath()
+    const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,color+'35');grad.addColorStop(1,color+'03')
+    ctx.fillStyle=grad;ctx.fill()
+    ctx.beginPath();ctx.strokeStyle='rgba(200,200,255,0.9)';ctx.lineWidth=1.8
+    pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.cum-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
+    ctx.beginPath();ctx.strokeStyle='#FFA726';ctx.lineWidth=1.2
+    pts.forEach((p,i)=>{const x=(i/(pts.length-1))*W,y=H-((p.ema-minV)/range)*H;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke()
+  },[pts])
+  return<canvas ref={ref} style={{width:'100%',height:180,borderRadius:8,display:'block'}}/>
 }
 
 function OISparkline({vals}:{vals:number[]}){
@@ -891,145 +750,52 @@ function OISparkline({vals}:{vals:number[]}){
   return<canvas ref={ref} style={{width:'100%',height:54,display:'block',borderRadius:6}}/>
 }
 
-// Segmented CVD History — multi-line par bucket de volume (proxy klines)
+// Segmented CVD History — multi-line par bucket de taille d'ordre (inspiré Material Indicators)
 interface SegHistPt { t: number; small: number; medium: number; large: number; institutional: number; whales: number }
-// SEG_LINES_CFG dérive de SEG_CFG pour garantir des couleurs identiques
-const SEG_LINES_CFG: { key: keyof SegHistPt; color: string; label: string; range: string; lw: number }[] = [
-  { key: 'whales',        color: SEG_CFG.whales.color,        label: SEG_CFG.whales.label,        range: '≥3× vol moy', lw: 2.0 },
-  { key: 'institutional', color: SEG_CFG.institutional.color, label: SEG_CFG.institutional.label, range: '2-3× vol',    lw: 1.6 },
-  { key: 'large',         color: SEG_CFG.large.color,         label: SEG_CFG.large.label,         range: '1.5-2× vol',  lw: 1.4 },
-  { key: 'medium',        color: SEG_CFG.medium.color,        label: SEG_CFG.medium.label,        range: '0.7-1.5×',    lw: 1.2 },
-  { key: 'small',         color: SEG_CFG.small.color,         label: SEG_CFG.small.label,         range: '<0.7× vol',   lw: 1.0 },
-]
 function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
-  const { t } = useTranslation()
   const ref = useRef<HTMLCanvasElement>(null)
-  const PAD_L = 62, PAD_B = 32, PAD_T = 10, PAD_R = 10
-  const H_CANVAS = 260
-
+  const SEG_LINES: { key: keyof SegHistPt; color: string; label: string; range: string; lw: number }[] = [
+    { key: 'whales',        color: '#EF5350', label: 'Whales',        range: '>$1M',       lw: 2.5 },
+    { key: 'institutional', color: '#FFA726', label: 'Institutional', range: '$100k–1M',   lw: 1.8 },
+    { key: 'large',         color: '#66BB6A', label: 'Large',         range: '$10k–100k',  lw: 1.5 },
+    { key: 'medium',        color: '#42A5F5', label: 'Medium',        range: '$1k–10k',    lw: 1.2 },
+    { key: 'small',         color: '#607D8B', label: 'Small',         range: '$100–1k',    lw: 1.0 },
+  ]
   useEffect(() => {
     const c = ref.current; if (!c || pts.length < 2) return
-    const dpr = window.devicePixelRatio || 1
-    const W = c.offsetWidth || 700, H = H_CANVAS
-    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr)
+    const dpr = window.devicePixelRatio || 1, W = c.offsetWidth || 700, H = 200
+    c.width = W * dpr; c.height = H * dpr
     const ctx = c.getContext('2d')!; ctx.scale(dpr, dpr)
-
-    const cW = W - PAD_L - PAD_R
-    const cH = H - PAD_T - PAD_B
-
-    // ── Background ──
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
-    // Bande Y-axis
-    ctx.fillStyle = '#060A10'; ctx.fillRect(0, 0, PAD_L, H)
-    // Bande X-axis
-    ctx.fillStyle = '#060A10'; ctx.fillRect(0, PAD_T + cH, W, PAD_B)
-
-    // ── Value range ──
     let minV = 0, maxV = 0
-    for (const ln of SEG_LINES_CFG) for (const p of pts) {
+    for (const ln of SEG_LINES) for (const p of pts) {
       const v = p[ln.key] as number
       if (v < minV) minV = v; if (v > maxV) maxV = v
     }
-    const rangePad = (maxV - minV) * 0.1
-    minV -= rangePad; maxV += rangePad
     const range = maxV - minV || 1
-
-    const toX = (i: number) => PAD_L + (i / (pts.length - 1)) * cW
-    const toY = (v: number) => PAD_T + (1 - (v - minV) / range) * cH
-
-    // ── Y Axis graduations ──
-    const yTicks = 5
-    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
-    for (let i = 0; i <= yTicks; i++) {
-      const v = minV + (range / yTicks) * i
-      const y = Math.round(toY(v)) + 0.5
-      // Grid line en pointillés légers
-      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'; ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(PAD_L + 1, y); ctx.lineTo(W - PAD_R, y); ctx.stroke()
-      ctx.setLineDash([])
-      // Tick
-      ctx.strokeStyle = '#3A4A5C'; ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(PAD_L - 4, y); ctx.lineTo(PAD_L, y); ctx.stroke()
-      // Label
-      ctx.fillStyle = '#8899BB'; ctx.fillText(fmtU(v), PAD_L - 7, y + 3)
-    }
-
-    // Ligne zéro plus visible
-    const lastCumWhales = pts[pts.length - 1].whales
-    const isPositive = lastCumWhales >= 0
-    const zeroColor = isPositive ? '#22C759' : '#FF3B30'
-    const zY = Math.round(toY(0)) + 0.5
-    if (zY > PAD_T && zY < PAD_T + cH) {
-      ctx.setLineDash([5, 4]); ctx.strokeStyle = zeroColor + '60'; ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(PAD_L, zY); ctx.lineTo(W - PAD_R, zY); ctx.stroke()
-      ctx.setLineDash([])
-      ctx.fillStyle = zeroColor; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right'
-      ctx.fillText('0', PAD_L - 7, zY + 3)
-    }
-
-    // Axe Y vertical
-    ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(PAD_L + 0.5, PAD_T); ctx.lineTo(PAD_L + 0.5, PAD_T + cH + 4); ctx.stroke()
-
-    // ── X Axis labels ──
-    const span = pts[pts.length - 1].t - pts[0].t
-    const multiDay = span > 86_400_000
-    const xTickCount = Math.min(8, pts.length - 1)
-    ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#8899BB'
-    for (let i = 0; i <= xTickCount; i++) {
-      const idx = Math.round((i / xTickCount) * (pts.length - 1))
-      const x = Math.round(toX(idx)) + 0.5
-      const d = new Date(pts[idx].t)
-      const hh = d.getHours().toString().padStart(2, '0')
-      const mm = d.getMinutes().toString().padStart(2, '0')
-      // Tick
-      ctx.strokeStyle = '#3A4A5C'; ctx.lineWidth = 1
-      ctx.beginPath(); ctx.moveTo(x, PAD_T + cH); ctx.lineTo(x, PAD_T + cH + 4); ctx.stroke()
-      // Vertical grid
-      ctx.setLineDash([2, 4]); ctx.strokeStyle = '#1E2A3A'
-      ctx.beginPath(); ctx.moveTo(x, PAD_T); ctx.lineTo(x, PAD_T + cH); ctx.stroke()
-      ctx.setLineDash([])
-      // Label
-      ctx.fillStyle = '#8899BB'
-      if (multiDay) {
-        const dd = d.getDate(), mo = d.getMonth() + 1
-        ctx.fillText(`${dd}/${mo}`, x, PAD_T + cH + 13)
-        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 24)
-      } else {
-        ctx.fillText(`${hh}:${mm}`, x, PAD_T + cH + 15)
-      }
-    }
-
-    // Axe X horizontal
-    ctx.strokeStyle = '#2A3548'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(PAD_L, PAD_T + cH + 0.5); ctx.lineTo(W - PAD_R, PAD_T + cH + 0.5); ctx.stroke()
-
-    // ── Tracé des lignes (clippé à la zone graphique) ──
-    ctx.save()
-    ctx.beginPath(); ctx.rect(PAD_L + 1, PAD_T, cW - 1, cH); ctx.clip()
-
-    for (const ln of SEG_LINES_CFG) {
+    const zY = H - ((-minV) / range) * H
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = '#1E2330'; ctx.lineWidth = 0.8
+    ctx.beginPath(); ctx.moveTo(0, zY); ctx.lineTo(W, zY); ctx.stroke(); ctx.setLineDash([])
+    for (const ln of SEG_LINES) {
       ctx.beginPath()
       pts.forEach((p, i) => {
-        const x = toX(i), y = toY(p[ln.key] as number)
+        const x = (i / (pts.length - 1)) * W
+        const y = H - ((p[ln.key] as number - minV) / range) * H
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
       })
-      ctx.strokeStyle = ln.color; ctx.lineWidth = ln.lw; ctx.globalAlpha = 0.9
+      ctx.strokeStyle = ln.color; ctx.lineWidth = ln.lw; ctx.globalAlpha = 0.85
       ctx.stroke(); ctx.globalAlpha = 1
     }
-    ctx.restore()
-
   }, [pts])
-
   if (pts.length < 2) return (
-    <div style={{ height: H_CANVAS, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
-      {t('analyse.awaitingData')}…
+    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
+      En attente des données historiques…
     </div>
   )
   return (
     <div>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-        {SEG_LINES_CFG.map(ln => (
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+        {SEG_LINES.map(ln => (
           <div key={ln.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 16, height: 2, background: ln.color, borderRadius: 1 }} />
             <span style={{ fontSize: 9, color: ln.color, fontFamily: 'JetBrains Mono,monospace' }}>{ln.label}</span>
@@ -1037,7 +803,7 @@ function SegmentedCVDHistoryChart({ pts }: { pts: SegHistPt[] }) {
           </div>
         ))}
       </div>
-      <canvas ref={ref} style={{ width: '100%', height: H_CANVAS, borderRadius: 8, display: 'block' }} />
+      <canvas ref={ref} style={{ width: '100%', height: 200, borderRadius: 8, display: 'block' }} />
     </div>
   )
 }
@@ -1054,173 +820,90 @@ function PressureBar({score}:{score:number}){
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-// ── ChartAndOscillators — layout TradingView-like avec mode plein écran ────
-function ChartAndOscillators({
-  symbol, isCrypto, syncEnabled, setSyncEnabled, syncInterval, setSyncInterval,
-  syncRange, setSyncRange, syncRangeFromOsc, handleOscViewport, handleCrosshairChange,
-  crosshairFrac, chartAreaRatio, fullscreen, setFullscreen,
-  panelHeights, setPanelHeights, showWT, setShowWT, showVMC, setShowVMC, showRSI, setShowRSI, t
-}: {
-  symbol: string; isCrypto: boolean
-  syncEnabled: boolean; setSyncEnabled: React.Dispatch<React.SetStateAction<boolean>>
-  syncInterval: string; setSyncInterval: React.Dispatch<React.SetStateAction<string>>
-  syncRange: {from:number;to:number}|null; setSyncRange: React.Dispatch<React.SetStateAction<{from:number;to:number}|null>>
-  syncRangeFromOsc: {from:number;to:number}|null
-  handleOscViewport: (f:number,t:number) => void
-  handleCrosshairChange: (d:{frac:number;areaRatio:number}|null) => void
-  crosshairFrac: number|null; chartAreaRatio: number
-  fullscreen: boolean; setFullscreen: React.Dispatch<React.SetStateAction<boolean>>
-  panelHeights: {main:number;wt:number;vmc:number;rsi:number}
-  setPanelHeights: React.Dispatch<React.SetStateAction<{main:number;wt:number;vmc:number;rsi:number}>>
-  showWT: boolean; setShowWT: React.Dispatch<React.SetStateAction<boolean>>
-  showVMC: boolean; setShowVMC: React.Dispatch<React.SetStateAction<boolean>>
-  showRSI: boolean; setShowRSI: React.Dispatch<React.SetStateAction<boolean>>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  t: any
-}) {
-  // Drag-to-resize handle
-  const startDrag = (panelA: keyof typeof panelHeights, panelB: keyof typeof panelHeights, e: React.MouseEvent) => {
-    e.preventDefault()
-    const startY = e.clientY
-    const hA0 = panelHeights[panelA]
-    const hB0 = panelHeights[panelB]
-    // total available px (fullscreen viewport - controlbar ~36px)
-    const totalPx = window.innerHeight - 36
-    const onMove = (ev: MouseEvent) => {
-      const deltaPx = ev.clientY - startY
-      const deltaPct = (deltaPx / totalPx) * 100
-      const newA = Math.max(10, Math.min(85, hA0 + deltaPct))
-      const newB = Math.max(5,  Math.min(85, hB0 - deltaPct))
-      setPanelHeights(prev => ({ ...prev, [panelA]: newA, [panelB]: newB }))
-    }
-    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
+// ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
+  type PanelType = 'tv' | 'lw'
+  type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
 
-  const DIVIDER = <div
-    style={{height:5,background:'#1E2330',cursor:'row-resize',flexShrink:0,position:'relative'}}
-    onMouseEnter={e=>(e.currentTarget.style.background='var(--tm-accent)')}
-    onMouseLeave={e=>(e.currentTarget.style.background='#1E2330')}
-  />
+  const [mode, setMode] = useState<LayoutMode>('tv')
 
-  const controlBar = (
-    <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',background:'var(--tm-bg-secondary)',borderBottom:'1px solid var(--tm-border)',flexWrap:'wrap',flexShrink:0}}>
-      <span style={{fontSize:10,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace',flexShrink:0}}>🔗 Sync</span>
-      <button onClick={() => setSyncEnabled((p: boolean) => !p)} style={{padding:'2px 10px',borderRadius:20,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${syncEnabled?'var(--tm-accent)':'var(--tm-border)'}`,background:syncEnabled?'rgba(0,229,255,0.12)':'transparent',color:syncEnabled?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s'}}>
-        {syncEnabled ? t('analyse.syncEnabled') : t('analyse.syncDisabled')}
-      </button>
-      {syncEnabled && <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono, monospace'}}>{`UT: ${syncInterval} · ${t('analyse.zoomPanShared')}`}</span>}
-      <div style={{marginLeft:'auto',display:'flex',gap:4,alignItems:'center'}}>
-        {([['WT',showWT,setShowWT],['VMC',showVMC,setShowVMC],['RSI',showRSI,setShowRSI]] as [string,boolean,React.Dispatch<React.SetStateAction<boolean>>][]).map(([label,on,setter])=>(
-          <button key={label} onClick={()=>setter((p:boolean)=>!p)} style={{padding:'2px 8px',borderRadius:5,fontSize:9,fontWeight:700,cursor:'pointer',border:`1px solid ${on?'var(--tm-accent)':'var(--tm-border)'}`,background:on?'rgba(0,229,255,0.1)':'transparent',color:on?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s'}}>{label}</button>
-        ))}
-        <div style={{width:1,height:12,background:'var(--tm-border)',margin:'0 2px'}}/>
-        <button onClick={() => setFullscreen((f:boolean) => !f)} title={fullscreen?'Quitter plein écran':'Plein écran'} style={{padding:'2px 8px',borderRadius:5,fontSize:13,cursor:'pointer',border:`1px solid ${fullscreen?'var(--tm-profit)':'var(--tm-border)'}`,background:fullscreen?'rgba(34,199,89,0.1)':'transparent',color:fullscreen?'var(--tm-profit)':'var(--tm-text-muted)',transition:'all 0.15s'}}>
-          {fullscreen ? '⊡' : '⛶'}
-        </button>
-      </div>
-    </div>
-  )
+  const LAYOUTS: { id: LayoutMode; icon: string; label: string; desc: string }[] = [
+    { id: 'tv',    icon: '📺',   label: 'TV seul',    desc: 'TradingView uniquement' },
+    { id: 'lw',    icon: '⚡',   label: 'LW seul',    desc: 'Lightweight uniquement' },
+    { id: 'tv-lw', icon: '📺⚡', label: 'TV | LW',    desc: 'TradingView + Lightweight côte à côte' },
+    { id: 'lw-tv', icon: '⚡📺', label: 'LW | TV',    desc: 'Lightweight + TradingView côte à côte' },
+    { id: 'tv-tv', icon: '📺📺', label: 'TV | TV',    desc: 'Deux TradingView (ex: 15m + 1h)' },
+    { id: 'lw-lw', icon: '⚡⚡', label: 'LW | LW',    desc: 'Deux Lightweight (ex: BTC + ETH)' },
+  ]
 
-  // Normal (non-fullscreen) panels — fixed heights, no autoHeight
-  const normalPanels = (
-    <>
-      <ChartLayout
-        symbol={symbol} isCrypto={isCrypto}
-        onTimeframeChange={setSyncInterval}
-        onVisibleRangeChange={syncEnabled ? (f,to) => setSyncRange({from:f,to}) : undefined}
-        syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
-        onCrosshairChange={handleCrosshairChange}
-        chartHeight={430}
-      />
-      {showWT && <WaveTrendChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={180} />}
-      {showVMC && <VMCOscillatorChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={230} />}
-      {showRSI && <RsiEliteChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} chartHeight={240} />}
-    </>
-  )
+  const isSplit = ['tv-lw','lw-tv','tv-tv','lw-lw'].includes(mode)
 
-  if (fullscreen) {
-    // Determine the "previous visible panel" for each divider's drag source
-    const prevOf = (panel: 'wt'|'vmc'|'rsi'): keyof typeof panelHeights => {
-      if (panel === 'wt')  return 'main'
-      if (panel === 'vmc') return showWT ? 'wt' : 'main'
-      return showVMC ? 'vmc' : showWT ? 'wt' : 'main'
+  const firstLwPanel = useRef(false)
+  const renderPanel = (type: PanelType, key: string) => {
+    if (type === 'lw' && !firstLwPanel.current) {
+      firstLwPanel.current = true
+      return (
+        <div key={key} style={{ minWidth: 0, flex: 1 }}>
+          <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />
+        </div>
+      )
     }
     return (
-      <div style={{position:'fixed',inset:0,zIndex:9999,background:'var(--tm-bg)',display:'flex',flexDirection:'column'}}>
-        {controlBar}
-        <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-          {/* Main chart panel */}
-          <div style={{flex:panelHeights.main,overflow:'hidden',minHeight:60,display:'flex',flexDirection:'column'}}>
-            <ChartLayout
-              symbol={symbol} isCrypto={isCrypto}
-              onTimeframeChange={setSyncInterval}
-              onVisibleRangeChange={syncEnabled ? (f,to) => setSyncRange({from:f,to}) : undefined}
-              syncRangeIn={syncEnabled ? syncRangeFromOsc : null}
-              onCrosshairChange={handleCrosshairChange}
-              autoHeight
-            />
-          </div>
-          {showWT && <>
-            {React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag('main','wt',e)})}
-            <div style={{flex:panelHeights.wt,overflow:'hidden',minHeight:50,display:'flex',flexDirection:'column'}}>
-              <WaveTrendChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} autoHeight />
-            </div>
-          </>}
-          {showVMC && <>
-            {React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag(prevOf('vmc'),'vmc',e)})}
-            <div style={{flex:panelHeights.vmc,overflow:'hidden',minHeight:50,display:'flex',flexDirection:'column'}}>
-              <VMCOscillatorChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} autoHeight />
-            </div>
-          </>}
-          {showRSI && <>
-            {React.cloneElement(DIVIDER, {onMouseDown:(e:React.MouseEvent)=>startDrag(prevOf('rsi'),'rsi',e)})}
-            <div style={{flex:panelHeights.rsi,overflow:'hidden',minHeight:40,display:'flex',flexDirection:'column'}}>
-              <RsiEliteChart symbol={symbol} syncInterval={syncEnabled?syncInterval:undefined} visibleRange={syncEnabled?syncRange:null} onViewportChange={syncEnabled?handleOscViewport:undefined} crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio} autoHeight />
-            </div>
-          </>}
-        </div>
+      <div key={key} style={{ minWidth: 0, flex: 1 }}>
+        {type === 'tv'
+          ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
+          : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />}
       </div>
     )
   }
 
+  const panels: [PanelType, PanelType] | [PanelType] =
+    mode === 'tv'    ? ['tv'] :
+    mode === 'lw'    ? ['lw'] :
+    mode === 'tv-lw' ? ['tv','lw'] :
+    mode === 'lw-tv' ? ['lw','tv'] :
+    mode === 'tv-tv' ? ['tv','tv'] :
+                       ['lw','lw']
+
   return (
-    <div style={{marginBottom:16}}>
-      <div style={{border:'1px solid var(--tm-border)',borderRadius:10,overflow:'hidden'}}>
-        {controlBar}
-        {normalPanels}
+    <div style={{ marginBottom: 16 }}>
+      {/* Sélecteur */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px',
+        background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 12,
+        marginBottom: 8, flexWrap: 'wrap',
+      }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', marginRight: 2, flexShrink: 0 }}>DISPOSITION :</span>
+        {LAYOUTS.map(l => (
+          <button key={l.id} onClick={() => setMode(l.id)} title={l.desc} style={{
+            display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+            borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer',
+            border: `1px solid ${mode === l.id ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
+            background: mode === l.id ? 'rgba(var(--tm-accent-rgb,0,229,255),0.10)' : 'transparent',
+            color: mode === l.id ? 'var(--tm-accent)' : 'var(--tm-text-muted)', transition: 'all 0.15s',
+          }}>
+            <span style={{ fontSize: 12 }}>{l.icon}</span>
+            <span>{l.label}</span>
+          </button>
+        ))}
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--tm-text-muted)', flexShrink: 0 }}>
+          {LAYOUTS.find(l => l.id === mode)?.desc}
+        </span>
+      </div>
+
+      {/* Graphiques */}
+      <div style={{
+        display: isSplit ? 'grid' : 'block',
+        gridTemplateColumns: isSplit ? '1fr 1fr' : undefined,
+        gap: isSplit ? 8 : undefined,
+      }}>
+        {panels.map((type, i) => renderPanel(type, `${type}-${i}`))}
       </div>
     </div>
   )
 }
 
-// ── ChartLayout — LightweightChart uniquement (zoom/pan sync bidirectionnel) ──
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, syncRangeIn, onCrosshairChange, chartHeight, autoHeight }: {
-  symbol: string; isCrypto: boolean
-  onTimeframeChange?: (interval: string) => void
-  onVisibleRangeChange?: (from: number, to: number) => void
-  syncRangeIn?: {from: number; to: number} | null
-  onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
-  chartHeight?: number
-  autoHeight?: boolean
-}) {
-  return (
-    <LightweightChart
-      symbol={symbol}
-      isCrypto={isCrypto}
-      onTimeframeChange={onTimeframeChange}
-      onVisibleRangeChange={onVisibleRangeChange}
-      syncRangeIn={syncRangeIn}
-      onCrosshairChange={onCrosshairChange}
-      chartHeight={chartHeight}
-      autoHeight={autoHeight}
-    />
-  )
-}
-
 export default function AnalysePage() {
-  const { t } = useTranslation()
   const [symbol, setSymbol] = useState(() => {
     // Read symbol passed from Marchés page via localStorage
     const stored = localStorage.getItem('tm_analyse_symbol')
@@ -1228,37 +911,110 @@ export default function AnalysePage() {
     return ''
   })
   const [mode,   setMode]   = useState<Mode>('micro')
-  const [syncInterval,     setSyncInterval]     = useState<string>('1h')
-  const [syncRange,        setSyncRange]        = useState<{from:number;to:number}|null>(null)
-  const [syncRangeFromOsc, setSyncRangeFromOsc] = useState<{from:number;to:number}|null>(null)
-  // Toggle synchronisation UT + viewport entre LightweightChart et oscillateurs
-  const [syncEnabled, setSyncEnabled] = useState(true)
-  // Fullscreen TradingView-like mode
-  const [fullscreen, setFullscreen] = useState(false)
-  // Panels visibles en fullscreen (hauteurs relatives en %)
-  const [panelHeights, setPanelHeights] = useState({ main: 55, wt: 18, vmc: 18, rsi: 9 })
-  const [showWT,  setShowWT]  = useState(true)
-  const [showVMC, setShowVMC] = useState(true)
-  const [showRSI, setShowRSI] = useState(true)
-  const dragRef = useRef<{panel: string; startY: number; startH: number; nextH: number} | null>(null)
-  const [crosshairFrac,    setCrosshairFrac]    = useState<number|null>(null)
-  const [chartAreaRatio,   setChartAreaRatio]   = useState<number>(0.93) // 0.93 = approximation initiale
+  const [syncInterval, setSyncInterval] = useState<string>('1h')
+  const [syncRange,    setSyncRange]    = useState<{from:number;to:number}|null>(null)
 
-  // ── Monitor en arrière-plan : poll TOUS les TFs peu importe lequel est affiché ──
-  useEffect(() => {
-    if (!symbol) return
-    backgroundMonitor.start(symbol)
-    return () => backgroundMonitor.stop()
-  }, [symbol])
+  // ── PDF export state ──────────────────────────────────────────────────────
+  const lwChartRef   = useRef<LightweightChartHandle>(null)
+  const livePriceRef = useRef(0)  // mirrors price state for use in callbacks
+  const [pdfMtfSnap, setPdfMtfSnap]   = useState<MTFSnapshot | null>(null)
+  const [pdfLevels,  setPdfLevels]    = useState<KeyLevel[]>([])
+  const [pdfLevelsPrice, setPdfLevelsPrice] = useState(0)
+  const [pdfPlan,    setPdfPlan]      = useState<TradePlanData | null>(null)
+  const [pdfGpt,     setPdfGpt]       = useState<GPTSections | null>(null)
+  const [pdfWtStatus,  setPdfWtStatus]  = useState('')
+  const [pdfWtValues,  setPdfWtValues]  = useState<{wt1:number;wt2:number}|null>(null)
+  const [pdfVmcStatus, setPdfVmcStatus] = useState('')
+  const [pdfGenerating, setPdfGenerating] = useState(false)
 
-  const handleCrosshairChange = useCallback((d: {frac:number; areaRatio:number}|null) => {
-    if (d == null) { setCrosshairFrac(null); return }
-    if (d.frac >= 0) setCrosshairFrac(d.frac)  // frac=-1 = resize event, ne pas effacer le crosshair
-    if (d.areaRatio > 0 && d.areaRatio < 1) setChartAreaRatio(d.areaRatio)
-  }, [])
-  const handleOscViewport = useCallback((from:number, to:number) => {
-    setSyncRangeFromOsc({ from, to })
-  }, [])
+  const handleExportPDF = useCallback(async () => {
+    if (pdfGenerating || !symbol) return
+    setPdfGenerating(true)
+    try {
+      const { generateAnalysisPDF } = await import('./AnalysisPDFExport')
+      // Try to get chart screenshot
+      let chartImg: string | null = null
+      try { chartImg = lwChartRef.current?.takeScreenshot() ?? null } catch { /* ignore */ }
+
+      const data: AnalysisPDFData = {
+        symbol,
+        price: livePriceRef.current || pdfLevelsPrice,
+        timestamp: new Date(),
+        mtfSnap: pdfMtfSnap ? {
+          readings: pdfMtfSnap.readings.map(r => ({
+            tf: r.tf,
+            rsi: r.rsi,
+            rsiNorm: r.rsiNorm,
+            vmc: r.vmc,
+            score: r.score,
+            signal: r.signal,
+            divergence: r.divergence,
+          })),
+          globalRSI: pdfMtfSnap.globalRSI,
+          globalVMC: pdfMtfSnap.globalVMC,
+          globalScore: pdfMtfSnap.globalScore,
+          globalSignal: pdfMtfSnap.globalSignal,
+          confluence: pdfMtfSnap.confluence,
+          isTurningUp: pdfMtfSnap.isTurningUp,
+          isTurningDown: pdfMtfSnap.isTurningDown,
+        } : undefined,
+        keyLevels: pdfLevels.map(l => ({
+          price: l.price,
+          type: l.type,
+          label: l.label,
+          strength: l.strength,
+          touches: l.touches,
+        })),
+        tradePlan: pdfPlan ? {
+          bull: {
+            entry: pdfPlan.bull.entry,
+            stop: pdfPlan.bull.stop,
+            tp1: pdfPlan.bull.tp1,
+            tp2: pdfPlan.bull.tp2,
+            tp3: pdfPlan.bull.tp3,
+            tp1RR: pdfPlan.bull.tp1RR,
+            tp2RR: pdfPlan.bull.tp2RR,
+            tp3RR: pdfPlan.bull.tp3RR,
+            signalStrength: pdfPlan.bull.signalStrength,
+            entryType: pdfPlan.bull.entryType,
+          },
+          bear: {
+            entry: pdfPlan.bear.entry,
+            stop: pdfPlan.bear.stop,
+            tp1: pdfPlan.bear.tp1,
+            tp2: pdfPlan.bear.tp2,
+            tp3: pdfPlan.bear.tp3,
+            tp1RR: pdfPlan.bear.tp1RR,
+            tp2RR: pdfPlan.bear.tp2RR,
+            tp3RR: pdfPlan.bear.tp3RR,
+            signalStrength: pdfPlan.bear.signalStrength,
+            entryType: pdfPlan.bear.entryType,
+          },
+          globalScore: pdfPlan.globalScore,
+          bullProb: pdfPlan.bullProb,
+          riskLevel: pdfPlan.riskLevel,
+          context: pdfPlan.context,
+        } : undefined,
+        gptSections: pdfGpt ? {
+          riskLines: pdfGpt.riskLines,
+          timingLines: pdfGpt.timingLines,
+          technicalLines: pdfGpt.technicalLines,
+          infoLines: pdfGpt.infoLines,
+          fundamentalLines: pdfGpt.fundamentalLines,
+          scoreExplanation: pdfGpt.scoreExplanation,
+        } : undefined,
+        wtStatus: pdfWtStatus || undefined,
+        wtValues: pdfWtValues ?? undefined,
+        vmcStatus: pdfVmcStatus || undefined,
+        chartImageDataUrl: chartImg,
+      }
+      generateAnalysisPDF(data)
+    } catch (e) {
+      console.error('PDF generation failed:', e)
+    } finally {
+      setPdfGenerating(false)
+    }
+  }, [symbol, pdfLevelsPrice, pdfMtfSnap, pdfLevels, pdfPlan, pdfGpt, pdfWtStatus, pdfWtValues, pdfVmcStatus, pdfGenerating])
 
   // CVD state
   const [connected, setConnected] = useState(false)
@@ -1278,7 +1034,6 @@ export default function AnalysePage() {
   // Segmented CVD History state
   const [segHistPts,  setSegHistPts]  = useState<SegHistPt[]>([])
   const [segHistLoad, setSegHistLoad] = useState(false)
-  const [segHistTf,   setSegHistTf]   = useState('24h')
 
   // Dérivés state
   const [oi,        setOI]        = useState<OIData|null>(null)
@@ -1309,7 +1064,7 @@ export default function AnalysePage() {
       ws.onmessage=(e)=>{
         try{const d=JSON.parse(e.data);if(d.e!=='aggTrade')return
           const p=parseFloat(d.p),q=parseFloat(d.q),vol=p*q;if(vol<100)return
-          tpsCnt.current++;priceRef.current=p;setPrice(p)
+          tpsCnt.current++;priceRef.current=p;livePriceRef.current=p;setPrice(p)
           const tick:Tick={ts:Date.now(),price:p,vol,isBuy:!d.m}
           tickBuf.current.push(tick);if(tickBuf.current.length>2000)tickBuf.current.shift()
           const delta=tick.isBuy?vol:-vol
@@ -1353,70 +1108,52 @@ export default function AnalysePage() {
         const trend=ms>0.4?'Accumulation forte':ms>0.1?'Accumulation':ms<-0.4?'Distribution forte':ms<-0.1?'Distribution':'Neutre'
         const tc=ms>0.1?'var(--tm-profit)':ms<-0.1?'var(--tm-loss)':'var(--tm-text-secondary)'
         const prices=raw.map(a=>parseFloat(a[4] as string));const ps=prices[prices.length-1]-prices[0],cs=last.cum-(pts[0]?.cum||0)
-        const div=ps<-0.1&&cs>0?'trendBullish':ps>0.1&&cs<0?'trendBearish':'trendNone'
+        const div=ps<-0.1&&cs>0?'Haussière 📈':ps>0.1&&cs<0?'Baissière 📉':'Aucune'
         setWtSummary({trend,trendColor:tc,netCVD:last.cum,momentum:ms,divergence:div})
       }).catch(()=>{})
   },[symbol,mode,wtTf])
 
-  // ── Segmented CVD History — klines avec takerBuyVolume (historique conséquent) ──
+  // ── Segmented CVD History (Structure tab) ──
   useEffect(() => {
+    if (mode !== 'structure') return
     if (!symbol || !/USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)) return
-    setSegHistPts([])
     setSegHistLoad(true)
-
-    // Paramètres selon timeframe choisi
-    const TF_KLINES: Record<string, { interval: string; limit: number }> = {
-      '4h':  { interval: '1m',  limit: 240 },
-      '24h': { interval: '5m',  limit: 288 },
-      '3j':  { interval: '15m', limit: 288 },
-      '7j':  { interval: '30m', limit: 336 },
-    }
-    const { interval, limit } = TF_KLINES[segHistTf] ?? TF_KLINES['24h']
-
-    // Calcul CVD segmenté à partir des klines (takerBuyBaseAssetVolume exact)
-    const processKlines = (klines: unknown[][]) => {
-      if (!Array.isArray(klines) || klines.length === 0) return
-      // Volume moyen pour classer la bougie
-      const vols = klines.map(k => parseFloat(k[5] as string))
-      const avgVol = vols.reduce((a, b) => a + b, 0) / (vols.length || 1)
-
-      const cum: SegHistPt = { t: 0, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 }
-      const pts: SegHistPt[] = klines.map(k => {
-        const t       = Number(k[0])
-        const close   = parseFloat(k[4] as string)
-        const vol     = parseFloat(k[5] as string)                    // base asset vol
-        const buyBase = parseFloat(k[9] as string)                    // taker buy base vol (exact)
-        const buyVol  = buyBase * close
-        const sellVol = (vol - buyBase) * close
-        const delta   = buyVol - sellVol
-        const ratio   = avgVol > 0 ? vol / avgVol : 1
-
-        // Segmentation par intensité relative de volume
-        if      (ratio >= 3)   cum.whales        += delta
-        else if (ratio >= 2)   cum.institutional += delta
-        else if (ratio >= 1.5) cum.large         += delta
-        else if (ratio >= 0.7) cum.medium        += delta
-        else                   cum.small         += delta
-
-        return { t, small: cum.small, medium: cum.medium, large: cum.large, institutional: cum.institutional, whales: cum.whales }
+    // Fetch last 3000 aggTrades from Binance futures for segmented CVD history
+    fetch(`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=3000`)
+      .then(r => r.json())
+      .then((trades: { p: string; q: string; m: boolean; T: number }[]) => {
+        if (!Array.isArray(trades) || trades.length === 0) return
+        const bucketMs = 60 * 1000 // 1-minute buckets
+        const buckets = new Map<number, SegHistPt>()
+        for (const t of trades) {
+          const price = parseFloat(t.p), qty = parseFloat(t.q), vol = price * qty
+          if (vol < 100) continue
+          const bk = Math.floor(t.T / bucketMs) * bucketMs
+          if (!buckets.has(bk)) buckets.set(bk, { t: bk, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 })
+          const b = buckets.get(bk)!
+          const delta = t.m ? -vol : vol
+          if (vol >= 1e6)   b.whales        += delta
+          else if (vol >= 1e5) b.institutional += delta
+          else if (vol >= 1e4) b.large         += delta
+          else if (vol >= 1e3) b.medium         += delta
+          else if (vol >= 100) b.small          += delta
+        }
+        // Convert to cumulative per segment
+        const sorted = [...buckets.values()].sort((a, b) => a.t - b.t)
+        const cum: SegHistPt = { t: 0, small: 0, medium: 0, large: 0, institutional: 0, whales: 0 }
+        const pts: SegHistPt[] = sorted.map(b => {
+          cum.small         += b.small
+          cum.medium        += b.medium
+          cum.large         += b.large
+          cum.institutional += b.institutional
+          cum.whales        += b.whales
+          return { t: b.t, small: cum.small, medium: cum.medium, large: cum.large, institutional: cum.institutional, whales: cum.whales }
+        })
+        setSegHistPts(pts)
       })
-      setSegHistPts(pts)
-    }
-
-    const doFetch = async () => {
-      try {
-        // Futures d'abord (volume + précis, takerBuy disponible)
-        const r1 = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
-        const d1 = await r1.json() as unknown
-        if (Array.isArray(d1) && d1.length > 0) { processKlines(d1 as unknown[][]); return }
-        // Fallback spot
-        const r2 = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
-        const d2 = await r2.json() as unknown
-        if (Array.isArray(d2)) processKlines(d2 as unknown[][])
-      } catch { /* réseau indisponible */ } finally { setSegHistLoad(false) }
-    }
-    void doFetch()
-  }, [symbol, segHistTf])
+      .catch(() => {})
+      .finally(() => setSegHistLoad(false))
+  }, [symbol, mode])
 
   // ── Dérivés ──
   useEffect(()=>{
@@ -1438,7 +1175,7 @@ export default function AnalysePage() {
       const rate=parseFloat(prem.lastFundingRate)*100,mark=parseFloat(prem.markPrice),idx=parseFloat(prem.indexPrice)
       const next=prem.nextFundingTime?new Date(prem.nextFundingTime):null
       const diff=next?next.getTime()-Date.now():0,h=Math.floor(diff/3600000),m=Math.floor((diff%3600000)/60000)
-      const bias=rate>0.05?'cvdBullOverheat':rate>0.01?'cvdBullBias':rate<-0.05?'cvdBearOverheat':rate<-0.01?'cvdBearBias':'cvdNeutral'
+      const bias=rate>0.05?'Surchauffe haussière':rate>0.01?'Biais long':rate<-0.05?'Surchauffe baissière':rate<-0.01?'Biais short':'Neutre'
       setFunding({rate,mark,index:idx,basis:mark-idx,basisPct:(mark-idx)/idx*100,nextIn:h>0?`${h}h ${m}m`:`${m}m`,bias,isWarning:Math.abs(rate)>0.05})
       setDerivLoad(false)
     }).catch(()=>setDerivLoad(false))
@@ -1451,7 +1188,7 @@ export default function AnalysePage() {
   const wFlowDelta=wF60B-wF60S,isWhaleB=wFlowDelta>50000,isNeutral=Math.abs(wFlowDelta)<50000
   const bullConf=(pressure&&pressure.score>0.1?1:0)+(lastCVD&&lastCVD.institutional>0?1:0)+(traps.filter(t=>t.conf>=0.55).length>0?1:0)
   const bearConf=(pressure&&pressure.score<-0.1?1:0)+(lastCVD&&lastCVD.institutional<0?1:0)
-  const biasLabel=bullConf>bearConf?t('analyse.trendBullish'):bearConf>bullConf?t('analyse.trendBearish'):t('analyse.neutral')
+  const biasLabel=bullConf>bearConf?'Haussier':bearConf>bullConf?'Baissier':'Neutre'
   const biasColor=bullConf>bearConf?'var(--tm-profit)':bearConf>bullConf?'var(--tm-loss)':'var(--tm-text-secondary)'
 
   const isCrypto = isCryptoSymbol(symbol)
@@ -1471,10 +1208,43 @@ export default function AnalysePage() {
         <div>
           <h1 style={{fontSize:24,fontWeight:700,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em'}}>Analyse</h1>
           <p style={{fontSize:13,color:'var(--tm-text-muted)',margin:'4px 0 0'}}>
-            {!symbol ? t('analyse.searchToBegin') : isCrypto ? t('analyse.cryptoSubtitle') : t('analyse.nonCryptoSubtitle')}
+            {!symbol ? 'Recherchez un actif pour commencer' : isCrypto ? 'Liquidation Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Plan de Trade'}
           </p>
         </div>
-        <SymbolSearch symbol={symbol} onSelect={s=>{const ns=normalizeForexSymbol(s);setSymbol(ns);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+          {symbol && (
+            <button
+              onClick={handleExportPDF}
+              disabled={pdfGenerating}
+              title="Exporter le rapport d'analyse complet en PDF"
+              style={{
+                display:'flex',alignItems:'center',gap:7,
+                padding:'8px 16px',borderRadius:10,
+                background: pdfGenerating ? 'rgba(13,17,23,0.8)' : 'linear-gradient(135deg,rgba(0,229,255,0.12),rgba(191,90,242,0.12))',
+                border:'1px solid rgba(0,229,255,0.35)',
+                color:'var(--tm-accent)',cursor: pdfGenerating ? 'wait' : 'pointer',
+                fontSize:12,fontWeight:600,
+                transition:'all 0.15s',flexShrink:0,
+                opacity: pdfGenerating ? 0.7 : 1,
+              }}
+            >
+              {pdfGenerating ? (
+                <>
+                  <div style={{width:14,height:14,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}} />
+                  Génération…
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                  </svg>
+                  Exporter PDF
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* État vide — deux colonnes : recherche | analyse photo */}
@@ -1486,16 +1256,16 @@ export default function AnalysePage() {
             {/* Hero */}
             <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
               <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(var(--tm-accent-rgb,0,229,255),0.15),rgba(var(--tm-purple-rgb,191,90,242),0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)'}}>📊</div>
-              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>{t('analyse.heroSearchTitle')}</div>
-              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>{t('analyse.heroSearchSub')}</div>
+              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Recherchez un actif</div>
+              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>Crypto, action, forex — tapez un symbole dans la barre de recherche pour lancer l'analyse</div>
             </div>
 
             {/* Accès rapide */}
             <div style={{display:'grid',gridTemplateColumns:'1fr',gap:8,marginBottom:16}}>
               {[
                 {title:'🪙 Crypto',items:[{s:'BTCUSDT',n:'Bitcoin'},{s:'ETHUSDT',n:'Ethereum'},{s:'SOLUSDT',n:'Solana'},{s:'BNBUSDT',n:'BNB'}]},
-                {title:t('analyse.categoryStocks'),items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
-                {title:t('analyse.categoryForex'),items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
+                {title:'📈 Actions US',items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
+                {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
               ].map(cat=>(
                 <div key={cat.title} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden'}}>
                   <div style={{padding:'8px 14px',borderBottom:'1px solid #1E2330'}}>
@@ -1522,9 +1292,9 @@ export default function AnalysePage() {
             {/* Raccourcis */}
             <div style={{display:'flex',justifyContent:'center',gap:16,flexWrap:'wrap'}}>
               {[
-                {label:t('common.search'),keys:t('analyse.clickBar')},
-                {label:t('analyse.cryptoQuick'),keys:'BTC, ETH, SOL...'},
-                {label:t('analyse.actionsQuick'),keys:'AAPL, TSLA, NVDA...'},
+                {label:'Rechercher',keys:'Cliquez la barre'},
+                {label:'Crypto rapide',keys:'BTC, ETH, SOL...'},
+                {label:'Actions',keys:'AAPL, TSLA, NVDA...'},
               ].map(h=>(
                 <div key={h.label} style={{display:'flex',alignItems:'center',gap:5}}>
                   <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',padding:'2px 7px',borderRadius:4,border:'1px solid #2A2F3E',fontFamily:'JetBrains Mono'}}>{h.keys}</span>
@@ -1538,8 +1308,8 @@ export default function AnalysePage() {
           <div>
             <div style={{textAlign:'center',padding:'32px 20px 24px'}}>
               <div style={{width:56,height:56,borderRadius:18,background:'linear-gradient(135deg,rgba(var(--tm-purple-rgb,191,90,242),0.15),rgba(255,45,85,0.15))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,margin:'0 auto 14px',border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.2)'}}>📸</div>
-              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>{t('analyse.screenshotTitle')}</div>
-              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>{t('analyse.screenshotHeroSub')}</div>
+              <div style={{fontSize:18,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:6,fontFamily:'Syne,sans-serif'}}>Analyse Screenshot IA</div>
+              <div style={{fontSize:12,color:'var(--tm-text-muted)',maxWidth:340,margin:'0 auto'}}>Upload une capture de graphique — GPT-4o Vision analyse la structure, les zones clés et génère un plan de trade</div>
             </div>
             <ChartScreenshotAnalysis />
           </div>
@@ -1547,45 +1317,42 @@ export default function AnalysePage() {
         </div>
       )}
 
-      {/* ══ CHART + OSCILLATEURS ══ */}
-      {symbol && <ChartAndOscillators
-        symbol={symbol}
-        isCrypto={isCryptoSymbol(symbol)}
-        syncEnabled={syncEnabled} setSyncEnabled={setSyncEnabled}
-        syncInterval={syncInterval} setSyncInterval={setSyncInterval}
-        syncRange={syncRange} setSyncRange={setSyncRange}
-        syncRangeFromOsc={syncRangeFromOsc}
-        handleOscViewport={handleOscViewport}
-        handleCrosshairChange={handleCrosshairChange}
-        crosshairFrac={crosshairFrac} chartAreaRatio={chartAreaRatio}
-        fullscreen={fullscreen} setFullscreen={setFullscreen}
-        panelHeights={panelHeights} setPanelHeights={setPanelHeights}
-        showWT={showWT} setShowWT={setShowWT}
-        showVMC={showVMC} setShowVMC={setShowVMC}
-        showRSI={showRSI} setShowRSI={setShowRSI}
-        t={t}
-      />}
+      {/* Graphique — layout selector */}
+      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} />}
 
-      {/* Plan de Trade IA — tous les actifs */}
+      {/* Oscillateurs synchronisés sous le chart */}
+      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
+        <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+          onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
+        <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+          onStatusReady={(status)=>setPdfVmcStatus(status)} />
+        <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+      </div>}
+
+
+      {/* Plan de Trade IA — tous les actifs, en premier */}
       {symbol && <ShareWrapper label="Trade Plan">
         <TradePlanCard
           symbol={symbol}
-          price={0}
-          mtfScore={0}
-          mtfSignal="NEUTRAL"
-          wtStatus="Neutral"
-          vmcStatus="NEUTRAL"
+          price={price || 0}
+          mtfScore={pdfMtfSnap?.globalScore ?? 0}
+          mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
+          wtStatus={pdfWtStatus || 'Neutral'}
+          vmcStatus={pdfVmcStatus || 'NEUTRAL'}
+          onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
         />
       </ShareWrapper>}
 
       {/* MTF Dashboard — tous les actifs */}
       {symbol && <ShareWrapper label="MTF Dashboard">
-        <MTFDashboard symbol={symbol} />
+        <MTFDashboard symbol={symbol} onSnapshotReady={snap => setPdfMtfSnap(snap)} />
       </ShareWrapper>}
+
+      {/* WaveTrend + VMC + RSI sont maintenant affichés directement sous le chart (ci-dessus) */}
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
       {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-        <ShareWrapper label={t('analyse.keyLevels')}><KeyLevelsCard symbol={symbol} /></ShareWrapper>
+        <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} onLevelsReady={(lvls, p) => { setPdfLevels(lvls); setPdfLevelsPrice(p) }} /></ShareWrapper>
         <ChartScreenshotAnalysis symbol={symbol} />
       </div>}
 
@@ -1597,9 +1364,9 @@ export default function AnalysePage() {
         {/* Mode tabs */}
         <div style={{display:'flex',background:'var(--tm-bg)',borderRadius:12,padding:3,marginBottom:16,border:'1px solid #1E2330',width:'fit-content'}}>
           {([
-            {id:'micro',    icon:'📊',label:t('analyse.microLabel'),    sub:t('analyse.microSub')},
+            {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel'},
             {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine'},
-            {id:'derivees', icon:'📈',label:t('analyse.deriveesLabel'),   sub:t('analyse.deriveesSub')},
+            {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq'},
           ] as {id:Mode;icon:string;label:string;sub:string}[]).map(m=>(
             <button key={m.id} onClick={()=>setMode(m.id)} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 20px',borderRadius:10,border:'none',cursor:'pointer',background:mode===m.id?'var(--tm-accent)':'transparent',transition:'all 0.15s'}}>
               <span style={{fontSize:14}}>{m.icon}</span>
@@ -1618,7 +1385,7 @@ export default function AnalysePage() {
         <div style={{...C.card,padding:C.p}}>
           <div style={C.top}/>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
-            <div><div style={{fontSize:14,fontWeight:700,color:biasColor}}>{biasLabel}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{bullConf+bearConf>0?t('analyse.confirmations', {count: Math.max(bullConf,bearConf)}):t('analyse.awaitingDataShort')}</div></div>
+            <div><div style={{fontSize:14,fontWeight:700,color:biasColor}}>{biasLabel}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{bullConf+bearConf>0?`${Math.max(bullConf,bearConf)} confirmation${Math.max(bullConf,bearConf)>1?'s':''} active${Math.max(bullConf,bearConf)>1?'s':''}`:'En attente de données'}</div></div>
             <div style={{display:'flex',gap:6}}>
               {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:pressure.score>0?'var(--tm-profit)':'var(--tm-loss)',background:`${pressure.score>0?'var(--tm-profit)':'var(--tm-loss)'}`,padding:'2px 8px',borderRadius:5}}>CVD {pressure.score>0?'↑':'↓'}</span>}
               {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:'var(--tm-accent)',background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',padding:'2px 8px',borderRadius:5}}>Whales</span>}
@@ -1628,7 +1395,6 @@ export default function AnalysePage() {
         </div>
 
         {/* CVD Panel */}
-        <ShareWrapper label={`CVD ${symbol}`}>
         <div style={C.card}><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:8}}>
@@ -1657,28 +1423,13 @@ export default function AnalysePage() {
             {/* Segment toggles */}
             <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}}>
               {(Object.keys(SEG_CFG) as Seg[]).map(seg=>{const cfg=SEG_CFG[seg],on=segs.includes(seg),val=cvdAcc.current[seg]
-                return<button key={seg} onClick={()=>setSegs(prev=>on?prev.filter(s=>s!==seg):[...prev,seg])} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'5px 10px',borderRadius:8,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${on?cfg.color:'var(--tm-border)'}`,background:on?cfg.color+'20':'var(--tm-bg-tertiary)',color:on?cfg.color:'var(--tm-text-muted)',transition:'all 0.15s',minWidth:60}}>
-                  <span style={{marginBottom:2}}>{cfg.label}</span>
-                  <span style={{fontSize:9,fontFamily:'JetBrains Mono,monospace',fontWeight:700,color:val>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{val>=0?'+':''}{fmtU(val)}</span>
+                return<button key={seg} onClick={()=>setSegs(prev=>on?prev.filter(s=>s!==seg):[...prev,seg])} style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'5px 10px',borderRadius:8,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${on?cfg.color:'var(--tm-border)'}`,background:on?`${cfg.color}`:'var(--tm-bg-tertiary)',color:on?cfg.color:'var(--tm-text-muted)',transition:'all 0.15s'}}>
+                  <span>{cfg.label}</span>
+                  <span style={{fontSize:9,fontFamily:'monospace',color:val>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{val>=0?'+':''}{fmtU(val)}</span>
                 </button>
               })}
             </div>
             <CVDChart pts={cvdPts} segs={segs}/>
-            {/* Historique CVD par taille d'ordre — toujours visible */}
-            <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid #1E2330'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:6}}>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontSize:11,fontWeight:600,color:'var(--tm-text-secondary)'}}>📊 CVD Historique par taille</span>
-                  {segHistLoad&&<div style={{width:10,height:10,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
-                </div>
-                <div style={{display:'flex',gap:4}}>
-                  {(['4h','24h','3j','7j'] as const).map(tf=>(
-                    <button key={tf} onClick={()=>setSegHistTf(tf)} style={{padding:'2px 9px',borderRadius:5,fontSize:9,fontWeight:600,cursor:'pointer',border:`1px solid ${segHistTf===tf?'var(--tm-accent)':'var(--tm-border)'}`,background:segHistTf===tf?'rgba(0,229,255,0.1)':'var(--tm-bg-tertiary)',color:segHistTf===tf?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s'}}>{tf}</button>
-                  ))}
-                </div>
-              </div>
-              <SegmentedCVDHistoryChart pts={segHistPts}/>
-            </div>
             {lastCVD&&<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginTop:8}}>
               {(['large','institutional','whales'] as Seg[]).map(s=>{const cfg=SEG_CFG[s],v=lastCVD[s]
                 return<div key={s} onClick={()=>setSegs(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s])} style={{background:'var(--tm-bg-tertiary)',border:`1px solid ${segs.includes(s)?cfg.color:'var(--tm-border)'}`,borderRadius:8,padding:'8px',cursor:'pointer'}}>
@@ -1690,7 +1441,6 @@ export default function AnalysePage() {
             </div>}
           </div>
         </div>
-        </ShareWrapper>
 
         {/* Order Flow */}
         <div style={C.card}><div style={C.top}/>
@@ -1786,13 +1536,25 @@ export default function AnalysePage() {
             </div>
             <WhaleTrendChart pts={wtPts}/>
             {wtSummary&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:10}}>
-              {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:t(`analyse.${wtSummary.divergence}`),c:wtSummary.divergence==='trendBullish'?'var(--tm-profit)':wtSummary.divergence==='trendBearish'?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:'30%',c:'#FFA726'}].map(({l,v,c})=>(
+              {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:wtSummary.divergence,c:wtSummary.divergence.includes('Hauss')?'var(--tm-profit)':wtSummary.divergence.includes('Baiss')?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:'30%',c:'#FFA726'}].map(({l,v,c})=>(
                 <div key={l} style={{background:'var(--tm-bg-tertiary)',borderRadius:8,padding:'8px',textAlign:'center'}}><div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:2}}>{l}</div><div style={{fontSize:12,fontWeight:600,color:c}}>{v}</div></div>
               ))}
             </div>}
           </div>
         </div>
 
+        {/* Segmented CVD History */}
+        <div style={C.card}><div style={C.top}/>
+          <div style={{padding:C.p}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <span>📊</span>
+              <span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>CVD par Taille d'Ordre</span>
+              <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',padding:'1px 7px',borderRadius:4}}>Récent · Futures</span>
+              {segHistLoad&&<div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
+            </div>
+            <SegmentedCVDHistoryChart pts={segHistPts}/>
+          </div>
+        </div>
       </div>}
 
       {/* ── DÉRIVÉS ── */}
@@ -1801,7 +1563,7 @@ export default function AnalysePage() {
         <DerivativesConfluenceCard symbol={symbol}/>
 
         {derivLoad&&<div style={{textAlign:'center',padding:24,color:'var(--tm-text-muted)',fontSize:12}}>
-          <div style={{width:20,height:20,border:'2px solid #2A2F3E',borderTopColor:'#F59714',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}}/>{t('common.loading')}
+          <div style={{width:20,height:20,border:'2px solid #2A2F3E',borderTopColor:'#F59714',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}}/>Chargement...
         </div>}
 
         {oi&&<div style={{...C.card,background:'rgba(245,151,20,0.04)',borderColor:'rgba(245,151,20,0.2)'}}>
@@ -1834,7 +1596,7 @@ export default function AnalysePage() {
                 <div style={{fontSize:26,fontWeight:700,fontFamily:'JetBrains Mono,monospace',color:funding.rate>0?'var(--tm-warning)':funding.rate<0?'var(--tm-profit)':'var(--tm-text-secondary)'}}>{funding.rate>0?'+':''}{funding.rate.toFixed(4)}%<span style={{fontSize:11,color:'var(--tm-text-muted)',marginLeft:4}}>/8h</span></div>
                 <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>Taux de financement</div>
               </div>
-              <div style={{fontSize:12,fontWeight:700,color:funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)'}`,padding:'5px 12px',borderRadius:8,border:`1px solid ${funding.isWarning?'rgba(var(--tm-loss-rgb,255,59,48),0.3)':'var(--tm-border)'}`}}>{t(`analyse.${funding.bias}`)}</div>
+              <div style={{fontSize:12,fontWeight:700,color:funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${funding.isWarning?'var(--tm-loss)':'var(--tm-text-secondary)'}`,padding:'5px 12px',borderRadius:8,border:`1px solid ${funding.isWarning?'rgba(var(--tm-loss-rgb,255,59,48),0.3)':'var(--tm-border)'}`}}>{funding.bias}</div>
             </div>
             <div style={{height:8,background:'linear-gradient(to right,#22C759,#2A2F3E 40%,#2A2F3E 60%,#FF9500)',borderRadius:4,position:'relative',marginBottom:6}}>
               <div style={{position:'absolute',left:`${Math.min(Math.max((funding.rate+0.1)/0.2*100,0),100)}%`,top:'50%',transform:'translate(-50%,-50%)',width:14,height:14,borderRadius:'50%',background:funding.rate>0.05?'var(--tm-loss)':funding.rate>0.01?'var(--tm-warning)':funding.rate<-0.01?'var(--tm-profit)':'var(--tm-text-secondary)',border:'2px solid #0D1117'}}/>
