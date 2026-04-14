@@ -195,7 +195,14 @@
     "lossStreak": "Série perdante",
     "weekAbbr": "Sem.",
     "winsLabel": "wins",
-    "lossesLabel": "losses"
+    "lossesLabel": "losses",
+    "shareStats": "Partager mes stats",
+    "widgets": "Widgets",
+    "backToJournal": "← Journal",
+    "siteWeb": "Site web",
+    "contact": "Contact",
+    "users_one": "{{count}} utilisateur",
+    "users_other": "{{count}} utilisateurs"
   },
   "trades": {
     "title": "Trades",

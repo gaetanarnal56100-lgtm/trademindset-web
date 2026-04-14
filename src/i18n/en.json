@@ -195,7 +195,14 @@
     "lossStreak": "Losing streak",
     "weekAbbr": "Wk",
     "winsLabel": "wins",
-    "lossesLabel": "losses"
+    "lossesLabel": "losses",
+    "shareStats": "Share my stats",
+    "widgets": "Widgets",
+    "backToJournal": "← Journal",
+    "siteWeb": "Website",
+    "contact": "Contact",
+    "users_one": "{{count}} user",
+    "users_other": "{{count}} users"
   },
   "trades": {
     "title": "Trades",

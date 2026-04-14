@@ -238,7 +238,7 @@ function calcRSIDiv(candles:Candle[],rsiPeriod=14,pivotLen=5,lookback=60):RSIDiv
 
 // ── Indicator settings types ──────────────────────────────────────────────
 interface VMCSettings{smoothLen:number;signalMult:number;upThreshold:number;loThreshold:number;ribbonMin:number;rsiLen:number;stochSmooth:number;mfiWeight:number}
-interface SMCSettings{swingLen:number;showOBBull:boolean;showOBBear:boolean;showFVGBull:boolean;showFVGBear:boolean;obCount:number;fvgCount:number;mitigatedOB:boolean;mtfEnabled:boolean;mtfTf:string}
+interface SMCSettings{swingLen:number;showOBBull:boolean;showOBBear:boolean;showFVGBull:boolean;showFVGBear:boolean;obCount:number;fvgCount:number;mitigatedOB:boolean;mtfEnabled:boolean;mtfTfs:string[]}
 const SMC_MTF_TFS=[
   {label:'4H',  min:'240'},
   {label:'1D',  min:'1440'},
@@ -423,19 +423,33 @@ function SettingsPanel({activeId,vmcSettings,setVmcSettings,smcSettings,setSmcSe
           <Toggle label="Afficher zones HTF" value={smcSettings.mtfEnabled} onChange={v=>setSmcSettings({...smcSettings,mtfEnabled:v})}/>
           {smcSettings.mtfEnabled&&(
             <div style={{marginBottom:10}}>
-              <div style={{fontSize:10,color:'var(--tm-text-secondary)',marginBottom:6}}>Timeframe supérieur</div>
-              <div style={{display:'flex',gap:4}}>
-                {SMC_MTF_TFS.map(tf=>(
-                  <button key={tf.min} onClick={()=>setSmcSettings({...smcSettings,mtfTf:tf.min})}
-                    style={{flex:1,padding:'4px 0',borderRadius:5,fontSize:10,fontWeight:600,cursor:'pointer',
-                      border:`1px solid ${smcSettings.mtfTf===tf.min?'var(--tm-blue)':'#2A2F3E'}`,
-                      background:smcSettings.mtfTf===tf.min?'rgba(10,133,255,0.15)':'transparent',
-                      color:smcSettings.mtfTf===tf.min?'var(--tm-blue)':'var(--tm-text-muted)'}}>
-                    {tf.label}
-                  </button>
-                ))}
+              <div style={{fontSize:10,color:'var(--tm-text-secondary)',marginBottom:6}}>Timeframes supérieurs (multi-select)</div>
+              <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                {SMC_MTF_TFS.map(tf=>{
+                  const active=smcSettings.mtfTfs.includes(tf.min)
+                  const toggle=()=>{
+                    const next=active
+                      ?smcSettings.mtfTfs.filter(t=>t!==tf.min)
+                      :[...smcSettings.mtfTfs,tf.min]
+                    setSmcSettings({...smcSettings,mtfTfs:next})
+                  }
+                  return(
+                    <button key={tf.min} onClick={toggle}
+                      style={{flex:1,padding:'5px 0',borderRadius:5,fontSize:10,fontWeight:700,cursor:'pointer',
+                        border:`1px solid ${active?'var(--tm-blue)':'#2A2F3E'}`,
+                        background:active?'rgba(10,133,255,0.18)':'transparent',
+                        color:active?'var(--tm-blue)':'var(--tm-text-muted)',
+                        position:'relative'}}>
+                      {tf.label}
+                      {active&&<span style={{position:'absolute',top:-4,right:-4,width:8,height:8,borderRadius:'50%',background:'var(--tm-blue)',border:'1px solid var(--tm-bg)'}}/>}
+                    </button>
+                  )
+                })}
               </div>
-              <div style={{fontSize:8,color:'var(--tm-text-muted)',marginTop:6,lineHeight:1.5}}>Zones HTF en bandes pleine largeur · bordure tiretée · label [TF]</div>
+              <div style={{fontSize:8,color:'var(--tm-text-muted)',marginTop:6,lineHeight:1.5}}>
+                {smcSettings.mtfTfs.length===0?'Aucun TF sélectionné':smcSettings.mtfTfs.map(m=>SMC_MTF_TFS.find(t=>t.min===m)?.label).join(' + ')+' actifs'}<br/>
+                Zones pleine largeur · bordure tiretée · label [TF]
+              </div>
             </div>
           )}
         </>)}
@@ -572,7 +586,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
 
   // Indicator settings
   const [vmcS, setVmcS] = useState<VMCSettings>({smoothLen:10,signalMult:1.75,upThreshold:35,loThreshold:-35,ribbonMin:5,rsiLen:14,stochSmooth:2,mfiWeight:0.4})
-  const [smcS, setSmcS] = useState<SMCSettings>({swingLen:10,showOBBull:true,showOBBear:true,showFVGBull:true,showFVGBear:true,obCount:4,fvgCount:5,mitigatedOB:false,mtfEnabled:false,mtfTf:'1440'})
+  const [smcS, setSmcS] = useState<SMCSettings>({swingLen:10,showOBBull:true,showOBBear:true,showFVGBull:true,showFVGBear:true,obCount:4,fvgCount:5,mitigatedOB:false,mtfEnabled:false,mtfTfs:['1440']})
   const [msdS, setMsdS] = useState<MSDSettings>({swingLen:5,showBOS:true,showSwings:true})
   const [mpS,  setMpS]  = useState<MPSettings>({bins:30,showProfile:true})
   const [bbS,  setBbS]  = useState<BollingerSettings>({len:20,mult:2,showMiddle:true})
@@ -580,8 +594,8 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
   const [vegasS, setVegasS] = useState<VegasSettings>({tunnels:[...VEGAS_DEFAULTS.map(t=>({...t}))]})
 
   // Computed results
-  const [smcResult,    setSmcResult]    = useState<SMCResult|null>(null)
-  const [smcMtfResult, setSmcMtfResult] = useState<SMCResult|null>(null)
+  const [smcResult,     setSmcResult]     = useState<SMCResult|null>(null)
+  const [smcMtfResults, setSmcMtfResults] = useState<Record<string,SMCResult>>({})
   const [msdResult,    setMsdResult]    = useState<MSDResult|null>(null)
   const [vmcResult,    setVmcResult]    = useState<VMCResult|null>(null)
   const [mpResult,     setMpResult]     = useState<MPResult|null>(null)
@@ -597,16 +611,23 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
 
   // Recalculate when settings change
   useEffect(()=>{const c=candlesRef.current;if(c.length)setSmcResult(calcSMC(c,smcS.swingLen))},[smcS.swingLen])
-  // Fetch Higher TF candles for SMC MTF overlay
+  // Fetch Higher TF candles for SMC MTF overlay (one fetch per selected TF)
   useEffect(()=>{
-    if(!indOn.smc||!smcS.mtfEnabled){setSmcMtfResult(null);return}
+    if(!indOn.smc||!smcS.mtfEnabled||!smcS.mtfTfs.length){setSmcMtfResults({});return}
     let cancelled=false
-    const mtfMin=parseInt(smcS.mtfTf)
-    fetchCandles(symbol,isCrypto,mtfMin)
-      .then(c=>{if(!cancelled&&c.length)setSmcMtfResult(calcSMC(c,smcS.swingLen))})
-      .catch(()=>{if(!cancelled)setSmcMtfResult(null)})
+    const fetchAll=async()=>{
+      const results:Record<string,SMCResult>={}
+      await Promise.all(smcS.mtfTfs.map(async(tfMin)=>{
+        try{
+          const c=await fetchCandles(symbol,isCrypto,parseInt(tfMin))
+          if(!cancelled&&c.length)results[tfMin]=calcSMC(c,smcS.swingLen)
+        }catch{}
+      }))
+      if(!cancelled)setSmcMtfResults(results)
+    }
+    fetchAll()
     return()=>{cancelled=true}
-  },[indOn.smc,smcS.mtfEnabled,smcS.mtfTf,symbol,isCrypto,smcS.swingLen])
+  },[indOn.smc,smcS.mtfEnabled,smcS.mtfTfs,symbol,isCrypto,smcS.swingLen])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setMsdResult(calcMSD(c,msdS.swingLen))},[msdS.swingLen])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setVmcResult(calcVMC(c,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold,vmcS.rsiLen,vmcS.stochSmooth,vmcS.mfiWeight))},[vmcS])
   useEffect(()=>{const c=candlesRef.current;if(c.length)setMpResult(calcMP(c,mpS.bins))},[mpS.bins])
@@ -864,9 +885,23 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     canvas.width=cw*dpr;canvas.height=ch*dpr;canvas.style.width=cw+'px';canvas.style.height=ch+'px'
     const ctx=canvas.getContext('2d')!;ctx.scale(dpr,dpr);ctx.clearRect(0,0,cw,ch)
 
+    // toX      : time-based  — for drawings/tools (saved with exact timestamps)
+    // toXIdx   : index-based — for indicators (avoids LW daily BusinessDay mismatch)
+    // toXByTime: index-based with time→index fallback for external-TF data (Vegas)
     const toX=(time:number):number|null=>{try{return chart.timeScale().timeToCoordinate(time as Time)}catch{return null}}
+    const toXIdx=(idx:number):number|null=>{try{return chart.timeScale().logicalToCoordinate(idx as any)}catch{return null}}
     const toY=(price:number):number|null=>{try{return ser.priceToCoordinate(price)}catch{return null}}
     const candles=candlesRef.current
+    // Build time→index map once per render (O(n), used by Vegas for cross-TF timestamps)
+    const timeIndexMap=new Map(candles.map((c,i)=>[c.time,i]))
+    const toXByTime=(time:number):number|null=>{
+      const exact=timeIndexMap.get(time)
+      if(exact!==undefined)return toXIdx(exact)
+      if(!candles.length)return null
+      let lo=0,hi=candles.length-1
+      while(lo<hi){const mid=(lo+hi+1)>>1;if(candles[mid].time<=time)lo=mid;else hi=mid-1}
+      return toXIdx(lo)
+    }
 
     // ── Draw saved drawings ──────────────────────────────────────────
     for(const d of drawings){
@@ -986,10 +1021,10 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         const pts=vegasData[ti]
         if(!pts?.length)continue
         const col=tun.color
-        // Build coordinate arrays
+        // Build coordinate arrays (toXByTime handles cross-TF timestamps on daily)
         const coordE1:{x:number;y:number}[]=[],coordE3:{x:number;y:number}[]=[]
         for(const p of pts){
-          const x=toX(p.time),y1=toY(p.e1),y3=toY(p.e3)
+          const x=toXByTime(p.time),y1=toY(p.e1),y3=toY(p.e3)
           if(x==null||x<0||x>chartAreaW)continue
           if(y1!=null)coordE1.push({x,y:y1})
           if(y3!=null)coordE3.push({x,y:y3})
@@ -1008,7 +1043,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
           ctx.beginPath()
           let first=true
           for(const p of pts){
-            const x=toX(p.time),y=toY(p[key])
+            const x=toXByTime(p.time),y=toY(p[key])
             if(x==null||y==null||x<0||x>chartAreaW)continue
             if(first){ctx.moveTo(x,y);first=false}else ctx.lineTo(x,y)
           }
@@ -1027,9 +1062,9 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       ctx.save()
       // Fill area
       const upper:number[]=[],lower:number[]=[],xs:number[]=[]
-      candles.forEach((c,i)=>{
+      candles.forEach((_,i)=>{
         const bb=bbResult[i];if(!bb)return
-        const x=toX(c.time),yu=toY(bb.upper),yl=toY(bb.lower)
+        const x=toXIdx(i),yu=toY(bb.upper),yl=toY(bb.lower)
         if(x==null||yu==null||yl==null)return
         xs.push(x);upper.push(yu);lower.push(yl)
       })
@@ -1050,9 +1085,9 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         // Middle SMA
         if(bbS.showMiddle){
           ctx.beginPath()
-          candles.forEach((c,i)=>{
+          candles.forEach((_,i)=>{
             const bb=bbResult[i];if(!bb)return
-            const x=toX(c.time),y=toY(bb.middle)
+            const x=toXIdx(i),y=toY(bb.middle)
             if(x==null||y==null)return
             ctx.lineTo(x,y)
           })
@@ -1070,8 +1105,8 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       ctx.fillStyle='rgba(13,17,23,0.82)';ctx.fillRect(0,cvdTop,chartAreaW,cvdH)
       // border top
       ctx.strokeStyle='#1E2330';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,cvdTop);ctx.lineTo(chartAreaW,cvdTop);ctx.stroke()
-      const visCandles=candles.map((c,i)=>({c,cvd:cvdResult[i]??0})).filter(({c})=>{
-        const x=toX(c.time);return x!=null&&x>=0&&x<=chartAreaW
+      const visCandles=candles.map((c,i)=>({c,idx:i,cvd:cvdResult[i]??0})).filter(({idx})=>{
+        const x=toXIdx(idx);return x!=null&&x>=0&&x<=chartAreaW
       })
       if(visCandles.length>2){
         const minCvd=Math.min(...visCandles.map(v=>v.cvd))
@@ -1087,18 +1122,18 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         const divergence=cvdTrendUp!==priceUp
         // Fill area under curve
         ctx.beginPath()
-        visCandles.forEach(({c,cvd},i)=>{
-          const x=toX(c.time)!,y=toCvdY(cvd)
+        visCandles.forEach(({idx,cvd},i)=>{
+          const x=toXIdx(idx)!,y=toCvdY(cvd)
           i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)
         })
-        ctx.lineTo(toX(visCandles[visCandles.length-1].c.time)!,cvdTop+cvdH)
-        ctx.lineTo(toX(visCandles[0].c.time)!,cvdTop+cvdH)
+        ctx.lineTo(toXIdx(visCandles[visCandles.length-1].idx)!,cvdTop+cvdH)
+        ctx.lineTo(toXIdx(visCandles[0].idx)!,cvdTop+cvdH)
         ctx.closePath()
         ctx.fillStyle=cvdTrendUp?'rgba(34,199,89,0.07)':'rgba(255,59,48,0.07)';ctx.fill()
         // CVD line
         ctx.beginPath()
-        visCandles.forEach(({c,cvd},i)=>{
-          const x=toX(c.time)!,y=toCvdY(cvd)
+        visCandles.forEach(({idx,cvd},i)=>{
+          const x=toXIdx(idx)!,y=toCvdY(cvd)
           i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)
         })
         ctx.strokeStyle=cvdTrendUp?'#22C759B0':'#FF3B30B0';ctx.lineWidth=1.5;ctx.stroke()
@@ -1127,7 +1162,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     // ── SMC ───────────────────────────────────────────────────────────
     if(indOn.smc&&smcResult){
       const drawZone=(top:number,btm:number,idx:number,fill:string,border:string,lbl:string)=>{
-        const t=candles[idx]?.time;const x=t?toX(t)??0:0;const y1=toY(top),y2=toY(btm);if(y1==null||y2==null)return
+        const x=toXIdx(idx)??0;const y1=toY(top),y2=toY(btm);if(y1==null||y2==null)return
         const zoneW=Math.max(0,chartAreaW-x)  // stop before price axis
         ctx.fillStyle=fill;ctx.strokeStyle=border;ctx.lineWidth=1
         ctx.fillRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1))
@@ -1140,7 +1175,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         smcResult.bearOBs.slice(0,smcS.obCount).forEach(ob=>drawZone(ob.top,ob.btm,ob.idx,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.10)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.75)`,'Bear OB'))
       if(smcS.showFVGBull)
         smcResult.bullFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
-          const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+          const x=toXIdx(fvg.idx)??0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
           const zoneW=Math.max(0,chartAreaW-x)
           ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.07)`;ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.5)`;ctx.setLineDash([4,3])
           ctx.fillRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.setLineDash([])
@@ -1148,7 +1183,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         })
       if(smcS.showFVGBear)
         smcResult.bearFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
-          const t=candles[fvg.idx]?.time;const x=t?toX(t)??0:0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+          const x=toXIdx(fvg.idx)??0;const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
           const zoneW=Math.max(0,chartAreaW-x)
           ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.07)`;ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.5)`;ctx.setLineDash([4,3])
           ctx.fillRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.strokeRect(x,Math.min(y1,y2),zoneW,Math.abs(y2-y1));ctx.setLineDash([])
@@ -1156,55 +1191,53 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
         })
     }
 
-    // ── SMC MTF (Higher TF OB/FVG overlay) ───────────────────────────
-    if(indOn.smc&&smcS.mtfEnabled&&smcMtfResult){
-      const tfEntry=SMC_MTF_TFS.find(t=>t.min===smcS.mtfTf)
-      const tfLbl=tfEntry?.label??'HTF'
+    // ── SMC MTF (Higher TF OB/FVG overlay — one layer per selected TF) ──
+    if(indOn.smc&&smcS.mtfEnabled&&Object.keys(smcMtfResults).length){
       const drawMtfZone=(top:number,btm:number,fill:string,border:string,lbl:string)=>{
         const y1=toY(top),y2=toY(btm);if(y1==null||y2==null)return
-        ctx.fillStyle=fill
-        ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
+        ctx.fillStyle=fill;ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
         ctx.strokeStyle=border;ctx.lineWidth=1.2;ctx.setLineDash([6,3])
         ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
         ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=border
-        ctx.fillText(`[${tfLbl}] ${lbl}`,4,Math.min(y1,y2)+12)
+        ctx.fillText(lbl,4,Math.min(y1,y2)+12)
       }
-      if(smcS.showOBBull)
-        smcMtfResult.bullOBs.slice(0,smcS.obCount).forEach(ob=>drawMtfZone(ob.top,ob.btm,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.06)`,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.55)`,'Bull OB'))
-      if(smcS.showOBBear)
-        smcMtfResult.bearOBs.slice(0,smcS.obCount).forEach(ob=>drawMtfZone(ob.top,ob.btm,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.06)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.55)`,'Bear OB'))
-      if(smcS.showFVGBull)
-        smcMtfResult.bullFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
-          const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
-          ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.05)`
-          ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
-          ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.4)`;ctx.lineWidth=1;ctx.setLineDash([6,4])
-          ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
-          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-profit','#22C759')
-          ctx.fillText(`[${tfLbl}] FVG ↑`,4,Math.min(y1,y2)+12)
-        })
-      if(smcS.showFVGBear)
-        smcMtfResult.bearFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
-          const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
-          ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.05)`
-          ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
-          ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.4)`;ctx.lineWidth=1;ctx.setLineDash([6,4])
-          ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
-          ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-warning','#FF9500')
-          ctx.fillText(`[${tfLbl}] FVG ↓`,4,Math.min(y1,y2)+12)
-        })
+      for(const [tfMin,res] of Object.entries(smcMtfResults)){
+        const tfLbl=SMC_MTF_TFS.find(t=>t.min===tfMin)?.label??'HTF'
+        if(smcS.showOBBull)
+          res.bullOBs.slice(0,smcS.obCount).forEach(ob=>drawMtfZone(ob.top,ob.btm,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.06)`,`rgba(${resolveCSSColor('var(--tm-blue-rgb','10,133,255')},0.55)`,`[${tfLbl}] Bull OB`))
+        if(smcS.showOBBear)
+          res.bearOBs.slice(0,smcS.obCount).forEach(ob=>drawMtfZone(ob.top,ob.btm,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.06)`,`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.55)`,`[${tfLbl}] Bear OB`))
+        if(smcS.showFVGBull)
+          res.bullFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
+            const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+            ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.05)`;ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
+            ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.4)`;ctx.lineWidth=1;ctx.setLineDash([6,4])
+            ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
+            ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-profit','#22C759')
+            ctx.fillText(`[${tfLbl}] FVG ↑`,4,Math.min(y1,y2)+12)
+          })
+        if(smcS.showFVGBear)
+          res.bearFVGs.slice(0,smcS.fvgCount).forEach(fvg=>{
+            const y1=toY(fvg.top),y2=toY(fvg.btm);if(y1==null||y2==null)return
+            ctx.fillStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.05)`;ctx.fillRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1))
+            ctx.strokeStyle=`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.4)`;ctx.lineWidth=1;ctx.setLineDash([6,4])
+            ctx.strokeRect(0,Math.min(y1,y2),chartAreaW,Math.abs(y2-y1));ctx.setLineDash([])
+            ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=resolveCSSColor('--tm-warning','#FF9500')
+            ctx.fillText(`[${tfLbl}] FVG ↓`,4,Math.min(y1,y2)+12)
+          })
+      }
     }
 
     // ── MSD ───────────────────────────────────────────────────────────
     if(indOn.msd&&msdResult){
       ctx.font='bold 10px JetBrains Mono, monospace'
       if(msdS.showSwings){
-        msdResult.swingHighs.forEach(sh=>{const t=candles[sh.idx]?.time;const x=t?toX(t):null;const y=toY(sh.price);if(x==null||y==null)return;ctx.fillStyle=sh.type==='HH'?'var(--tm-loss)':'var(--tm-warning)';ctx.fillText(sh.type,x-10,y-8)})
-        msdResult.swingLows.forEach(sl=>{const t=candles[sl.idx]?.time;const x=t?toX(t):null;const y=toY(sl.price);if(x==null||y==null)return;ctx.fillStyle=sl.type==='LL'?'var(--tm-profit)':'var(--tm-accent)';ctx.fillText(sl.type,x-10,y+16)})
+        msdResult.swingHighs.forEach(sh=>{const x=toXIdx(sh.idx);const y=toY(sh.price);if(x==null||y==null)return;ctx.fillStyle=sh.type==='HH'?'var(--tm-loss)':'var(--tm-warning)';ctx.fillText(sh.type,x-10,y-8)})
+        msdResult.swingLows.forEach(sl=>{const x=toXIdx(sl.idx);const y=toY(sl.price);if(x==null||y==null)return;ctx.fillStyle=sl.type==='LL'?'var(--tm-profit)':'var(--tm-accent)';ctx.fillText(sl.type,x-10,y+16)})
       }
       if(msdS.showBOS){
         msdResult.bosLines.forEach(bos=>{
-          const t1=candles[bos.from]?.time,t2=candles[bos.to]?.time;const x1=t1?toX(t1):null,x2=t2?toX(t2):null;const y=toY(bos.price);if(x1==null||x2==null||y==null)return
+          const x1=toXIdx(bos.from),x2=toXIdx(bos.to);const y=toY(bos.price);if(x1==null||x2==null||y==null)return
           ctx.strokeStyle=bos.type==='BOS'?(bos.dir==='bull'?'var(--tm-profit)':'var(--tm-loss)'):'#FFD60A';ctx.lineWidth=1;ctx.setLineDash([5,3])
           ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();ctx.setLineDash([])
           ctx.font='bold 9px JetBrains Mono, monospace';ctx.fillStyle=bos.type==='BOS'?(bos.dir==='bull'?'var(--tm-profit)':'var(--tm-loss)'):'#FFD60A';ctx.fillText(bos.type,(x1+x2)/2-10,y-4)
@@ -1218,8 +1251,8 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       ctx.fillStyle=bull?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.10)`:bear?`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.10)`:'rgba(255,255,255,0.03)';ctx.fillRect(0,ch-10,cw,10)
       ctx.font='bold 8px JetBrains Mono, monospace';ctx.fillStyle=bull?'var(--tm-profit)':bear?'var(--tm-loss)':'var(--tm-text-muted)';ctx.fillText(bull?'▲ BULL RIBBON':bear?'▼ BEAR RIBBON':'— NEUTRE',6,ch-2)
       const off=candles.length-vmcResult.sig.length
-      vmcResult.buySignals.forEach(idx=>{const c=candles[idx+off];if(!c)return;const x=toX(c.time),y=toY(c.low);if(x==null||y==null)return;ctx.fillStyle=resolveCSSColor('--tm-profit','#22C759');ctx.beginPath();ctx.moveTo(x,y+24);ctx.lineTo(x-6,y+14);ctx.lineTo(x+6,y+14);ctx.closePath();ctx.fill()})
-      vmcResult.sellSignals.forEach(idx=>{const c=candles[idx+off];if(!c)return;const x=toX(c.time),y=toY(c.high);if(x==null||y==null)return;ctx.fillStyle=resolveCSSColor('--tm-loss','#FF3B30');ctx.beginPath();ctx.moveTo(x,y-24);ctx.lineTo(x-6,y-14);ctx.lineTo(x+6,y-14);ctx.closePath();ctx.fill()})
+      vmcResult.buySignals.forEach(idx=>{const absIdx=idx+off;const c=candles[absIdx];if(!c)return;const x=toXIdx(absIdx),y=toY(c.low);if(x==null||y==null)return;ctx.fillStyle=resolveCSSColor('--tm-profit','#22C759');ctx.beginPath();ctx.moveTo(x,y+24);ctx.lineTo(x-6,y+14);ctx.lineTo(x+6,y+14);ctx.closePath();ctx.fill()})
+      vmcResult.sellSignals.forEach(idx=>{const absIdx=idx+off;const c=candles[absIdx];if(!c)return;const x=toXIdx(absIdx),y=toY(c.high);if(x==null||y==null)return;ctx.fillStyle=resolveCSSColor('--tm-loss','#FF3B30');ctx.beginPath();ctx.moveTo(x,y-24);ctx.lineTo(x-6,y-14);ctx.lineTo(x+6,y-14);ctx.closePath();ctx.fill()})
     }
 
     // ── Market Profile histogram (clipped to chart area) ──────────────
@@ -1238,10 +1271,9 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     // ── RSI Divergences ───────────────────────────────────────────────
     if(indOn.rsiDiv&&rsiDivResult){
       const drawDiv=(pair:RSIDivPair,isBull:boolean)=>{
-        const lc=candles[pair.leftIdx],rc=candles[pair.rightIdx]
-        if(!lc||!rc)return
-        const x1=toX(lc.time),y1=toY(pair.leftPrice)
-        const x2=toX(rc.time),y2=toY(pair.rightPrice)
+        if(!candles[pair.leftIdx]||!candles[pair.rightIdx])return
+        const x1=toXIdx(pair.leftIdx),y1=toY(pair.leftPrice)
+        const x2=toXIdx(pair.rightIdx),y2=toY(pair.rightPrice)
         if(x1==null||x2==null||y1==null||y2==null)return
         const col=isBull?'#22C759':'#FF3B30'
         ctx.save()
@@ -1260,7 +1292,7 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
       rsiDivResult.bullDivs.forEach(p=>drawDiv(p,true))
       rsiDivResult.bearDivs.forEach(p=>drawDiv(p,false))
     }
-  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,smcMtfResult,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
+  },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,smcMtfResults,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
 
   // RAF loop — redraws overlay canvas every frame (canvas ops are fast, ensures
   // indicators appear immediately after data load regardless of LW internal state)
