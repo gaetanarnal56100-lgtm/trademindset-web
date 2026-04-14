@@ -885,18 +885,23 @@ export default function LightweightChart({symbol,isCrypto,onTimeframeChange,onVi
     canvas.width=cw*dpr;canvas.height=ch*dpr;canvas.style.width=cw+'px';canvas.style.height=ch+'px'
     const ctx=canvas.getContext('2d')!;ctx.scale(dpr,dpr);ctx.clearRect(0,0,cw,ch)
 
-    // toX      : time-based  — for drawings/tools (saved with exact timestamps)
-    // toXIdx   : index-based — for indicators (avoids LW daily BusinessDay mismatch)
-    // toXByTime: index-based with time→index fallback for external-TF data (Vegas)
+    // ── Coordinate helpers ────────────────────────────────────────────
+    // toX      : time→pixel via LW API  (drawings/tools only — breaks on daily BusinessDay)
+    // toXIdx   : index→pixel computed from visibleLogicalRange (ALL timeframes, 100% reliable)
+    // toXByTime: time→index (binary search) then toXIdx  (Vegas cross-TF data)
     const toX=(time:number):number|null=>{try{return chart.timeScale().timeToCoordinate(time as Time)}catch{return null}}
-    const toXIdx=(idx:number):number|null=>{try{return chart.timeScale().logicalToCoordinate(idx as any)}catch{return null}}
     const toY=(price:number):number|null=>{try{return ser.priceToCoordinate(price)}catch{return null}}
     const candles=candlesRef.current
-    // Build time→index map once per render (O(n), used by Vegas for cross-TF timestamps)
-    const timeIndexMap=new Map(candles.map((c,i)=>[c.time,i]))
+    // Compute X from visible logical range — works identically on 1m and 1D
+    // because it only uses bar indices, never timestamps
+    const visRange=chart.timeScale().getVisibleLogicalRange()
+    const toXIdx=(idx:number):number|null=>{
+      if(!visRange)return null
+      const span=visRange.to-visRange.from||1
+      return((idx-visRange.from)/span)*chartAreaW
+    }
+    // Binary search: external time → nearest candle index → toXIdx
     const toXByTime=(time:number):number|null=>{
-      const exact=timeIndexMap.get(time)
-      if(exact!==undefined)return toXIdx(exact)
       if(!candles.length)return null
       let lo=0,hi=candles.length-1
       while(lo<hi){const mid=(lo+hi+1)>>1;if(candles[mid].time<=time)lo=mid;else hi=mid-1}
