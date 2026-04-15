@@ -31,7 +31,7 @@ function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
 
-async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
+export async function fetchCandles(symbol: string, interval: string, limit: number): Promise<Candle[]> {
   const sym = symbol.toUpperCase()
   if (isCryptoSymbol(sym)) {
     const binanceSymbols = [sym, sym.replace(/USDT$/i,'')+'USDT']
@@ -80,7 +80,7 @@ function rollingSum(arr: number[], length: number): number[] {
 
 // ── WaveTrend ──────────────────────────────────────────────────────────────
 interface WTResult { wt1: number[]; wt2: number[]; signals: (null|'bull'|'bear'|'smartBull'|'smartBear')[] }
-function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53): WTResult {
+export function calcWaveTrend(candles: Candle[], n1=10, n2=21, obLevel=53, osLevel=-53): WTResult {
   if (candles.length < n1+n2) return { wt1:[], wt2:[], signals:[] }
   const ap = candles.map(c => (c.h+c.l+c.c)/3)
   const esa:number[]=[], d:number[]=[], ci:number[]=[], tci:number[]=[]
@@ -113,7 +113,7 @@ interface VMCResult {
   smartCompressionArr:boolean[]; smartCompressionActive:boolean; breakoutCandidate:boolean
   obLevel:number; osLevel:number; rrScore:number
 }
-function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'|'custom'='custom'): VMCResult {
+export function calcVMCOscillator(candles: Candle[], preset:'scalping'|'swing'|'position'|'custom'='custom'): VMCResult {
   const EMPTY:VMCResult={sig:[],sigSignal:[],momentum:[],bullConfirm:false,bearConfirm:false,ribbonBull:false,ribbonBear:false,compression:false,status:'NEUTRAL',emas:[],vpi:[],vpiStrongBull:false,vpiStrongBear:false,vpiBreakout:false,smartCompressionArr:[],smartCompressionActive:false,breakoutCandidate:false,obLevel:40,osLevel:-40,rrScore:0}
   if (candles.length<60) return EMPTY
   const close=candles.map(c=>c.c), vol=candles.map(c=>c.v)
