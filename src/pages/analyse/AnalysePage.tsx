@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import type { MTFSnapshot } from './MTFDashboard'
-import { WaveTrendChart, VMCOscillatorChart, RSIChart } from './OscillatorCharts'
+import { WaveTrendChart, VMCOscillatorChart, RSIChart, RSIBollingerChart } from './OscillatorCharts'
 import TradePlanCard from './TradePlanCard'
 import type { TradePlanData, GPTSections } from './TradePlanCard'
 import LiveChart from './LiveChart'
@@ -1327,6 +1327,7 @@ export default function AnalysePage() {
         <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
           onStatusReady={(status)=>setPdfVmcStatus(status)} />
         <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+        <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
       </div>}
 
 

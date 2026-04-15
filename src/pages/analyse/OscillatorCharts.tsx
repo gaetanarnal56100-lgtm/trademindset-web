@@ -682,6 +682,446 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
   )
 }
 
+// ── RSI Bollinger helpers ─────────────────────────────────────────────────
+function rollingStdev(vals: number[], length: number): number[] {
+  return vals.map((_, i) => {
+    const win = vals.slice(Math.max(0, i - length + 1), i + 1)
+    const mean = win.reduce((a, b) => a + b, 0) / win.length
+    const variance = win.reduce((a, b) => a + (b - mean) ** 2, 0) / win.length
+    return Math.sqrt(variance)
+  })
+}
+
+function findPivotIdxs(data: number[], len: number, type: 'low' | 'high'): number[] {
+  const idxs: number[] = []
+  for (let i = len; i < data.length - len; i++) {
+    let isPivot = true
+    for (let j = i - len; j <= i + len; j++) {
+      if (j === i) continue
+      if (type === 'low' ? data[j] <= data[i] : data[j] >= data[i]) { isPivot = false; break }
+    }
+    if (isPivot) idxs.push(i)
+  }
+  return idxs
+}
+
+interface RSIBBTrendline {
+  x1: number; y1: number   // first pivot bar idx + RSI value
+  x2: number; y2: number   // second pivot bar idx + RSI value
+  slope: number
+  endIdx: number           // last bar this trendline is drawn to
+  broken: boolean
+  breakIdx: number
+  type: 'low' | 'high'
+}
+interface RSIBBResult {
+  rsi: number[]
+  basis: number[]
+  upper: number[]
+  lower: number[]
+  disp_up: number[]
+  disp_down: number[]
+  trendlines: RSIBBTrendline[]
+  divBull: { barIdx: number; prevBarIdx: number }[]
+  divBear: { barIdx: number; prevBarIdx: number }[]
+  tpUpperBars: boolean[]
+  tpLowerBars: boolean[]
+}
+
+function calcRSIBollinger(
+  candles: Candle[], rsiLen: number, bbLen: number, bbStdev: number,
+  sigma: number, pLen: number, rsiDiff: number,
+  showTrendlines: boolean, showDivergence: boolean
+): RSIBBResult {
+  const EMPTY: RSIBBResult = { rsi:[],basis:[],upper:[],lower:[],disp_up:[],disp_down:[],trendlines:[],divBull:[],divBear:[],tpUpperBars:[],tpLowerBars:[] }
+  const n = candles.length
+  if (n < 30) return EMPTY
+
+  const rsi = calcRSI(candles, rsiLen)
+  const basis = emaArr(rsi, bbLen)
+  const sd = rollingStdev(rsi, bbLen)
+  const upper    = basis.map((b, i) => b + bbStdev * sd[i])
+  const lower    = basis.map((b, i) => b - bbStdev * sd[i])
+  const disp_up  = basis.map((b, i) => b + (upper[i] - lower[i]) * sigma)
+  const disp_down= basis.map((b, i) => b - (upper[i] - lower[i]) * sigma)
+
+  const trendlines: RSIBBTrendline[] = []
+
+  if (showTrendlines && n > pLen * 2 + 5) {
+    // Pivot LOWS → support lines (connect higher lows; breakout = rsi drops below line)
+    const plIdxs = findPivotIdxs(rsi, pLen, 'low')
+    for (let k = Math.max(0, plIdxs.length - 12); k < plIdxs.length - 1; k++) {
+      const x1 = plIdxs[k], x2 = plIdxs[k + 1]
+      const y1 = rsi[x1],   y2 = rsi[x2]
+      if (y2 <= y1) continue   // only higher lows = rising support
+      const slope = (y2 - y1) / (x2 - x1)
+      let broken = false, breakIdx = n - 1
+      for (let j = x2 + 1; j < n; j++) {
+        if (rsi[j] < y2 + slope * (j - x2) - rsiDiff) { broken = true; breakIdx = j; break }
+      }
+      trendlines.push({ x1, y1, x2, y2, slope, endIdx: broken ? breakIdx : n - 1, broken, breakIdx, type: 'low' })
+    }
+    // Pivot HIGHS → resistance lines (connect lower highs; breakout = rsi rises above line)
+    const phIdxs = findPivotIdxs(rsi, pLen, 'high')
+    for (let k = Math.max(0, phIdxs.length - 12); k < phIdxs.length - 1; k++) {
+      const x1 = phIdxs[k], x2 = phIdxs[k + 1]
+      const y1 = rsi[x1],   y2 = rsi[x2]
+      if (y2 >= y1) continue   // only lower highs = falling resistance
+      const slope = (y2 - y1) / (x2 - x1)
+      let broken = false, breakIdx = n - 1
+      for (let j = x2 + 1; j < n; j++) {
+        if (rsi[j] > y2 + slope * (j - x2) + rsiDiff) { broken = true; breakIdx = j; break }
+      }
+      trendlines.push({ x1, y1, x2, y2, slope, endIdx: broken ? breakIdx : n - 1, broken, breakIdx, type: 'high' })
+    }
+  }
+
+  const divBull: { barIdx: number; prevBarIdx: number }[] = []
+  const divBear: { barIdx: number; prevBarIdx: number }[] = []
+
+  if (showDivergence && n > 30) {
+    const dlb = 5, drb = 5, dMin = 5, dMax = 60
+    const plD = findPivotIdxs(rsi, dlb, 'low').filter(i => i < n - drb)
+    for (let k = 1; k < plD.length; k++) {
+      const i1 = plD[k - 1], i2 = plD[k]
+      if (i2 - i1 < dMin || i2 - i1 > dMax) continue
+      if (candles[i2].l < candles[i1].l && rsi[i2] > rsi[i1]) divBull.push({ barIdx: i2, prevBarIdx: i1 })
+    }
+    const phD = findPivotIdxs(rsi, dlb, 'high').filter(i => i < n - drb)
+    for (let k = 1; k < phD.length; k++) {
+      const i1 = phD[k - 1], i2 = phD[k]
+      if (i2 - i1 < dMin || i2 - i1 > dMax) continue
+      if (candles[i2].h > candles[i1].h && rsi[i2] < rsi[i1]) divBear.push({ barIdx: i2, prevBarIdx: i1 })
+    }
+  }
+
+  return {
+    rsi, basis, upper, lower, disp_up, disp_down, trendlines, divBull, divBear,
+    tpUpperBars: rsi.map((r, i) => r >= upper[i]),
+    tpLowerBars: rsi.map((r, i) => r <= lower[i]),
+  }
+}
+
+// ── RSI Bollinger draw ─────────────────────────────────────────────────────
+function drawRSIBollinger(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  result: RSIBBResult, hoverIdx: number | null,
+  viewStart: number, viewEnd: number,
+  showTrendlines: boolean, showDivergence: boolean
+) {
+  ctx.fillStyle = resolveCSSColor('--tm-bg', '#0D1117'); ctx.fillRect(0, 0, W, H)
+  const { rsi, basis, upper, lower, disp_up, disp_down, trendlines, divBull, divBear, tpUpperBars, tpLowerBars } = result
+  const si = viewStart, ei = Math.min(viewEnd, rsi.length)
+  const n = ei - si; if (n < 2) return
+
+  const rsiS  = rsi.slice(si, ei)
+  const basS  = basis.slice(si, ei)
+  const uppS  = upper.slice(si, ei)
+  const lowS  = lower.slice(si, ei)
+  const duS   = disp_up.slice(si, ei)
+  const ddS   = disp_down.slice(si, ei)
+
+  const pad = { top: 8, bot: 8 }
+  const oscH = H - pad.top - pad.bot
+  const xp    = (i: number) => n > 1 ? (i / (n - 1)) * W : W / 2
+  const yp    = (v: number) => pad.top + oscH * (1 - Math.max(0, Math.min(100, v)) / 100)
+  const xpAbs = (abs: number) => xp(abs - si)
+
+  // OB/OS zones
+  ctx.fillStyle = 'rgba(255,59,48,0.06)';  ctx.fillRect(0, yp(100), W, yp(70) - yp(100))
+  ctx.fillStyle = 'rgba(34,199,89,0.06)';  ctx.fillRect(0, yp(30),  W, yp(0)  - yp(30))
+
+  // Grid & labels
+  ctx.setLineDash([3, 3]); ctx.strokeStyle = resolveCSSColor('--tm-border', '#2A2F3E'); ctx.lineWidth = 0.8
+  ;[70, 50, 30].forEach(l => { ctx.beginPath(); ctx.moveTo(0, yp(l)); ctx.lineTo(W, yp(l)); ctx.stroke() })
+  ctx.setLineDash([])
+  ctx.font = '9px JetBrains Mono,monospace'; ctx.fillStyle = resolveCSSColor('--tm-text-muted', '#555C70'); ctx.textAlign = 'right'
+  ctx.fillText('70', W - 4, yp(70) + 11); ctx.fillText('50', W - 4, yp(50) + 11); ctx.fillText('30', W - 4, yp(30) - 3)
+
+  // BB band fill
+  ctx.beginPath()
+  uppS.forEach((v, i) => i === 0 ? ctx.moveTo(xp(i), yp(v)) : ctx.lineTo(xp(i), yp(v)))
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(xp(i), yp(lowS[i]))
+  ctx.closePath(); ctx.fillStyle = 'rgba(0,229,255,0.04)'; ctx.fill()
+
+  // BB lines (upper/lower)
+  for (const arr of [uppS, lowS]) {
+    ctx.beginPath(); ctx.strokeStyle = '#00E5FF'; ctx.lineWidth = 1
+    arr.forEach((v, i) => i === 0 ? ctx.moveTo(xp(i), yp(v)) : ctx.lineTo(xp(i), yp(v))); ctx.stroke()
+  }
+
+  // Basis line
+  ctx.beginPath(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5
+  basS.forEach((v, i) => i === 0 ? ctx.moveTo(xp(i), yp(v)) : ctx.lineTo(xp(i), yp(v))); ctx.stroke()
+
+  // Dispersion fill
+  ctx.beginPath()
+  duS.forEach((v, i) => i === 0 ? ctx.moveTo(xp(i), yp(v)) : ctx.lineTo(xp(i), yp(v)))
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(xp(i), yp(ddS[i]))
+  ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill()
+
+  // Dispersion lines (disp_up / disp_down)
+  for (const arr of [duS, ddS]) {
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2
+    arr.forEach((v, i) => i === 0 ? ctx.moveTo(xp(i), yp(v)) : ctx.lineTo(xp(i), yp(v))); ctx.stroke()
+  }
+
+  // RSI — 3 colors: green (≥disp_up), red (≤disp_down), yellow (between)
+  for (let i = 1; i < n; i++) {
+    const v = rsiS[i], col = v >= duS[i] ? '#22C759' : v <= ddS[i] ? '#FF3B30' : '#FFEA00'
+    ctx.beginPath(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([])
+    ctx.moveTo(xp(i - 1), yp(rsiS[i - 1])); ctx.lineTo(xp(i), yp(v)); ctx.stroke()
+  }
+
+  // Trendlines
+  if (showTrendlines) {
+    for (const tl of trendlines) {
+      const drawEnd = Math.min(tl.endIdx, ei - 1)
+      const drawStart = Math.max(tl.x1, si)
+      if (drawEnd < si || drawStart >= ei) continue
+      const col = tl.type === 'low' ? '#ffffff' : '#ff03e2'
+      const ys = tl.y2 + tl.slope * (drawStart - tl.x2)
+      const ye = tl.y2 + tl.slope * (drawEnd   - tl.x2)
+      ctx.beginPath()
+      ctx.strokeStyle = tl.broken ? col + '55' : col
+      ctx.lineWidth = 2; ctx.setLineDash(tl.broken ? [4, 4] : [])
+      ctx.moveTo(xpAbs(drawStart), yp(ys)); ctx.lineTo(xpAbs(drawEnd), yp(ye)); ctx.stroke()
+      ctx.setLineDash([])
+      // Breakout emoji
+      if (tl.broken && tl.breakIdx >= si && tl.breakIdx < ei) {
+        ctx.font = '11px sans-serif'; ctx.textAlign = 'center'
+        ctx.fillText('🔥', xpAbs(tl.breakIdx), yp(rsi[tl.breakIdx]) + (tl.type === 'low' ? 14 : -6))
+      }
+    }
+  }
+
+  // Divergences
+  if (showDivergence) {
+    ctx.lineWidth = 2; ctx.setLineDash([])
+    for (const d of divBull) {
+      if (d.barIdx < si || d.barIdx >= ei || d.prevBarIdx < si) continue
+      ctx.beginPath(); ctx.strokeStyle = '#22C759'
+      ctx.moveTo(xpAbs(d.prevBarIdx), yp(rsi[d.prevBarIdx])); ctx.lineTo(xpAbs(d.barIdx), yp(rsi[d.barIdx])); ctx.stroke()
+      ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.fillStyle = '#22C759'; ctx.textAlign = 'center'
+      ctx.fillText('Bull', xpAbs(d.barIdx), yp(rsi[d.barIdx]) + 14)
+    }
+    for (const d of divBear) {
+      if (d.barIdx < si || d.barIdx >= ei || d.prevBarIdx < si) continue
+      ctx.beginPath(); ctx.strokeStyle = '#FF3B30'
+      ctx.moveTo(xpAbs(d.prevBarIdx), yp(rsi[d.prevBarIdx])); ctx.lineTo(xpAbs(d.barIdx), yp(rsi[d.barIdx])); ctx.stroke()
+      ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.fillStyle = '#FF3B30'; ctx.textAlign = 'center'
+      ctx.fillText('Bear', xpAbs(d.barIdx), yp(rsi[d.barIdx]) - 6)
+    }
+  }
+
+  // TP markers (✅ when RSI touches BB bands)
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.setLineDash([])
+  for (let i = 0; i < n; i++) {
+    const abs = i + si
+    if (tpUpperBars[abs]) ctx.fillText('✅', xp(i), yp(rsiS[i]) - 8)
+    else if (tpLowerBars[abs]) ctx.fillText('✅', xp(i), yp(rsiS[i]) + 14)
+  }
+
+  // Crosshair
+  if (hoverIdx != null && hoverIdx >= 0 && hoverIdx < n) {
+    const hx = xp(hoverIdx), hy = yp(rsiS[hoverIdx])
+    const hCol = rsiS[hoverIdx] >= duS[hoverIdx] ? '#22C759' : rsiS[hoverIdx] <= ddS[hoverIdx] ? '#FF3B30' : '#FFEA00'
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3])
+    ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, H); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.beginPath(); ctx.arc(hx, hy, 4, 0, Math.PI * 2)
+    ctx.fillStyle = hCol; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke()
+    // Value badge
+    ctx.fillStyle = hCol; ctx.fillRect(W - 44, hy - 9, 44, 18)
+    ctx.fillStyle = '#0D1117'; ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+    ctx.fillText(rsiS[hoverIdx].toFixed(1), W - 22, hy + 3)
+  }
+}
+
+// ── RSI Bollinger Chart Component ─────────────────────────────────────────
+export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+  const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
+  const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
+  const [candles, setCandles]         = useState<Candle[]>([])
+  const [result,  setResult]          = useState<RSIBBResult | null>(null)
+  const [status,  setStatus]          = useState<'idle'|'loading'|'error'>('idle')
+  const [errorMsg, setErrorMsg]       = useState('')
+  const [viewport, setViewport]       = useState<Viewport>({ from: 0, to: 1 })
+  const [nextRefresh, setNextRefresh] = useState(0)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showTrendlines, setShowTrendlines] = useState(true)
+  const [showDivergence, setShowDivergence] = useState(false)
+  const [bbStdev, setBbStdev] = useState(2)
+  const [sigma,   setSigma]   = useState(0.1)
+
+  const loadCandles = useCallback(async () => {
+    setStatus('loading'); setErrorMsg('')
+    try { const c = await fetchCandles(symbol, tf.interval, tf.limit); setCandles(c); setStatus('idle') }
+    catch (e) { setErrorMsg((e as Error).message); setStatus('error') }
+  }, [symbol, tf])
+
+  useEffect(() => { loadCandles() }, [loadCandles])
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval]||3600000; setNextRefresh(ms/1000); const t = setInterval(()=>setNextRefresh(x=>x<=1?ms/1000:x-1),1000); return()=>clearInterval(t) }, [tf])
+  useEffect(() => { const ms = TF_REFRESH_MS[tf.interval]||3600000; const t = setInterval(()=>loadCandles(),ms); return()=>clearInterval(t) }, [tf, loadCandles])
+
+  useEffect(() => {
+    if (candles.length < 30) return
+    setResult(calcRSIBollinger(candles, 14, 20, bbStdev, sigma, 4, 3, showTrendlines, showDivergence))
+  }, [candles, bbStdev, sigma, showTrendlines, showDivergence])
+
+  useEffect(() => {
+    if (!visibleRange) {
+      const n = candles.length || 1
+      setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else {
+      setViewport({ from: visibleRange.from, to: visibleRange.to })
+    }
+  }, [visibleRange, candles.length])
+
+  const total     = candles.length
+  const viewStart = total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
+  const viewEnd   = total > 0 ? Math.min(total, Math.ceil(viewport.to * total)) : 0
+  const viewSize  = Math.max(viewEnd - viewStart, 2)
+
+  const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
+    (ctx, W, H, hi) => { if (result) drawRSIBollinger(ctx, W, H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence) },
+    [result, viewStart, viewEnd, showTrendlines, showDivergence], viewSize, viewport, setViewport
+  )
+
+  const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
+  const lastDu  = result?.disp_up[result.disp_up.length - 1] ?? 55
+  const lastDd  = result?.disp_down[result.disp_down.length - 1] ?? 45
+  const lastBBU = result?.upper[result.upper.length - 1] ?? 70
+  const lastBBL = result?.lower[result.lower.length - 1] ?? 30
+  const rsiCol  = lastRsi >= lastDu ? '#22C759' : lastRsi <= lastDd ? '#FF3B30' : '#FFEA00'
+  const rsiLbl  = lastRsi >= lastDu ? '▲ Haussier' : lastRsi <= lastDd ? '▼ Baissier' : '◆ Neutre'
+  const activeTLs = (result?.trendlines ?? []).filter(tl => !tl.broken).length
+
+  return (
+    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#00E5FF,#0099bb)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#0D1117', letterSpacing: '-0.5px' }}>BB</div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>RSI Bollinger</div>
+          <div style={{ fontSize: 10, color: '#00E5FFaa' }}>{symbol}</div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:5, padding:'2px 8px', background:'rgba(34,199,89,0.1)', border:'1px solid rgba(34,199,89,0.25)', borderRadius:6 }}>
+          <div style={{ width:5, height:5, borderRadius:'50%', background:'var(--tm-profit)', animation:'pulse 1.5s ease-in-out infinite' }} />
+          <span style={{ fontSize:9, fontWeight:700, color:'var(--tm-profit)', fontFamily:'monospace' }}>LIVE</span>
+          <span style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'monospace' }}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
+        </div>
+        <div style={{ fontSize:10, fontWeight:700, color:rsiCol, background:`${rsiCol}22`, padding:'2px 10px', borderRadius:20, border:`1px solid ${rsiCol}55` }}>{rsiLbl}</div>
+        {showTrendlines && activeTLs > 0 && <div style={{ fontSize:9, fontWeight:600, color:'#ffffff90', background:'rgba(255,255,255,0.07)', padding:'1px 7px', borderRadius:10, border:'1px solid rgba(255,255,255,0.18)' }}>⟋ {activeTLs} TL{activeTLs>1?'s':''}</div>}
+        {showDivergence && <div style={{ fontSize:9, fontWeight:600, color:'#22C75990', background:'rgba(34,199,89,0.07)', padding:'1px 7px', borderRadius:10, border:'1px solid rgba(34,199,89,0.18)' }}>↗↘ Div</div>}
+        <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'center' }}>
+          <span style={{ fontSize:12, fontWeight:700, color:rsiCol, fontFamily:'JetBrains Mono,monospace' }}>RSI: {lastRsi.toFixed(1)}</span>
+          <span style={{ fontSize:10, color:'#00E5FF88', fontFamily:'JetBrains Mono,monospace' }}>{lastBBL.toFixed(1)}–{lastBBU.toFixed(1)}</span>
+          <button onClick={() => setShowSettings(s => !s)} style={{ background:'var(--tm-bg-tertiary)', border:'1px solid #2A2F3E', borderRadius:7, padding:'4px 9px', cursor:'pointer', fontSize:11, color:showSettings?'#00E5FF':'var(--tm-text-secondary)' }}>⚙</button>
+          <button onClick={loadCandles}  style={{ background:'var(--tm-bg-tertiary)', border:'1px solid #2A2F3E', borderRadius:7, padding:'4px 9px', cursor:'pointer', fontSize:11, color:'var(--tm-text-secondary)' }}>↻</button>
+        </div>
+      </div>
+
+      {/* Settings panel */}
+      {showSettings && (
+        <div style={{ padding:'8px 16px 12px', background:'rgba(0,229,255,0.03)', borderTop:'1px solid #1E2330', display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
+          <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--tm-text-secondary)' }}>
+            Écart-type σ
+            <select value={bbStdev} onChange={e => setBbStdev(+e.target.value)} style={{ background:'var(--tm-bg-tertiary)', border:'1px solid #2A2F3E', borderRadius:6, padding:'2px 6px', color:'var(--tm-text-primary)', fontSize:11 }}>
+              {[1,2,3].map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+          <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--tm-text-secondary)' }}>
+            Dispersion
+            <select value={sigma} onChange={e => setSigma(+e.target.value)} style={{ background:'var(--tm-bg-tertiary)', border:'1px solid #2A2F3E', borderRadius:6, padding:'2px 6px', color:'var(--tm-text-primary)', fontSize:11 }}>
+              {[0.05,0.10,0.15,0.20,0.30].map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+          <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--tm-text-secondary)', cursor:'pointer' }}>
+            <input type="checkbox" checked={showTrendlines} onChange={e => setShowTrendlines(e.target.checked)} />
+            Trendlines
+          </label>
+          <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--tm-text-secondary)', cursor:'pointer' }}>
+            <input type="checkbox" checked={showDivergence} onChange={e => setShowDivergence(e.target.checked)} />
+            Divergences
+          </label>
+        </div>
+      )}
+
+      {/* TF pills (hidden when synced) */}
+      {!syncInterval && (
+        <div style={{ display:'flex', gap:4, padding:'0 16px 10px', overflowX:'auto', scrollbarWidth:'none' as const }}>
+          {TF_OPTIONS.map(t => (
+            <button key={t.label} onClick={() => setLocalTf(t)} style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:500, cursor:'pointer', border:`1px solid ${t.label===tf.label?'#00E5FF':'var(--tm-border)'}`, background:t.label===tf.label?'rgba(0,229,255,0.15)':'var(--tm-bg-tertiary)', color:t.label===tf.label?'#00E5FF':'var(--tm-text-muted)', whiteSpace:'nowrap' }}>{t.label}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Canvas */}
+      <div style={{ padding:'0 16px 16px', position:'relative' }}>
+        {status === 'loading' && (
+          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'rgba(8,12,20,0.85)', borderRadius:8, zIndex:30, gap:8 }}>
+            <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
+            <span style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Chargement {symbol}…</span>
+          </div>
+        )}
+        {status === 'error' && (
+          <div style={{ padding:'20px 16px', display:'flex', flexDirection:'column', alignItems:'center', gap:8, textAlign:'center' }}>
+            <span style={{ fontSize:22 }}>📡</span>
+            <span style={{ fontSize:11, fontWeight:600, color:'var(--tm-loss)' }}>{errorMsg}</span>
+          </div>
+        )}
+        <canvas ref={canvasRef} width={800} height={200}
+          onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp} onMouseLeave={onLeave}
+          style={{ width:'100%', height:200, display:'block', borderRadius:8, cursor:'crosshair', userSelect:'none' }} />
+
+        {/* Hover tooltip */}
+        {hoverIdx !== null && result && (() => {
+          const di = viewStart + hoverIdx
+          const candle = candles[di]
+          if (!candle || result.rsi[di] == null) return null
+          const time = new Date(candle.t)
+          const timeStr = time.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})+' '+time.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})
+          const rv = result.rsi[di], bv = result.basis[di], uv = result.upper[di], lv = result.lower[di], duv = result.disp_up[di], ddv = result.disp_down[di]
+          const col = rv >= duv ? '#22C759' : rv <= ddv ? '#FF3B30' : '#FFEA00'
+          const tail = viewEnd - viewStart
+          const xVal = tail > 1 ? (hoverIdx / (tail - 1)) * canvasW : canvasW / 2
+          return (
+            <div style={{ position:'absolute', top:4, left: xVal > canvasW/2 ? 12 : canvasW - 200, background:'rgba(22,27,34,0.96)', border:'1px solid #2A2F3E', borderRadius:10, padding:'10px 14px', minWidth:185, pointerEvents:'none', boxShadow:'0 8px 24px rgba(0,0,0,0.6)', zIndex:20, backdropFilter:'blur(8px)' }}>
+              <div style={{ fontSize:10, color:'var(--tm-text-secondary)', fontWeight:600, marginBottom:6, fontFamily:'JetBrains Mono,monospace' }}>{timeStr}</div>
+              {[['RSI',rv,col],['Basis',bv,'#00E5FF'],['BB+',uv,'#00E5FF'],['BB−',lv,'#00E5FF'],['Disp+',duv,'rgba(255,255,255,0.6)'],['Disp−',ddv,'rgba(255,255,255,0.6)']].map(([lbl,val,c])=>(
+                <div key={String(lbl)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
+                  <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{lbl}</span>
+                  <span style={{ fontSize:11, fontWeight:700, color:String(c), fontFamily:'JetBrains Mono,monospace' }}>{(val as number)?.toFixed(1)}</span>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
+
+        {/* Legend */}
+        <div style={{ display:'flex', gap:12, marginTop:8, flexWrap:'wrap' }}>
+          {([
+            { color:'#22C759',             label:'RSI > Disp+' },
+            { color:'#FFEA00',             label:'RSI neutre' },
+            { color:'#FF3B30',             label:'RSI < Disp−' },
+            { color:'#00E5FF',             label:'Bollinger' },
+            { color:'rgba(255,255,255,0.55)', label:'Dispersion' },
+            ...(showTrendlines ? [{ color:'#ffffff', label:'⟋ Support' }, { color:'#ff03e2', label:'⟋ Résistance' }] : []),
+          ] as {color:string;label:string}[]).map(({ color, label }) => (
+            <div key={label} style={{ display:'flex', alignItems:'center', gap:4 }}>
+              <div style={{ width:8, height:8, borderRadius:2, background:color }} />
+              <span style={{ fontSize:9, color:'var(--tm-text-muted)' }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── RSI Calculation ──────────────────────────────────────────────────────────
 function calcRSI(candles: Candle[], period = 14): number[] {
   if (candles.length < period + 1) return []
