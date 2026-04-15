@@ -1,5 +1,5 @@
 // src/components/layout/AuthLayout.tsx
-import { Outlet } from 'react-router-dom'
+import { Outlet, Link } from 'react-router-dom'
 
 export default function AuthLayout() {
   return (
@@ -9,7 +9,7 @@ export default function AuthLayout() {
 
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="flex flex-col items-center gap-3 mb-8">
+        <Link to="/" className="flex flex-col items-center gap-3 mb-8" style={{ textDecoration: 'none' }}>
           <div className="w-12 h-12 rounded-2xl bg-brand-cyan bg-opacity-10 border border-brand-cyan border-opacity-20 flex items-center justify-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--tm-accent)" strokeWidth="2" strokeLinecap="round">
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
@@ -20,7 +20,7 @@ export default function AuthLayout() {
             <div className="text-xl font-bold text-text-primary font-display">TradeMindset</div>
             <div className="text-xs text-text-tertiary mt-0.5">Journal de trading professionnel</div>
           </div>
-        </div>
+        </Link>
 
         {/* Page content */}
         <Outlet />

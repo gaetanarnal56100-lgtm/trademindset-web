@@ -27,50 +27,46 @@ export default function XPBar() {
       }}
       title="Voir mes badges"
     >
-      {/* Level + Streak */}
+      {/* Level + XP + Streak — single row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{
             fontSize: 10, fontWeight: 800, color: '#0D1117',
             background: 'var(--tm-accent)', borderRadius: 4,
-            padding: '1px 5px', fontFamily: 'JetBrains Mono, monospace',
+            padding: '1px 5px', fontFamily: 'JetBrains Mono, monospace', flexShrink: 0,
           }}>
             LV.{level}
+          </span>
+          <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>
+            {currentXP.toLocaleString()}/{nextLevelXP.toLocaleString()}
           </span>
           {prestigeStars && (
             <span style={{ fontSize: 10, letterSpacing: -2 }}>{prestigeStars}</span>
           )}
           {profile.activeTitle && (
-            <span style={{ fontSize: 9, color: 'var(--tm-accent)', fontWeight: 600, opacity: 0.8 }}>
+            <span style={{ fontSize: 9, color: 'var(--tm-accent)', fontWeight: 600, opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 60 }}>
               {profile.activeTitle}
             </span>
           )}
         </div>
-        {profile.currentStreak > 0 && (
-          <span style={{ fontSize: 10, color: '#FF9500', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>
-            🔥{profile.currentStreak}
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+          <span style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>🏅{profile.badgeCount}</span>
+          {profile.currentStreak > 0 && (
+            <span style={{ fontSize: 10, color: '#FF9500', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>
+              🔥{profile.currentStreak}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* XP Bar */}
-      <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
+      <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{
           height: '100%', borderRadius: 2,
           width: `${Math.min(progress * 100, 100)}%`,
           background: 'linear-gradient(90deg, var(--tm-accent), #0A85FF)',
           transition: 'width 0.5s ease',
         }} />
-      </div>
-
-      {/* XP Numbers */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
-          {currentXP.toLocaleString()} / {nextLevelXP.toLocaleString()} XP
-        </span>
-        <span style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>
-          🏅 {profile.badgeCount}
-        </span>
       </div>
     </div>
   )

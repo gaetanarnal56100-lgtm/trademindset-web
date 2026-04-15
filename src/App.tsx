@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthInit, useIsAuthenticated } from '@/hooks/useAuth'
 import AppLayout      from '@/components/layout/AppLayout'
 import AuthLayout     from '@/components/layout/AuthLayout'
+import PublicLayout   from '@/components/layout/PublicLayout'
+import LandingPage    from '@/pages/landing/LandingPage'
 import LoginPage      from '@/pages/auth/LoginPage'
 import SignUpPage     from '@/pages/auth/SignUpPage'
 import DashboardPage  from '@/pages/dashboard/DashboardPage'
@@ -18,9 +20,11 @@ import SettingsPage   from '@/pages/settings/SettingsPage'
 import ExchangesPage  from '@/pages/exchanges/ExchangesPage'
 import ReferralPage   from '@/pages/referral/ReferralPage'
 import CoachIAPage    from '@/pages/coach/CoachIAPage'
-import BadgesPage from '@/pages/badges/BadgesPage'
+import BadgesPage   from '@/pages/badges/BadgesPage'
+import PredictPage  from '@/pages/predict/PredictPage'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
 import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
+import { LanguageProvider } from '@/contexts/LanguageContext'
 import { useAppStore } from '@/store/appStore'
 
 export default function App() {
@@ -32,16 +36,22 @@ export default function App() {
   if (isAuthLoading) return <LoadingScreen />
 
   return (
+    <LanguageProvider>
     <ThemeProvider isPremium={isPremium}>
     <Routes>
+      {/* ── Landing page publique ── */}
+      <Route element={<PublicLayout />}>
+        <Route path="/" element={!isAuthenticated ? <LandingPage /> : <Navigate to="/app" replace />} />
+      </Route>
+
       {/* ── Auth (non connecté) ── */}
       <Route element={<AuthLayout />}>
-        <Route path="/login"   element={!isAuthenticated ? <LoginPage />  : <Navigate to="/" replace />} />
-        <Route path="/signup"  element={!isAuthenticated ? <SignUpPage /> : <Navigate to="/" replace />} />
+        <Route path="/login"   element={!isAuthenticated ? <LoginPage />  : <Navigate to="/app" replace />} />
+        <Route path="/signup"  element={!isAuthenticated ? <SignUpPage /> : <Navigate to="/app" replace />} />
       </Route>
 
       {/* ── App (connecté) ── */}
-      <Route element={
+      <Route path="app" element={
         isAuthenticated
           ? <AppLayout />
           : <Navigate to="/login" replace />
@@ -59,12 +69,14 @@ export default function App() {
         <Route path="exchanges"        element={<ExchangesPage />} />
         <Route path="referral"         element={<ReferralPage />} />
         <Route path="coach"            element={<CoachIAPage />} />
-        <Route path="badges" element={<BadgesPage />} />
+        <Route path="badges"           element={<BadgesPage />} />
+        <Route path="predict"          element={<PredictPage />} />
       </Route>
 
       {/* ── Fallback ── */}
-      <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
+      <Route path="*" element={<Navigate to={isAuthenticated ? '/app' : '/'} replace />} />
     </Routes>
     </ThemeProvider>
+    </LanguageProvider>
   )
 }

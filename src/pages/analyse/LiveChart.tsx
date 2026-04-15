@@ -139,7 +139,20 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
       loading_screen: { backgroundColor: resolveCSSColor('--tm-bg','#0D1117'), foregroundColor: '#22C75940' },
 
       // Callback quand le widget est prêt
-      onready: () => setLoading(false),
+      onready: () => {
+        setLoading(false)
+        // Hook interval changes from inside the TV widget toolbar
+        try {
+          const w = widgetRef.current
+          w.onChartReady?.(() => {
+            try {
+              w.chart().onIntervalChanged().subscribe(null, (interval: string) => {
+                onTimeframeChange?.(TV_TO_OSC[interval] ?? '1h')
+              })
+            } catch { /* chart API not available */ }
+          })
+        } catch { /* widget API not available */ }
+      },
     })
 
     // Fallback si onready ne se déclenche pas
@@ -160,7 +173,7 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
   const chartH = expanded ? 620 : 440
 
   return (
-    <div style={{ background:resolveCSSColor('--tm-bg-secondary','#161B22'), border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:resolveCSSColor('--tm-bg-secondary','#161B22'), border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:0 }}>
 
       {/* Header */}
       <div style={{ padding:'10px 14px', display:'flex', alignItems:'center', gap:8, borderBottom:'1px solid #1E2330', flexWrap:'wrap' }}>

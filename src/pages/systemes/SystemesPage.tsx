@@ -1,12 +1,14 @@
 // src/pages/systemes/SystemesPage.tsx — Connecté à Firestore users/{uid}/systems
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { subscribeSystems, subscribeTrades, createSystem, updateSystem, deleteSystem, tradePnL, type TradingSystem, type Trade } from '@/services/firestore'
 
 function fmtPnL(n: number) { return `${n>=0?'+':''}$${Math.abs(n).toFixed(2)}` }
 
 // ── Mini courbe P&L canvas par système ────────────────────────────────────────
 function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: string; systemId: string }) {
+  const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hovered, setHovered] = useState<{x:number;y:number;val:number;date:string}|null>(null)
 
@@ -32,7 +34,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
       ctx.fillStyle = resolveCSSColor('--tm-text-muted','#555C70')
       ctx.font = '10px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText('Aucun trade fermé', W / 2, H / 2)
+      ctx.fillText(t('dashboard.noTrades'), W / 2, H / 2)
       return
     }
 
@@ -179,6 +181,7 @@ function SystemsComparisonChart({ systemStats, trades }: {
   systemStats: (TradingSystem & { totalTrades: number; totalPnL: number; winRate: string })[]
   trades: Trade[]
 }) {
+  const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hovered, setHovered] = useState<{sysName:string;pnl:number;x:number}|null>(null)
 
@@ -315,8 +318,8 @@ function SystemsComparisonChart({ systemStats, trades }: {
     <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:14, padding:'16px', marginTop:20 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
         <div>
-          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>Comparaison des systèmes</div>
-          <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>P&L cumulé par système</div>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>{t('systemes.comparison')}</div>
+          <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>{t('systemes.comparisonSubtitle')}</div>
         </div>
         {/* Légende */}
         <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
@@ -379,6 +382,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
 }
 
 export default function SystemesPage() {
+  const { t } = useTranslation()
   const [systems, setSystems] = useState<TradingSystem[]>([])
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [loading, setLoading] = useState(true)
@@ -408,11 +412,11 @@ export default function SystemesPage() {
     <div style={{ padding:24, maxWidth:900, margin:'0 auto' }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne,sans-serif' }}>Systèmes</h1>
-          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'3px 0 0' }}>{systems.length} système{systems.length > 1 ? 's' : ''} de trading</p>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne,sans-serif' }}>{t('systemes.title')}</h1>
+          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'3px 0 0' }}>{t('systemes.subtitle', { count: systems.length })}</p>
         </div>
         <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-          + Nouveau système
+          {t('systemes.newSystem')}
         </button>
       </div>
 
@@ -420,11 +424,11 @@ export default function SystemesPage() {
         <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)' }}>
           <div style={{ width:24, height:24, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-          Chargement...
+          {t('common.loading')}
         </div>
       ) : systems.length === 0 ? (
         <div style={{ textAlign:'center', padding:48, color:'var(--tm-text-muted)', fontSize:14 }}>
-          Aucun système. Crée ton premier système de trading.
+          {t('systemes.empty')}
         </div>
       ) : (
         <>
@@ -443,7 +447,7 @@ export default function SystemesPage() {
                   </div>
                   <div style={{ display:'flex', gap:6 }}>
                     <button onClick={() => setEditing(s)} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:11 }}>✏️</button>
-                    <button onClick={() => { if(confirm(`Supprimer "${s.name}" ?`)) deleteSystem(s.id) }} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:11 }}>✕</button>
+                    <button onClick={() => { if(confirm(`${t('common.delete')} "${s.name}" ?`)) deleteSystem(s.id) }} style={{ background:'none', border:'1px solid #2A2F3E', borderRadius:6, padding:'3px 8px', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:11 }}>✕</button>
                   </div>
                 </div>
 
@@ -492,6 +496,7 @@ export default function SystemesPage() {
 }
 
 function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null; onSave: (n: string, c: string) => Promise<void>; onClose: () => void }) {
+  const { t } = useTranslation()
   const [name, setName]   = useState(system?.name ?? '')
   const [color, setColor] = useState(system?.color ?? 'var(--tm-accent)')
   const [saving, setSaving] = useState(false)
@@ -508,16 +513,16 @@ function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
       <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:380, maxWidth:'95vw' }}>
         <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{system ? 'Modifier' : 'Nouveau'} système</span>
+          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{system ? t('common.edit') : t('systemes.new')} système</span>
           <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
         </div>
         <div style={{ marginBottom:12 }}>
-          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>NOM DU SYSTÈME</div>
+          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('systemes.nameLabel')}</div>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Breakout BTC" autoFocus
             style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:14, outline:'none', boxSizing:'border-box' }} />
         </div>
         <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8 }}>COULEUR</div>
+          <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8 }}>{t('systemes.colorLabel')}</div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
             {COLORS.map(c => (
               <button key={c} onClick={() => setColor(c)} style={{ width:30, height:30, borderRadius:8, background:c, border: color===c?`3px solid white`:'3px solid transparent', cursor:'pointer' }} />
@@ -526,7 +531,7 @@ function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null
         </div>
         <button onClick={save} disabled={!name.trim() || saving}
           style={{ width:'100%', padding:10, borderRadius:10, border:'none', background: name.trim()?color:'var(--tm-bg-tertiary)', color: name.trim()?'var(--tm-bg)':'var(--tm-text-muted)', fontSize:14, fontWeight:600, cursor: name.trim()?'pointer':'not-allowed' }}>
-          {saving ? 'Enregistrement...' : system ? 'Mettre à jour' : 'Créer le système'}
+          {saving ? t('common.saving') : system ? t('systemes.update') : t('systemes.create')}
         </button>
       </div>
     </div>

@@ -1,15 +1,43 @@
 // src/pages/auth/SignUpPage.tsx
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
 import { signUpWithEmail, signInWithGoogle } from '@/services/firebase/auth'
 import { IconEye, IconEyeOff, IconGoogle } from '@/components/ui/Icons'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
+import { useLanguage } from '@/contexts/LanguageContext'
+import type { Lang } from '@/i18n/config'
 
 const fbFn = getFunctions(app, 'europe-west1')
 
+// ── Sélecteur de langue ───────────────────────────────────────────────────
+
+function LangToggle({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void }) {
+  const btnStyle = (active: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px',
+    borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+    background: active ? 'rgba(0,229,255,0.12)' : 'transparent',
+    color: active ? '#00E5FF' : 'var(--tm-text-muted)',
+    outline: active ? '1px solid rgba(0,229,255,0.35)' : '1px solid transparent',
+    transition: 'all 0.15s',
+  })
+  return (
+    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', marginBottom: 12 }}>
+      <button type="button" onClick={() => setLang('fr')} style={btnStyle(lang === 'fr')}>
+        🇫🇷 FR
+      </button>
+      <button type="button" onClick={() => setLang('en')} style={btnStyle(lang === 'en')}>
+        🇬🇧 EN
+      </button>
+    </div>
+  )
+}
+
 export default function SignUpPage() {
+  const { t } = useTranslation()
+  const { lang, setLang } = useLanguage()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const refCode = searchParams.get('ref') || ''
@@ -21,26 +49,24 @@ export default function SignUpPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (password.length < 8) { toast.error('Mot de passe trop court (8 caractères min)'); return }
+    if (password.length < 8) { toast.error(t('auth.passwordTooShort')); return }
     setLoading(true)
     try {
-      await signUpWithEmail(email, password, name)
-      // Process referral if code present in URL
+      await signUpWithEmail(email, password, name, lang)
       if (refCode) {
         try {
           const fn = httpsCallable(fbFn, 'processReferral')
           await fn({ code: refCode })
         } catch { /* referral errors don't block signup */ }
       }
-      // Generate referral code for new user
       try {
         const genFn = httpsCallable(fbFn, 'generateUserReferralCode')
         await genFn()
       } catch { /* non-blocking */ }
-      toast.success('Compte créé ! Bienvenue sur TradeMindset 🎉')
-      navigate('/')
+      toast.success(t('auth.accountCreated'))
+      navigate('/app')
     } catch (err: unknown) {
-      toast.error((err as Error).message ?? 'Erreur inscription')
+      toast.error((err as Error).message ?? t('auth.signupError'))
     } finally {
       setLoading(false)
     }
@@ -60,9 +86,9 @@ export default function SignUpPage() {
         const genFn = httpsCallable(fbFn, 'generateUserReferralCode')
         await genFn()
       } catch { /* non-blocking */ }
-      navigate('/')
+      navigate('/app')
     } catch (err: unknown) {
-      toast.error((err as Error).message ?? 'Erreur Google')
+      toast.error((err as Error).message ?? t('auth.googleError'))
     } finally {
       setLoading(false)
     }
@@ -70,13 +96,15 @@ export default function SignUpPage() {
 
   return (
     <div className="card animate-slide-up space-y-5">
+      <LangToggle lang={lang} setLang={setLang} />
+
       <div>
-        <h1 className="text-xl font-bold text-text-primary font-display">Créer un compte</h1>
-        <p className="text-sm text-text-secondary mt-1">Commencez à tracker vos trades</p>
+        <h1 className="text-xl font-bold text-text-primary font-display">{t('auth.createAccount')}</h1>
+        <p className="text-sm text-text-secondary mt-1">{t('auth.startTracking')}</p>
         {refCode && (
           <div style={{ marginTop: 8, padding: '6px 12px', background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 14 }}>🎁</span>
-            <span style={{ fontSize: 12, color: '#00E5FF', fontWeight: 600 }}>Parrainage actif : <span style={{ fontFamily: 'monospace' }}>{refCode}</span></span>
+            <span style={{ fontSize: 12, color: '#00E5FF', fontWeight: 600 }}>{t('auth.referralActive')} <span style={{ fontFamily: 'monospace' }}>{refCode}</span></span>
           </div>
         )}
       </div>
@@ -86,37 +114,37 @@ export default function SignUpPage() {
         className="w-full flex items-center justify-center gap-3 bg-bg-tertiary border border-border text-text-primary text-sm font-medium py-2.5 rounded-lg hover:bg-bg-secondary transition-colors disabled:opacity-50"
       >
         <IconGoogle size={18} />
-        Continuer avec Google
+        {t('auth.continueWithGoogle')}
       </button>
 
       <div className="flex items-center gap-3">
         <div className="flex-1 h-px bg-border" />
-        <span className="text-xs text-text-tertiary">ou</span>
+        <span className="text-xs text-text-tertiary">{t('auth.or')}</span>
         <div className="flex-1 h-px bg-border" />
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="input-label">Prénom / Pseudo</label>
+          <label className="input-label">{t('auth.firstName')}</label>
           <input
             type="text" value={name} onChange={e => setName(e.target.value)}
-            className="input" placeholder="Votre nom" required
+            className="input" placeholder={t('auth.yourName')} required
           />
         </div>
         <div>
-          <label className="input-label">Email</label>
+          <label className="input-label">{t('auth.email')}</label>
           <input
             type="email" value={email} onChange={e => setEmail(e.target.value)}
             className="input" placeholder="trader@email.com" required
           />
         </div>
         <div>
-          <label className="input-label">Mot de passe</label>
+          <label className="input-label">{t('auth.password')}</label>
           <div className="relative">
             <input
               type={showPwd ? 'text' : 'password'}
               value={password} onChange={e => setPassword(e.target.value)}
-              className="input pr-10" placeholder="8 caractères minimum" required minLength={8}
+              className="input pr-10" placeholder={t('auth.passwordMin')} required minLength={8}
             />
             <button
               type="button" onClick={() => setShowPwd(v => !v)}
@@ -137,14 +165,14 @@ export default function SignUpPage() {
               <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
           )}
-          {loading ? 'Création...' : 'Créer mon compte'}
+          {loading ? t('auth.creating') : t('auth.createButton')}
         </button>
       </form>
 
       <p className="text-center text-sm text-text-secondary">
-        Déjà un compte ?{' '}
+        {t('auth.alreadyAccount')}{' '}
         <Link to="/login" className="text-brand-cyan hover:underline font-medium">
-          Se connecter
+          {t('auth.loginLink')}
         </Link>
       </p>
     </div>

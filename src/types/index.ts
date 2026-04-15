@@ -123,6 +123,7 @@ export interface UserProfile {
   displayName: string
   photoURL?:   string
   isPremium:   boolean
+  language?:   string
   createdAt:   Date
 }
 

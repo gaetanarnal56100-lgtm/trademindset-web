@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useGamification } from '@/hooks/useGamification'
 import {
   ALL_BADGES, BADGES_BY_ID, RARITY_CONFIG, CATEGORY_CONFIG,
@@ -15,6 +16,7 @@ type FilterCategory = 'all' | BadgeCategory
 type FilterRarity = 'all' | BadgeRarity
 
 export default function BadgesPage() {
+  const { t } = useTranslation()
   const { profile, earnedBadgeIds, loading, level, currentXP, nextLevelXP, progress } = useGamification()
   const [filterCat, setFilterCat] = useState<FilterCategory>('all')
   const [filterRarity, setFilterRarity] = useState<FilterRarity>('all')
@@ -48,21 +50,21 @@ export default function BadgesPage() {
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tm-text-primary, #F0F3FF)', margin: 0, fontFamily: 'Syne, sans-serif' }}>
-          🏅 Badges
+          {t('badges.title')}
         </h1>
         <p style={{ fontSize: 13, color: 'var(--tm-text-muted, #555C70)', margin: '4px 0 0' }}>
-          {earned} / {total} badges obtenus — débloquez des récompenses exclusives
+          {t('badges.subtitle', { earned, total })}
         </p>
       </div>
 
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 12, marginBottom: 20 }}>
         {[
-          { label: 'Niveau', value: `${level}`, icon: '⚡', color: 'var(--tm-accent, #00E5FF)' },
-          { label: 'XP Total', value: profile?.totalXP?.toLocaleString() ?? '0', icon: '💎', color: '#FFD700' },
-          { label: 'Badges', value: `${earned}/${total}`, icon: '🏅', color: '#22C759' },
-          { label: 'Streak', value: `${profile?.currentStreak ?? 0}j`, icon: '🔥', color: '#FF9500' },
-          { label: 'Multi XP', value: `×${(profile?.activeMultiplier ?? 1).toFixed(2)}`, icon: '✨', color: '#BF5AF2' },
+          { label: t('badges.statLevel'), value: `${level}`, icon: '⚡', color: 'var(--tm-accent, #00E5FF)' },
+          { label: t('badges.statXp'), value: profile?.totalXP?.toLocaleString() ?? '0', icon: '💎', color: '#FFD700' },
+          { label: t('badges.statBadges'), value: `${earned}/${total}`, icon: '🏅', color: '#22C759' },
+          { label: t('badges.statStreak'), value: `${profile?.currentStreak ?? 0}${t('badges.daysSuffix')}`, icon: '🔥', color: '#FF9500' },
+          { label: t('badges.statMultiplier'), value: `×${(profile?.activeMultiplier ?? 1).toFixed(2)}`, icon: '✨', color: '#BF5AF2' },
         ].map(({ label, value, icon, color }) => (
           <div key={label} style={card()}>
             <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
@@ -75,7 +77,7 @@ export default function BadgesPage() {
       {/* XP Progress bar */}
       <div style={{ ...card({ marginBottom: 20 }) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tm-text-primary, #F0F3FF)' }}>Niveau {level} → {level + 1}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tm-text-primary, #F0F3FF)' }}>{t('badges.levelProgress', { from: level, to: level + 1 })}</span>
           <span style={{ fontSize: 11, color: 'var(--tm-text-muted, #555C70)', fontFamily: 'JetBrains Mono, monospace' }}>{currentXP} / {nextLevelXP} XP</span>
         </div>
         <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
@@ -83,7 +85,7 @@ export default function BadgesPage() {
         </div>
         {profile && profile.prestigeLevel > 0 && (
           <div style={{ marginTop: 8, fontSize: 11, color: '#BF5AF2', fontWeight: 600 }}>
-            {'⭐'.repeat(profile.prestigeLevel)} Prestige {profile.prestigeLevel}
+            {'⭐'.repeat(profile.prestigeLevel)} {t('badges.prestige')} {profile.prestigeLevel}
           </div>
         )}
       </div>
@@ -92,18 +94,18 @@ export default function BadgesPage() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {/* Category filter */}
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1 }}>
-          <FilterChip label="Tous" active={filterCat === 'all'} onClick={() => setFilterCat('all')} />
-          {(Object.entries(CATEGORY_CONFIG) as [BadgeCategory, { label: string; icon: string }][]).map(([key, { label, icon }]) => (
-            <FilterChip key={key} label={`${icon} ${label}`} active={filterCat === key} onClick={() => setFilterCat(key)} />
+          <FilterChip label={t('common.all')} active={filterCat === 'all'} onClick={() => setFilterCat('all')} />
+          {(Object.entries(CATEGORY_CONFIG) as [BadgeCategory, { label: string; icon: string }][]).map(([key, { icon }]) => (
+            <FilterChip key={key} label={`${icon} ${t('badges.cat.' + key)}`} active={filterCat === key} onClick={() => setFilterCat(key)} />
           ))}
         </div>
       </div>
 
       {/* Rarity filter */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, flexWrap: 'wrap' }}>
-        <FilterChip label="Toutes raretés" active={filterRarity === 'all'} onClick={() => setFilterRarity('all')} />
-        {(Object.entries(RARITY_CONFIG) as [BadgeRarity, { label: string; color: string }][]).map(([key, { label, color }]) => (
-          <FilterChip key={key} label={label} active={filterRarity === key} onClick={() => setFilterRarity(key)} color={color} />
+        <FilterChip label={t('badges.allRarities')} active={filterRarity === 'all'} onClick={() => setFilterRarity('all')} />
+        {(Object.entries(RARITY_CONFIG) as [BadgeRarity, { label: string; color: string }][]).map(([key, { color }]) => (
+          <FilterChip key={key} label={t('badges.rarity.' + key)} active={filterRarity === key} onClick={() => setFilterRarity(key)} color={color} />
         ))}
       </div>
 
@@ -138,16 +140,16 @@ export default function BadgesPage() {
                   marginBottom: 4, lineHeight: 1.3,
                   minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {isSecret ? '???' : badge.name}
+                  {isSecret ? '???' : t('badges.names.' + badge.id, { defaultValue: badge.name })}
                 </div>
                 <div style={{
                   fontSize: 9, fontWeight: 700, color: rarity.color,
                   textTransform: 'uppercase', letterSpacing: '0.08em',
                 }}>
-                  {isSecret ? '???' : rarity.label}
+                  {isSecret ? '???' : t('badges.rarity.' + badge.rarity)}
                 </div>
                 {isEarned && (
-                  <div style={{ marginTop: 4, fontSize: 9, color: '#22C759', fontWeight: 600 }}>✅ Obtenu</div>
+                  <div style={{ marginTop: 4, fontSize: 9, color: '#22C759', fontWeight: 600 }}>{t('badges.earned')}</div>
                 )}
               </div>
             </div>
@@ -190,6 +192,7 @@ function FilterChip({ label, active, onClick, color }: { label: string; active: 
 
 // ── Badge Detail Modal ────────────────────────────────────────
 function BadgeModal({ badge, isEarned, onClose }: { badge: BadgeDefinition; isEarned: boolean; onClose: () => void }) {
+  const { t } = useTranslation()
   const rarity = RARITY_CONFIG[badge.rarity]
   const rewards = badge.reward
 
@@ -220,13 +223,13 @@ function BadgeModal({ badge, isEarned, onClose }: { badge: BadgeDefinition; isEa
         {/* Icon */}
         <div style={{ textAlign: 'center', marginBottom: 16 }}>
           <div style={{ fontSize: 56, filter: isEarned ? 'none' : 'grayscale(1)', marginBottom: 8 }}>{badge.icon}</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--tm-text-primary, #F0F3FF)', marginBottom: 4 }}>{badge.name}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: rarity.color, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{rarity.label}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--tm-text-primary, #F0F3FF)', marginBottom: 4 }}>{t('badges.names.' + badge.id, { defaultValue: badge.name })}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: rarity.color, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{t('badges.rarity.' + badge.rarity)}</div>
         </div>
 
         {/* Description */}
         <div style={{ fontSize: 13, color: 'var(--tm-text-secondary, #8F94A3)', textAlign: 'center', marginBottom: 20, lineHeight: 1.5 }}>
-          {badge.description}
+          {t('badges.desc.' + badge.id, { defaultValue: badge.description })}
         </div>
 
         {/* Status */}
@@ -236,27 +239,27 @@ function BadgeModal({ badge, isEarned, onClose }: { badge: BadgeDefinition; isEa
           border: `1px solid ${isEarned ? 'rgba(34,199,89,0.3)' : 'rgba(255,255,255,0.08)'}`,
         }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: isEarned ? '#22C759' : 'var(--tm-text-muted, #555C70)' }}>
-            {isEarned ? '✅ Badge obtenu' : '🔒 Non débloqué'}
+            {isEarned ? t('badges.obtained') : t('badges.locked')}
           </span>
         </div>
 
         {/* Rewards */}
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary, #F0F3FF)', marginBottom: 10 }}>Récompenses</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary, #F0F3FF)', marginBottom: 10 }}>{t('badges.rewards')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <RewardRow icon="⚡" label={`+${rewards.xp} XP`} />
-          {rewards.proDays && <RewardRow icon="👑" label={`${rewards.proDays} jours Pro`} />}
-          {rewards.xpMultiplier && <RewardRow icon="✨" label={`Multiplicateur XP ×${rewards.xpMultiplier}`} />}
-          {rewards.frame && <RewardRow icon="🖼️" label={`Cadre profil : ${rewards.frame}`} />}
-          {rewards.theme && <RewardRow icon="🎨" label={`Thème : ${rewards.theme}`} />}
-          {rewards.title && <RewardRow icon="📛" label={`Titre : ${rewards.title}`} />}
-          {rewards.feature && <RewardRow icon="🔓" label={`Feature : ${rewards.feature}`} />}
+          {rewards.proDays && <RewardRow icon="👑" label={t('badges.proDays', { count: rewards.proDays })} />}
+          {rewards.xpMultiplier && <RewardRow icon="✨" label={t('badges.xpMultiplier', { n: rewards.xpMultiplier })} />}
+          {rewards.frame && <RewardRow icon="🖼️" label={`${t('badges.profileFrame')}: ${rewards.frame}`} />}
+          {rewards.theme && <RewardRow icon="🎨" label={`${t('badges.theme')}: ${rewards.theme}`} />}
+          {rewards.title && <RewardRow icon="📛" label={`${t('badges.badgeTitle')}: ${rewards.title}`} />}
+          {rewards.feature && <RewardRow icon="🔓" label={`${t('badges.feature')}: ${rewards.feature}`} />}
         </div>
 
         {/* Seasonal tag */}
         {badge.seasonal && (
           <div style={{ marginTop: 12, textAlign: 'center' }}>
             <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)', color: '#FF9500', fontWeight: 600 }}>
-              🎄 Badge saisonnier — disponibilité limitée
+              {t('badges.seasonal')}
             </span>
           </div>
         )}

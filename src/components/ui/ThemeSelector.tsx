@@ -36,15 +36,10 @@ export function ThemeSelector() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tm-text-primary)' }}>Thème d'interface</span>
-        <span style={{ fontSize: 11, color: 'var(--tm-text-secondary)', marginLeft: 'auto' }}>
-          Appliqué instantanément
-        </span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+      {/* Single-row theme strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${THEMES.length}, 1fr)`, gap: 8 }}>
         {THEMES.map((t) => {
           const isActive = theme === t.id
           const isLocked = t.isPremium && !isPremium
@@ -60,83 +55,70 @@ export function ThemeSelector() {
                 position: 'relative',
                 padding: 0,
                 border: `2px solid ${isActive ? t.preview.accent : 'var(--tm-border)'}`,
-                borderRadius: 14,
+                borderRadius: 10,
                 overflow: 'hidden',
                 cursor: isLocked ? 'not-allowed' : 'pointer',
                 background: 'transparent',
                 transition: 'all 0.2s',
-                transform: isActive ? 'scale(1.02)' : 'scale(1)',
-                boxShadow: isActive ? `0 0 20px ${t.preview.accent}40` : 'none',
-                opacity: isLocked && !isHoveringUpgrade ? 0.65 : 1,
+                boxShadow: isActive ? `0 0 12px ${t.preview.accent}35` : 'none',
+                opacity: isLocked && !isHoveringUpgrade ? 0.6 : 1,
               }}
             >
-              {/* Theme preview miniature */}
-              <div style={{ background: t.preview.bg, padding: 10 }}>
-                {/* Mini card */}
-                <div style={{
-                  background: t.preview.card,
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  marginBottom: 6,
-                  border: `1px solid ${t.preview.accent}30`,
-                }}>
-                  <div style={{ fontSize: 10, color: t.preview.text, fontWeight: 700, fontFamily: 'monospace', marginBottom: 4 }}>
-                    {t.label.toUpperCase()}
-                  </div>
-                  {/* Mini P&L bars */}
-                  <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 20 }}>
-                    {[60, 80, 45, 90, 55, 70, 40].map((h, i) => (
-                      <div key={i} style={{
-                        flex: 1, borderRadius: 2,
-                        height: `${h}%`,
-                        background: i % 3 === 2 ? t.preview.loss : t.preview.profit,
-                        opacity: 0.8,
-                      }} />
-                    ))}
-                  </div>
+              {/* Compact preview */}
+              <div style={{ background: t.preview.bg, padding: '6px 7px 4px' }}>
+                {/* Mini P&L bars */}
+                <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 14, marginBottom: 4 }}>
+                  {[60, 80, 45, 90, 55, 70, 40].map((h, i) => (
+                    <div key={i} style={{
+                      flex: 1, borderRadius: 1,
+                      height: `${h}%`,
+                      background: i % 3 === 2 ? t.preview.loss : t.preview.profit,
+                      opacity: 0.85,
+                    }} />
+                  ))}
                 </div>
                 {/* Accent line */}
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.preview.accent }} />
-                  <div style={{ flex: 1, height: 2, borderRadius: 1, background: `${t.preview.accent}40` }} />
-                  <div style={{ fontSize: 9, color: t.preview.profit, fontFamily: 'monospace', fontWeight: 700 }}>+2.4%</div>
+                <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: t.preview.accent, flexShrink: 0 }} />
+                  <div style={{ flex: 1, height: 1, borderRadius: 1, background: `${t.preview.accent}50` }} />
+                  <div style={{ fontSize: 8, color: t.preview.profit, fontFamily: 'monospace', fontWeight: 700 }}>+2.4%</div>
                 </div>
               </div>
 
-              {/* Label */}
+              {/* Label row */}
               <div style={{
-                padding: '6px 10px 8px',
+                padding: '4px 7px 5px',
                 background: t.preview.card,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                gap: 4,
               }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? t.preview.accent : t.preview.text }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: isActive ? t.preview.accent : t.preview.text, whiteSpace: 'nowrap' }}>
                   {t.id === 'default' ? '✦ Default' : t.label}
                 </span>
                 {isLocked && (
                   <span style={{
-                    fontSize: 9, fontWeight: 700,
+                    fontSize: 8, fontWeight: 700,
                     background: 'rgba(var(--tm-purple-rgb,191,90,242),0.15)',
                     color: 'var(--tm-purple)',
                     border: '1px solid rgba(var(--tm-purple-rgb,191,90,242),0.3)',
-                    padding: '1px 5px',
-                    borderRadius: 4,
-                    letterSpacing: '0.05em',
+                    padding: '1px 4px',
+                    borderRadius: 3,
                   }}>
                     PRO
                   </span>
                 )}
                 {isActive && !isLocked && (
                   <span style={{
-                    fontSize: 9, fontWeight: 700,
+                    fontSize: 8, fontWeight: 700,
                     background: `${t.preview.accent}20`,
                     color: t.preview.accent,
                     border: `1px solid ${t.preview.accent}40`,
-                    padding: '1px 5px',
-                    borderRadius: 4,
+                    padding: '1px 4px',
+                    borderRadius: 3,
                   }}>
-                    ✓ ACTIF
+                    ✓
                   </span>
                 )}
               </div>
@@ -146,17 +128,17 @@ export function ThemeSelector() {
                 <div style={{
                   position: 'absolute',
                   inset: 0,
-                  background: 'rgba(0,0,0,0.7)',
+                  background: 'rgba(0,0,0,0.72)',
                   backdropFilter: 'blur(2px)',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 4,
-                  borderRadius: 12,
+                  gap: 3,
+                  borderRadius: 8,
                 }}>
-                  <span style={{ fontSize: 20 }}>🔒</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-purple)' }}>Pro requis</span>
+                  <span style={{ fontSize: 14 }}>🔒</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-purple)' }}>Pro requis</span>
                 </div>
               )}
             </button>
@@ -164,13 +146,13 @@ export function ThemeSelector() {
         })}
       </div>
 
-      {/* Description */}
+      {/* Active theme description — compact */}
       {THEMES.map(t => t.id === theme && (
         <div key={t.id} style={{
           fontSize: 11, color: 'var(--tm-text-secondary)',
-          padding: '8px 12px',
+          padding: '6px 10px',
           background: 'var(--tm-bg-secondary)',
-          borderRadius: 8,
+          borderRadius: 7,
           border: '1px solid var(--tm-border)',
         }}>
           <span style={{ color: 'var(--tm-accent)', fontWeight: 600 }}>{t.label}</span> — {t.description}

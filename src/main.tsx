@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './styles/globals.css'
+import './i18n/config' // initialise i18next avant le render React
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

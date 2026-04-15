@@ -3,6 +3,7 @@
 // Firestore: users/{uid}/exchanges/{id}
 
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   subscribeExchanges, createExchange, updateExchange,
   deleteExchange, setDefaultExchange,
@@ -25,8 +26,9 @@ const PRESET_EXCHANGES = [
   { name: 'Kraken',   maker: 0.002,  taker: 0.005  },
 ]
 
-// ─── Main page ─────────────────────────────────────────────────────────────────
-export default function ExchangesPage() {
+// ─── ExchangeManager — contenu réutilisable (sans wrapper page) ───────────────
+export function ExchangeManager() {
+  const { t } = useTranslation()
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
@@ -48,25 +50,19 @@ export default function ExchangesPage() {
   async function handleDelete(ex: Exchange) {
     try {
       await deleteExchange(ex.id)
-      toast.success(`${ex.name} supprimé`)
+      toast.success(t('exchanges.deleted', { name: ex.name }))
     } catch {
-      toast.error('Erreur lors de la suppression')
+      toast.error(t('common.error'))
     }
   }
 
   async function handleSetDefault(ex: Exchange) {
     try {
       await setDefaultExchange(ex.id, exchanges)
-      toast.success(`${ex.name} défini par défaut`)
+      toast.success(t('exchanges.setDefaultMsg', { name: ex.name }))
     } catch {
-      toast.error('Erreur')
+      toast.error(t('common.error'))
     }
-  }
-
-  const s: React.CSSProperties = {
-    padding: '28px 28px 60px',
-    maxWidth: 1200,
-    margin: '0 auto',
   }
 
   // Dedup: remove duplicate exchanges by name, keep the default one or first
@@ -81,7 +77,6 @@ export default function ExchangesPage() {
     for (const ex of exchanges) {
       const key = ex.name.toLowerCase()
       if (seen.has(key)) {
-        // Keep the default one, or the first seen
         const existing = seen.get(key)!
         if (ex.isDefault && !existing.isDefault) {
           toDelete.push(existing.id)
@@ -93,27 +88,24 @@ export default function ExchangesPage() {
         seen.set(key, ex)
       }
     }
-    if (!toDelete.length) { toast.success('Aucun doublon trouvé'); return }
+    if (!toDelete.length) { toast.success(t('exchanges.noDuplicates')); return }
     try {
       await Promise.all(toDelete.map(id => deleteExchange(id)))
-      toast.success(`${toDelete.length} doublon${toDelete.length > 1 ? 's' : ''} supprimé${toDelete.length > 1 ? 's' : ''}`)
-    } catch { toast.error('Erreur lors du nettoyage') }
+      toast.success(t('exchanges.duplicatesRemoved', { count: toDelete.length }))
+    } catch { toast.error(t('common.error')) }
   }
 
   return (
-    <div style={s}>
-      {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:24, flexWrap:'wrap', gap:12 }}>
+    <>
+      {/* Controls row */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne, sans-serif', letterSpacing:'-0.02em' }}>
-            Exchanges
-          </h1>
-          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'4px 0 0' }}>
-            {loading ? '…' : `${exchanges.length} exchange${exchanges.length !== 1 ? 's' : ''} configuré${exchanges.length !== 1 ? 's' : ''}`}
+          <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:0 }}>
+            {loading ? '…' : t('exchanges.configured', { count: exchanges.length })}
           </p>
           {hasDuplicates && (
             <button onClick={handleDedup} style={{ marginTop:6, padding:'4px 12px', borderRadius:8, border:'1px solid rgba(255,149,0,0.4)', background:'rgba(255,149,0,0.08)', color:'var(--tm-warning)', cursor:'pointer', fontSize:11, fontWeight:600 }}>
-              ⚠ Doublons détectés — Nettoyer
+              ⚠ {t('exchanges.cleanDuplicates')}
             </button>
           )}
         </div>
@@ -128,7 +120,7 @@ export default function ExchangesPage() {
             transition:'all 0.15s',
           }}
         >
-          + Ajouter un exchange
+          {t('exchanges.addExchange')}
         </button>
       </div>
 
@@ -141,7 +133,7 @@ export default function ExchangesPage() {
         <span style={{ fontSize:14, color:'var(--tm-text-muted)' }}>🔍</span>
         <input
           value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Rechercher un exchange…"
+          placeholder={t('exchanges.searchPlaceholder')}
           style={{
             flex:1, background:'transparent', border:'none', outline:'none',
             color:'var(--tm-text-primary)', fontSize:13,
@@ -152,7 +144,7 @@ export default function ExchangesPage() {
         )}
       </div>
 
-      {/* Empty state */}
+      {/* List */}
       {loading ? (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:16 }}>
           {[1,2,3].map(i => <SkeletonCard key={i} />)}
@@ -161,11 +153,10 @@ export default function ExchangesPage() {
         <EmptyState onAdd={() => setShowAdd(true)} search={search} />
       ) : (
         <>
-          {/* Default exchange highlight */}
           {exchanges.some(e => e.isDefault) && (
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
-                Par défaut
+                {t('exchanges.default')}
               </div>
               {filtered.filter(e => e.isDefault).map(ex => (
                 <ExchangeCard key={ex.id} exchange={ex}
@@ -175,12 +166,11 @@ export default function ExchangesPage() {
               ))}
             </div>
           )}
-
           {filtered.filter(e => !e.isDefault).length > 0 && (
             <div>
               {exchanges.some(e => e.isDefault) && (
                 <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
-                  Autres exchanges
+                  {t('exchanges.others')}
                 </div>
               )}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:14 }}>
@@ -197,13 +187,23 @@ export default function ExchangesPage() {
       )}
 
       {/* Preset quick-add */}
-      {!loading && (
-        <PresetSection exchanges={exchanges} />
-      )}
+      {!loading && <PresetSection exchanges={exchanges} />}
 
       {/* Modals */}
       {showAdd    && <ExchangeModal onClose={() => setShowAdd(false)} />}
       {editTarget && <ExchangeModal exchange={editTarget} onClose={() => setEditTarget(null)} />}
+    </>
+  )
+}
+
+// ─── ExchangesPage — wrapper pour la route /exchanges ─────────────────────────
+export default function ExchangesPage() {
+  return (
+    <div style={{ padding: '28px 28px 60px', maxWidth: 1200, margin: '0 auto' }}>
+      <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:'0 0 20px', fontFamily:'Syne, sans-serif', letterSpacing:'-0.02em' }}>
+        Exchanges
+      </h1>
+      <ExchangeManager />
     </div>
   )
 }
@@ -215,6 +215,7 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
   onEdit: () => void
   onSetDefault: () => void
 }) {
+  const { t } = useTranslation()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -230,14 +231,10 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
 
   return (
     <div style={card}>
-      {/* Top line accent for default */}
       {exchange.isDefault && (
         <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'var(--tm-profit)', opacity:0.6 }} />
       )}
-
-      {/* Header */}
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
-        {/* Avatar */}
         <div style={{
           width:42, height:42, borderRadius:'50%', flexShrink:0,
           background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',
@@ -247,7 +244,6 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
         }}>
           {initial(exchange.name)}
         </div>
-
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)', marginBottom:2 }}>
             {exchange.name}
@@ -255,12 +251,10 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
           {exchange.isDefault && (
             <div style={{ fontSize:10, fontWeight:600, color:'var(--tm-profit)', display:'flex', alignItems:'center', gap:4 }}>
               <span style={{ width:6, height:6, borderRadius:'50%', background:'var(--tm-profit)', display:'inline-block' }} />
-              Exchange par défaut
+              {t('exchanges.defaultExchange')}
             </div>
           )}
         </div>
-
-        {/* Menu */}
         <div style={{ position:'relative' }}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
@@ -277,39 +271,35 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
                 borderRadius:10, padding:4, minWidth:150,
                 boxShadow:'0 8px 24px rgba(0,0,0,0.5)',
               }}>
-                <MenuItem label="Modifier" icon="✏️" onClick={() => { onEdit(); setMenuOpen(false) }} />
-                {!exchange.isDefault && <MenuItem label="Définir par défaut" icon="⭐" onClick={() => { onSetDefault(); setMenuOpen(false) }} />}
+                <MenuItem label={t('common.edit')} icon="✏️" onClick={() => { onEdit(); setMenuOpen(false) }} />
+                {!exchange.isDefault && <MenuItem label={t('exchanges.setDefault')} icon="⭐" onClick={() => { onSetDefault(); setMenuOpen(false) }} />}
                 <div style={{ height:1, background:'var(--tm-border)', margin:'4px 0' }} />
-                <MenuItem label="Supprimer" icon="🗑" onClick={() => { setConfirmDelete(true); setMenuOpen(false) }} danger />
+                <MenuItem label={t('common.delete')} icon="🗑" onClick={() => { setConfirmDelete(true); setMenuOpen(false) }} danger />
               </div>
             </>
           )}
         </div>
       </div>
-
-      {/* Fees */}
       <div style={{ background:'var(--tm-bg-secondary)', borderRadius:10, padding:'12px 14px' }}>
         <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.06em' }}>
-          Frais de trading
+          {t('exchanges.tradingFees')}
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr auto 1fr', gap:8, alignItems:'center' }}>
           <div>
-            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:3 }}>Maker</div>
+            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:3 }}>{t('exchanges.maker')}</div>
             <div style={{ fontSize:18, fontWeight:800, fontFamily:'JetBrains Mono, monospace', color:'var(--tm-text-primary)' }}>
               {fmtFee(exchange.makerFeeRate)}
             </div>
           </div>
           <div style={{ width:1, height:30, background:'var(--tm-border)' }} />
           <div style={{ textAlign:'right' }}>
-            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:3 }}>Taker</div>
+            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:3 }}>{t('exchanges.taker')}</div>
             <div style={{ fontSize:18, fontWeight:800, fontFamily:'JetBrains Mono, monospace', color:'var(--tm-text-primary)' }}>
               {fmtFee(exchange.takerFeeRate)}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Set default button */}
       {!exchange.isDefault && (
         <button
           onClick={onSetDefault}
@@ -322,11 +312,9 @@ function ExchangeCard({ exchange, onDelete, onEdit, onSetDefault }: {
           onMouseOver={e => (e.currentTarget.style.borderColor = 'var(--tm-accent)')}
           onMouseOut={e => (e.currentTarget.style.borderColor = 'var(--tm-border)')}
         >
-          Définir par défaut
+          {t('exchanges.setDefault')}
         </button>
       )}
-
-      {/* Delete confirm */}
       {confirmDelete && (
         <ConfirmDeleteOverlay
           name={exchange.name}
@@ -358,16 +346,17 @@ function MenuItem({ label, icon, onClick, danger }: { label: string; icon: strin
 }
 
 function ConfirmDeleteOverlay({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
+  const { t } = useTranslation()
   return (
     <div style={{
       position:'absolute', inset:0, background:'rgba(0,0,0,0.8)', backdropFilter:'blur(4px)',
       borderRadius:14, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:20, zIndex:5,
     }}>
-      <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)', textAlign:'center' }}>Supprimer {name} ?</div>
-      <div style={{ fontSize:12, color:'var(--tm-text-secondary)', textAlign:'center' }}>Cette action est irréversible</div>
+      <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-text-primary)', textAlign:'center' }}>{t('exchanges.deleteConfirm', { name })}</div>
+      <div style={{ fontSize:12, color:'var(--tm-text-secondary)', textAlign:'center' }}>{t('exchanges.irreversible')}</div>
       <div style={{ display:'flex', gap:8 }}>
-        <button onClick={onCancel} style={{ padding:'7px 16px', borderRadius:8, border:'1px solid var(--tm-border)', background:'transparent', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:12 }}>Annuler</button>
-        <button onClick={onConfirm} style={{ padding:'7px 16px', borderRadius:8, border:'none', background:'var(--tm-loss)', color:'#fff', cursor:'pointer', fontSize:12, fontWeight:600 }}>Supprimer</button>
+        <button onClick={onCancel} style={{ padding:'7px 16px', borderRadius:8, border:'1px solid var(--tm-border)', background:'transparent', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:12 }}>{t('common.cancel')}</button>
+        <button onClick={onConfirm} style={{ padding:'7px 16px', borderRadius:8, border:'none', background:'var(--tm-loss)', color:'#fff', cursor:'pointer', fontSize:12, fontWeight:600 }}>{t('common.delete')}</button>
       </div>
     </div>
   )
@@ -375,12 +364,13 @@ function ConfirmDeleteOverlay({ name, onConfirm, onCancel }: { name: string; onC
 
 // ─── Exchange Modal (Add + Edit) ───────────────────────────────────────────────
 function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: () => void }) {
+  const { t } = useTranslation()
   const isEdit = !!exchange
-  const [name, setName]               = useState(exchange?.name ?? '')
-  const [makerFee, setMakerFee]       = useState(exchange ? exchange.makerFeeRate * 100 : 0.1)
-  const [takerFee, setTakerFee]       = useState(exchange ? exchange.takerFeeRate * 100 : 0.1)
-  const [isDefault, setIsDefault]     = useState(exchange?.isDefault ?? false)
-  const [saving, setSaving]           = useState(false)
+  const [name, setName]           = useState(exchange?.name ?? '')
+  const [makerFee, setMakerFee]   = useState(exchange ? exchange.makerFeeRate * 100 : 0.1)
+  const [takerFee, setTakerFee]   = useState(exchange ? exchange.takerFeeRate * 100 : 0.1)
+  const [isDefault, setIsDefault] = useState(exchange?.isDefault ?? false)
+  const [saving, setSaving]       = useState(false)
 
   async function handleSave() {
     if (!name.trim()) return
@@ -394,14 +384,14 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
       }
       if (isEdit && exchange) {
         await updateExchange({ ...exchange, ...data })
-        toast.success('Exchange mis à jour')
+        toast.success(t('exchanges.added', { name: data.name }))
       } else {
         await createExchange(data)
-        toast.success('Exchange ajouté')
+        toast.success(t('exchanges.added', { name: data.name }))
       }
       onClose()
     } catch {
-      toast.error('Erreur lors de la sauvegarde')
+      toast.error(t('common.error'))
     } finally {
       setSaving(false)
     }
@@ -421,24 +411,21 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
         borderRadius:18, width:'100%', maxWidth:460, overflow:'hidden',
         boxShadow:'0 24px 48px rgba(0,0,0,0.6)',
       }}>
-        {/* Header */}
         <div style={{ padding:'18px 20px 14px', borderBottom:'1px solid var(--tm-border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div>
             <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)' }}>
-              {isEdit ? 'Modifier l\'exchange' : 'Ajouter un exchange'}
+              {isEdit ? t('exchanges.editTitle') : t('exchanges.addTitle')}
             </div>
             <div style={{ fontSize:11, color:'var(--tm-text-secondary)', marginTop:2 }}>
-              {isEdit ? 'Modifiez les informations' : 'Configurez un nouvel exchange'}
+              {isEdit ? t('exchanges.editSubtitle') : t('exchanges.addSubtitle')}
             </div>
           </div>
           <button onClick={onClose} style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:18, color:'var(--tm-text-muted)', width:28, height:28, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
         </div>
-
         <div style={{ padding:20, display:'flex', flexDirection:'column', gap:16 }}>
-          {/* Presets (only for new) */}
           {!isEdit && (
             <div>
-              <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>Presets rapides</div>
+              <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{t('exchanges.quickPresets')}</div>
               <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
                 {PRESET_EXCHANGES.map(p => (
                   <button key={p.name} onClick={() => applyPreset(p)} style={{
@@ -454,19 +441,15 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
               </div>
             </div>
           )}
-
-          {/* Name */}
-          <FormField label="Nom de l'exchange">
+          <FormField label={t('exchanges.nameLabel')}>
             <input
               value={name} onChange={e => setName(e.target.value)}
-              placeholder="Ex: Binance, Bybit…"
+              placeholder={t('exchanges.namePlaceholder')}
               style={inputStyle}
             />
           </FormField>
-
-          {/* Fees */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <FormField label="Frais Maker (%)" hint="Ordre limite">
+            <FormField label={t('exchanges.makerFees')} hint={t('exchanges.limitOrder')}>
               <div style={{ position:'relative' }}>
                 <input
                   type="number" value={makerFee} step="0.001" min="0" max="1"
@@ -476,7 +459,7 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
                 <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', fontSize:12, color:'var(--tm-text-muted)' }}>%</span>
               </div>
             </FormField>
-            <FormField label="Frais Taker (%)" hint="Ordre marché">
+            <FormField label={t('exchanges.takerFees')} hint={t('exchanges.marketOrder')}>
               <div style={{ position:'relative' }}>
                 <input
                   type="number" value={takerFee} step="0.001" min="0" max="1"
@@ -487,20 +470,16 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
               </div>
             </FormField>
           </div>
-
-          {/* Default toggle */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:'var(--tm-bg-tertiary)', borderRadius:10, border:'1px solid var(--tm-border)' }}>
             <div>
-              <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-primary)' }}>Exchange par défaut</div>
-              <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>Pré-sélectionné lors de la création de trades</div>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-primary)' }}>{t('exchanges.defaultLabel')}</div>
+              <div style={{ fontSize:11, color:'var(--tm-text-secondary)' }}>{t('exchanges.defaultHint')}</div>
             </div>
             <Toggle checked={isDefault} onChange={setIsDefault} />
           </div>
-
-          {/* Buttons */}
           <div style={{ display:'flex', gap:10, marginTop:4 }}>
             <button onClick={onClose} style={{ flex:1, padding:'10px', borderRadius:9, border:'1px solid var(--tm-border)', background:'transparent', color:'var(--tm-text-secondary)', cursor:'pointer', fontSize:13 }}>
-              Annuler
+              {t('common.cancel')}
             </button>
             <button
               onClick={handleSave}
@@ -511,7 +490,7 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
                 opacity: saving ? 0.7 : 1,
               }}
             >
-              {saving ? '…' : isEdit ? 'Enregistrer' : 'Ajouter'}
+              {saving ? '…' : isEdit ? t('common.save') : t('common.add')}
             </button>
           </div>
         </div>
@@ -522,38 +501,32 @@ function ExchangeModal({ exchange, onClose }: { exchange?: Exchange; onClose: ()
 
 // ─── Preset Section ────────────────────────────────────────────────────────────
 function PresetSection({ exchanges }: { exchanges: Exchange[] }) {
-  const existingNames = new Set(exchanges.map(e => e.name.toLowerCase()))
+  const { t } = useTranslation()
+  const existingNames = new Set(exchanges.map(ex => ex.name.toLowerCase()))
   const missing = PRESET_EXCHANGES.filter(p => !existingNames.has(p.name.toLowerCase()))
   if (!missing.length) return null
-
   return (
     <div style={{ marginTop:32 }}>
       <div style={{ fontSize:13, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:12 }}>
-        Ajouter rapidement
+        {t('exchanges.quickAdd')}
       </div>
       <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-        {missing.map(p => (
-          <QuickAddButton key={p.name} preset={p} />
-        ))}
+        {missing.map(p => <QuickAddButton key={p.name} preset={p} />)}
       </div>
     </div>
   )
 }
 
 function QuickAddButton({ preset }: { preset: typeof PRESET_EXCHANGES[0] }) {
+  const { t } = useTranslation()
   const [adding, setAdding] = useState(false)
   async function handleAdd() {
     setAdding(true)
     try {
-      await createExchange({
-        name: preset.name,
-        makerFeeRate: preset.maker,
-        takerFeeRate: preset.taker,
-        isDefault: false,
-      })
-      toast.success(`${preset.name} ajouté`)
-    } catch (err) {
-      toast.error('Erreur lors de l\'ajout')
+      await createExchange({ name: preset.name, makerFeeRate: preset.maker, takerFeeRate: preset.taker, isDefault: false })
+      toast.success(t('exchanges.added', { name: preset.name }))
+    } catch {
+      toast.error(t('common.error'))
     } finally {
       setAdding(false)
     }
@@ -613,21 +586,22 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 }
 
 function EmptyState({ onAdd, search }: { onAdd: () => void; search: string }) {
+  const { t } = useTranslation()
   return (
     <div style={{ textAlign:'center', padding:'60px 20px', color:'var(--tm-text-secondary)' }}>
       <div style={{ fontSize:48, marginBottom:16 }}>🏦</div>
       <div style={{ fontSize:16, fontWeight:600, marginBottom:8, color:'var(--tm-text-primary)' }}>
-        {search ? 'Aucun résultat' : 'Aucun exchange configuré'}
+        {search ? t('exchanges.noResults') : t('exchanges.noExchanges')}
       </div>
       <div style={{ fontSize:13, color:'var(--tm-text-secondary)', marginBottom:20 }}>
-        {search ? 'Essayez une autre recherche' : 'Ajoutez vos exchanges pour calculer automatiquement les frais dans vos trades'}
+        {search ? t('exchanges.trySearch') : t('exchanges.addFirst')}
       </div>
       {!search && (
         <button onClick={onAdd} style={{
           padding:'10px 24px', borderRadius:10, border:'none',
           background:'var(--tm-accent)', color:'var(--tm-bg)', cursor:'pointer', fontSize:13, fontWeight:700,
         }}>
-          Ajouter un exchange
+          {t('exchanges.addExchange')}
         </button>
       )}
     </div>

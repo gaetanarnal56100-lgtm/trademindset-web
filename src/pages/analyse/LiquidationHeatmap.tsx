@@ -1,8 +1,9 @@
-// LiquidationHeatmap.tsx — v7 Coinglass-faithful
-// Algorithme cumulatif avec accumulateur running persistant entre colonnes
-// 200 buckets, bougies petites, bandes horizontales longues comme Coinglass
+// LiquidationHeatmap.tsx — v8 avec onglets Heatmap / Liquidation Map
+// Onglet 1 : heatmap temps×prix (Coinglass-faithful)
+// Onglet 2 : liquidation map prix×volume avec lignes cumulatives Long/Short
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import LiquidationMap from './LiquidationMap'
 
 interface Kline { openTime: Date; open: number; high: number; low: number; close: number; volume: number }
 interface HeatmapData { pMin: number; pMax: number; step: number; N: number; cols: Float32Array[]; candles: Kline[]; buckets: number }
@@ -89,9 +90,9 @@ function buildHeatmap(candles: Kline[]): HeatmapData {
         if(b<0||b>=BUCKETS)continue
         // Un seul pixel de large — bandes parfaitement nettes
         running[b]+=vol*w
-        // Demi-pixel de chaque côté pour l'antialiasing naturel
-        if(b>0)         running[b-1]+=vol*w*0.3
-        if(b<BUCKETS-1) running[b+1]+=vol*w*0.3
+        // Léger halo de chaque côté — réduit avec HiDPI (chaque bucket = +de pixels physiques)
+        if(b>0)         running[b-1]+=vol*w*0.12
+        if(b<BUCKETS-1) running[b+1]+=vol*w*0.12
       }
     }
 
@@ -127,11 +128,23 @@ function buildHeatmap(candles: Kline[]): HeatmapData {
   return{pMin,pMax,step,N,cols,candles,buckets:BUCKETS}
 }
 
+// ── HiDPI helper ───────────────────────────────────────────────────────────
+// Configure le canvas en résolution physique (dpr), retourne ctx scalé en pixels CSS
+function hiDPI(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; W: number; H: number } {
+  const dpr = window.devicePixelRatio || 1
+  const W   = canvas.offsetWidth  || 1000
+  const H   = canvas.offsetHeight || CANVAS_H
+  canvas.width  = Math.round(W * dpr)
+  canvas.height = Math.round(H * dpr)
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(dpr, dpr)
+  return { ctx, W, H }
+}
+
 // ── Draw ───────────────────────────────────────────────────────────────────
 
 function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, threshold = 0) {
-  const ctx=canvas.getContext('2d')!
-  const W=canvas.width, H=canvas.height
+  const { ctx, W, H } = hiDPI(canvas)
   const chartW=W-AXIS_W
   const colW=chartW/data.N
   const rowH=H/data.buckets
@@ -159,28 +172,38 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, t
     }
   }
 
-  // Bougies — petites, semi-transparentes, au dessus de la heatmap
+  // Bougies — coordonnées snappées au pixel entier pour un rendu net
   for(let ci=0;ci<data.N;ci++){
-    const c=data.candles[ci], cx=ci*colW+colW/2
+    const c=data.candles[ci]
     const bull=c.close>=c.open
-    const hY=H*(1-(c.high-data.pMin)/range)
-    const lY=H*(1-(c.low-data.pMin)/range)
-    const oY=H*(1-(c.open-data.pMin)/range)
-    const cY=H*(1-(c.close-data.pMin)/range)
-    const bW=Math.max(colW*0.5, 1.2)
 
-    const color=bull?'rgba(0,220,140,0.85)':'rgba(220,40,60,0.85)'
-    ctx.strokeStyle=color; ctx.lineWidth=0.7
-    ctx.beginPath(); ctx.moveTo(cx,hY); ctx.lineTo(cx,lY); ctx.stroke()
+    // Snap x : centrer sur pixel entier
+    const cx = Math.round(ci*colW + colW/2)
+    // Snap y : arrondi à l'entier le plus proche
+    const hY = Math.round(H*(1-(c.high -data.pMin)/range))
+    const lY = Math.round(H*(1-(c.low  -data.pMin)/range))
+    const oY = Math.round(H*(1-(c.open -data.pMin)/range))
+    const cY = Math.round(H*(1-(c.close-data.pMin)/range))
+    // Body width : entier minimum 1px
+    const bW = Math.max(Math.round(colW*0.6), 1)
+    const bX = cx - Math.floor(bW/2)
+
+    const color = bull ? 'rgba(0,220,140,0.92)' : 'rgba(220,40,60,0.92)'
+
+    // Mèche : cx+0.5 → trait de 1px exactement centré sur un pixel (pas de blur)
+    ctx.strokeStyle=color; ctx.lineWidth=1
+    ctx.beginPath(); ctx.moveTo(cx+0.5, hY); ctx.lineTo(cx+0.5, lY); ctx.stroke()
+
+    // Corps : tous entiers → fillRect net
     ctx.fillStyle=color
-    ctx.fillRect(cx-bW/2, Math.min(oY,cY), bW, Math.max(Math.abs(cY-oY),1))
+    ctx.fillRect(bX, Math.min(oY,cY), bW, Math.max(Math.abs(cY-oY), 1))
   }
 
   // Ligne prix courant
   if(price>0&&price>=data.pMin&&price<=data.pMax){
-    const py=H*(1-(price-data.pMin)/range)
+    const py=Math.round(H*(1-(price-data.pMin)/range))+0.5
     ctx.save(); ctx.setLineDash([4,3])
-    ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=0.8
+    ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1
     ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(chartW,py); ctx.stroke()
     ctx.restore()
     const label=fmtP(price)
@@ -202,10 +225,8 @@ function drawBase(canvas: HTMLCanvasElement, data: HeatmapData, price: number, t
 }
 
 function drawOverlay(canvas: HTMLCanvasElement, tip: Tip|null, data: HeatmapData) {
-  const ctx=canvas.getContext('2d')!
-  const W=canvas.width, H=canvas.height
+  const { ctx, W, H } = hiDPI(canvas)   // reset + scale — clear automatique
   const chartW=W-AXIS_W
-  ctx.clearRect(0,0,W,H)
   if(!tip)return
 
   // Crosshair
@@ -265,6 +286,8 @@ const fmtTS=(d:Date)=>d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',ye
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
+  const [tab, setTab] = useState<'heatmap'|'map'>('heatmap')
+
   const [period,  setPeriod]  = useState(PERIODS[4])   // 24h
   const [data,    setData]    = useState<HeatmapData|null>(null)
   const [price,   setPrice]   = useState(0)
@@ -304,15 +327,14 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
     if(!d||!overlayRef.current)return
     const canvas=overlayRef.current
     const rect=canvas.getBoundingClientRect()
-    const scaleX=canvas.width/rect.width
-    const scaleY=canvas.height/rect.height
-    const chartW=canvas.width-AXIS_W
+    // Coordonnées CSS (pas de scaleX/Y — tout se dessine en pixels CSS avec hiDPI)
+    const W=rect.width, H=rect.height
+    const chartW=W-AXIS_W
     let cx:number,cy:number
     if('touches' in e){cx=e.touches[0].clientX;cy=e.touches[0].clientY}
     else{cx=(e as React.MouseEvent).clientX;cy=(e as React.MouseEvent).clientY}
-    const x=(cx-rect.left)*scaleX, y=(cy-rect.top)*scaleY
-    if(x<0||x>chartW||y<0||y>canvas.height)return
-    const H=canvas.height
+    const x=cx-rect.left, y=cy-rect.top
+    if(x<0||x>chartW||y<0||y>H)return
     const tipPrice=d.pMin+(1-y/H)*(d.pMax-d.pMin)
     const ci=Math.min(Math.max(Math.floor(x/chartW*d.N),0),d.N-1)
     const snap=d.candles[ci]
@@ -330,92 +352,115 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
     <div style={{background:'#050210',borderRadius:16,border:'1px solid rgba(80,0,180,0.35)',overflow:'hidden',userSelect:'none'}}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
-      {/* Header */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px'}}>
+      {/* Header + onglets */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span>🔥</span>
-          <span style={{fontSize:13,fontWeight:600,color:'white'}}>Liquidation Heatmap</span>
+          <span>{tab==='heatmap'?'🔥':'💧'}</span>
+          <span style={{fontSize:13,fontWeight:600,color:'white'}}>
+            {tab==='heatmap'?'Liquidation Heatmap':'Liquidation Map'}
+          </span>
           <span style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{symbol}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
-          {loading&&<div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'rgba(255,255,255,0.4)'}}>
+          {loading&&tab==='heatmap'&&<div style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'rgba(255,255,255,0.4)'}}>
             <div style={{width:10,height:10,border:'1.5px solid rgba(120,0,255,0.3)',borderTopColor:'#9B59B6',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
             Calcul...
           </div>}
-          {price>0&&<span style={{fontSize:14,fontWeight:700,color:'var(--tm-accent)',fontFamily:'monospace'}}>{fmtP(price)}</span>}
+          {price>0&&tab==='heatmap'&&<span style={{fontSize:14,fontWeight:700,color:'var(--tm-accent)',fontFamily:'monospace'}}>{fmtP(price)}</span>}
         </div>
       </div>
 
-      {/* Period selector — toutes les périodes */}
-      <div style={{display:'flex',gap:3,padding:'0 14px 6px',overflowX:'auto',scrollbarWidth:'none'}}>
-        {PERIODS.map(p=>(
-          <button key={p.v} onClick={()=>setPeriod(p)} style={{
-            padding:'3px 9px',borderRadius:5,fontSize:10,cursor:'pointer',border:'none',flexShrink:0,
-            fontWeight:period.v===p.v?700:400,
-            background:period.v===p.v?'rgba(100,0,255,0.5)':'rgba(255,255,255,0.05)',
-            color:period.v===p.v?'white':'rgba(255,255,255,0.4)',
+      {/* Onglets */}
+      <div style={{display:'flex',gap:2,padding:'8px 14px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+        {([['heatmap','🔥 Heatmap'],['map','💧 Liq. Map']] as const).map(([v,label])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{
+            padding:'5px 14px',borderRadius:'6px 6px 0 0',fontSize:11,fontWeight:600,cursor:'pointer',border:'none',
+            background:tab===v?'rgba(100,0,255,0.4)':'transparent',
+            color:tab===v?'white':'rgba(255,255,255,0.4)',
+            borderBottom:tab===v?'2px solid #9B59B6':'2px solid transparent',
             transition:'all 0.15s',
-          }}>{p.label}</button>
+          }}>{label}</button>
         ))}
       </div>
 
-      {/* Threshold slider — Seuil de liquidité comme Coinglass */}
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}>
-        <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',whiteSpace:'nowrap'}}>
-          Seuil de liquidité = <span style={{color:'var(--tm-accent)',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
-        </span>
-        <input
-          type="range" min={0} max={0.8} step={0.01}
-          value={threshold}
-          onChange={e => setThreshold(parseFloat(e.target.value))}
-          style={{flex:1,accentColor:'var(--tm-accent)',cursor:'pointer',height:4}}
-        />
-        {threshold > 0 && (
-          <button onClick={()=>setThreshold(0)} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'1px solid #2A2F3E',borderRadius:4,padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>
-            Reset
-          </button>
-        )}
-      </div>
-
-      {/* Canvas */}
-      {error?(
-        <div style={{height:CANVAS_H,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10}}>
-          <span style={{fontSize:24,opacity:0.3}}>📊</span>
-          <span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>{error}</span>
-          <button onClick={()=>load(symbol,period)} style={{color:'var(--tm-accent)',background:'none',border:'1px solid #00E5FF40',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:11}}>Réessayer</button>
-        </div>
-      ):(
-        <div style={{position:'relative',height:CANVAS_H}}>
-          <canvas ref={baseRef} width={1000} height={CANVAS_H}
-            style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block'}}/>
-          <canvas ref={overlayRef} width={1000} height={CANVAS_H}
-            style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block',cursor:'crosshair'}}
-            onMouseMove={handlePointer}
-            onMouseDown={handlePointer}
-            onMouseLeave={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);setTip(null)}}
-            onTouchStart={handlePointer}
-            onTouchMove={handlePointer}
-            onTouchEnd={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);tipTimer.current=setTimeout(()=>setTip(null),2500)}}
-          />
-        </div>
-      )}
-
-      {/* Legend */}
-      <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 14px'}}>
-        <div style={{width:20,height:80,borderRadius:3,background:`linear-gradient(to bottom,${stops.split(',').reverse().join(',')})`,flexShrink:0}}/>
-        <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',height:80,fontSize:8,color:'rgba(255,255,255,0.4)'}}>
-          <span>Fort</span>
-          <span style={{color:'rgba(255,255,255,0.2)'}}>Liq. Leverage</span>
-          <span>Faible</span>
-        </div>
-        <div style={{marginLeft:'auto',display:'flex',gap:12,alignItems:'center'}}>
-          {[['#00DC8C','Bull'],['#DC2840','Bear']].map(([c,l])=>(
-            <span key={l} style={{display:'flex',alignItems:'center',gap:4,fontSize:9,color:'rgba(255,255,255,0.35)'}}>
-              <span style={{width:10,height:10,borderRadius:2,background:c,display:'inline-block'}}/>{l}
-            </span>
+      {/* ── Onglet Heatmap ─────────────────────────────────────────────── */}
+      {tab === 'heatmap' && <>
+        {/* Period selector */}
+        <div style={{display:'flex',gap:3,padding:'6px 14px 4px',overflowX:'auto',scrollbarWidth:'none'}}>
+          {PERIODS.map(p=>(
+            <button key={p.v} onClick={()=>setPeriod(p)} style={{
+              padding:'3px 9px',borderRadius:5,fontSize:10,cursor:'pointer',border:'none',flexShrink:0,
+              fontWeight:period.v===p.v?700:400,
+              background:period.v===p.v?'rgba(100,0,255,0.5)':'rgba(255,255,255,0.05)',
+              color:period.v===p.v?'white':'rgba(255,255,255,0.4)',
+              transition:'all 0.15s',
+            }}>{p.label}</button>
           ))}
         </div>
-      </div>
+
+        {/* Threshold slider */}
+        <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}>
+          <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',whiteSpace:'nowrap'}}>
+            Seuil = <span style={{color:'var(--tm-accent)',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
+          </span>
+          <input
+            type="range" min={0} max={0.8} step={0.01}
+            value={threshold}
+            onChange={e => setThreshold(parseFloat(e.target.value))}
+            style={{flex:1,accentColor:'var(--tm-accent)',cursor:'pointer',height:4}}
+          />
+          {threshold > 0 && (
+            <button onClick={()=>setThreshold(0)} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'1px solid #2A2F3E',borderRadius:4,padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>
+              Reset
+            </button>
+          )}
+        </div>
+
+        {/* Canvas */}
+        {error?(
+          <div style={{height:CANVAS_H,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10}}>
+            <span style={{fontSize:24,opacity:0.3}}>📊</span>
+            <span style={{color:'rgba(255,255,255,0.3)',fontSize:12}}>{error}</span>
+            <button onClick={()=>load(symbol,period)} style={{color:'var(--tm-accent)',background:'none',border:'1px solid #00E5FF40',borderRadius:6,padding:'4px 12px',cursor:'pointer',fontSize:11}}>Réessayer</button>
+          </div>
+        ):(
+          <div style={{position:'relative',height:CANVAS_H}}>
+            <canvas ref={baseRef}
+              style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block'}}/>
+            <canvas ref={overlayRef}
+              style={{position:'absolute',top:0,left:0,width:'100%',height:CANVAS_H,display:'block',cursor:'crosshair'}}
+              onMouseMove={handlePointer}
+              onMouseDown={handlePointer}
+              onMouseLeave={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);setTip(null)}}
+              onTouchStart={handlePointer}
+              onTouchMove={handlePointer}
+              onTouchEnd={()=>{if(tipTimer.current)clearTimeout(tipTimer.current);tipTimer.current=setTimeout(()=>setTip(null),2500)}}
+            />
+          </div>
+        )}
+
+        {/* Legend */}
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 14px'}}>
+          <div style={{width:20,height:80,borderRadius:3,background:`linear-gradient(to bottom,${stops.split(',').reverse().join(',')})`,flexShrink:0}}/>
+          <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',height:80,fontSize:8,color:'rgba(255,255,255,0.4)'}}>
+            <span>Fort</span>
+            <span style={{color:'rgba(255,255,255,0.2)'}}>Liq. Leverage</span>
+            <span>Faible</span>
+          </div>
+          <div style={{marginLeft:'auto',display:'flex',gap:12,alignItems:'center'}}>
+            {[['#00DC8C','Bull'],['#DC2840','Bear']].map(([c,l])=>(
+              <span key={l} style={{display:'flex',alignItems:'center',gap:4,fontSize:9,color:'rgba(255,255,255,0.35)'}}>
+                <span style={{width:10,height:10,borderRadius:2,background:c,display:'inline-block'}}/>{l}
+              </span>
+            ))}
+          </div>
+        </div>
+      </>}
+
+      {/* ── Onglet Liquidation Map ──────────────────────────────────────── */}
+      {tab === 'map' && (
+        <LiquidationMap symbol={symbol} embedded />
+      )}
     </div>
   )
 }

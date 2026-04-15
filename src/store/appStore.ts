@@ -9,6 +9,7 @@ import {
   createTrade, updateTrade, deleteTrade,
 } from '@/services/firebase/trades'
 import { getUserProfile } from '@/services/firebase/auth'
+import { loadUserLanguage } from '@/contexts/LanguageContext'
 import type { Unsubscribe } from 'firebase/firestore'
 
 interface AppState {
@@ -71,6 +72,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Charge le profil complet depuis Firestore
       const profile = await getUserProfile(user.uid)
       set({ user: profile ?? user })
+      // Restaure la langue depuis Firestore
+      if (profile?.language) loadUserLanguage(profile.language)
       // Lance le listener temps réel des trades
       get().loadTrades(user.uid)
     } else {

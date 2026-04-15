@@ -2,6 +2,7 @@
 // Page parrainage complète — code, lien, stats, progression, paliers, XP passif
 
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import { useIsAuthenticated } from '@/hooks/useAuth'
@@ -20,24 +21,24 @@ interface ReachedTier { count: number; features: string[]; proDays: number; badg
 interface ReferralData { referralCode: string; referralLink: string; stats: ReferralStats; referrals: Referral[] }
 interface RewardsData { stats: ReferralStats; rewards: { badges: string[]; unlockedFeatures: string[]; bonusXP: number; proDaysEarned: number; passiveXPToday: number }; nextTier: TierInfo | null; reachedTiers: ReachedTier[]; proReferralsCount: number; totalXP: number; passiveXPToday: number }
 
-const TIER_LABELS: Record<number, { label: string; icon: string }> = {
-  1:  { label: 'Export PDF', icon: '📄' },
-  3:  { label: 'Filtres avancés + 5j Pro', icon: '🔍' },
-  5:  { label: '+100 XP', icon: '⚡' },
-  10: { label: 'Widgets dashboard + 10j Pro', icon: '📊' },
-  15: { label: '+200 XP', icon: '⚡' },
-  20: { label: '1 mois Pro + Badge Top Parrain', icon: '🏆' },
-  25: { label: '+400 XP', icon: '⚡' },
-  30: { label: '2 mois Pro + Badge Ambassadeur', icon: '🎖️' },
-  40: { label: '+750 XP', icon: '⚡' },
-  50: { label: '3 mois Pro + Badge Légende', icon: '👑' },
+const TIER_LABELS_ICONS: Record<number, string> = {
+  1:  '📄',
+  3:  '🔍',
+  5:  '⚡',
+  10: '📊',
+  15: '⚡',
+  20: '🏆',
+  25: '⚡',
+  30: '🎖️',
+  40: '⚡',
+  50: '👑',
 }
 
-const BADGE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
-  filleul:      { label: 'Filleul', icon: '🤝', color: '#00E5FF' },
-  topParrain:   { label: 'Top Parrain', icon: '🏆', color: '#FF9500' },
-  ambassadeur:  { label: 'Ambassadeur', icon: '🎖️', color: '#BF5AF2' },
-  legende:      { label: 'Légende', icon: '👑', color: '#FFD700' },
+const BADGE_CONFIG: Record<string, { icon: string; color: string }> = {
+  filleul:      { icon: '🤝', color: '#00E5FF' },
+  topParrain:   { icon: '🏆', color: '#FF9500' },
+  ambassadeur:  { icon: '🎖️', color: '#BF5AF2' },
+  legende:      { icon: '👑', color: '#FFD700' },
 }
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -47,6 +48,7 @@ const FEATURE_LABELS: Record<string, string> = {
 }
 
 export default function ReferralPage() {
+  const { t } = useTranslation()
   const [data, setData] = useState<ReferralData | null>(null)
   const [rewards, setRewards] = useState<RewardsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,7 +57,7 @@ export default function ReferralPage() {
 
   useEffect(() => {
     if (!isAuthLoading && isAuthenticated) loadAll()
-    else if (!isAuthLoading && !isAuthenticated) { setLoading(false); toast.error('Tu dois être connecté') }
+    else if (!isAuthLoading && !isAuthenticated) { setLoading(false); toast.error(t('referral.mustBeLoggedIn')) }
   }, [isAuthLoading, isAuthenticated])
 
   async function loadAll() {
@@ -97,7 +99,7 @@ export default function ReferralPage() {
   }
 
   async function copyToClipboard(text: string, type: 'code' | 'link') {
-    try { await navigator.clipboard.writeText(text); setCopied(type); setTimeout(() => setCopied(null), 2000); toast.success(type === 'code' ? 'Code copié !' : 'Lien copié !') }
+    try { await navigator.clipboard.writeText(text); setCopied(type); setTimeout(() => setCopied(null), 2000); toast.success(type === 'code' ? t('referral.codeCopied') : t('referral.linkCopied')) }
     catch { toast.error('Impossible de copier') }
   }
 
@@ -111,14 +113,28 @@ export default function ReferralPage() {
   const hl = (): React.CSSProperties => ({ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)' })
 
   const statusConfig = {
-    pending:   { label: 'En attente', color: '#FF9500', bg: 'rgba(255,149,0,0.1)', dot: '#FF9500' },
-    validated: { label: 'Validé', color: '#22C759', bg: 'rgba(34,199,89,0.1)', dot: '#22C759' },
-    rewarded:  { label: 'Récompensé', color: '#00E5FF', bg: 'rgba(0,229,255,0.1)', dot: '#00E5FF' },
+    pending:   { label: t('referral.pending'), color: '#FF9500', bg: 'rgba(255,149,0,0.1)', dot: '#FF9500' },
+    validated: { label: t('referral.validated'), color: '#22C759', bg: 'rgba(34,199,89,0.1)', dot: '#22C759' },
+    rewarded:  { label: t('referral.rewarded'), color: '#00E5FF', bg: 'rgba(0,229,255,0.1)', dot: '#00E5FF' },
   }
 
   function fmtDate(iso: string | null) {
     if (!iso) return '—'
     return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
+  // Build tier labels using translations
+  const tierLabels: Record<number, { label: string; icon: string }> = {
+    1:  { label: 'Export PDF', icon: '📄' },
+    3:  { label: t('referral.filters'), icon: '🔍' },
+    5:  { label: '+100 XP', icon: '⚡' },
+    10: { label: 'Widgets dashboard + 10j Pro', icon: '📊' },
+    15: { label: '+200 XP', icon: '⚡' },
+    20: { label: '1 mois Pro + Badge Top Parrain', icon: '🏆' },
+    25: { label: '+400 XP', icon: '⚡' },
+    30: { label: '2 mois Pro + Badge Ambassadeur', icon: '🎖️' },
+    40: { label: '+750 XP', icon: '⚡' },
+    50: { label: t('referral.threeMonthsPro'), icon: '👑' },
   }
 
   if (loading || isAuthLoading) {
@@ -149,8 +165,8 @@ export default function ReferralPage() {
     <div style={{ padding: '28px 28px 60px', maxWidth: 960, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F0F3FF', margin: 0, fontFamily: 'Syne, sans-serif' }}>🎁 Parrainage</h1>
-        <p style={{ fontSize: 13, color: '#555C70', margin: '4px 0 0' }}>Invite tes amis sur TradeMindset et suis tes parrainages</p>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F0F3FF', margin: 0, fontFamily: 'Syne, sans-serif' }}>{t('referral.title')}</h1>
+        <p style={{ fontSize: 13, color: '#555C70', margin: '4px 0 0' }}>{t('referral.subtitle')}</p>
       </div>
 
       {/* XP passif du jour */}
@@ -160,10 +176,10 @@ export default function ReferralPage() {
             <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,149,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🔥</div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 800, color: '#FF9500', fontFamily: 'JetBrains Mono, monospace' }}>+{passiveXP} XP</div>
-              <div style={{ fontSize: 12, color: '#8F94A3' }}>gagné aujourd'hui grâce à tes filleuls</div>
+              <div style={{ fontSize: 12, color: '#8F94A3' }}>{t('referral.earnedToday')}</div>
             </div>
             <div style={{ marginLeft: 'auto', fontSize: 11, color: '#555C70', background: '#1C2130', padding: '4px 10px', borderRadius: 6 }}>
-              cap : 100/jour
+              {t('referral.dailyCap')}
             </div>
           </div>
         </div>
@@ -174,9 +190,9 @@ export default function ReferralPage() {
         <div style={{ ...card({ marginBottom: 16 }) }}>
           <div style={hl()} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF' }}>Progression</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF' }}>{t('referral.progression')}</div>
             <div style={{ fontSize: 12, color: '#00E5FF', fontWeight: 600 }}>
-              {TIER_LABELS[nt.count]?.icon} Prochain : {TIER_LABELS[nt.count]?.label}
+              {tierLabels[nt.count]?.icon} Prochain : {tierLabels[nt.count]?.label}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
@@ -188,7 +204,7 @@ export default function ReferralPage() {
             </span>
           </div>
           <div style={{ fontSize: 11, color: '#555C70' }}>
-            Encore {nt.count - nt.current} filleul{nt.count - nt.current > 1 ? 's' : ''} pour débloquer ce palier
+            {t('referral.remaining', { count: nt.count - nt.current })}
           </div>
         </div>
       )}
@@ -200,8 +216,8 @@ export default function ReferralPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🎁</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#F0F3FF' }}>Ton code de parrainage</div>
-            <div style={{ fontSize: 12, color: '#555C70', marginTop: 2 }}>Partage ce code ou ce lien — chaque filleul est validé à son premier trade</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#F0F3FF' }}>{t('referral.codeTitle')}</div>
+            <div style={{ fontSize: 12, color: '#555C70', marginTop: 2 }}>{t('referral.codeDesc')}</div>
           </div>
         </div>
         {/* Code */}
@@ -209,7 +225,7 @@ export default function ReferralPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 200, background: '#0D1117', border: '1px solid #1E2330', borderRadius: 10, padding: '10px 16px' }}>
             <span style={{ fontSize: 20, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', color: '#00E5FF', letterSpacing: '0.05em', flex: 1 }}>{data?.referralCode || '…'}</span>
             <button onClick={() => data && copyToClipboard(data.referralCode, 'code')} style={{ padding: '5px 14px', borderRadius: 8, border: '1px solid #2A2F3E', background: copied === 'code' ? '#22C759' : '#1C2130', color: copied === 'code' ? '#fff' : '#8F94A3', cursor: 'pointer', fontSize: 12, fontWeight: 600, transition: 'all 0.15s' }}>
-              {copied === 'code' ? '✓ Copié' : '📋 Copier'}
+              {copied === 'code' ? t('common.copied') : t('referral.copyCode')}
             </button>
           </div>
         </div>
@@ -219,19 +235,19 @@ export default function ReferralPage() {
             <span style={{ fontSize: 11, color: '#3D4254', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{data?.referralLink}</span>
           </div>
           <button onClick={() => data && copyToClipboard(data.referralLink, 'link')} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid #2A2F3E', background: copied === 'link' ? '#22C759' : '#1C2130', color: copied === 'link' ? '#fff' : '#8F94A3', cursor: 'pointer', fontSize: 12, fontWeight: 600, transition: 'all 0.15s' }}>
-            {copied === 'link' ? '✓ Copié' : '🔗 Copier le lien'}
+            {copied === 'link' ? t('common.copied') : t('referral.copyLink')}
           </button>
-          <button onClick={shareLink} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(0,229,255,0.3)', background: 'rgba(0,229,255,0.08)', color: '#00E5FF', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>↗ Partager</button>
+          <button onClick={shareLink} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(0,229,255,0.3)', background: 'rgba(0,229,255,0.08)', color: '#00E5FF', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>{t('common.share')}</button>
         </div>
       </div>
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
         {[
-          { label: 'Total filleuls', value: data?.stats.total ?? 0, color: '#F0F3FF', icon: '👥' },
-          { label: 'En attente', value: data?.stats.pending ?? 0, color: '#FF9500', icon: '⏳' },
-          { label: 'Validés', value: data?.stats.validated ?? 0, color: '#22C759', icon: '✅' },
-          { label: 'XP Total', value: rewards?.totalXP ?? rewards?.rewards.bonusXP ?? 0, color: '#00E5FF', icon: '⚡' },
+          { label: t('referral.statsTotal'), value: data?.stats.total ?? 0, color: '#F0F3FF', icon: '👥' },
+          { label: t('referral.statsPending'), value: data?.stats.pending ?? 0, color: '#FF9500', icon: '⏳' },
+          { label: t('referral.validatedCount'), value: data?.stats.validated ?? 0, color: '#22C759', icon: '✅' },
+          { label: t('referral.statsXp'), value: rewards?.totalXP ?? rewards?.rewards.bonusXP ?? 0, color: '#00E5FF', icon: '⚡' },
         ].map(({ label, value, color, icon }) => (
           <div key={label} style={card()}>
             <div style={hl()} />
@@ -245,9 +261,9 @@ export default function ReferralPage() {
       {/* Paliers de récompenses */}
       <div style={{ ...card({ marginBottom: 16 }) }}>
         <div style={hl()} />
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF', marginBottom: 16 }}>Paliers de récompenses</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF', marginBottom: 16 }}>{t('referral.tiersTitle')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {Object.entries(TIER_LABELS).map(([countStr, { label, icon }]) => {
+          {Object.entries(tierLabels).map(([countStr, { label, icon }]) => {
             const count = parseInt(countStr)
             const reached = validated >= count
             return (
@@ -260,7 +276,7 @@ export default function ReferralPage() {
                   <div style={{ fontSize: 10, color: '#555C70' }}>{count} filleul{count > 1 ? 's' : ''}</div>
                 </div>
                 <div style={{ fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: reached ? '#22C759' : '#3D4254' }}>
-                  {reached ? 'Débloqué' : `${count - validated} restant${count - validated > 1 ? 's' : ''}`}
+                  {reached ? t('referral.unlocked') : `${count - validated} restant${count - validated > 1 ? 's' : ''}`}
                 </div>
               </div>
             )
@@ -272,15 +288,16 @@ export default function ReferralPage() {
       {rewards && rewards.rewards.badges.length > 0 && (
         <div style={{ ...card({ marginBottom: 16 }) }}>
           <div style={hl()} />
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF', marginBottom: 16 }}>Mes badges</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF', marginBottom: 16 }}>{t('referral.myBadges')}</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {rewards.rewards.badges.map(badgeId => {
               const cfg = BADGE_CONFIG[badgeId]
               if (!cfg) return null
+              const badgeLabel = badgeId === 'legende' ? t('referral.legend') : badgeId
               return (
                 <div key={badgeId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 10, background: `${cfg.color}12`, border: `1px solid ${cfg.color}30` }}>
                   <span style={{ fontSize: 18 }}>{cfg.icon}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: cfg.color }}>{badgeLabel}</span>
                 </div>
               )
             })}
@@ -292,11 +309,11 @@ export default function ReferralPage() {
       {rewards && rewards.rewards.unlockedFeatures.length > 0 && (
         <div style={{ ...card({ marginBottom: 16 }) }}>
           <div style={hl()} />
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF', marginBottom: 16 }}>Fonctionnalités débloquées</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF', marginBottom: 16 }}>{t('referral.unlockedFeatures')}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {rewards.rewards.unlockedFeatures.map(f => (
               <div key={f} style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)', fontSize: 12, fontWeight: 600, color: '#00E5FF' }}>
-                ✓ {FEATURE_LABELS[f] || f}
+                ✓ {f === 'advancedFilters' ? t('referral.advancedFilters') : FEATURE_LABELS[f] || f}
               </div>
             ))}
           </div>
@@ -309,9 +326,9 @@ export default function ReferralPage() {
         <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F3FF', marginBottom: 16 }}>Comment ça marche ?</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
           {[
-            { step: '1', icon: '🔗', title: 'Partage ton lien', desc: 'Envoie ton lien unique à tes amis traders' },
-            { step: '2', icon: '📝', title: 'Ils s\'inscrivent', desc: 'Ils créent leur compte via ton lien de parrainage' },
-            { step: '3', icon: '🏆', title: 'Premier trade', desc: 'Le parrainage est validé à leur premier trade (min 1h après inscription)' },
+            { step: '1', icon: '🔗', title: t('referral.step1Title'), desc: t('referral.step1Desc') },
+            { step: '2', icon: '📝', title: t('referral.step2Title'), desc: t('referral.step2Desc') },
+            { step: '3', icon: '🏆', title: t('referral.step3Title'), desc: t('referral.step3Desc') },
           ].map(({ step, icon, title, desc }) => (
             <div key={step} style={{ background: '#1C2130', borderRadius: 12, padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{icon}</div>
