@@ -66,11 +66,18 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     ctx.setLineDash([])
 
     // Fill gradient
-    const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
-    const finalPnL = pts[pts.length - 1]
-    const fillColor = finalPnL >= 0 ? color : resolveCSSColor('--tm-loss','#FF3B30')
-    grad.addColorStop(0, fillColor + '40')
-    grad.addColorStop(1, fillColor + '05')
+      const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
+      const finalPnL = pts[pts.length - 1]
+
+      // IMPORTANT: résoudre la couleur si c'est une variable CSS
+      const rawColor = finalPnL >= 0 ? color : 'var(--tm-loss)'
+      const resolvedColor = rawColor.startsWith('var(')
+        ? resolveCSSColor(rawColor.replace('var(','').replace(')',''), '#FF3B30')
+        : rawColor
+
+      grad.addColorStop(0, hexToRgba(resolvedColor, 0.25))
+      grad.addColorStop(1, hexToRgba(resolvedColor, 0.05))
+
 
     ctx.beginPath()
     ctx.moveTo(toX(0), toY(pts[0]))
@@ -243,7 +250,7 @@ function SystemsComparisonChart({ systemStats, trades }: {
       const isHov = hoveredId === c.id
       ctx.globalAlpha = hoveredId && !isHov ? 0.25 : 1
       ctx.beginPath()
-      ctx.strokeStyle = c.color
+      ctx.strokeStyle = resolveColor(c.color)
       ctx.lineWidth = isHov ? 2.5 : 1.5
       ctx.lineJoin = 'round'
       ctx.moveTo(toX(0, c.pts.length), toY(c.pts[0]))
@@ -508,6 +515,21 @@ function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null
     try { await onSave(name.trim(), color) } catch(e) { alert((e as Error).message) }
     finally { setSaving(false) }
   }
+    function hexToRgba(hex: string, alpha: number) {
+      if (!hex.startsWith('#')) return hex // fallback sécurité
+
+      const r = parseInt(hex.slice(1, 3), 16)
+      const g = parseInt(hex.slice(3, 5), 16)
+      const b = parseInt(hex.slice(5, 7), 16)
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`
+    }
+    function resolveColor(color: string, fallback = '#3B82F6') {
+      if (color.startsWith('var(')) {
+        const varName = color.replace('var(','').replace(')','')
+        return resolveCSSColor(varName, fallback)
+      }
+      return color
+    }
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
