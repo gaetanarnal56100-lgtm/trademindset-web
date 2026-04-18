@@ -527,6 +527,40 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
 }
 
 // ── Derivatives Confluence Card ─────────────────────────────────────────────
+// ── FundingRateCell — fetche le vrai taux via /fapi/v1/premiumIndex ──────────
+function FundingRateCell({ symbol }: { symbol: string }) {
+  const [rate, setRate] = useState<number|null>(null)
+
+  useEffect(() => {
+    if (!symbol) return
+    fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`)
+      .then(r => r.json())
+      .then((d: { lastFundingRate?: string }) => {
+        if (d?.lastFundingRate) setRate(parseFloat(d.lastFundingRate) * 100)
+      })
+      .catch(() => {})
+  }, [symbol])
+
+  const rateColor = rate === null ? '#FFA726' : rate > 0.05 ? 'var(--tm-loss)' : rate < -0.01 ? 'var(--tm-profit)' : '#FFA726'
+  const biasLabel = rate === null ? '—' : rate > 0.05 ? 'Surchauffe' : rate > 0.01 ? 'Longs pay' : rate < -0.01 ? 'Shorts pay' : 'Neutre'
+
+  return (
+    <div style={{background:'var(--tm-bg-tertiary)',padding:'14px 16px'}}>
+      <div style={{fontSize:11,color:'var(--tm-text-secondary)',marginBottom:6,fontWeight:500}}>Funding Rate</div>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+        <span style={{fontSize:16,fontWeight:700,color:rateColor}}>%</span>
+        <span style={{fontSize:20,fontWeight:700,color:rateColor,fontFamily:'JetBrains Mono,monospace'}}>
+          {rate === null ? '…' : `${rate > 0 ? '+' : ''}${rate.toFixed(4)}%`}
+        </span>
+      </div>
+      <div style={{fontSize:11,color:rateColor,display:'flex',alignItems:'center',gap:4}}>
+        <span>{rate === null ? '' : rate > 0 ? '↑' : rate < 0 ? '↓' : '→'}</span>
+        <span>{biasLabel}</span>
+      </div>
+    </div>
+  )
+}
+
 // Miroir exact de MarketContextService.swift
 function DerivativesConfluenceCard({ symbol }: { symbol: string }) {
   const [data, setData] = useState<ContextData|null>(null)
@@ -655,20 +689,8 @@ function DerivativesConfluenceCard({ symbol }: { symbol: string }) {
             <span>{data?.oiChange1h!=null ? `${data.oiChange1h>0?'+':''}${data.oiChange1h.toFixed(1)}% 1h` : '—'}</span>
           </div>
         </div>
-        {/* Funding Rate */}
-        <div style={{background:data?.cvdBias==='bearish'?'rgba(var(--tm-warning-rgb,255,149,0),0.08)':'var(--tm-bg-tertiary)',padding:'14px 16px',border:data?.cvdBias==='bearish'?'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)':'1px solid transparent'}}>
-          <div style={{fontSize:11,color:'var(--tm-text-secondary)',marginBottom:6,fontWeight:500}}>Funding Rate</div>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-            <span style={{fontSize:16,fontWeight:700,color:'#FFA726'}}>%</span>
-            <span style={{fontSize:20,fontWeight:700,color:'#FFA726',fontFamily:'JetBrains Mono,monospace'}}>
-              {/* Funding récupéré en dehors si dérivés chargés, sinon placeholder */}
-              +0.0025%
-            </span>
-          </div>
-          <div style={{fontSize:11,color:'#FFA726',display:'flex',alignItems:'center',gap:4}}>
-            <span>↑</span><span>Longs pay</span>
-          </div>
-        </div>
+        {/* Funding Rate — récupéré via /fapi/v1/premiumIndex */}
+        <FundingRateCell symbol={symbol} />
       </div>
     </div>
   )
@@ -821,7 +843,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef, syncRangeIn }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle>; syncRangeIn?: {from:number;to:number}|null }) {
   type PanelType = 'tv' | 'lw'
   type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
 
@@ -844,7 +866,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
       firstLwPanel.current = true
       return (
         <div key={key} style={{ minWidth: 0, flex: 1 }}>
-          <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />
+          <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} syncRangeIn={syncRangeIn ?? undefined} />
         </div>
       )
     }
@@ -926,6 +948,17 @@ export default function AnalysePage() {
   const [pdfWtValues,  setPdfWtValues]  = useState<{wt1:number;wt2:number}|null>(null)
   const [pdfVmcStatus, setPdfVmcStatus] = useState('')
   const [pdfGenerating, setPdfGenerating] = useState(false)
+
+  // ── Sync bi-directionnelle oscillateurs ↔ chart ──────────────────────────
+  // Quand l'utilisateur zoome sur un oscillateur, on pousse la range au LightweightChart
+  const [syncEnabled, setSyncEnabled] = useState(true)
+  const [syncRangeIn, setSyncRangeIn] = useState<{from:number;to:number}|null>(null)
+
+  const syncRangeFromOsc = useCallback((from: number, to: number) => {
+    if (!syncEnabled) return
+    setSyncRangeIn({ from, to })
+    lwChartRef.current?.setVisibleRange?.({ from, to })
+  }, [syncEnabled])
 
   const handleExportPDF = useCallback(async () => {
     if (pdfGenerating || !symbol) return
@@ -1318,16 +1351,35 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} />}
+      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>{ if(syncEnabled) setSyncRange({from,to}) }} lwChartRef={lwChartRef} syncRangeIn={syncEnabled ? syncRangeIn : null} />}
 
       {/* Oscillateurs synchronisés sous le chart */}
-      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
+      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 8 }}>
+        {/* Toggle sync */}
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0 8px',justifyContent:'flex-end'}}>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Sync chart ↔ oscillateurs</span>
+          <button
+            onClick={() => setSyncEnabled(v => !v)}
+            style={{
+              display:'flex',alignItems:'center',gap:5,padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',
+              border:`1px solid ${syncEnabled?'var(--tm-accent)':'var(--tm-border)'}`,
+              background:syncEnabled?'rgba(var(--tm-accent-rgb,0,229,255),0.10)':'var(--tm-bg-tertiary)',
+              color:syncEnabled?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s',
+            }}
+          >
+            {syncEnabled ? '⟳ ON' : '⟳ OFF'}
+          </button>
+        </div>
         <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-          onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
+          onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}}
+          onViewportChange={syncEnabled ? syncRangeFromOsc : undefined} />
         <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-          onStatusReady={(status)=>setPdfVmcStatus(status)} />
-        <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
-        <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+          onStatusReady={(status)=>setPdfVmcStatus(status)}
+          onViewportChange={syncEnabled ? syncRangeFromOsc : undefined} />
+        <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+          onViewportChange={syncEnabled ? syncRangeFromOsc : undefined} />
+        <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+          onViewportChange={syncEnabled ? syncRangeFromOsc : undefined} />
       </div>}
 
 
@@ -1537,7 +1589,7 @@ export default function AnalysePage() {
             </div>
             <WhaleTrendChart pts={wtPts}/>
             {wtSummary&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:10}}>
-              {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:wtSummary.divergence,c:wtSummary.divergence.includes('Hauss')?'var(--tm-profit)':wtSummary.divergence.includes('Baiss')?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:'30%',c:'#FFA726'}].map(({l,v,c})=>(
+              {[{l:'CVD Net',v:`${wtSummary.netCVD>=0?'+':''}${fmtU(wtSummary.netCVD)}`,c:wtSummary.netCVD>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Divergence',v:wtSummary.divergence,c:wtSummary.divergence.includes('Hauss')?'var(--tm-profit)':wtSummary.divergence.includes('Baiss')?'var(--tm-loss)':'var(--tm-text-secondary)'},{l:'Momentum',v:`${(wtSummary.momentum*100).toFixed(0)}%`,c:wtSummary.momentum>=0?'var(--tm-profit)':'var(--tm-loss)'},{l:'Dominance',v:wtPts.length>0?`${Math.round(Math.max(0,Math.min(100,(wtPts[wtPts.length-1].cum/(Math.max(1,Math.abs(wtPts[wtPts.length-1].cum)+Math.abs(wtPts[wtPts.length-1].retail||1))))*100)))}%`:'—',c:'#FFA726'}].map(({l,v,c})=>(
                 <div key={l} style={{background:'var(--tm-bg-tertiary)',borderRadius:8,padding:'8px',textAlign:'center'}}><div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:2}}>{l}</div><div style={{fontSize:12,fontWeight:600,color:c}}>{v}</div></div>
               ))}
             </div>}

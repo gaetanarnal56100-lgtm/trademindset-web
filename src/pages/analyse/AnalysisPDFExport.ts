@@ -299,6 +299,34 @@ function drawPage1(doc: jsPDF, data: AnalysisPDFData, totalPages: number) {
 
   y += 19
 
+  // ── CHART IMAGE (ou fallback explicite) ───────────────────────────────────
+  const chartH = 48  // hauteur réservée
+  if (data.chartImageDataUrl) {
+    try {
+      doc.addImage(data.chartImageDataUrl, 'PNG', ML, y, CW, chartH, undefined, 'FAST')
+      // fine border around the chart
+      stroke(doc, C.border2)
+      doc.setLineWidth(0.3)
+      doc.roundedRect(ML, y, CW, chartH, 2, 2, 'S')
+    } catch {
+      // addImage failed (corrupt data url) — show placeholder
+      rectBorder(doc, ML, y, CW, chartH, C.bg3, C.border, 2, 0.3)
+      txt(doc, 'Graphique non disponible', PW / 2, y + chartH / 2 + 3, 8, C.textMut, 'center')
+    }
+  } else {
+    // chartImageDataUrl is null — show explicit placeholder instead of blank space
+    rectBorder(doc, ML, y, CW, chartH, C.bg3, C.border, 2, 0.3)
+    // Dashed centre line
+    stroke(doc, C.border2)
+    doc.setLineWidth(0.25)
+    doc.setLineDashPattern([2, 2], 0)
+    doc.line(ML + 4, y + chartH / 2, ML + CW - 4, y + chartH / 2)
+    doc.setLineDashPattern([], 0)
+    txt(doc, 'Graphique non disponible', PW / 2, y + chartH / 2 - 3, 7.5, C.textMut, 'center')
+    txt(doc, 'Le LightweightChart doit etre actif pour capturer le graphique', PW / 2, y + chartH / 2 + 5, 6, C.textMut, 'center')
+  }
+  y += chartH + 4
+
   // ── SIGNAL GLOBAL (3 KPI boxes) ───────────────────────────────────────────
   if (data.mtfSnap) {
     const snap = data.mtfSnap
@@ -528,6 +556,49 @@ function drawPage1(doc: jsPDF, data: AnalysisPDFData, totalPages: number) {
       txt(doc, 'Moyen (2)', ML + 76, y + 4, 6, C.warning)
       drawStrengthDots(doc, ML + 108, y + 3, 'weak')
       txt(doc, 'Faible (1)', ML + 122, y + 4, 6, C.textMut)
+      y += 8
+    }
+
+    // ── Mini visualisation prix — barre horizontale ────────────────────────
+    if (y < PH - 28 && data.price > 0) {
+      const prices = allLevels.map(l => l.price)
+      const minP = Math.min(...prices, data.price)
+      const maxP = Math.max(...prices, data.price)
+      const rangeP = maxP - minP || 1
+
+      const barX = ML
+      const barW = CW
+      const barY = y + 6
+      const barH = 10
+
+      // Background track
+      rect(doc, barX, barY, barW, barH, C.bg3, 1)
+
+      // Each level line
+      for (const lv of allLevels) {
+        const xPct = (lv.price - minP) / rangeP
+        const lx = barX + xPct * barW
+        const lc = levelTypeColor(lv.type)
+        stroke(doc, lc)
+        doc.setLineWidth(lv.strength === 'strong' ? 1.2 : lv.strength === 'medium' ? 0.7 : 0.4)
+        doc.line(lx, barY, lx, barY + barH)
+      }
+
+      // Current price marker
+      const cpPct = (data.price - minP) / rangeP
+      const cpX = barX + cpPct * barW
+      fill(doc, C.white); stroke(doc, C.white)
+      doc.setLineWidth(1.5)
+      doc.line(cpX, barY - 1, cpX, barY + barH + 1)
+      // Triangle marker above bar
+      doc.triangle(cpX - 2, barY - 1, cpX + 2, barY - 1, cpX, barY + 2, 'F')
+
+      // Price labels at extremes
+      txt(doc, fmtPrice(minP), barX, barY + barH + 5, 5.5, C.textMut)
+      txt(doc, fmtPrice(maxP), barX + barW, barY + barH + 5, 5.5, C.textMut, 'right')
+      txt(doc, fmtPrice(data.price), cpX, barY - 3, 5.5, C.white, 'center')
+
+      y += barH + 12
     }
   }
 }
@@ -727,14 +798,21 @@ function drawPage3GPT(doc: jsPDF, data: AnalysisPDFData, totalPages: number) {
 
   function drawGPTSection(title: string, markerC: RGB, linesArr: string[]) {
     if (linesArr.length === 0) return
-    if (y > PH - 35) return
 
     y = sectionHeading(doc, title, y, markerC)
     rectBorder(doc, ML, y, CW, 0, C.bg2, C.border, 2, 0.3)
     const cardStartY = y
 
     for (const rawLine of linesArr) {
-      if (y > PH - 28) break
+      // Overflow: add a new page if near bottom
+      if (y > PH - 28) {
+        const cardH = y - cardStartY
+        if (cardH > 0) rectBorder(doc, ML, cardStartY, CW, cardH, C.bg2, C.border, 2, 0.3)
+        addNewPage(doc)
+        drawPageHeader(doc, `${data.symbol}  —  Analyse IA (suite)`, totalPages + 1, totalPages + 1)
+        drawPageFooter(doc, data.symbol, data.timestamp)
+        y = 17
+      }
       const cleanLine = rawLine.replace(/^[-•>]\s*/, '')
       const colonIdx = cleanLine.indexOf(':')
       if (colonIdx > 0 && colonIdx < 35) {
@@ -747,7 +825,14 @@ function drawPage3GPT(doc: jsPDF, data: AnalysisPDFData, totalPages: number) {
       } else {
         const wrLines = doc.splitTextToSize(cleanLine, CW - 12) as string[]
         for (const wl of wrLines) {
-          if (y > PH - 28) break
+          if (y > PH - 28) {
+            const cardH2 = y - cardStartY
+            if (cardH2 > 0) rectBorder(doc, ML, cardStartY, CW, cardH2, C.bg2, C.border, 2, 0.3)
+            addNewPage(doc)
+            drawPageHeader(doc, `${data.symbol}  —  Analyse IA (suite)`, totalPages + 1, totalPages + 1)
+            drawPageFooter(doc, data.symbol, data.timestamp)
+            y = 17
+          }
           txt(doc, wl, ML + 5, y + 4.5, 7.5, C.text1)
           y += 6
         }
