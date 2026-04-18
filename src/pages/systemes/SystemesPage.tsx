@@ -6,6 +6,31 @@ import { subscribeSystems, subscribeTrades, createSystem, updateSystem, deleteSy
 
 function fmtPnL(n: number) { return `${n>=0?'+':''}$${Math.abs(n).toFixed(2)}` }
 
+// ── Helpers au niveau du module (accessibles partout) ─────────────────────────
+function resolveCSSColor(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  const name = varName.startsWith('--') ? varName : varName.replace('var(','').replace(')','')
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+
+function resolveColor(color: string, fallback = '#3B82F6'): string {
+  if (!color) return fallback
+  if (color.startsWith('var(')) {
+    const varName = color.replace('var(','').replace(')','')
+    return resolveCSSColor(varName, fallback)
+  }
+  return color
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const resolved = resolveColor(hex)
+  if (!resolved.startsWith('#')) return resolved
+  const r = parseInt(resolved.slice(1, 3), 16)
+  const g = parseInt(resolved.slice(3, 5), 16)
+  const b = parseInt(resolved.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 // ── Mini courbe P&L canvas par système ────────────────────────────────────────
 function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: string; systemId: string }) {
   const { t } = useTranslation()
@@ -40,8 +65,8 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
 
     // Cumulative PnL points
     let cum = 0
-    const pts = closed.map(t => { cum += tradePnL(t); return cum })
-    const dates = closed.map(t => t.date ? t.date.toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit'}) : '')
+    const pts = closed.map(tr => { cum += tradePnL(tr); return cum })
+    const dates = closed.map(tr => tr.date ? tr.date.toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit'}) : '')
 
     const pad = { t: 8, b: 20, l: 8, r: 8 }
     const cW = W - pad.l - pad.r
@@ -65,19 +90,15 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     ctx.stroke()
     ctx.setLineDash([])
 
+    // Resolve the line color
+    const finalPnL = pts[pts.length - 1]
+    const rawColor = finalPnL >= 0 ? color : 'var(--tm-loss)'
+    const fillColor = resolveColor(rawColor, '#FF3B30')
+
     // Fill gradient
-      const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
-      const finalPnL = pts[pts.length - 1]
-
-      // IMPORTANT: résoudre la couleur si c'est une variable CSS
-      const rawColor = finalPnL >= 0 ? color : 'var(--tm-loss)'
-      const resolvedColor = rawColor.startsWith('var(')
-        ? resolveCSSColor(rawColor.replace('var(','').replace(')',''), '#FF3B30')
-        : rawColor
-
-      grad.addColorStop(0, hexToRgba(resolvedColor, 0.25))
-      grad.addColorStop(1, hexToRgba(resolvedColor, 0.05))
-
+    const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
+    grad.addColorStop(0, hexToRgba(fillColor, 0.25))
+    grad.addColorStop(1, hexToRgba(fillColor, 0.05))
 
     ctx.beginPath()
     ctx.moveTo(toX(0), toY(pts[0]))
@@ -107,7 +128,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     }
     ctx.stroke()
 
-    // Dots on hover
+    // Dot on hover
     if (tipIdx !== null && tipIdx >= 0 && tipIdx < pts.length) {
       const x = toX(tipIdx), y = toY(pts[tipIdx])
       ctx.beginPath()
@@ -126,7 +147,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     ctx.fillText(dates[0] ?? '', pad.l, H - 4)
     ctx.textAlign = 'right'
     ctx.fillText(dates[dates.length - 1] ?? '', pad.l + cW, H - 4)
-  }, [trades, color, systemId])
+  }, [trades, color, systemId, t])
 
   useEffect(() => { draw(null) }, [draw])
 
@@ -137,7 +158,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     const mx = e.clientX - rect.left
 
     const closed = trades
-      .filter(t => t.systemId === systemId && t.status === 'closed')
+      .filter(tr => tr.systemId === systemId && tr.status === 'closed')
       .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
     if (closed.length < 2) return
 
@@ -147,7 +168,7 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     const clampedIdx = Math.max(0, Math.min(closed.length - 1, idx))
 
     let cum = 0
-    const pts = closed.map(t => { cum += tradePnL(t); return cum })
+    const pts = closed.map(tr => { cum += tradePnL(tr); return cum })
     const date = closed[clampedIdx]?.date?.toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit',year:'2-digit'}) ?? ''
 
     draw(clampedIdx)
@@ -195,12 +216,12 @@ function SystemsComparisonChart({ systemStats, trades }: {
   const buildCurves = useCallback(() => {
     return systemStats.map(s => {
       const closed = trades
-        .filter(t => t.systemId === s.id && t.status === 'closed')
+        .filter(tr => tr.systemId === s.id && tr.status === 'closed')
         .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
       let cum = 0
       return {
-        id: s.id, name: s.name, color: s.color,
-        pts: closed.map(t => { cum += tradePnL(t); return cum })
+        id: s.id, name: s.name, color: resolveColor(s.color, '#3B82F6'),
+        pts: closed.map(tr => { cum += tradePnL(tr); return cum })
       }
     }).filter(c => c.pts.length > 0)
   }, [systemStats, trades])
@@ -225,7 +246,6 @@ function SystemsComparisonChart({ systemStats, trades }: {
     const minV = Math.min(0, ...allPts)
     const maxV = Math.max(0, ...allPts)
     const range = maxV - minV || 1
-    const maxLen = Math.max(...curves.map(c => c.pts.length))
 
     const pad = { t: 12, b: 8, l: 8, r: 8 }
     const cW = W - pad.l - pad.r
@@ -250,7 +270,7 @@ function SystemsComparisonChart({ systemStats, trades }: {
       const isHov = hoveredId === c.id
       ctx.globalAlpha = hoveredId && !isHov ? 0.25 : 1
       ctx.beginPath()
-      ctx.strokeStyle = resolveColor(c.color)
+      ctx.strokeStyle = c.color  // already resolved in buildCurves
       ctx.lineWidth = isHov ? 2.5 : 1.5
       ctx.lineJoin = 'round'
       ctx.moveTo(toX(0, c.pts.length), toY(c.pts[0]))
@@ -295,7 +315,7 @@ function SystemsComparisonChart({ systemStats, trades }: {
     const toX = (i: number, len: number) => pad.l + (i / (len - 1 || 1)) * cW
     const toY = (v: number) => pad.t + (1 - (v - minV) / range) * cH
 
-    let closest: {sysName:string;pnl:number;x:number;dist:number} | null = null
+    let closest: {sysName:string;pnl:number;x:number;dist:number;id:string} | null = null
     curves.forEach(c => {
       const idx = Math.round(((mx - pad.l) / cW) * (c.pts.length - 1))
       const clampedIdx = Math.max(0, Math.min(c.pts.length - 1, idx))
@@ -303,12 +323,12 @@ function SystemsComparisonChart({ systemStats, trades }: {
       const cy = toY(c.pts[clampedIdx])
       const dist = Math.sqrt((cx - mx) ** 2 + (cy - my) ** 2)
       if (!closest || dist < closest.dist) {
-        closest = { sysName: c.name, pnl: c.pts[clampedIdx], x: cx, dist }
+        closest = { sysName: c.name, pnl: c.pts[clampedIdx], x: cx, dist, id: c.id }
       }
     })
 
     if (closest && (closest as any).dist < 30) {
-      draw((closest as any).sysName ? curves.find(c => c.name === (closest as any).sysName)?.id ?? null : null)
+      draw((closest as any).id)
       setHovered({ sysName: (closest as any).sysName, pnl: (closest as any).pnl, x: mx })
     } else {
       draw(null)
@@ -382,12 +402,6 @@ function SystemsComparisonChart({ systemStats, trades }: {
 }
 
 // ── Page principale ────────────────────────────────────────────────────────────
-
-function resolveCSSColor(varName: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback
-  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
-}
-
 export default function SystemesPage() {
   const { t } = useTranslation()
   const [systems, setSystems] = useState<TradingSystem[]>([])
@@ -403,7 +417,7 @@ export default function SystemesPage() {
   }, [])
 
   const systemStats = systems.map(s => {
-    const st = trades.filter(t => t.systemId === s.id && t.status === 'closed')
+    const st = trades.filter(tr => tr.systemId === s.id && tr.status === 'closed')
     const pnls = st.map(tradePnL)
     const total = pnls.reduce((a, b) => a + b, 0)
     const wins = pnls.filter(p => p > 0).length
@@ -442,11 +456,11 @@ export default function SystemesPage() {
           {/* Cards systèmes */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:12 }}>
             {systemStats.map(s => (
-              <div key={s.id} style={{ background:'var(--tm-bg-secondary)', border:`1px solid ${s.color}40`, borderRadius:14, padding:'16px', position:'relative', overflow:'hidden' }}>
-                <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:s.color, borderRadius:'14px 14px 0 0' }} />
+              <div key={s.id} style={{ background:'var(--tm-bg-secondary)', border:`1px solid ${resolveColor(s.color, '#3B82F6')}40`, borderRadius:14, padding:'16px', position:'relative', overflow:'hidden' }}>
+                <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:resolveColor(s.color, '#3B82F6'), borderRadius:'14px 14px 0 0' }} />
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <div style={{ width:36, height:36, borderRadius:10, background:`${s.color}20`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📊</div>
+                    <div style={{ width:36, height:36, borderRadius:10, background:`${resolveColor(s.color,'#3B82F6')}20`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📊</div>
                     <div>
                       <div style={{ fontSize:15, fontWeight:700, color:'var(--tm-text-primary)' }}>{s.name}</div>
                       <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{s.totalTrades} trade{s.totalTrades > 1 ? 's' : ''}</div>
@@ -505,9 +519,9 @@ export default function SystemesPage() {
 function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null; onSave: (n: string, c: string) => Promise<void>; onClose: () => void }) {
   const { t } = useTranslation()
   const [name, setName]   = useState(system?.name ?? '')
-  const [color, setColor] = useState(system?.color ?? 'var(--tm-accent)')
+  const [color, setColor] = useState(system?.color ?? '#00E5FF')
   const [saving, setSaving] = useState(false)
-  const COLORS = ['var(--tm-accent)','var(--tm-profit)','var(--tm-warning)','var(--tm-loss)','#9B59B6','#E91E63','#4CAF50','#2196F3','#FF6B35','#FFD700']
+  const COLORS = ['#00E5FF','#22C759','#F59714','#FF3B30','#9B59B6','#E91E63','#4CAF50','#2196F3','#FF6B35','#FFD700']
 
   const save = async () => {
     if (!name.trim()) return
@@ -515,21 +529,6 @@ function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null
     try { await onSave(name.trim(), color) } catch(e) { alert((e as Error).message) }
     finally { setSaving(false) }
   }
-    function hexToRgba(hex: string, alpha: number) {
-      if (!hex.startsWith('#')) return hex // fallback sécurité
-
-      const r = parseInt(hex.slice(1, 3), 16)
-      const g = parseInt(hex.slice(3, 5), 16)
-      const b = parseInt(hex.slice(5, 7), 16)
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`
-    }
-    function resolveColor(color: string, fallback = '#3B82F6') {
-      if (color.startsWith('var(')) {
-        const varName = color.replace('var(','').replace(')','')
-        return resolveCSSColor(varName, fallback)
-      }
-      return color
-    }
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
@@ -552,7 +551,7 @@ function SystemModal({ system, onSave, onClose }: { system: TradingSystem | null
           </div>
         </div>
         <button onClick={save} disabled={!name.trim() || saving}
-          style={{ width:'100%', padding:10, borderRadius:10, border:'none', background: name.trim()?color:'var(--tm-bg-tertiary)', color: name.trim()?'var(--tm-bg)':'var(--tm-text-muted)', fontSize:14, fontWeight:600, cursor: name.trim()?'pointer':'not-allowed' }}>
+          style={{ width:'100%', padding:10, borderRadius:10, border:'none', background: name.trim()?color:'var(--tm-bg-tertiary)', color: name.trim()?'#0D1117':'var(--tm-text-muted)', fontSize:14, fontWeight:600, cursor: name.trim()?'pointer':'not-allowed' }}>
           {saving ? t('common.saving') : system ? t('systemes.update') : t('systemes.create')}
         </button>
       </div>
