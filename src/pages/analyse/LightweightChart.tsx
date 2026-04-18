@@ -25,6 +25,7 @@ interface Props {
 
 export interface LightweightChartHandle {
   takeScreenshot: () => string | null
+  setVisibleRange: (range: { from: number; to: number }) => void
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -549,7 +550,15 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
         const canvas = chartApi.current.takeScreenshot()
         return canvas.toDataURL('image/png')
       } catch { return null }
-    }
+    },
+    // Oscillateurs → LW : pousse une plage fractionnaire [0-1] dans le chart
+    setVisibleRange: (range: { from: number; to: number }) => {
+      if (!chartApi.current || !candlesRef.current.length) return
+      const total = candlesRef.current.length
+      const target = { from: range.from * total, to: range.to * total }
+      lastSetLogical.current = target
+      chartApi.current.timeScale().setVisibleLogicalRange(target)
+    },
   }))
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef      = useRef<Candle[]>([])

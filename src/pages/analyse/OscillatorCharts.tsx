@@ -385,7 +385,8 @@ interface Viewport { from: number; to: number }  // fractions 0-1
 function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
   deps: unknown[], viewSize: number,
-  viewport: Viewport, setViewport: (vp:Viewport) => void
+  viewport: Viewport, setViewport: (vp:Viewport) => void,
+  onViewportChange?: (from: number, to: number) => void
 ) {
   const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
@@ -393,6 +394,9 @@ function useInteractiveCanvas(
   const dragRef = useRef<{x:number; vp:Viewport}|null>(null)
   const vpRef   = useRef<Viewport>(viewport)
   vpRef.current = viewport
+  // Keep onViewportChange stable in a ref to avoid stale closures
+  const onVPChangeRef = useRef(onViewportChange)
+  useEffect(() => { onVPChangeRef.current = onViewportChange }, [onViewportChange])
 
   useEffect(() => {
     const c = ref.current; if(!c) return
@@ -407,6 +411,11 @@ function useInteractiveCanvas(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, hoverIdx])
 
+  const applyViewport = useCallback((vp: Viewport) => {
+    setViewport(vp)
+    onVPChangeRef.current?.(vp.from, vp.to)
+  }, [setViewport])
+
   const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault()
     const c = ref.current; if (!c) return
@@ -417,8 +426,8 @@ function useInteractiveCanvas(
     const factor = e.deltaY > 0 ? 1.15 : 0.87
     const newSpan = Math.min(1, Math.max(0.02, span * factor))
     const newFrom = Math.max(0, Math.min(1 - newSpan, vp.from + mouseX * (span - newSpan)))
-    setViewport({ from: newFrom, to: newFrom + newSpan })
-  }, [setViewport])
+    applyViewport({ from: newFrom, to: newFrom + newSpan })
+  }, [applyViewport])
 
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     dragRef.current = { x: e.clientX, vp: vpRef.current }
@@ -431,7 +440,7 @@ function useInteractiveCanvas(
       const { from, to } = dragRef.current.vp
       const span = to - from
       const newFrom = Math.max(0, Math.min(1 - span, from + dx))
-      setViewport({ from: newFrom, to: newFrom + span })
+      applyViewport({ from: newFrom, to: newFrom + span })
     } else {
       const c = ref.current; if (!c || viewSize < 2) return
       const rect = c.getBoundingClientRect()
@@ -439,7 +448,7 @@ function useInteractiveCanvas(
       const idx = Math.round((x / rect.width) * (viewSize - 1))
       setHoverIdx(Math.max(0, Math.min(viewSize - 1, idx)))
     }
-  }, [setViewport, viewSize])
+  }, [applyViewport, viewSize])
 
   const onMouseUp  = useCallback(() => { dragRef.current = null }, [])
   const onLeave    = useCallback(() => { dragRef.current = null; setHoverIdx(null) }, [])
@@ -452,7 +461,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; onViewportChange?: (from: number, to: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -462,6 +471,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   const [nextRefresh, setNextRefresh] = useState(0)
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
   const obLevel=53, osLevel=-53
+  // Anti-loop: track last emitted viewport so we don't re-apply our own emission
+  const lastEmitted = useRef<{from:number;to:number}|null>(null)
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -485,6 +496,10 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
+      const eps = 0.001
+      if (lastEmitted.current &&
+          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -497,11 +512,17 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
 
+  // Wrap onViewportChange to track last emission (anti-loop)
+  const handleVPChange = useCallback((from: number, to: number) => {
+    lastEmitted.current = { from, to }
+    onViewportChange?.(from, to)
+  }, [onViewportChange])
+
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
       drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd)
-    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport
+    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport, handleVPChange
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -556,7 +577,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, sig: number) => void }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, sig: number) => void; onViewportChange?: (from: number, to: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -564,6 +585,7 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
+  const lastEmitted = useRef<{from:number;to:number}|null>(null)
   // obLevel/osLevel are dynamic from result (default PERSONNALISÉ: 40/-40)
   const obLevel=result?.obLevel??40, osLevel=result?.osLevel??-40
 
@@ -585,12 +607,16 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
   }, [candles, symbol, tf.label])
 
-  // Sync viewport from LW chart range fractions
+  // Sync viewport from LW chart range fractions — ignore our own emissions
   useEffect(() => {
     if (!visibleRange) {
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
+      const eps = 0.001
+      if (lastEmitted.current &&
+          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -620,11 +646,16 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
     return []
   }) : []
 
+  const handleVPChange = useCallback((from: number, to: number) => {
+    lastEmitted.current = { from, to }
+    onViewportChange?.(from, to)
+  }, [onViewportChange])
+
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel], vmcViewSize, viewport, setViewport
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel], vmcViewSize, viewport, setViewport, handleVPChange
   )
 
   return (
@@ -940,7 +971,7 @@ function drawRSIBollinger(
 }
 
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
-export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function RSIBollingerChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from: number, to: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles]         = useState<Candle[]>([])
@@ -954,6 +985,7 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symb
   const [showDivergence, setShowDivergence] = useState(false)
   const [bbStdev, setBbStdev] = useState(2)
   const [sigma,   setSigma]   = useState(0.1)
+  const lastEmitted = useRef<{from:number;to:number}|null>(null)
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -970,11 +1002,16 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symb
     setResult(calcRSIBollinger(candles, 14, 20, bbStdev, sigma, 4, 3, showTrendlines, showDivergence))
   }, [candles, bbStdev, sigma, showTrendlines, showDivergence])
 
+  // Sync viewport from LW chart range fractions — ignore our own emissions
   useEffect(() => {
     if (!visibleRange) {
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
+      const eps = 0.001
+      if (lastEmitted.current &&
+          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -984,9 +1021,14 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symb
   const viewEnd   = total > 0 ? Math.min(total, Math.ceil(viewport.to * total)) : 0
   const viewSize  = Math.max(viewEnd - viewStart, 2)
 
+  const handleVPChange = useCallback((from: number, to: number) => {
+    lastEmitted.current = { from, to }
+    onViewportChange?.(from, to)
+  }, [onViewportChange])
+
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => { if (result) drawRSIBollinger(ctx, W, H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence) },
-    [result, viewStart, viewEnd, showTrendlines, showDivergence], viewSize, viewport, setViewport
+    [result, viewStart, viewEnd, showTrendlines, showDivergence], viewSize, viewport, setViewport, handleVPChange
   )
 
   const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
@@ -1216,7 +1258,7 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 }
 
 // ── RSI Chart Component ──────────────────────────────────────────────────────
-export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function RSIChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from: number, to: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -1225,6 +1267,7 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
   const [errorMsg, setErrorMsg] = useState('')
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
   const [nextRefresh, setNextRefresh] = useState(0)
+  const lastEmitted = useRef<{from:number;to:number}|null>(null)
   const obLevel = 70, osLevel = 30
 
   const loadCandles = useCallback(async () => {
@@ -1242,12 +1285,16 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
     setRsiData(calcRSI(candles, 14))
   }, [candles])
 
-  // Sync viewport from LW chart range fractions
+  // Sync viewport from LW chart range fractions — ignore our own emissions
   useEffect(() => {
     if (!visibleRange) {
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
+      const eps = 0.001
+      if (lastEmitted.current &&
+          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -1264,9 +1311,14 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
     : lastRsi <= 40 ? { label: 'Faible', color: 'var(--tm-text-secondary)' }
     : { label: 'Neutre', color: 'var(--tm-text-secondary)' }
 
+  const handleVPChange = useCallback((from: number, to: number) => {
+    lastEmitted.current = { from, to }
+    onViewportChange?.(from, to)
+  }, [onViewportChange])
+
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => { drawRSI(ctx, W, H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd) },
-    [rsiData, rsiViewStart, rsiViewEnd], rsiViewSize, viewport, setViewport
+    [rsiData, rsiViewStart, rsiViewEnd], rsiViewSize, viewport, setViewport, handleVPChange
   )
 
   return (
