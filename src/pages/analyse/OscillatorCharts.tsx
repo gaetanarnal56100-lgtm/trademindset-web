@@ -497,9 +497,12 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
       const eps = 0.001
-      if (lastEmitted.current &&
-          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
+      if (lastEmitted.current) {
+        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
+        lastEmitted.current = null  // consume : always clear so subsequent LW pans pass through
+        if (eq) return
+      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -614,9 +617,12 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
       const eps = 0.001
-      if (lastEmitted.current &&
-          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
+      if (lastEmitted.current) {
+        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
+        lastEmitted.current = null
+        if (eq) return
+      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -1009,9 +1015,12 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, onViewpo
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
       const eps = 0.001
-      if (lastEmitted.current &&
-          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
+      if (lastEmitted.current) {
+        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
+        lastEmitted.current = null
+        if (eq) return
+      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -1292,9 +1301,12 @@ export function RSIChart({ symbol, syncInterval, visibleRange, onViewportChange 
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
       const eps = 0.001
-      if (lastEmitted.current &&
-          Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-          Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps) return
+      if (lastEmitted.current) {
+        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
+                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
+        lastEmitted.current = null
+        if (eq) return
+      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
