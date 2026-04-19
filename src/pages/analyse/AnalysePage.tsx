@@ -950,14 +950,16 @@ export default function AnalysePage() {
   const [pdfGenerating, setPdfGenerating] = useState(false)
 
   // ── Sync bi-directionnelle oscillateurs ↔ chart ──────────────────────────
-  // Quand l'utilisateur zoome sur un oscillateur, on pousse la range au LightweightChart
+  // Quand l'utilisateur zoome/déplace sur un oscillateur :
+  //   1. setSyncRange  → met à jour visibleRange de TOUS les oscillateurs directement
+  //   2. setVisibleRange impératif → déplace la chart LW (l'anti-loop LW supprime son propre écho,
+  //      donc setSyncRange ne sera pas rappelé par LW, pas de boucle)
   const [syncEnabled, setSyncEnabled] = useState(true)
-  const [syncRangeIn, setSyncRangeIn] = useState<{from:number;to:number}|null>(null)
 
   const syncRangeFromOsc = useCallback((from: number, to: number) => {
     if (!syncEnabled) return
-    setSyncRangeIn({ from, to })
-    lwChartRef.current?.setVisibleRange?.({ from, to })
+    setSyncRange({ from, to })                          // propagation directe vers tous les oscillateurs
+    lwChartRef.current?.setVisibleRange?.({ from, to }) // mise à jour LW (impératif, pas de double appel)
   }, [syncEnabled])
 
   const handleExportPDF = useCallback(async () => {
@@ -1351,7 +1353,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>{ if(syncEnabled) setSyncRange({from,to}) }} lwChartRef={lwChartRef} syncRangeIn={syncEnabled ? syncRangeIn : null} />}
+      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>{ if(syncEnabled) setSyncRange({from,to}) }} lwChartRef={lwChartRef} syncRangeIn={null} />}
 
       {/* Oscillateurs synchronisés sous le chart */}
       {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 8 }}>
