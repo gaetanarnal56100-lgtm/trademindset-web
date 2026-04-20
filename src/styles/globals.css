@@ -49,53 +49,109 @@
 }
 
 @layer components {
-  /* ── Cards ── */
+  /* ── FLAT DESIGN CARDS ── */
   .card {
-    @apply bg-bg-card border border-border rounded-2xl p-4;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 2px 8px rgba(0,0,0,0.3);
+    @apply bg-bg-card border border-border rounded-2xl p-4 transition-all duration-150;
+    border-width: 1px;
+    border-color: rgba(42, 47, 62, 0.6);
   }
+
+  .card-flat {
+    @apply card;
+    box-shadow: none;
+  }
+
   .card-hover {
-    @apply card transition-all duration-200 cursor-pointer;
+    @apply card-flat cursor-pointer hover:border-brand-cyan/40;
+    transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+
   .card-hover:hover {
-    @apply border-border;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 4px 16px rgba(0,0,0,0.5);
+    transform: translateY(-2px);
+    border-color: rgba(0, 229, 255, 0.3);
+  }
+
+  /* Variant: accent border on hover */
+  .card-accent {
+    @apply card-flat border-transparent hover:border-brand-cyan/50;
+  }
+
+  /* ── KPI CARD (Flat Design) ── */
+  .kpi-card {
+    @apply bg-bg-card border border-border rounded-2xl p-4 relative overflow-hidden transition-all duration-150;
+    border-color: rgba(42, 47, 62, 0.6);
+  }
+
+  /* Subtle top accent line */
+  .kpi-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.3), transparent);
+  }
+
+  /* Hover state */
+  .kpi-card:hover {
+    border-color: rgba(0, 229, 255, 0.3);
     transform: translateY(-1px);
   }
 
-  /* ── KPI card ── */
-  .kpi-card {
-    @apply bg-bg-card border border-border rounded-2xl p-4 relative overflow-hidden;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 2px 8px rgba(0,0,0,0.3);
-  }
-  .kpi-card::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
-  }
-
-  /* ── Buttons ── */
+  /* ── BUTTONS (Flat Design) ── */
   .btn-primary {
     @apply bg-brand-cyan text-bg-primary font-semibold px-4 py-2 rounded-xl text-sm
-           transition-all duration-150 active:scale-95 select-none;
-    box-shadow: 0 0 16px rgba(0,229,255,0.2);
+           transition-all duration-150 active:scale-95 select-none cursor-pointer;
+    box-shadow: 0 2px 8px rgba(0, 229, 255, 0.25);
   }
-  .btn-primary:hover { box-shadow: 0 0 24px rgba(0,229,255,0.35); filter: brightness(1.05); }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 229, 255, 0.35);
+    filter: brightness(1.08);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+  }
 
   .btn-secondary {
     @apply bg-bg-tertiary text-text-primary border border-border px-4 py-2 rounded-xl text-sm
-           hover:bg-bg-secondary hover:border-border transition-all duration-150 active:scale-95;
+           transition-all duration-150 active:scale-95 cursor-pointer hover:bg-bg-secondary;
+    border-color: rgba(42, 47, 62, 0.8);
   }
+  .btn-secondary:hover {
+    border-color: rgba(0, 229, 255, 0.2);
+    transform: translateY(-1px);
+  }
+
   .btn-ghost {
     @apply text-text-secondary px-3 py-1.5 rounded-lg text-sm
-           hover:bg-bg-tertiary hover:text-text-primary transition-all duration-150;
+           transition-all duration-150 cursor-pointer hover:text-text-primary;
   }
+  .btn-ghost:hover {
+    @apply bg-bg-tertiary/50;
+  }
+
   .btn-danger {
-    @apply px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 active:scale-95;
-    background: rgba(255,59,48,0.12); color: #FF3B30;
-    border: 1px solid rgba(255,59,48,0.25);
+    @apply px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 cursor-pointer;
+    background: rgba(255, 59, 48, 0.12);
+    color: #FF3B30;
+    border: 1px solid rgba(255, 59, 48, 0.3);
   }
-  .btn-danger:hover { background: rgba(255,59,48,0.22); }
+  .btn-danger:hover {
+    background: rgba(255, 59, 48, 0.2);
+    border-color: rgba(255, 59, 48, 0.5);
+    transform: translateY(-1px);
+  }
+
+  /* NEW: Flat outline buttons */
+  .btn-outline {
+    @apply px-4 py-2 rounded-xl text-sm font-medium border transition-all duration-150 cursor-pointer;
+    background: transparent;
+    border-color: rgba(0, 229, 255, 0.4);
+    color: #00E5FF;
+  }
+  .btn-outline:hover {
+    background: rgba(0, 229, 255, 0.08);
+    border-color: rgba(0, 229, 255, 0.6);
+    transform: translateY(-1px);
+  }
 
   /* ── Nav link ── */
   .nav-link {
@@ -113,15 +169,27 @@
     width: 2px; border-radius: 99px; background: #00E5FF;
   }
 
-  /* ── Inputs ── */
+  /* ── INPUTS (Flat Design) ── */
   .input {
     @apply bg-bg-tertiary border border-border rounded-xl px-3 py-2 text-sm text-text-primary w-full
            placeholder:text-text-tertiary
-           focus:outline-none focus:border-brand-cyan transition-colors duration-150;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+           focus:outline-none focus:border-brand-cyan transition-all duration-150 cursor-text;
+    border-color: rgba(42, 47, 62, 0.8);
   }
-  .input:focus { box-shadow: 0 0 0 3px rgba(0,229,255,0.1), 0 1px 0 rgba(255,255,255,0.02) inset; }
-  .input-label { @apply text-xs font-medium text-text-secondary mb-1.5 block tracking-wide; }
+
+  .input:focus {
+    border-color: #00E5FF;
+    box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.1);
+  }
+
+  .input-label {
+    @apply text-xs font-medium text-text-secondary mb-1.5 block tracking-wide;
+  }
+
+  /* Flat input variant */
+  .input-flat {
+    @apply input;
+  }
 
   /* ── Badge ── */
   .badge-profit { @apply text-xs font-semibold px-2 py-0.5 rounded-md; background: rgba(34,199,89,0.12); color: #22C759; }
@@ -163,6 +231,189 @@
     @apply w-1.5 h-1.5 rounded-full bg-profit;
     animation: livePulse 2s ease-in-out infinite;
   }
+
+  /* ── FORM GROUP (Flat Design) ── */
+  .form-group {
+    @apply flex flex-col gap-1.5 mb-4;
+  }
+
+  .form-group-label {
+    @apply input-label;
+  }
+
+  .form-group-hint {
+    @apply text-xs text-text-tertiary mt-1;
+  }
+
+  .form-group-error {
+    @apply text-xs text-loss mt-1;
+  }
+
+  /* ── MODAL (Flat Design) ── */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/40 backdrop-blur-sm z-40;
+    animation: fadeIn 0.25s ease-out;
+  }
+
+  .modal {
+    @apply bg-bg-card border border-border rounded-2xl p-6 w-full max-w-md
+           shadow-lg z-50 animate-slide-up;
+    box-shadow: 0 20px 25px rgba(0,0,0,0.3), 0 10px 15px rgba(0,0,0,0.2);
+  }
+
+  .modal-header {
+    @apply mb-4 flex items-center justify-between;
+  }
+
+  .modal-title {
+    @apply text-lg font-bold text-text-primary;
+  }
+
+  .modal-close {
+    @apply text-text-secondary hover:text-text-primary transition-colors cursor-pointer;
+  }
+
+  .modal-body {
+    @apply mb-6 text-text-secondary;
+  }
+
+  .modal-footer {
+    @apply flex gap-3 justify-end;
+  }
+
+  /* ── TOGGLE / CHECKBOX (Flat Design) ── */
+  .toggle-switch {
+    @apply relative inline-flex items-center cursor-pointer w-12 h-6 rounded-full
+           transition-all duration-150;
+    background: #2A2F3E;
+  }
+
+  .toggle-switch.active {
+    background: #00E5FF;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    @apply absolute w-5 h-5 rounded-full bg-white transition-all duration-150;
+    left: 0.25rem;
+  }
+
+  .toggle-switch.active::after {
+    left: calc(100% - 1.5rem);
+  }
+
+  /* ── SELECT / DROPDOWN (Flat Design) ── */
+  .select {
+    @apply bg-bg-tertiary border border-border rounded-xl px-3 py-2 text-sm text-text-primary w-full
+           placeholder:text-text-tertiary
+           focus:outline-none focus:border-brand-cyan transition-all duration-150 cursor-pointer;
+    border-color: rgba(42, 47, 62, 0.8);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238F94A3' d='M0 0l6 8 6-8z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2rem;
+  }
+
+  .select:focus {
+    border-color: #00E5FF;
+    box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.1);
+  }
+
+  /* ── TEXTAREA (Flat Design) ── */
+  .textarea {
+    @apply bg-bg-tertiary border border-border rounded-xl px-3 py-2 text-sm text-text-primary w-full
+           placeholder:text-text-tertiary resize-y
+           focus:outline-none focus:border-brand-cyan transition-all duration-150;
+    border-color: rgba(42, 47, 62, 0.8);
+    font-family: inherit;
+  }
+
+  .textarea:focus {
+    border-color: #00E5FF;
+    box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.1);
+  }
+
+  /* ── DASHBOARD CARD (Stats & KPI) ── */
+  .dashboard-card {
+    @apply bg-bg-card border border-border rounded-2xl p-5 relative overflow-hidden
+           transition-all duration-150 hover:border-brand-cyan/30;
+    border-color: rgba(42, 47, 62, 0.6);
+  }
+
+  .dashboard-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.2), transparent);
+  }
+
+  .dashboard-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0, 229, 255, 0.3);
+  }
+
+  .dashboard-card-value {
+    @apply text-2xl font-bold text-text-primary;
+  }
+
+  .dashboard-card-label {
+    @apply text-xs text-text-secondary uppercase tracking-wide mt-1;
+  }
+
+  .dashboard-card-change {
+    @apply text-xs font-medium mt-2;
+  }
+
+  /* ── SIDEBAR SECTION (Collapsible) ── */
+  .sidebar-section {
+    @apply mb-4 rounded-xl overflow-hidden border border-border;
+    border-color: rgba(42, 47, 62, 0.5);
+  }
+
+  .sidebar-section-header {
+    @apply px-4 py-3 bg-bg-tertiary/50 border-b border-border cursor-pointer
+           flex items-center justify-between transition-colors hover:bg-bg-tertiary;
+    border-color: rgba(42, 47, 62, 0.5);
+  }
+
+  .sidebar-section-header-title {
+    @apply text-sm font-semibold text-text-primary;
+  }
+
+  .sidebar-section-content {
+    @apply px-4 py-3 bg-bg-card/50 space-y-2;
+  }
+
+  /* ── CHART CONTROL PANEL (Toggles & Selects) ── */
+  .chart-controls {
+    @apply flex flex-col gap-3 p-4 bg-bg-tertiary/30 rounded-xl border border-border;
+    border-color: rgba(42, 47, 62, 0.5);
+  }
+
+  .chart-control-item {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  .chart-control-label {
+    @apply text-sm text-text-secondary font-medium;
+  }
+
+  /* ── INDICATOR BADGE (Status) ── */
+  .indicator-badge {
+    @apply inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg
+           border transition-all duration-150;
+    border-color: rgba(0, 229, 255, 0.2);
+    background: rgba(0, 229, 255, 0.08);
+    color: #00E5FF;
+  }
+
+  .indicator-badge-dot {
+    @apply w-1.5 h-1.5 rounded-full;
+    background: currentColor;
+    animation: livePulse 2s ease-in-out infinite;
+  }
 }
 
 @layer utilities {
@@ -185,6 +436,30 @@
 
   .glow-cyan  { box-shadow: 0 0 20px rgba(0,229,255,0.15); }
   .glow-green { box-shadow: 0 0 20px rgba(34,199,89,0.15); }
+
+  /* FLAT DESIGN UTILITIES */
+  .flat-transition { @apply transition-all duration-150 ease-out; }
+  .lift-on-hover:hover { transform: translateY(-2px); }
+  .lift-subtle-on-hover:hover { transform: translateY(-1px); }
+
+  /* Flat Design spacing (4px grid) */
+  .gap-flat { @apply gap-2; /* 8px = 2*4px */ }
+  .p-flat { @apply p-2; /* 8px padding */ }
+
+  /* Border utilities for Flat Design */
+  .border-flat { border-color: rgba(42, 47, 62, 0.6); }
+  .border-flat-hover:hover { border-color: rgba(0, 229, 255, 0.3); }
+}
+
+/* ── FLAT DESIGN ANIMATIONS ── */
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* ── Keyframes ── */

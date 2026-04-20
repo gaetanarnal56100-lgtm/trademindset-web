@@ -43,6 +43,8 @@ export default {
         'fade-in':    'fadeIn 0.3s ease-out',
         'slide-up':   'slideUp 0.3s ease-out',
         'slide-in':   'slideIn 0.25s ease-out',
+        'slide-down': 'slideDown 0.25s ease-out',
+        'fade-scale': 'fadeScale 0.25s ease-out',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'ticker':     'ticker 30s linear infinite',
       },

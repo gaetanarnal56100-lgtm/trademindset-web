@@ -16,6 +16,7 @@ import KeyLevelsCard from './KeyLevelsCard'
 import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
+import { Button, SidebarSection } from '@/components/ui'
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
@@ -842,85 +843,18 @@ function PressureBar({score}:{score:number}){
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-// ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
+// ── ChartLayout — Lightweight Charts uniquement ─────────────────────────────
 function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef, syncRangeIn }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle>; syncRangeIn?: {from:number;to:number}|null }) {
-  type PanelType = 'tv' | 'lw'
-  type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
-
-  const [mode, setMode] = useState<LayoutMode>('tv')
-
-  const LAYOUTS: { id: LayoutMode; icon: string; label: string; desc: string }[] = [
-    { id: 'tv',    icon: '📺',   label: 'TV seul',    desc: 'TradingView uniquement' },
-    { id: 'lw',    icon: '⚡',   label: 'LW seul',    desc: 'Lightweight uniquement' },
-    { id: 'tv-lw', icon: '📺⚡', label: 'TV | LW',    desc: 'TradingView + Lightweight côte à côte' },
-    { id: 'lw-tv', icon: '⚡📺', label: 'LW | TV',    desc: 'Lightweight + TradingView côte à côte' },
-    { id: 'tv-tv', icon: '📺📺', label: 'TV | TV',    desc: 'Deux TradingView (ex: 15m + 1h)' },
-    { id: 'lw-lw', icon: '⚡⚡', label: 'LW | LW',    desc: 'Deux Lightweight (ex: BTC + ETH)' },
-  ]
-
-  const isSplit = ['tv-lw','lw-tv','tv-tv','lw-lw'].includes(mode)
-
-  const firstLwPanel = useRef(false)
-  const renderPanel = (type: PanelType, key: string) => {
-    if (type === 'lw' && !firstLwPanel.current) {
-      firstLwPanel.current = true
-      return (
-        <div key={key} style={{ minWidth: 0, flex: 1 }}>
-          <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} syncRangeIn={syncRangeIn ?? undefined} />
-        </div>
-      )
-    }
-    return (
-      <div key={key} style={{ minWidth: 0, flex: 1 }}>
-        {type === 'tv'
-          ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
-          : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />}
-      </div>
-    )
-  }
-
-  const panels: [PanelType, PanelType] | [PanelType] =
-    mode === 'tv'    ? ['tv'] :
-    mode === 'lw'    ? ['lw'] :
-    mode === 'tv-lw' ? ['tv','lw'] :
-    mode === 'lw-tv' ? ['lw','tv'] :
-    mode === 'tv-tv' ? ['tv','tv'] :
-                       ['lw','lw']
-
   return (
     <div style={{ marginBottom: 16 }}>
-      {/* Sélecteur */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px',
-        background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 12,
-        marginBottom: 8, flexWrap: 'wrap',
-      }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', marginRight: 2, flexShrink: 0 }}>DISPOSITION :</span>
-        {LAYOUTS.map(l => (
-          <button key={l.id} onClick={() => setMode(l.id)} title={l.desc} style={{
-            display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-            borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer',
-            border: `1px solid ${mode === l.id ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
-            background: mode === l.id ? 'rgba(var(--tm-accent-rgb,0,229,255),0.10)' : 'transparent',
-            color: mode === l.id ? 'var(--tm-accent)' : 'var(--tm-text-muted)', transition: 'all 0.15s',
-          }}>
-            <span style={{ fontSize: 12 }}>{l.icon}</span>
-            <span>{l.label}</span>
-          </button>
-        ))}
-        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--tm-text-muted)', flexShrink: 0 }}>
-          {LAYOUTS.find(l => l.id === mode)?.desc}
-        </span>
-      </div>
-
-      {/* Graphiques */}
-      <div style={{
-        display: isSplit ? 'grid' : 'block',
-        gridTemplateColumns: isSplit ? '1fr 1fr' : undefined,
-        gap: isSplit ? 8 : undefined,
-      }}>
-        {panels.map((type, i) => renderPanel(type, `${type}-${i}`))}
-      </div>
+      <LightweightChart
+        ref={lwChartRef}
+        symbol={symbol}
+        isCrypto={isCrypto}
+        onTimeframeChange={onTimeframeChange}
+        onVisibleRangeChange={onVisibleRangeChange}
+        syncRangeIn={syncRangeIn ?? undefined}
+      />
     </div>
   )
 }
@@ -1358,19 +1292,15 @@ export default function AnalysePage() {
       {/* Oscillateurs synchronisés sous le chart */}
       {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 8 }}>
         {/* Toggle sync */}
-        <div style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0 8px',justifyContent:'flex-end'}}>
-          <span style={{fontSize:10,color:'var(--tm-text-muted)'}}>Sync chart ↔ oscillateurs</span>
-          <button
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0 12px',justifyContent:'flex-end'}}>
+          <span style={{fontSize:11,fontWeight:500,color:'var(--tm-text-secondary)',textTransform:'uppercase',letterSpacing:0.5}}>Sync chart ↔ oscill.</span>
+          <Button
+            variant={syncEnabled ? 'primary' : 'secondary'}
+            size="sm"
             onClick={() => setSyncEnabled(v => !v)}
-            style={{
-              display:'flex',alignItems:'center',gap:5,padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',
-              border:`1px solid ${syncEnabled?'var(--tm-accent)':'var(--tm-border)'}`,
-              background:syncEnabled?'rgba(var(--tm-accent-rgb,0,229,255),0.10)':'var(--tm-bg-tertiary)',
-              color:syncEnabled?'var(--tm-accent)':'var(--tm-text-muted)',transition:'all 0.15s',
-            }}
           >
             {syncEnabled ? '⟳ ON' : '⟳ OFF'}
-          </button>
+          </Button>
         </div>
         <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
           onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}}

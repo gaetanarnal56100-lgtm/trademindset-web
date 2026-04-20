@@ -1,9 +1,11 @@
 // ─── Widget Components v2 ─────────────────────────────────────────────────────
 // Tous les widgets : journal (KPI, P&L, heatmap...) + analyse (RSI, MACD...)
 // Chaque widget reçoit les props dont il a besoin via WidgetDataContext.
+// Refactored with Flat Design components and improved styling
 
 import { useContext } from 'react'
 import { WidgetDataContext, type WidgetDataContextType } from '../WidgetDataContext'
+import { DashboardCard, StatsRow } from '@/components/ui'
 
 // ─── Shared helpers (copiés depuis DashboardPage pour cohérence) ──────────────
 function fmtK(n: number) {
@@ -22,20 +24,17 @@ function Skel({ h = 20 }: { h?: number }) {
 export function KPIBarWidget() {
   const { s, loading, closed, open } = useContext(WidgetDataContext)
   const items = [
-    { label:'P&L Total', value: loading ? null : fmtK(s.totalPnL), color: s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} trades fermés` },
-    { label:'Win Rate',  value: loading ? null : `${s.winRate.toFixed(1)}%`, color:'var(--tm-text-primary)', sub:`${s.wins}W / ${s.losses}L` },
-    { label:'Ratio R/R', value: loading ? null : s.payoffRatio.toFixed(2),   color:'var(--tm-accent)', sub:'Rendement/Risque' },
-    { label:'Ouverts',   value: loading ? null : String(open.length),         color: open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives' },
+    { label:'P&L Total', value: loading ? '—' : fmtK(s.totalPnL), color: s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} trades fermés` },
+    { label:'Win Rate',  value: loading ? '—' : `${s.winRate.toFixed(1)}%`, color:'var(--tm-text-primary)', sub:`${s.wins}W / ${s.losses}L` },
+    { label:'Ratio R/R', value: loading ? '—' : s.payoffRatio.toFixed(2),   color:'var(--tm-accent)', sub:'Rendement/Risque' },
+    { label:'Ouverts',   value: loading ? '—' : String(open.length),         color: open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives' },
   ]
   return (
     <div className="grid grid-cols-4 gap-3 p-3 h-full">
       {items.map(({ label, value, color, sub }) => (
-        <div key={label} className="bg-bg-secondary rounded-xl p-3 flex flex-col justify-between">
+        <div key={label} className="dashboard-card">
           <div className="text-[10px] text-text-muted uppercase tracking-widest font-medium">{label}</div>
-          {value === null
-            ? <Skel h={28} />
-            : <div className="text-lg font-bold font-mono" style={{ color }}>{value}</div>
-          }
+          <div className="text-lg font-bold font-mono mt-2" style={{ color }}>{value}</div>
           <div className="text-[10px] text-text-muted mt-1">{sub}</div>
         </div>
       ))}
@@ -51,11 +50,10 @@ export function LongShortWidget() {
       <div className="text-[11px] text-text-secondary font-medium">Win rate & P&L par direction</div>
       <div className="grid grid-cols-2 gap-3 flex-1">
         {[
-          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)', bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.2)' },
-          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)', bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.2)' },
-        ].map(({ label, icon, wr, pnl, count, c, bdr }) => (
-          <div key={label} className="rounded-xl p-3 flex flex-col gap-2"
-            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${bdr}` }}>
+          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)' },
+          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)' },
+        ].map(({ label, icon, wr, pnl, count, c }) => (
+          <div key={label} className="dashboard-card flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
                 style={{ background:`${c}20`, color:c }}>{icon}</div>
@@ -79,17 +77,17 @@ export function LongShortWidget() {
 export function MainMetricsWidget() {
   const { s, loading, closed } = useContext(WidgetDataContext)
   const items = loading ? [] : [
-    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'var(--tm-profit)', bg:'rgba(var(--tm-profit-rgb,34,199,89),0.08)' },
-    { icon:'💲', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'var(--tm-accent)', bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)' },
-    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain/Perte',                c:'var(--tm-blue)', bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)' },
-    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total',                     c:'var(--tm-purple)', bg:'rgba(var(--tm-purple-rgb,191,90,242),0.08)' },
+    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'var(--tm-profit)' },
+    { icon:'💲', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'var(--tm-accent)' },
+    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain/Perte',                c:'var(--tm-blue)' },
+    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total',                     c:'var(--tm-purple)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3">
       <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-widest">Main Metrics</div>
       <div className="grid grid-cols-2 gap-2 flex-1">
-        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, bg }) => (
-          <div key={label} className="rounded-xl p-3 flex flex-col gap-1" style={{ background:bg }}>
+        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c }) => (
+          <div key={label} className="dashboard-card flex flex-col gap-1">
             <span className="text-base">{icon}</span>
             <div className="text-base font-black font-mono text-text-primary">{value}</div>
             <div className="text-[10px] text-text-secondary">{label}</div>
