@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -180,49 +181,51 @@ function Tooltip({ token }: { token: TokenRSI | null }) {
   const rsiZ = RSI_ZONES.find(z => z.id === getRsiZone(token.rsi ?? 50))!
   const vmcZ = VMC_ZONES.find(z => z.id === getVmcZone(token.wt1 ?? 0))!
   const profit = resolveCSSColor('--tm-profit', '#22C759')
-  const loss = resolveCSSColor('--tm-loss', '#FF3B30')
+  const loss   = resolveCSSColor('--tm-loss',   '#FF3B30')
 
-  return (
+  // Portal → renders into document.body, escaping any parent backdrop-filter / transform
+  // stacking context that would otherwise confine position:fixed to the container
+  return createPortal(
     <div ref={ref} style={{
-      position: 'fixed', ...pos, zIndex: 9999, pointerEvents: 'none',
-      width: 220,
-      background: 'var(--tm-bg, #0D1117)',
-      border: `1px solid ${rsiZ.color}44`,
+      position: 'fixed', top: pos.top, left: pos.left, zIndex: 99999, pointerEvents: 'none',
+      width: 230,
+      background: '#0A0E1A',
+      border: `1px solid ${rsiZ.color}55`,
       borderRadius: 10, padding: '12px 14px',
-      backdropFilter: 'blur(16px)',
-      boxShadow: `0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 ${rsiZ.color}10`,
+      boxShadow: `0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px ${rsiZ.color}20`,
       fontFamily: "'JetBrains Mono','Fira Code',monospace",
     }}>
-      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--tm-text-primary)', marginBottom: 10, letterSpacing: 0.4 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, color: '#e2e8f0', marginBottom: 10, letterSpacing: 0.4 }}>
         {token.symbol}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px', fontSize: 11.5 }}>
-        <span style={{ color: 'var(--tm-text-muted)' }}>RSI</span>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '5px 12px', fontSize: 11.5 }}>
+        <span style={{ color: 'rgba(148,163,184,0.7)' }}>RSI</span>
         <span style={{ color: rsiZ.color, fontWeight: 700, textAlign: 'right' }}>
-          {token.rsi} <span style={{ fontSize: 9, opacity: 0.7 }}>({t(rsiZ.labelKey)})</span>
+          {token.rsi} <span style={{ fontSize: 9, opacity: 0.6 }}>({t(rsiZ.labelKey)})</span>
         </span>
 
-        <span style={{ color: 'var(--tm-text-muted)' }}>VMC WT1</span>
+        <span style={{ color: 'rgba(148,163,184,0.7)' }}>VMC WT1</span>
         <span style={{ color: vmcZ.color, fontWeight: 700, textAlign: 'right' }}>
-          {(token.wt1 ?? 0) > 0 ? '+' : ''}{token.wt1 ?? 0} <span style={{ fontSize: 9, opacity: 0.7 }}>({t(vmcZ.labelKey)})</span>
+          {(token.wt1 ?? 0) > 0 ? '+' : ''}{token.wt1 ?? 0} <span style={{ fontSize: 9, opacity: 0.6 }}>({t(vmcZ.labelKey)})</span>
         </span>
 
-        <span style={{ color: 'var(--tm-text-muted)' }}>24h</span>
+        <span style={{ color: 'rgba(148,163,184,0.7)' }}>24h</span>
         <span style={{ color: token.change24h >= 0 ? profit : loss, fontWeight: 700, textAlign: 'right' }}>
           {token.change24h >= 0 ? '+' : ''}{token.change24h}%
         </span>
 
-        <span style={{ color: 'var(--tm-text-muted)' }}>Prix</span>
-        <span style={{ color: 'var(--tm-text-secondary)', fontWeight: 600, textAlign: 'right' }}>
+        <span style={{ color: 'rgba(148,163,184,0.7)' }}>Prix</span>
+        <span style={{ color: '#e2e8f0', fontWeight: 600, textAlign: 'right' }}>
           ${fmtPrice(token.price)}
         </span>
 
-        <span style={{ color: 'var(--tm-text-muted)' }}>Vol.</span>
-        <span style={{ color: 'var(--tm-text-secondary)', fontWeight: 600, textAlign: 'right' }}>
+        <span style={{ color: 'rgba(148,163,184,0.7)' }}>Vol.</span>
+        <span style={{ color: '#e2e8f0', fontWeight: 600, textAlign: 'right' }}>
           {token.volume ? `$${((token.volume) / 1e6).toFixed(1)}M` : '—'}
         </span>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
