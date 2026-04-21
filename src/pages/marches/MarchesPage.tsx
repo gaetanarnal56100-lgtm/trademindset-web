@@ -3,6 +3,7 @@
 // Page Marchés — RSI + VMC Heatmap · 200 crypto (dynamique) + ~215 actions
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { motion, AnimatePresence } from 'framer-motion'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -322,17 +323,24 @@ function FilterPills<T extends string>({
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-      {label && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 2 }}>{label}</span>}
-      {options.map(o => (
-        <button key={o.value} onClick={() => onChange(o.value)} style={{
-          padding: '3px 11px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all 0.12s',
-          border: `1px solid ${value === o.value ? 'var(--tm-accent)' : 'var(--tm-border-sub)'}`,
-          background: value === o.value ? 'var(--tm-accent, #5B5EF4)22' : 'transparent',
-          color: value === o.value ? 'var(--tm-accent, #5B5EF4)' : 'var(--tm-text-muted)',
-        }}>
-          {o.label}{o.sub ? <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 4 }}>{o.sub}</span> : null}
-        </button>
-      ))}
+      {label && <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(0,229,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: 4 }}>{label}</span>}
+      {options.map(o => {
+        const active = value === o.value
+        return (
+          <motion.button key={o.value} onClick={() => onChange(o.value)}
+            whileHover={{ y: -1 }}
+            style={{
+              padding: '4px 12px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              border: `1px solid ${active ? 'rgba(0,229,255,0.5)' : 'rgba(255,255,255,0.07)'}`,
+              background: active ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.02)',
+              color: active ? '#00E5FF' : 'rgba(148,163,184,0.6)',
+              boxShadow: active ? '0 0 10px rgba(0,229,255,0.15)' : 'none',
+              transition: 'all 0.15s',
+            }}>
+            {o.label}{o.sub ? <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 4 }}>{o.sub}</span> : null}
+          </motion.button>
+        )
+      })}
     </div>
   )
 }
@@ -353,65 +361,57 @@ function CompareBar({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {/* Reference selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('marches.reference')}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(191,90,242,0.6)', textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: 4 }}>{t('marches.reference')}</span>
         {refOptions.map(opt => {
           const active = refKey === opt.value
           return (
-            <button
-              key={opt.value}
-              onClick={() => onRefChange(active ? 'none' : opt.value)}
+            <motion.button key={opt.value} onClick={() => onRefChange(active ? 'none' : opt.value)}
+              whileHover={{ y: -1 }}
               style={{
-                padding: '3px 11px', borderRadius: 99, fontSize: 11, fontWeight: 600,
-                cursor: 'pointer', transition: 'all 0.12s',
-                border: `1px solid ${active ? '#BF5AF2' : 'var(--tm-border-sub)'}`,
-                background: active ? 'rgba(191,90,242,0.15)' : 'transparent',
-                color: active ? '#BF5AF2' : 'var(--tm-text-muted)',
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}
-            >
+                padding: '4px 12px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', border: `1px solid ${active ? 'rgba(191,90,242,0.5)' : 'rgba(255,255,255,0.07)'}`,
+                background: active ? 'rgba(191,90,242,0.12)' : 'rgba(255,255,255,0.02)',
+                color: active ? '#BF5AF2' : 'rgba(148,163,184,0.6)',
+                boxShadow: active ? '0 0 10px rgba(191,90,242,0.2)' : 'none',
+                display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.15s',
+              }}>
               {opt.label}
               {opt.rsi !== null && (
-                <span style={{
-                  fontSize: 10, fontWeight: 800,
-                  color: active ? '#BF5AF2' : 'var(--tm-text-secondary)',
-                  fontFamily: "'JetBrains Mono',monospace",
-                }}>
-                  RSI {opt.rsi}
+                <span style={{ fontSize: 10, fontWeight: 800, color: active ? '#BF5AF2' : 'rgba(148,163,184,0.5)', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {opt.rsi}
                 </span>
               )}
-            </button>
+            </motion.button>
           )
         })}
       </div>
 
-      {/* Stronger / Weaker chips — only visible when a reference is active */}
+      {/* Stronger / Weaker chips */}
       {hasRef && (
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginRight: 2 }}>{t('marches.show')}</span>
+          <span style={{ fontSize: 9, color: 'rgba(148,163,184,0.4)', marginRight: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('marches.show')}</span>
           {([
-            { v: 'stronger' as StrengthFilter, label: t('marches.strongest'), color: '#22c759', count: totalStronger },
-            { v: 'all'      as StrengthFilter, label: t('common.all'),         color: 'var(--tm-text-muted)', count: totalAll },
-            { v: 'weaker'   as StrengthFilter, label: t('marches.weakest'),    color: '#ff3b5c', count: totalWeaker },
-          ] as { v: StrengthFilter; label: string; color: string; count: number }[]).map(({ v, label, color, count }) => {
+            { v: 'stronger' as StrengthFilter, label: t('marches.strongest'), color: '#22c759', glow: '34,199,89',  count: totalStronger },
+            { v: 'all'      as StrengthFilter, label: t('common.all'),        color: '#94a3b8', glow: '148,163,184', count: totalAll },
+            { v: 'weaker'   as StrengthFilter, label: t('marches.weakest'),   color: '#ff3b5c', glow: '255,59,92',  count: totalWeaker },
+          ] as { v: StrengthFilter; label: string; color: string; glow: string; count: number }[]).map(({ v, label, color, glow, count }) => {
             const active = strengthFilter === v
             return (
-              <button key={v} onClick={() => onStrengthChange(v)} style={{
-                padding: '3px 11px', borderRadius: 99, fontSize: 11, fontWeight: 600,
-                cursor: 'pointer', transition: 'all 0.12s',
-                border: `1px solid ${active ? color : 'var(--tm-border-sub)'}`,
-                background: active ? color + '22' : 'transparent',
-                color: active ? color : 'var(--tm-text-muted)',
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                {label}
-                <span style={{
-                  fontSize: 9, fontWeight: 800, background: active ? color + '33' : 'var(--tm-bg-secondary)',
-                  padding: '0 5px', borderRadius: 99, color: active ? color : 'var(--tm-text-muted)',
+              <motion.button key={v} onClick={() => onStrengthChange(v)} whileHover={{ y: -1 }}
+                style={{
+                  padding: '4px 12px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+                  cursor: 'pointer', border: `1px solid ${active ? `rgba(${glow},0.5)` : 'rgba(255,255,255,0.07)'}`,
+                  background: active ? `rgba(${glow},0.1)` : 'rgba(255,255,255,0.02)',
+                  color: active ? color : 'rgba(148,163,184,0.5)',
+                  boxShadow: active ? `0 0 10px rgba(${glow},0.18)` : 'none',
+                  display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.15s',
                 }}>
+                {label}
+                <span style={{ fontSize: 9, fontWeight: 800, background: active ? `rgba(${glow},0.15)` : 'rgba(255,255,255,0.04)', padding: '1px 6px', borderRadius: 99, color: active ? color : 'rgba(148,163,184,0.4)' }}>
                   {count}
                 </span>
-              </button>
+              </motion.button>
             )
           })}
         </div>
@@ -515,11 +515,14 @@ async function fetchGroupParallel(
 
 function SkeletonGroup({ label, count }: { label: string; count: number }) {
   return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-text-muted)', marginBottom: 6, padding: '0 2px' }}>{label}</div>
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(0,229,255,0.4)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {Array.from({ length: count }).map((_, i) => (
-          <div key={i} style={{ width: 76, height: 58, borderRadius: 7, background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border-sub)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <motion.div key={i}
+            animate={{ opacity: [0.3, 0.7, 0.3] }}
+            transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.04 }}
+            style={{ width: 76, height: 58, borderRadius: 8, background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.08)' }} />
         ))}
       </div>
     </div>
@@ -530,11 +533,13 @@ function RefetchBadge() {
   const { t } = useTranslation()
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10,
-      color: 'var(--tm-text-muted)', padding: '3px 10px', background: 'var(--tm-bg-secondary)',
-      borderRadius: 99, border: '1px solid var(--tm-border-sub)', marginBottom: 8,
+      display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 10, fontFamily: 'JetBrains Mono, monospace',
+      color: 'rgba(0,229,255,0.7)', padding: '4px 12px',
+      background: 'rgba(0,229,255,0.05)', borderRadius: 99,
+      border: '1px solid rgba(0,229,255,0.2)', marginBottom: 10,
     }}>
-      <div style={{ width: 10, height: 10, border: '1.5px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <motion.div style={{ width: 8, height: 8, borderRadius: '50%', background: '#00E5FF', boxShadow: '0 0 6px #00E5FF' }}
+        animate={{ opacity: [1, 0.2, 1] }} transition={{ duration: 0.8, repeat: Infinity }}/>
       {t('marches.updating')}
     </div>
   )
@@ -556,47 +561,66 @@ function DivergenceScanner({ tokens, onTokenClick, timeframe }: { tokens: TokenR
   const bears = tokens.filter(tok => tok.divergence === 'bear')
   if (bulls.length === 0 && bears.length === 0) return null
   return (
-    <div style={{ marginBottom: 16, padding: '14px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid #1E2330', borderRadius: 12 }}>
+    <motion.div initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.4 }}
+      style={{ marginBottom: 16, padding: '14px 16px', background: 'rgba(8,12,22,0.8)', border: '1px solid rgba(0,229,255,0.15)', borderRadius: 12, backdropFilter: 'blur(12px)', position: 'relative', overflow: 'hidden', boxShadow: '0 0 30px rgba(0,229,255,0.04)' }}>
+      {/* Scan line */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.4),transparent)' }}/>
+      {/* Moving scan light */}
+      <motion.div style={{ position:'absolute', bottom:0, left:0, height:2, width:'30%', background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.6),transparent)', pointerEvents:'none' }}
+        animate={{ left:['-30%','130%'] }} transition={{ duration:3, repeat:Infinity, ease:'linear', repeatDelay:2 }}/>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <span style={{ fontSize: 16 }}>🎯</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>{t('marches.rsiDivDetected')}</span>
-        <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginLeft: 4 }}>UT {timeframe.toUpperCase()}</span>
-        {bulls.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: 'var(--tm-profit)', background: 'rgba(34,199,89,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(34,199,89,0.25)' }}>↗ {bulls.length} BULL</span>}
-        {bears.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-loss)', background: 'rgba(255,59,48,0.12)', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(255,59,48,0.25)', marginLeft: bulls.length ? 4 : 'auto' }}>↘ {bears.length} BEAR</span>}
+        <motion.div style={{ width:8, height:8, borderRadius:'50%', background:'#00E5FF', boxShadow:'0 0 8px #00E5FF' }}
+          animate={{ opacity:[1,0.2,1], scale:[1,1.2,1] }} transition={{ duration:1.5, repeat:Infinity }}/>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(226,232,240,0.9)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('marches.rsiDivDetected')}</span>
+        <span style={{ fontSize: 9, color: 'rgba(0,229,255,0.5)', fontFamily: 'JetBrains Mono, monospace', background: 'rgba(0,229,255,0.08)', padding: '2px 7px', borderRadius: 4, border: '1px solid rgba(0,229,255,0.15)' }}>UT {timeframe.toUpperCase()}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {bulls.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#22C764', background: 'rgba(34,199,100,0.1)', padding: '2px 9px', borderRadius: 99, border: '1px solid rgba(34,199,100,0.3)', boxShadow: '0 0 8px rgba(34,199,100,0.1)' }}>↗ {bulls.length} BULL</span>}
+          {bears.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#FF3B30', background: 'rgba(255,59,48,0.1)', padding: '2px 9px', borderRadius: 99, border: '1px solid rgba(255,59,48,0.3)', boxShadow: '0 0 8px rgba(255,59,48,0.1)' }}>↘ {bears.length} BEAR</span>}
+        </div>
       </div>
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {bulls.map(tok => (
-          <button key={tok.symbol} onClick={() => onTokenClick(tok.symbol)} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
-            background: 'rgba(34,199,89,0.08)', border: '1px solid rgba(34,199,89,0.3)',
-            color: 'var(--tm-profit)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
-          }}>
+        {bulls.map((tok, i) => (
+          <motion.button key={tok.symbol} onClick={() => onTokenClick(tok.symbol)}
+            initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} transition={{ delay: i * 0.04 }}
+            whileHover={{ y:-2, boxShadow:'0 4px 16px rgba(34,199,100,0.25)' }}
+            style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '7px 11px', borderRadius: 8, cursor: 'pointer',
+              background: 'rgba(34,199,100,0.07)', border: '1px solid rgba(34,199,100,0.3)',
+              color: '#22C764', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
+              boxShadow: '0 0 10px rgba(34,199,100,0.05)',
+            }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              ↗ {tok.symbol}
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {tok.rsi}</span>
+              <span style={{ fontSize: 10 }}>↗</span> {tok.symbol}
+              <span style={{ fontSize: 9, color: 'rgba(148,163,184,0.6)', fontWeight: 400, background: 'rgba(34,199,100,0.1)', padding: '1px 5px', borderRadius: 4 }}>RSI {tok.rsi}</span>
             </span>
             {tok.divergenceCandlesAgo !== undefined && (
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>{t('marches.candlesAgo', { count: tok.divergenceCandlesAgo })}</span>
+              <span style={{ fontSize: 9, color: 'rgba(148,163,184,0.5)', fontWeight: 400 }}>{t('marches.candlesAgo', { count: tok.divergenceCandlesAgo })}</span>
             )}
-          </button>
+          </motion.button>
         ))}
-        {bears.map(tok => (
-          <button key={tok.symbol} onClick={() => onTokenClick(tok.symbol)} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
-            background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.3)',
-            color: 'var(--tm-loss)', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
-          }}>
+        {bears.map((tok, i) => (
+          <motion.button key={tok.symbol} onClick={() => onTokenClick(tok.symbol)}
+            initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} transition={{ delay: (bulls.length + i) * 0.04 }}
+            whileHover={{ y:-2, boxShadow:'0 4px 16px rgba(255,59,48,0.25)' }}
+            style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '7px 11px', borderRadius: 8, cursor: 'pointer',
+              background: 'rgba(255,59,48,0.07)', border: '1px solid rgba(255,59,48,0.3)',
+              color: '#FF3B30', fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
+              boxShadow: '0 0 10px rgba(255,59,48,0.05)',
+            }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              ↘ {tok.symbol}
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>RSI {tok.rsi}</span>
+              <span style={{ fontSize: 10 }}>↘</span> {tok.symbol}
+              <span style={{ fontSize: 9, color: 'rgba(148,163,184,0.6)', fontWeight: 400, background: 'rgba(255,59,48,0.1)', padding: '1px 5px', borderRadius: 4 }}>RSI {tok.rsi}</span>
             </span>
             {tok.divergenceCandlesAgo !== undefined && (
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontWeight: 400 }}>{t('marches.candlesAgo', { count: tok.divergenceCandlesAgo })}</span>
+              <span style={{ fontSize: 9, color: 'rgba(148,163,184,0.5)', fontWeight: 400 }}>{t('marches.candlesAgo', { count: tok.divergenceCandlesAgo })}</span>
             )}
-          </button>
+          </motion.button>
         ))}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -683,11 +707,19 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   return (
     <div>
       {!allLoaded && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 11, color: 'var(--tm-text-muted)', padding: '8px 12px', background: 'var(--tm-bg-secondary)', borderRadius: 8, border: '1px solid var(--tm-border-sub)' }}>
-          <div style={{ width: 14, height: 14, border: '2px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-          <span>Chargement… {totalLoaded}/{totalSymbols} actions ({loadedGroups.size}/{STOCK_GROUPS.length} groupes)</span>
-          <div style={{ flex: 1, height: 3, background: 'var(--tm-border-sub)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(loadedGroups.size / STOCK_GROUPS.length) * 100}%`, background: 'var(--tm-accent)', transition: 'width 0.4s ease', borderRadius: 2 }} />
+        <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(8,12,22,0.8)', border: '1px solid rgba(0,229,255,0.15)', borderRadius: 10, backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <motion.div style={{ width:8, height:8, borderRadius:'50%', background:'#00E5FF', boxShadow:'0 0 6px #00E5FF', flexShrink:0 }}
+              animate={{ opacity:[1,0.2,1] }} transition={{ duration:0.8, repeat:Infinity }}/>
+            <span style={{ fontSize: 11, color: 'rgba(0,229,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>
+              Chargement… {totalLoaded}/{totalSymbols} actions · {loadedGroups.size}/{STOCK_GROUPS.length} groupes
+            </span>
+          </div>
+          <div style={{ height: 2, background: 'rgba(0,229,255,0.08)', borderRadius: 1, overflow: 'hidden' }}>
+            <motion.div
+              style={{ height: '100%', background: 'linear-gradient(90deg,#0A85FF,#00E5FF)', borderRadius: 1, boxShadow: '0 0 8px rgba(0,229,255,0.5)' }}
+              animate={{ width: `${(loadedGroups.size / STOCK_GROUPS.length) * 100}%` }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}/>
           </div>
         </div>
       )}
@@ -807,13 +839,25 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 
   if (isFirstLoad) return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--tm-text-muted)', padding: '8px 12px', background: 'var(--tm-bg-secondary)', borderRadius: 8, border: '1px solid var(--tm-border-sub)' }}>
-        <div style={{ width: 16, height: 16, border: '2px solid var(--tm-border)', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-        {status}
+      <div style={{ padding: '12px 16px', background: 'rgba(8,12,22,0.8)', border: '1px solid rgba(0,229,255,0.15)', borderRadius: 10, backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.4),transparent)' }}/>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <motion.div style={{ width:8, height:8, borderRadius:'50%', background:'#00E5FF', boxShadow:'0 0 6px #00E5FF' }}
+            animate={{ opacity:[1,0.2,1] }} transition={{ duration:0.8, repeat:Infinity }}/>
+          <span style={{ fontSize: 11, color: 'rgba(0,229,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{status}</span>
+        </div>
+        {/* Animated neon progress bar */}
+        <div style={{ height:2, background:'rgba(0,229,255,0.08)', borderRadius:1, overflow:'hidden', position:'relative' }}>
+          <motion.div style={{ position:'absolute', top:0, left:0, height:'100%', width:'35%', background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.8),transparent)' }}
+            animate={{ left:['-35%','100%'] }} transition={{ duration:1.5, repeat:Infinity, ease:'linear' }}/>
+        </div>
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {Array.from({ length: 40 }).map((_, i) => (
-          <div key={i} style={{ width: 76, height: 58, borderRadius: 7, background: 'var(--tm-bg-secondary)', border: '1px solid var(--tm-border-sub)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <motion.div key={i}
+            animate={{ opacity:[0.2,0.6,0.2] }}
+            transition={{ duration:1.5, repeat:Infinity, delay: i * 0.03 }}
+            style={{ width: 76, height: 58, borderRadius: 8, background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.08)' }} />
         ))}
       </div>
     </div>
@@ -885,42 +929,94 @@ export default function MarchesPage() {
     navigate('/app/analyse')
   }
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: '8px 20px', borderRadius: '8px 8px 0 0', border: 'none', cursor: 'pointer',
-    fontSize: 13, fontWeight: active ? 600 : 400,
-    background: active ? 'var(--tm-bg-card)' : 'transparent',
-    color: active ? 'var(--tm-accent)' : 'var(--tm-text-muted)',
-    borderBottom: active ? '2px solid var(--tm-accent)' : '2px solid transparent',
-    transition: 'all 0.15s',
-  })
+  const totalStocks = STOCK_GROUPS.reduce((s, g) => s + g.symbols.length, 0)
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: 1600, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 20 }}>🌡️</span>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tm-text-primary)', margin: 0, fontFamily: 'Syne, sans-serif' }}>{t('nav.marches')}</h1>
+    <div style={{ padding: '24px 28px', maxWidth: 1600, margin: '0 auto',
+      backgroundImage:'linear-gradient(rgba(0,229,255,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.02) 1px,transparent 1px)',
+      backgroundSize:'40px 40px',
+    }}>
+      {/* ── Header HUD ── */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:'rgba(0,229,255,0.08)', border:'1px solid rgba(0,229,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 16px rgba(0,229,255,0.1)' }}>
+                <span style={{ fontSize: 18 }}>🌡️</span>
+              </div>
+              <motion.h1
+                initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }}
+                style={{ fontSize: 24, fontWeight: 800, margin: 0, fontFamily: 'Syne, sans-serif', letterSpacing: '-0.02em',
+                  background: 'linear-gradient(90deg, #00E5FF, #0A85FF)',
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                  filter: 'drop-shadow(0 0 12px rgba(0,229,255,0.3))',
+                }}>
+                {t('nav.marches')}
+              </motion.h1>
+            </div>
+            {/* Stats badges */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {[
+                { label: '200 Crypto', glow: '191,90,242' },
+                { label: `${totalStocks} Actions`, glow: '10,133,255' },
+                { label: 'RSI · VMC · Divergences', glow: '0,229,255' },
+                { label: '🔴 Live Binance', glow: '255,59,48' },
+              ].map(({ label, glow }) => (
+                <span key={label} style={{ fontSize: 10, fontWeight: 600, color: `rgb(${glow})`, background: `rgba(${glow},0.08)`, border: `1px solid rgba(${glow},0.2)`, padding: '3px 9px', borderRadius: 99, letterSpacing: '0.04em' }}>
+                  {label}
+                </span>
+              ))}
+            </div>
           </div>
-          <p style={{ fontSize: 13, color: 'var(--tm-text-muted)', margin: 0 }}>
-            Vue globale RSI & VMC — Top 200 crypto par volume · {STOCK_GROUPS.reduce((s, g) => s + g.symbols.length, 0)} actions mondiales
-          </p>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <ShareButton targetRef={tab === 'crypto' ? cryptoShareRef : stocksShareRef} label={`marches-${tab}`} />
+          </div>
         </div>
-        <ShareButton targetRef={tab === 'crypto' ? cryptoShareRef : stocksShareRef} label={`marches-${tab}`} />
       </div>
 
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--tm-border-sub)', marginBottom: 0 }}>
-        <button onClick={() => setTab('crypto')}  style={tabStyle(tab === 'crypto')}>🪙 Crypto</button>
-        <button onClick={() => setTab('actions')} style={tabStyle(tab === 'actions')}>📈 Actions</button>
+      {/* ── Tab Navigation — cyberpunk pills ── */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 0, alignItems: 'center' }}>
+        {([
+          { id: 'crypto',  label: '🪙 Crypto',  glow: '191,90,242' },
+          { id: 'actions', label: '📈 Actions', glow: '10,133,255' },
+        ] as { id: Tab; label: string; glow: string }[]).map(({ id, label, glow }) => {
+          const active = tab === id
+          return (
+            <motion.button key={id} onClick={() => setTab(id)} whileHover={{ y:-1 }}
+              style={{
+                padding: '9px 22px', borderRadius: '10px 10px 0 0', border: 'none', cursor: 'pointer',
+                fontSize: 13, fontWeight: active ? 700 : 500,
+                background: active ? `rgba(${glow},0.1)` : 'rgba(255,255,255,0.02)',
+                color: active ? `rgb(${glow})` : 'rgba(148,163,184,0.5)',
+                borderTop: `1px solid ${active ? `rgba(${glow},0.4)` : 'rgba(255,255,255,0.06)'}`,
+                borderLeft: `1px solid ${active ? `rgba(${glow},0.4)` : 'rgba(255,255,255,0.06)'}`,
+                borderRight: `1px solid ${active ? `rgba(${glow},0.4)` : 'rgba(255,255,255,0.06)'}`,
+                borderBottom: active ? `2px solid rgb(${glow})` : '2px solid transparent',
+                boxShadow: active ? `0 -4px 16px rgba(${glow},0.12), inset 0 1px 0 rgba(${glow},0.1)` : 'none',
+                transition: 'all 0.2s',
+              }}>
+              {label}
+            </motion.button>
+          )
+        })}
+        {/* Separator line that completes the tab bar */}
+        <div style={{ flex:1, height:1, alignSelf:'flex-end', background:'rgba(255,255,255,0.06)', marginBottom:2 }}/>
       </div>
 
+      {/* ── Content container — glassmorphism ── */}
       <div style={{
-        background: 'var(--tm-bg-card)', border: '1px solid var(--tm-border-sub)',
-        borderTop: 'none', borderRadius: '0 0 14px 14px', padding: 20, position: 'relative', overflow: 'hidden',
+        background: 'rgba(8,12,22,0.75)', border: '1px solid rgba(0,229,255,0.1)',
+        borderTop: 'none', borderRadius: '0 12px 12px 12px', padding: '20px 20px 24px', position: 'relative', overflow: 'hidden',
+        backdropFilter: 'blur(12px)', boxShadow: '0 8px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(0,229,255,0.06)',
       }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,var(--tm-accent),transparent)', opacity: 0.3 }} />
-        {tab === 'crypto'  && <CryptoTab  onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
-        {tab === 'actions' && <StocksTab  onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
+        {/* Subtle top glow scan line */}
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.25),transparent)' }}/>
+        <AnimatePresence mode="wait">
+          <motion.div key={tab} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-8 }} transition={{ duration:0.25 }}>
+            {tab === 'crypto'  && <CryptoTab  onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
+            {tab === 'actions' && <StocksTab  onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {sheetSymbol && (
