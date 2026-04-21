@@ -23,19 +23,23 @@ function Skel({ h = 20 }: { h?: number }) {
 // ─── KPI Bar ─────────────────────────────────────────────────────────────────
 export function KPIBarWidget() {
   const { s, loading, closed, open } = useContext(WidgetDataContext)
+  const accentColor = s.totalPnL >= 0 ? 'var(--tm-profit)' : 'var(--tm-loss)'
   const items = [
-    { label:'P&L Total', value: loading ? '—' : fmtK(s.totalPnL), color: s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} trades fermés` },
-    { label:'Win Rate',  value: loading ? '—' : `${s.winRate.toFixed(1)}%`, color:'var(--tm-text-primary)', sub:`${s.wins}W / ${s.losses}L` },
-    { label:'Ratio R/R', value: loading ? '—' : s.payoffRatio.toFixed(2),   color:'var(--tm-accent)', sub:'Rendement/Risque' },
-    { label:'Ouverts',   value: loading ? '—' : String(open.length),         color: open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives' },
+    { label:'P&L Total', value: loading ? '—' : fmtK(s.totalPnL), color: s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} trades fermés`, accent: accentColor },
+    { label:'Win Rate',  value: loading ? '—' : `${s.winRate.toFixed(1)}%`, color: s.winRate>=50?'var(--tm-profit)':'var(--tm-loss)', sub:`${s.wins}W / ${s.losses}L`, accent:'var(--tm-accent)' },
+    { label:'Ratio R/R', value: loading ? '—' : s.payoffRatio.toFixed(2),   color:'var(--tm-accent)', sub:'Rendement/Risque', accent:'var(--tm-blue)' },
+    { label:'Ouverts',   value: loading ? '—' : String(open.length),         color: open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives', accent: open.length>0?'var(--tm-warning)':'var(--tm-border)' },
   ]
   return (
-    <div className="grid grid-cols-4 gap-3 p-3 h-full">
-      {items.map(({ label, value, color, sub }) => (
-        <div key={label} className="dashboard-card">
-          <div className="text-[10px] text-text-muted uppercase tracking-widest font-medium">{label}</div>
-          <div className="text-lg font-bold font-mono mt-2" style={{ color }}>{value}</div>
-          <div className="text-[10px] text-text-muted mt-1">{sub}</div>
+    <div className="grid grid-cols-4 gap-2.5 p-3 h-full">
+      {items.map(({ label, value, color, sub, accent }) => (
+        <div key={label} className="relative rounded-2xl p-4 overflow-hidden transition-all duration-150 hover:-translate-y-px"
+          style={{ background: 'var(--tm-bg-card)', border: '1px solid rgba(42,47,62,0.6)' }}>
+          {/* Colored top accent */}
+          <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl" style={{ background: accent }} />
+          <div className="text-[9px] text-text-muted uppercase tracking-widest font-semibold mb-2">{label}</div>
+          <div className="text-xl font-black font-mono leading-none" style={{ color }}>{value}</div>
+          <div className="text-[10px] text-text-muted mt-2">{sub}</div>
         </div>
       ))}
     </div>
@@ -47,23 +51,24 @@ export function LongShortWidget() {
   const { s, loading } = useContext(WidgetDataContext)
   return (
     <div className="p-4 h-full flex flex-col gap-3">
-      <div className="text-[11px] text-text-secondary font-medium">Win rate & P&L par direction</div>
+      <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Direction</div>
       <div className="grid grid-cols-2 gap-3 flex-1">
         {[
-          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)' },
-          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)' },
-        ].map(({ label, icon, wr, pnl, count, c }) => (
-          <div key={label} className="dashboard-card flex flex-col gap-2">
+          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)', bg:'rgba(34,199,89,0.07)', border:'rgba(34,199,89,0.2)' },
+          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)',   bg:'rgba(255,59,48,0.07)', border:'rgba(255,59,48,0.2)' },
+        ].map(({ label, icon, wr, pnl, count, c, bg, border }) => (
+          <div key={label} className="rounded-2xl p-3 flex flex-col gap-2 transition-all duration-150 hover:-translate-y-px"
+            style={{ background: bg, border: `1px solid ${border}` }}>
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-                style={{ background:`${c}20`, color:c }}>{icon}</div>
-              <span className="text-xs font-semibold text-text-primary">{label}</span>
+                style={{ background:`${c}22`, color:c }}>{icon}</div>
+              <span className="text-xs font-bold" style={{ color: c }}>{label}</span>
             </div>
             {loading ? <Skel h={36} /> : (
               <>
-                <div className="text-2xl font-black font-mono" style={{ color:c }}>{wr.toFixed(1)}<span className="text-sm">%</span></div>
+                <div className="text-2xl font-black font-mono" style={{ color:c }}>{wr.toFixed(1)}<span className="text-sm font-normal text-text-muted">%</span></div>
                 <div className="text-[10px] text-text-muted">{count} trades</div>
-                <div className="text-xs font-semibold font-mono" style={{ color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(pnl)}</div>
+                <div className="text-xs font-bold font-mono" style={{ color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(pnl)}</div>
               </>
             )}
           </div>
@@ -77,21 +82,22 @@ export function LongShortWidget() {
 export function MainMetricsWidget() {
   const { s, loading, closed } = useContext(WidgetDataContext)
   const items = loading ? [] : [
-    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'var(--tm-profit)' },
-    { icon:'💲', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'var(--tm-accent)' },
-    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain/Perte',                c:'var(--tm-blue)' },
-    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total',                     c:'var(--tm-purple)' },
+    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'var(--tm-profit)',  bg:'rgba(34,199,89,0.08)',  border:'rgba(34,199,89,0.2)' },
+    { icon:'💰', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'var(--tm-accent)', bg:'rgba(0,229,255,0.08)',  border:'rgba(0,229,255,0.2)' },
+    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain/Perte',                c:'var(--tm-blue)',   bg:'rgba(10,133,255,0.08)', border:'rgba(10,133,255,0.2)' },
+    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total',                     c:'var(--tm-purple)', bg:'rgba(191,90,242,0.08)', border:'rgba(191,90,242,0.2)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3">
-      <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-widest">Main Metrics</div>
+      <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Main Metrics</div>
       <div className="grid grid-cols-2 gap-2 flex-1">
-        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c }) => (
-          <div key={label} className="dashboard-card flex flex-col gap-1">
-            <span className="text-base">{icon}</span>
-            <div className="text-base font-black font-mono text-text-primary">{value}</div>
-            <div className="text-[10px] text-text-secondary">{label}</div>
-            <div className="text-[10px]" style={{ color:c }}>{sub}</div>
+        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, bg, border }) => (
+          <div key={label} className="rounded-2xl p-3 flex flex-col gap-1 transition-all duration-150 hover:-translate-y-px"
+            style={{ background: bg, border: `1px solid ${border}` }}>
+            <span className="text-sm">{icon}</span>
+            <div className="text-base font-black font-mono" style={{ color: c }}>{value}</div>
+            <div className="text-[10px] font-semibold text-text-secondary">{label}</div>
+            <div className="text-[10px] text-text-muted">{sub}</div>
           </div>
         ))}
       </div>
@@ -103,21 +109,22 @@ export function MainMetricsWidget() {
 export function AdvancedMetricsWidget() {
   const { s, loading } = useContext(WidgetDataContext)
   const items = loading ? [] : [
-    { icon:'📉', value:fmtK(-s.maxDD),       label:'Max Drawdown', sub:'Max loss',     c:'var(--tm-loss)', bg:'rgba(var(--tm-loss-rgb,255,59,48),0.08)' },
-    { icon:'📊', value:s.sharpe.toFixed(2),   label:'Sharpe Ratio', sub:'Return/Risk',  c:'var(--tm-blue)', bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)' },
-    { icon:'🎯', value:fmtK(s.expectancy),    label:'Expectancy',   sub:'Avg gain/trade',c:'var(--tm-accent)', bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)' },
-    { icon:'🔥', value:String(s.bestStreak),  label:'Best Streak',  sub:`${s.worstStreak} max losses`,c:'var(--tm-warning)', bg:'rgba(var(--tm-warning-rgb,255,149,0),0.08)' },
+    { icon:'📉', value:fmtK(-s.maxDD),       label:'Max Drawdown', sub:'Max loss',       c:'var(--tm-loss)',    bg:'rgba(255,59,48,0.07)',  border:'rgba(255,59,48,0.2)' },
+    { icon:'📊', value:s.sharpe.toFixed(2),   label:'Sharpe Ratio', sub:'Return/Risk',    c:'var(--tm-blue)',   bg:'rgba(10,133,255,0.07)', border:'rgba(10,133,255,0.2)' },
+    { icon:'🎯', value:fmtK(s.expectancy),    label:'Expectancy',   sub:'Avg gain/trade', c:'var(--tm-accent)', bg:'rgba(0,229,255,0.07)',  border:'rgba(0,229,255,0.2)' },
+    { icon:'🔥', value:String(s.bestStreak),  label:'Best Streak',  sub:`${s.worstStreak} max losses`, c:'var(--tm-warning)', bg:'rgba(255,149,0,0.07)', border:'rgba(255,149,0,0.2)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3">
-      <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-widest">Advanced Metrics</div>
+      <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Advanced Metrics</div>
       <div className="grid grid-cols-2 gap-2 flex-1">
-        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, bg }) => (
-          <div key={label} className="rounded-xl p-3 flex flex-col gap-1" style={{ background:bg }}>
-            <span className="text-base">{icon}</span>
-            <div className="text-base font-black font-mono text-text-primary">{value}</div>
-            <div className="text-[10px] text-text-secondary">{label}</div>
-            <div className="text-[10px]" style={{ color:c }}>{sub}</div>
+        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, bg, border }) => (
+          <div key={label} className="rounded-2xl p-3 flex flex-col gap-1 transition-all duration-150 hover:-translate-y-px"
+            style={{ background: bg, border: `1px solid ${border}` }}>
+            <span className="text-sm">{icon}</span>
+            <div className="text-base font-black font-mono" style={{ color: c }}>{value}</div>
+            <div className="text-[10px] font-semibold text-text-secondary">{label}</div>
+            <div className="text-[10px] text-text-muted">{sub}</div>
           </div>
         ))}
       </div>
@@ -173,20 +180,24 @@ export function RecentTradesWidget() {
         <div className="flex flex-col gap-1.5">
           {recent.map(t => {
             const pnl = tradePnLFn(t)
+            const isLong = t.type === 'Long'
             return (
-              <div key={t.id} className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                style={{ background:'rgba(255,255,255,0.02)' }}>
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs flex-shrink-0"
-                  style={{ background: t.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',
-                           color:       t.type==='Long'?'var(--tm-profit)':'var(--tm-loss)' }}>
-                  {t.type==='Long'?'↑':'↓'}
+              <div key={t.id} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px"
+                style={{ background:'rgba(255,255,255,0.025)', border: '1px solid rgba(42,47,62,0.5)' }}>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{
+                    background: isLong ? 'rgba(34,199,89,0.12)' : 'rgba(255,59,48,0.12)',
+                    color: isLong ? 'var(--tm-profit)' : 'var(--tm-loss)',
+                    border: `1px solid ${isLong ? 'rgba(34,199,89,0.2)' : 'rgba(255,59,48,0.2)'}`,
+                  }}>
+                  {isLong ? '↑' : '↓'}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold font-mono text-text-primary truncate">{t.symbol}</div>
+                  <div className="text-xs font-bold font-mono text-text-primary truncate">{t.symbol}</div>
                   <div className="text-[10px] text-text-muted">{fmtDate(t.date)} · <span style={{ color:systemColor(t.systemId) }}>{systemName(t.systemId)}</span></div>
                 </div>
                 {t.status==='open'
-                  ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)', color:'var(--tm-warning)' }}>OUVERT</span>
+                  ? <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg uppercase tracking-wide" style={{ background:'rgba(255,149,0,0.12)', color:'var(--tm-warning)', border:'1px solid rgba(255,149,0,0.2)' }}>Live</span>
                   : <span className="text-xs font-bold font-mono" style={{ color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(pnl)}</span>
                 }
               </div>
