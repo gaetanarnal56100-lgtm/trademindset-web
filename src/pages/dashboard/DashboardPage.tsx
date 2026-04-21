@@ -1,4 +1,5 @@
 // DashboardPage.tsx — Dashboard enrichi v2 (heatmap compact + interactif + analytics tabs)
+import { motion } from 'framer-motion'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
@@ -24,10 +25,10 @@ function fmtK(n: number) {
 }
 function fmtDate(d: Date) { return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) }
 function card(extra?: object) {
-  return { background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, padding:'18px 20px', position:'relative' as const, overflow:'hidden', ...extra }
+  return { background:'rgba(8,12,22,0.85)', border:'1px solid rgba(0,229,255,0.12)', borderRadius:16, padding:'18px 20px', position:'relative' as const, overflow:'hidden', backdropFilter:'blur(12px)', boxShadow:'0 0 30px rgba(0,229,255,0.04), inset 0 1px 0 rgba(0,229,255,0.08)', ...extra }
 }
 function hl() {
-  return { position:'absolute' as const, top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)' }
+  return { position:'absolute' as const, top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.4),transparent)' }
 }
 function Skel({ h=20, w='100%' }: { h?: number; w?: string|number }) {
   return <div style={{height:h,width:w,background:'rgba(255,255,255,0.04)',borderRadius:6}}/>
@@ -632,16 +633,44 @@ export default function DashboardPage() {
       {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
         {[
-          {label:t('dashboard.pnlTotal'), value:loading?null:fmtK(s.totalPnL), color:s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} ${t('dashboard.closedTrades').toLowerCase()}`},
-          {label:'Win Rate',  value:loading?null:`${s.winRate.toFixed(1)}%`, color:'var(--tm-text-primary)', sub:`${s.wins}W / ${s.losses}L`},
-          {label:'Ratio R/R', value:loading?null:s.payoffRatio.toFixed(2), color:'var(--tm-accent)', sub:'Rendement/Risque'},
-          {label:t('common.open'),   value:loading?null:String(open.length), color:open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives'},
-        ].map(({label,value,color,sub})=>(
-          <div key={label} style={card()}>
-            <div style={hl()}/>
-            <div style={{fontSize:11,color:'var(--tm-text-muted)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:500}}>{label}</div>
-            {value===null?<Skel h={28}/>:<div style={{fontSize:22,fontWeight:700,color,fontFamily:'JetBrains Mono, monospace',letterSpacing:'-0.02em',marginBottom:4}}>{value}</div>}
-            <div style={{fontSize:11,color:'var(--tm-text-muted)'}}>{sub}</div>
+          {label:t('dashboard.pnlTotal'), value:loading?null:fmtK(s.totalPnL), color:s.totalPnL>=0?'#22C764':'#FF3B30', glow:s.totalPnL>=0?'34,199,100':'255,59,48', sub:`${closed.length} ${t('dashboard.closedTrades').toLowerCase()}`},
+          {label:'Win Rate',  value:loading?null:`${s.winRate.toFixed(1)}%`, color:'#e2e8f0', glow:'226,232,240', sub:`${s.wins}W / ${s.losses}L`},
+          {label:'Ratio R/R', value:loading?null:s.payoffRatio.toFixed(2), color:'#00E5FF', glow:'0,229,255', sub:'Rendement/Risque'},
+          {label:t('common.open'), value:loading?null:String(open.length), color:open.length>0?'#FF9500':'#64748b', glow:open.length>0?'255,149,0':'100,116,139', sub:'Positions actives'},
+        ].map(({label,value,color,glow,sub})=>(
+          <div key={label} style={{
+            background:'rgba(8,12,22,0.9)',
+            border:`1px solid rgba(${glow},0.2)`,
+            borderRadius:16,
+            padding:'18px 20px',
+            position:'relative',
+            overflow:'hidden',
+            backdropFilter:'blur(16px)',
+            boxShadow:`0 0 25px rgba(${glow},0.08), inset 0 1px 0 rgba(${glow},0.12)`,
+          }}>
+            {/* Scan line top */}
+            <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.7),transparent)`}}/>
+            {/* Corner accents */}
+            <div style={{position:'absolute',top:0,left:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderLeft:`1px solid rgba(${glow},0.6)`,borderTopLeftRadius:16}}/>
+            <div style={{position:'absolute',top:0,right:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderRight:`1px solid rgba(${glow},0.6)`,borderTopRightRadius:16}}/>
+            <div style={{position:'absolute',bottom:0,left:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderLeft:`1px solid rgba(${glow},0.3)`,borderBottomLeftRadius:16}}/>
+            <div style={{position:'absolute',bottom:0,right:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderRight:`1px solid rgba(${glow},0.3)`,borderBottomRightRadius:16}}/>
+            {/* Ambient glow orb */}
+            <motion.div style={{position:'absolute',width:60,height:60,borderRadius:'50%',background:`rgba(${glow},0.12)`,filter:'blur(20px)',pointerEvents:'none'}}
+              animate={{top:['5%','5%','65%','65%','5%'],left:['5%','70%','70%','5%','5%']}}
+              transition={{duration:10,repeat:Infinity,ease:'linear'}}/>
+            <div style={{fontSize:10,color:`rgba(${glow},0.7)`,marginBottom:10,textTransform:'uppercase',letterSpacing:'0.12em',fontWeight:700,position:'relative'}}>{label}</div>
+            {value===null?<Skel h={28}/>:<motion.div
+              animate={{textShadow:[`0 0 10px rgba(${glow},0.3)`,`0 0 22px rgba(${glow},0.6)`,`0 0 10px rgba(${glow},0.3)`]}}
+              transition={{duration:2.5,repeat:Infinity}}
+              style={{fontSize:26,fontWeight:800,color,fontFamily:'JetBrains Mono, monospace',letterSpacing:'-0.02em',marginBottom:6,position:'relative'}}>
+              {value}
+            </motion.div>}
+            <div style={{fontSize:10,color:'rgba(148,163,184,0.7)',position:'relative'}}>{sub}</div>
+            {/* Bottom scanning light */}
+            <motion.div style={{position:'absolute',bottom:0,left:0,height:2,width:'40%',background:`linear-gradient(90deg,transparent,rgba(${glow},0.8),transparent)`,pointerEvents:'none'}}
+              animate={{left:['-40%','140%']}}
+              transition={{duration:2.5,repeat:Infinity,ease:'linear',repeatDelay:1.5}}/>
           </div>
         ))}
       </div>
@@ -655,25 +684,31 @@ export default function DashboardPage() {
       {/* Long / Short */}
       <div style={{...card(),marginBottom:16}}>
         <div style={hl()}/>
-        <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:4}}>Long / Short Performance</div>
-        <div style={{fontSize:11,color:'var(--tm-text-muted)',marginBottom:16}}>Win rate & P&L par direction</div>
+        <div style={{fontSize:13,fontWeight:700,color:'rgba(226,232,240,0.9)',marginBottom:2,letterSpacing:'0.05em',textTransform:'uppercase'}}>Long / Short Performance</div>
+        <div style={{fontSize:11,color:'rgba(148,163,184,0.6)',marginBottom:16}}>Win rate & P&L par direction</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           {[
-            {label:'LONG', icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)', bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.2)'},
-            {label:'SHORT',icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)', bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.2)'},
-          ].map(({label,icon,wr,pnl,count,c,bdr})=>(
-            <div key={label} style={{background:'rgba(255,255,255,0.02)',border:`1px solid ${bdr}`,borderRadius:12,padding:'14px 16px'}}>
+            {label:'LONG', icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'#22C764', glow:'34,199,100'},
+            {label:'SHORT',icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'#FF3B30', glow:'255,59,48'},
+          ].map(({label,icon,wr,pnl,count,c,glow})=>(
+            <div key={label} style={{background:`rgba(${glow},0.04)`,border:`1px solid rgba(${glow},0.25)`,borderRadius:12,padding:'14px 16px',position:'relative',overflow:'hidden',backdropFilter:'blur(8px)',boxShadow:`0 0 20px rgba(${glow},0.06)`}}>
+              <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.6),transparent)`}}/>
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-                <div style={{width:28,height:28,borderRadius:'50%',background:`${c}20`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:c}}>{icon}</div>
-                <div style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)'}}>{label} Performance</div>
+                <div style={{width:30,height:30,borderRadius:'50%',background:`rgba(${glow},0.15)`,border:`1px solid rgba(${glow},0.4)`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,color:c,boxShadow:`0 0 10px rgba(${glow},0.3)`}}>{icon}</div>
+                <div style={{fontSize:12,fontWeight:700,color:'rgba(226,232,240,0.9)',letterSpacing:'0.05em'}}>{label}</div>
               </div>
-              <div style={{borderTop:`1px solid ${bdr}`,marginBottom:12}}/>
+              <div style={{borderTop:`1px solid rgba(${glow},0.15)`,marginBottom:12}}/>
               {loading?<Skel h={40}/>:<>
-                <div style={{fontSize:36,fontWeight:800,color:c,fontFamily:'JetBrains Mono, monospace',lineHeight:1}}>{wr.toFixed(1)}<span style={{fontSize:14}}>%</span></div>
-                <div style={{fontSize:10,color:'var(--tm-text-muted)',marginBottom:8}}>Win Rate · {count} trades</div>
-                <div style={{display:'inline-flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'rgba(255,255,255,0.04)',padding:'2px 7px',borderRadius:5}}>P&L</span>
-                  <span style={{fontSize:12,fontWeight:700,color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</span>
+                <motion.div
+                  animate={{textShadow:[`0 0 12px rgba(${glow},0.4)`,`0 0 24px rgba(${glow},0.7)`,`0 0 12px rgba(${glow},0.4)`]}}
+                  transition={{duration:2.5,repeat:Infinity}}
+                  style={{fontSize:38,fontWeight:900,color:c,fontFamily:'JetBrains Mono, monospace',lineHeight:1}}>
+                  {wr.toFixed(1)}<span style={{fontSize:14,fontWeight:600}}>%</span>
+                </motion.div>
+                <div style={{fontSize:10,color:'rgba(148,163,184,0.6)',marginBottom:8,marginTop:4}}>Win Rate · {count} trades</div>
+                <div style={{display:'inline-flex',alignItems:'center',gap:6,background:`rgba(${glow},0.08)`,padding:'4px 10px',borderRadius:8,border:`1px solid rgba(${glow},0.2)`}}>
+                  <span style={{fontSize:10,color:`rgba(${glow},0.8)`,fontWeight:700,letterSpacing:'0.08em'}}>P&L</span>
+                  <span style={{fontSize:12,fontWeight:800,color:pnl>=0?'#22C764':'#FF3B30',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</span>
                 </div>
               </>}
             </div>
@@ -683,41 +718,53 @@ export default function DashboardPage() {
 
       {/* Main + Advanced Metrics */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+        {/* Main Metrics */}
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:16}}>Main Metrics</div>
+          <div style={{fontSize:12,fontWeight:700,color:'rgba(226,232,240,0.9)',marginBottom:16,textTransform:'uppercase',letterSpacing:'0.1em'}}>Main Metrics</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
-              {icon:'📈',value:`${s.winRate.toFixed(1)}%`,label:'Win Rate',sub:`${s.wins}W / ${s.losses}L`,c:'var(--tm-profit)',bg:'rgba(var(--tm-profit-rgb,34,199,89),0.08)'},
-              {icon:'💲',value:fmtK(s.totalPnL),label:'Total P&L',sub:`${closed.length} trades`,c:'var(--tm-accent)',bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)'},
-              {icon:'⇄',value:s.payoffRatio.toFixed(2),label:'Payoff Ratio',sub:'Gain/Perte',c:'var(--tm-blue)',bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)'},
-              {icon:'💳',value:fmtK(-s.fees),label:'Fees',sub:'Total',c:'var(--tm-purple)',bg:'rgba(var(--tm-purple-rgb,191,90,242),0.08)'},
-            ].map(({icon,value,label,sub,c,bg})=>(
-              <div key={label} style={{background:bg,borderRadius:10,padding:'12px 14px'}}>
-                <div style={{fontSize:18,marginBottom:6}}>{icon}</div>
-                <div style={{fontSize:18,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{value}</div>
-                <div style={{fontSize:11,color:'var(--tm-text-secondary)',marginTop:2}}>{label}</div>
-                <div style={{fontSize:10,color:c,marginTop:2}}>{sub}</div>
+              {value:`${s.winRate.toFixed(1)}%`,label:'Win Rate',sub:`${s.wins}W / ${s.losses}L`,c:'#22C764',glow:'34,199,100'},
+              {value:fmtK(s.totalPnL),label:'Total P&L',sub:`${closed.length} trades`,c:'#00E5FF',glow:'0,229,255'},
+              {value:s.payoffRatio.toFixed(2),label:'Payoff Ratio',sub:'Gain/Perte',c:'#0A85FF',glow:'10,133,255'},
+              {value:fmtK(-s.fees),label:'Fees',sub:'Total',c:'#BF5AF2',glow:'191,90,242'},
+            ].map(({value,label,sub,c,glow})=>(
+              <div key={label} style={{background:`rgba(${glow},0.06)`,border:`1px solid rgba(${glow},0.2)`,borderRadius:10,padding:'12px 14px',position:'relative',overflow:'hidden',boxShadow:`0 0 15px rgba(${glow},0.05)`}}>
+                <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.5),transparent)`}}/>
+                <motion.div
+                  animate={{textShadow:[`0 0 8px rgba(${glow},0.3)`,`0 0 18px rgba(${glow},0.6)`,`0 0 8px rgba(${glow},0.3)`]}}
+                  transition={{duration:3,repeat:Infinity,delay:Math.random()*2}}
+                  style={{fontSize:20,fontWeight:800,color:c,fontFamily:'JetBrains Mono, monospace',marginBottom:4}}>
+                  {value}
+                </motion.div>
+                <div style={{fontSize:11,color:'rgba(226,232,240,0.8)',fontWeight:600}}>{label}</div>
+                <div style={{fontSize:10,color:`rgba(${glow},0.7)`,marginTop:2}}>{sub}</div>
               </div>
             ))}
           </div>
         </div>
+        {/* Advanced Metrics */}
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:14,fontWeight:700,color:'var(--tm-text-primary)',marginBottom:4}}>Advanced Metrics</div>
-          <div style={{fontSize:11,color:'var(--tm-text-muted)',marginBottom:16}}>Drawdown, Sharpe, expectancy, streaks</div>
+          <div style={{fontSize:12,fontWeight:700,color:'rgba(226,232,240,0.9)',marginBottom:2,textTransform:'uppercase',letterSpacing:'0.1em'}}>Advanced Metrics</div>
+          <div style={{fontSize:10,color:'rgba(148,163,184,0.5)',marginBottom:16}}>Drawdown · Sharpe · Expectancy · Streaks</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
-              {icon:'📉',value:fmtK(-s.maxDD),label:'Max Drawdown',sub:'Max loss',c:'var(--tm-loss)',bg:'rgba(var(--tm-loss-rgb,255,59,48),0.08)'},
-              {icon:'📊',value:s.sharpe.toFixed(2),label:'Sharpe Ratio',sub:'Return/Risk',c:'var(--tm-blue)',bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)'},
-              {icon:'🎯',value:fmtK(s.expectancy),label:'Expectancy',sub:'Avg gain/trade',c:'var(--tm-accent)',bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)'},
-              {icon:'🔥',value:String(s.bestStreak),label:'Best Streak',sub:`${s.worstStreak} max losses`,c:'var(--tm-warning)',bg:'rgba(var(--tm-warning-rgb,255,149,0),0.08)'},
-            ].map(({icon,value,label,sub,c,bg})=>(
-              <div key={label} style={{background:bg,borderRadius:10,padding:'12px 14px'}}>
-                <div style={{fontSize:18,marginBottom:6}}>{icon}</div>
-                <div style={{fontSize:18,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{value}</div>
-                <div style={{fontSize:11,color:'var(--tm-text-secondary)',marginTop:2}}>{label}</div>
-                <div style={{fontSize:10,color:c,marginTop:2}}>{sub}</div>
+              {value:fmtK(-s.maxDD),label:'Max Drawdown',sub:'Max loss',c:'#FF3B30',glow:'255,59,48'},
+              {value:s.sharpe.toFixed(2),label:'Sharpe Ratio',sub:'Return/Risk',c:'#0A85FF',glow:'10,133,255'},
+              {value:fmtK(s.expectancy),label:'Expectancy',sub:'Avg/trade',c:'#00E5FF',glow:'0,229,255'},
+              {value:String(s.bestStreak),label:'Best Streak',sub:`${s.worstStreak} max losses`,c:'#FF9500',glow:'255,149,0'},
+            ].map(({value,label,sub,c,glow})=>(
+              <div key={label} style={{background:`rgba(${glow},0.06)`,border:`1px solid rgba(${glow},0.2)`,borderRadius:10,padding:'12px 14px',position:'relative',overflow:'hidden',boxShadow:`0 0 15px rgba(${glow},0.05)`}}>
+                <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.5),transparent)`}}/>
+                <motion.div
+                  animate={{textShadow:[`0 0 8px rgba(${glow},0.3)`,`0 0 18px rgba(${glow},0.6)`,`0 0 8px rgba(${glow},0.3)`]}}
+                  transition={{duration:3,repeat:Infinity,delay:Math.random()*2}}
+                  style={{fontSize:20,fontWeight:800,color:c,fontFamily:'JetBrains Mono, monospace',marginBottom:4}}>
+                  {value}
+                </motion.div>
+                <div style={{fontSize:11,color:'rgba(226,232,240,0.8)',fontWeight:600}}>{label}</div>
+                <div style={{fontSize:10,color:`rgba(${glow},0.7)`,marginTop:2}}>{sub}</div>
               </div>
             ))}
           </div>
