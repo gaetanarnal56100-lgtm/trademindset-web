@@ -152,23 +152,29 @@ function TokenTile({ token, view, onClick, onHover, hovered }: {
 
 // ── Tooltip ──────────────────────────────────────────────────────────────────
 
-function Tooltip({ token, anchor }: { token: TokenRSI | null; anchor: HTMLElement | null }) {
+function Tooltip({ token }: { token: TokenRSI | null }) {
   const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const [pos, setPos] = useState({ top: -9999, left: -9999 })
 
   useEffect(() => {
-    if (!token || !anchor || !ref.current) return
-    const ar = anchor.getBoundingClientRect()
-    const tr = ref.current.getBoundingClientRect()
-    const sr = document.documentElement
-    let left = ar.right + 10
-    let top = ar.top + ar.height / 2 - tr.height / 2
-    if (left + tr.width > sr.clientWidth - 10) left = ar.left - tr.width - 10
-    if (top < 10) top = 10
-    if (top + tr.height > sr.clientHeight - 10) top = sr.clientHeight - tr.height - 10
-    setPos({ top, left })
-  }, [token, anchor])
+    if (!token) return
+    const handleMove = (e: MouseEvent) => {
+      if (!ref.current) return
+      const tw = ref.current.offsetWidth || 220
+      const th = ref.current.offsetHeight || 180
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      let left = e.clientX + 18
+      let top  = e.clientY - th / 2
+      if (left + tw > vw - 12) left = e.clientX - tw - 18
+      if (top < 12) top = 12
+      if (top + th > vh - 12) top = vh - th - 12
+      setPos({ top, left })
+    }
+    window.addEventListener('mousemove', handleMove)
+    return () => window.removeEventListener('mousemove', handleMove)
+  }, [token])
 
   if (!token) return null
   const rsiZ = RSI_ZONES.find(z => z.id === getRsiZone(token.rsi ?? 50))!
@@ -345,7 +351,6 @@ export default function RsiHeatmap({
   const [view, setView] = useState<View>('rsi')
   const [search, setSearch] = useState('')
   const [hoveredToken, setHoveredToken] = useState<TokenRSI | null>(null)
-  const [hoveredAnchor, setHoveredAnchor] = useState<HTMLElement | null>(null)
 
   const tfSeed: Record<Timeframe, number> = { '5m': 1, '15m': 2, '1h': 3, '4h': 4, '1d': 5 }
 
@@ -366,9 +371,8 @@ export default function RsiHeatmap({
     onTimeframeChange?.(tf)
   }
 
-  const handleHover = (tok: TokenRSI | null, el: HTMLElement | null) => {
+  const handleHover = (tok: TokenRSI | null, _el: HTMLElement | null) => {
     setHoveredToken(tok)
-    setHoveredAnchor(el)
   }
 
   const timeframes: Timeframe[] = ['5m', '15m', '1h', '4h', '1d']
@@ -468,8 +472,8 @@ export default function RsiHeatmap({
         <span>TradeMindset</span>
       </div>
 
-      {/* Tooltip (fixed position) */}
-      <Tooltip token={hoveredToken} anchor={hoveredAnchor} />
+      {/* Tooltip (cursor-tracked) */}
+      <Tooltip token={hoveredToken} />
     </div>
   )
 }
