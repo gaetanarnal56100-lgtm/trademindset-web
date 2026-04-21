@@ -34,6 +34,206 @@ function Skel({ h=20, w='100%' }: { h?: number; w?: string|number }) {
   return <div style={{height:h,width:w,background:'rgba(255,255,255,0.04)',borderRadius:6}}/>
 }
 
+// ── CountUp Hook ──────────────────────────────────────────────────────────
+function useCountUp(target: number, duration = 1400, enabled = true) {
+  const [val, setVal] = useState(0)
+  useEffect(() => {
+    if (!enabled) { setVal(target); return }
+    let start: number | null = null
+    let raf: number
+    const step = (now: number) => {
+      if (!start) start = now
+      const p = Math.min((now - start) / duration, 1)
+      setVal(target * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) raf = requestAnimationFrame(step)
+      else setVal(target)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [target, enabled, duration])
+  return val
+}
+
+function CountUpNumber({ value, fmt, loaded }: { value: number, fmt: (v: number) => string, loaded: boolean }) {
+  const c = useCountUp(value, 1200, loaded)
+  return <>{fmt(c)}</>
+}
+
+// ── Mini Sparkline SVG ────────────────────────────────────────────────────
+function MiniSparkline({ data, color, width=60, height=22 }: { data: number[], color: string, width?: number, height?: number }) {
+  if (data.length < 2) return null
+  const min = Math.min(...data), max = Math.max(...data)
+  const range = max - min || 1
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - 4 - ((v - min) / range) * (height - 8)}`).join(' ')
+  const lastPt = pts.split(' ').slice(-1)[0].split(',')
+  return (
+    <svg width={width} height={height} style={{ overflow:'visible', opacity:0.85 }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
+      <circle cx={Number(lastPt[0])} cy={Number(lastPt[1])} r="2.5" fill={color} style={{ filter:`drop-shadow(0 0 3px ${color})` }}/>
+    </svg>
+  )
+}
+
+// ── Ring Progress SVG ─────────────────────────────────────────────────────
+function RingProgress({ value, max=100, glow, size=64, strokeWidth=5 }: { value: number, max?: number, glow: string, size?: number, strokeWidth?: number }) {
+  const r = (size - strokeWidth) / 2
+  const circ = 2 * Math.PI * r
+  const pct = Math.min(Math.max(value / max, 0), 1)
+  return (
+    <svg width={size} height={size} style={{ transform:'rotate(-90deg)' }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={`rgba(${glow},0.1)`} strokeWidth={strokeWidth}/>
+      <motion.circle cx={size/2} cy={size/2} r={r} fill="none" stroke={`rgb(${glow})`}
+        strokeWidth={strokeWidth} strokeLinecap="round"
+        strokeDasharray={circ}
+        initial={{ strokeDashoffset: circ }}
+        animate={{ strokeDashoffset: circ * (1 - pct) }}
+        transition={{ duration:1.5, ease:'easeOut' }}
+        style={{ filter:`drop-shadow(0 0 6px rgb(${glow}))` }}/>
+    </svg>
+  )
+}
+
+// ── Live UTC Clock ─────────────────────────────────────────────────────────
+function LiveClock() {
+  const [time, setTime] = useState(new Date())
+  useEffect(() => { const id = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(id) }, [])
+  const p = (n: number) => n.toString().padStart(2, '0')
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6, fontFamily:'JetBrains Mono, monospace', fontSize:12, fontWeight:700, color:'#00E5FF', letterSpacing:'0.1em', background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', padding:'3px 10px', borderRadius:6 }}>
+      <motion.div style={{ width:5, height:5, borderRadius:'50%', background:'#00E5FF', boxShadow:'0 0 6px #00E5FF' }} animate={{ opacity:[1,0.2,1] }} transition={{ duration:1, repeat:Infinity }}/>
+      {p(time.getUTCHours())}:{p(time.getUTCMinutes())}:<span style={{opacity:0.45}}>{p(time.getUTCSeconds())}</span>
+      <span style={{fontSize:8,opacity:0.5,marginLeft:2}}>UTC</span>
+    </div>
+  )
+}
+
+// ── Market Sessions ────────────────────────────────────────────────────────
+function MarketSessions() {
+  const [now, setNow] = useState(new Date())
+  useEffect(() => { const id = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(id) }, [])
+  const h = now.getUTCHours() + now.getUTCMinutes() / 60
+  const sessions = [
+    { label:'ASIA', open: h >= 0 && h < 9,     color:'#BF5AF2', glow:'191,90,242' },
+    { label:'EU',   open: h >= 7 && h < 16,    color:'#0A85FF', glow:'10,133,255' },
+    { label:'US',   open: h >= 13.5 && h < 20, color:'#22C764', glow:'34,199,100' },
+  ]
+  return (
+    <div style={{ display:'flex', gap:5 }}>
+      {sessions.map(({ label, open, color, glow }) => (
+        <div key={label} style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', background: open ? `rgba(${glow},0.1)` : 'rgba(255,255,255,0.02)', border:`1px solid ${open ? `rgba(${glow},0.35)` : 'rgba(255,255,255,0.05)'}`, borderRadius:5, fontSize:9, fontWeight:700, letterSpacing:'0.07em', color: open ? color : 'rgba(148,163,184,0.3)' }}>
+          {open
+            ? <motion.div style={{width:5,height:5,borderRadius:'50%',background:color,boxShadow:`0 0 5px ${color}`}} animate={{opacity:[1,0.2,1]}} transition={{duration:1.2,repeat:Infinity}}/>
+            : <div style={{width:5,height:5,borderRadius:'50%',background:'rgba(148,163,184,0.12)'}}/>}
+          {label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Scrolling Stats Ticker ─────────────────────────────────────────────────
+function ScrollingTicker({ items }: { items: string[] }) {
+  const text = items.join('   ·   ')
+  return (
+    <div style={{ overflow:'hidden', borderTop:'1px solid rgba(0,229,255,0.07)', borderBottom:'1px solid rgba(0,229,255,0.07)', background:'rgba(0,229,255,0.02)', padding:'5px 0', marginBottom:16, position:'relative' }}>
+      <div style={{ position:'absolute', left:0, top:0, bottom:0, width:48, background:'linear-gradient(90deg,var(--tm-bg) 0%,transparent 100%)', zIndex:1, pointerEvents:'none' }}/>
+      <div style={{ position:'absolute', right:0, top:0, bottom:0, width:48, background:'linear-gradient(-90deg,var(--tm-bg) 0%,transparent 100%)', zIndex:1, pointerEvents:'none' }}/>
+      <motion.div
+        animate={{ x: ['0%', '-50%'] }}
+        transition={{ duration:28, repeat:Infinity, ease:'linear' }}
+        style={{ display:'inline-flex', whiteSpace:'nowrap', fontSize:10, color:'rgba(0,229,255,0.5)', fontFamily:'JetBrains Mono, monospace', fontWeight:600, letterSpacing:'0.05em' }}>
+        <span style={{marginRight:40}}>{text}</span>
+        <span style={{marginRight:40}}>{text}</span>
+      </motion.div>
+    </div>
+  )
+}
+
+// ── KPI Card variants ──────────────────────────────────────────────────────
+const containerVariants = { hidden:{}, show:{ transition:{ staggerChildren:0.09 } } }
+const cardVariants = { hidden:{ opacity:0, y:24 }, show:{ opacity:1, y:0, transition:{ duration:0.45, ease:[0.25,0.46,0.45,0.94] as any } } }
+
+function KPICard({ label, rawVal, fmtFn, color, glow, sub, sparkData, isWinRate=false, loaded=true }: {
+  label: string, rawVal: number, fmtFn: (v: number) => string
+  color: string, glow: string, sub: string
+  sparkData?: number[], isWinRate?: boolean, loaded?: boolean
+}) {
+  const counted = useCountUp(rawVal, 1400, loaded)
+  return (
+    <motion.div variants={cardVariants}
+      whileHover={{ y:-5, boxShadow:`0 16px 50px rgba(${glow},0.22), 0 0 0 1px rgba(${glow},0.45)` }}
+      style={{ background:'rgba(8,12,22,0.9)', border:`1px solid rgba(${glow},0.2)`, borderRadius:16, padding:'18px 20px', position:'relative', overflow:'hidden', backdropFilter:'blur(16px)', boxShadow:`0 0 25px rgba(${glow},0.08), inset 0 1px 0 rgba(${glow},0.12)`, cursor:'default' }}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.7),transparent)`}}/>
+      <div style={{position:'absolute',top:0,left:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderLeft:`1px solid rgba(${glow},0.6)`,borderTopLeftRadius:16}}/>
+      <div style={{position:'absolute',top:0,right:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderRight:`1px solid rgba(${glow},0.6)`,borderTopRightRadius:16}}/>
+      <div style={{position:'absolute',bottom:0,left:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderLeft:`1px solid rgba(${glow},0.3)`,borderBottomLeftRadius:16}}/>
+      <div style={{position:'absolute',bottom:0,right:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderRight:`1px solid rgba(${glow},0.3)`,borderBottomRightRadius:16}}/>
+      <motion.div style={{position:'absolute',width:60,height:60,borderRadius:'50%',background:`rgba(${glow},0.1)`,filter:'blur(20px)',pointerEvents:'none'}}
+        animate={{top:['5%','5%','65%','65%','5%'],left:['5%','72%','72%','5%','5%']}}
+        transition={{duration:10,repeat:Infinity,ease:'linear'}}/>
+      {isWinRate ? (
+        <div style={{ display:'flex', alignItems:'center', gap:14, position:'relative' }}>
+          <div style={{ position:'relative', flexShrink:0, width:64, height:64 }}>
+            <RingProgress value={rawVal} glow={glow} size={64} strokeWidth={5}/>
+            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <span style={{ fontSize:13, fontWeight:900, color, fontFamily:'JetBrains Mono, monospace' }}>
+                {loaded ? `${Math.round(counted)}%` : '—'}
+              </span>
+            </div>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:10, color:`rgba(${glow},0.7)`, marginBottom:6, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{label}</div>
+            <div style={{ fontSize:10, color:'rgba(148,163,184,0.7)' }}>{sub}</div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ position:'relative' }}>
+          <div style={{ fontSize:10, color:`rgba(${glow},0.7)`, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{label}</div>
+          {sparkData && sparkData.length >= 2 && (
+            <div style={{ position:'absolute', top:0, right:0 }}>
+              <MiniSparkline data={sparkData} color={color} width={55} height={22}/>
+            </div>
+          )}
+          {!loaded ? <Skel h={28}/> : (
+            <motion.div
+              animate={{ textShadow:[`0 0 10px rgba(${glow},0.3)`,`0 0 22px rgba(${glow},0.6)`,`0 0 10px rgba(${glow},0.3)`] }}
+              transition={{ duration:2.5, repeat:Infinity }}
+              style={{ fontSize:26, fontWeight:800, color, fontFamily:'JetBrains Mono, monospace', letterSpacing:'-0.02em', marginBottom:6 }}>
+              {fmtFn(counted)}
+            </motion.div>
+          )}
+          <div style={{ fontSize:10, color:'rgba(148,163,184,0.7)' }}>{sub}</div>
+        </div>
+      )}
+      <motion.div style={{position:'absolute',bottom:0,left:0,height:2,width:'40%',background:`linear-gradient(90deg,transparent,rgba(${glow},0.8),transparent)`,pointerEvents:'none'}}
+        animate={{left:['-40%','140%']}} transition={{duration:2.5,repeat:Infinity,ease:'linear',repeatDelay:1.5}}/>
+    </motion.div>
+  )
+}
+
+// ── Metric Cell ────────────────────────────────────────────────────────────
+function MetricCell({ value, label, sub, c, glow, pct, tooltip }: { value: string, label: string, sub: string, c: string, glow: string, pct?: number, tooltip?: string }) {
+  return (
+    <div title={tooltip} style={{ background:`rgba(${glow},0.06)`, border:`1px solid rgba(${glow},0.2)`, borderRadius:10, padding:'12px 14px', position:'relative', overflow:'hidden', boxShadow:`0 0 15px rgba(${glow},0.05)` }}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.5),transparent)`}}/>
+      <motion.div
+        animate={{ textShadow:[`0 0 8px rgba(${glow},0.3)`,`0 0 18px rgba(${glow},0.6)`,`0 0 8px rgba(${glow},0.3)`] }}
+        transition={{ duration:3, repeat:Infinity }}
+        style={{ fontSize:20, fontWeight:800, color:c, fontFamily:'JetBrains Mono, monospace', marginBottom:4 }}>
+        {value}
+      </motion.div>
+      <div style={{ fontSize:11, color:'rgba(226,232,240,0.8)', fontWeight:600 }}>{label}</div>
+      <div style={{ fontSize:10, color:`rgba(${glow},0.7)`, marginTop:2 }}>{sub}</div>
+      {pct !== undefined && (
+        <div style={{ marginTop:8, height:2, background:'rgba(255,255,255,0.05)', borderRadius:1, overflow:'hidden' }}>
+          <motion.div initial={{ width:0 }} animate={{ width:`${Math.min(Math.max(pct,0),100)}%` }} transition={{ duration:1.5, ease:'easeOut' }}
+            style={{ height:'100%', background:`rgba(${glow},0.75)`, borderRadius:1, boxShadow:`0 0 4px rgba(${glow},0.5)` }}/>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Statistics ────────────────────────────────────────────────────────────
 function calcStats(trades: Trade[]) {
   const closed = trades.filter(t=>t.status==='closed').sort((a,b)=>safeTime(a.date)-safeTime(b.date))
@@ -584,9 +784,23 @@ export default function DashboardPage() {
   const recent=[...trades].sort((a,b)=>safeTime(b.date)-safeTime(a.date)).slice(0,6)
   const systemName =(id:string)=>systems.find(s=>s.id===id)?.name??'—'
   const systemColor=(id:string)=>systems.find(s=>s.id===id)?.color??'var(--tm-accent)'
+  const sparkPnLs = useMemo(()=>[...trades].filter(t=>t.status==='closed').sort((a,b)=>safeTime(a.date)-safeTime(b.date)).slice(-10).map(tradePnL),[trades])
+  const tickerItems = !loading ? [
+    `📈 Win Rate: ${s.winRate.toFixed(1)}%`,
+    `💰 Total P&L: ${fmtK(s.totalPnL)}`,
+    `⇄ Ratio R/R: ${s.payoffRatio.toFixed(2)}`,
+    `📊 Sharpe: ${s.sharpe.toFixed(2)}`,
+    `🎯 Expectancy: ${fmtK(s.expectancy)}`,
+    `🔥 Best Streak: ${s.bestStreak} wins`,
+    `📉 Max DD: ${fmtK(-s.maxDD)}`,
+    `🏆 ${s.wins}W · ${s.losses}L · ${closed.length} trades`,
+  ] : ['Loading…']
 
   return(
-    <div style={{padding:'28px 28px 60px',maxWidth:1600,margin:'0 auto'}}>
+    <div style={{padding:'28px 28px 60px',maxWidth:1600,margin:'0 auto',
+      backgroundImage:'linear-gradient(rgba(0,229,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.025) 1px,transparent 1px)',
+      backgroundSize:'40px 40px',
+    }}>
       {/* Header */}
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,gap:16,flexWrap:'wrap'}}>
         <div>
@@ -594,7 +808,10 @@ export default function DashboardPage() {
             <h1 style={{fontSize:24,fontWeight:700,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne, sans-serif',letterSpacing:'-0.02em'}}>Dashboard</h1>
             <p style={{fontSize:13,color:'var(--tm-text-muted)',margin:'4px 0 0'}}>{loading?'…':`${trades.length} trades · ${t('dashboard.openTrades', {count: open.length})}`}</p>
           </div>
-
+          <div style={{display:'flex',alignItems:'center',gap:8,marginTop:10}}>
+            <LiveClock/>
+            <MarketSessions/>
+          </div>
         </div>
         {/* Info banner */}
         <div style={{display:'flex',gap:8,alignItems:'center',padding:'8px 14px',background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:12,flexWrap:'wrap'}}>
@@ -630,50 +847,51 @@ export default function DashboardPage() {
       </div>
 
       {activeTab === 'journal' && <>
-      {/* KPIs */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
-        {[
-          {label:t('dashboard.pnlTotal'), value:loading?null:fmtK(s.totalPnL), color:s.totalPnL>=0?'#22C764':'#FF3B30', glow:s.totalPnL>=0?'34,199,100':'255,59,48', sub:`${closed.length} ${t('dashboard.closedTrades').toLowerCase()}`},
-          {label:'Win Rate',  value:loading?null:`${s.winRate.toFixed(1)}%`, color:'#e2e8f0', glow:'226,232,240', sub:`${s.wins}W / ${s.losses}L`},
-          {label:'Ratio R/R', value:loading?null:s.payoffRatio.toFixed(2), color:'#00E5FF', glow:'0,229,255', sub:'Rendement/Risque'},
-          {label:t('common.open'), value:loading?null:String(open.length), color:open.length>0?'#FF9500':'#64748b', glow:open.length>0?'255,149,0':'100,116,139', sub:'Positions actives'},
-        ].map(({label,value,color,glow,sub})=>(
-          <div key={label} style={{
-            background:'rgba(8,12,22,0.9)',
-            border:`1px solid rgba(${glow},0.2)`,
-            borderRadius:16,
-            padding:'18px 20px',
-            position:'relative',
-            overflow:'hidden',
-            backdropFilter:'blur(16px)',
-            boxShadow:`0 0 25px rgba(${glow},0.08), inset 0 1px 0 rgba(${glow},0.12)`,
-          }}>
-            {/* Scan line top */}
-            <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.7),transparent)`}}/>
-            {/* Corner accents */}
-            <div style={{position:'absolute',top:0,left:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderLeft:`1px solid rgba(${glow},0.6)`,borderTopLeftRadius:16}}/>
-            <div style={{position:'absolute',top:0,right:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderRight:`1px solid rgba(${glow},0.6)`,borderTopRightRadius:16}}/>
-            <div style={{position:'absolute',bottom:0,left:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderLeft:`1px solid rgba(${glow},0.3)`,borderBottomLeftRadius:16}}/>
-            <div style={{position:'absolute',bottom:0,right:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderRight:`1px solid rgba(${glow},0.3)`,borderBottomRightRadius:16}}/>
-            {/* Ambient glow orb */}
-            <motion.div style={{position:'absolute',width:60,height:60,borderRadius:'50%',background:`rgba(${glow},0.12)`,filter:'blur(20px)',pointerEvents:'none'}}
-              animate={{top:['5%','5%','65%','65%','5%'],left:['5%','70%','70%','5%','5%']}}
-              transition={{duration:10,repeat:Infinity,ease:'linear'}}/>
-            <div style={{fontSize:10,color:`rgba(${glow},0.7)`,marginBottom:10,textTransform:'uppercase',letterSpacing:'0.12em',fontWeight:700,position:'relative'}}>{label}</div>
-            {value===null?<Skel h={28}/>:<motion.div
-              animate={{textShadow:[`0 0 10px rgba(${glow},0.3)`,`0 0 22px rgba(${glow},0.6)`,`0 0 10px rgba(${glow},0.3)`]}}
-              transition={{duration:2.5,repeat:Infinity}}
-              style={{fontSize:26,fontWeight:800,color,fontFamily:'JetBrains Mono, monospace',letterSpacing:'-0.02em',marginBottom:6,position:'relative'}}>
-              {value}
-            </motion.div>}
-            <div style={{fontSize:10,color:'rgba(148,163,184,0.7)',position:'relative'}}>{sub}</div>
-            {/* Bottom scanning light */}
-            <motion.div style={{position:'absolute',bottom:0,left:0,height:2,width:'40%',background:`linear-gradient(90deg,transparent,rgba(${glow},0.8),transparent)`,pointerEvents:'none'}}
-              animate={{left:['-40%','140%']}}
-              transition={{duration:2.5,repeat:Infinity,ease:'linear',repeatDelay:1.5}}/>
-          </div>
-        ))}
-      </div>
+      {/* Scrolling Ticker */}
+      <ScrollingTicker items={tickerItems}/>
+
+      {/* KPIs — staggered entrance + hover lift + countup + ring + sparkline */}
+      <motion.div variants={containerVariants} initial="hidden" animate="show"
+        style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+        <KPICard
+          label={t('dashboard.pnlTotal')}
+          rawVal={s.totalPnL}
+          fmtFn={fmtK}
+          color={s.totalPnL>=0?'#22C764':'#FF3B30'}
+          glow={s.totalPnL>=0?'34,199,100':'255,59,48'}
+          sub={`${closed.length} ${t('dashboard.closedTrades').toLowerCase()}`}
+          sparkData={sparkPnLs}
+          loaded={!loading}
+        />
+        <KPICard
+          label="Win Rate"
+          rawVal={s.winRate}
+          fmtFn={v=>`${v.toFixed(1)}%`}
+          color="#22C764"
+          glow="34,199,100"
+          sub={`${s.wins}W / ${s.losses}L`}
+          isWinRate={true}
+          loaded={!loading}
+        />
+        <KPICard
+          label="Ratio R/R"
+          rawVal={s.payoffRatio}
+          fmtFn={v=>v.toFixed(2)}
+          color="#00E5FF"
+          glow="0,229,255"
+          sub="Rendement / Risque"
+          loaded={!loading}
+        />
+        <KPICard
+          label={t('common.open')}
+          rawVal={open.length}
+          fmtFn={v=>String(Math.round(v))}
+          color={open.length>0?'#FF9500':'#64748b'}
+          glow={open.length>0?'255,149,0':'100,116,139'}
+          sub="Positions actives"
+          loaded={!loading}
+        />
+      </motion.div>
 
       {/* P&L Curve */}
       <div style={{...card(),marginBottom:16}}>
@@ -703,7 +921,7 @@ export default function DashboardPage() {
                   animate={{textShadow:[`0 0 12px rgba(${glow},0.4)`,`0 0 24px rgba(${glow},0.7)`,`0 0 12px rgba(${glow},0.4)`]}}
                   transition={{duration:2.5,repeat:Infinity}}
                   style={{fontSize:38,fontWeight:900,color:c,fontFamily:'JetBrains Mono, monospace',lineHeight:1}}>
-                  {wr.toFixed(1)}<span style={{fontSize:14,fontWeight:600}}>%</span>
+                  <CountUpNumber value={wr} fmt={v=>v.toFixed(1)} loaded={!loading}/><span style={{fontSize:14,fontWeight:600}}>%</span>
                 </motion.div>
                 <div style={{fontSize:10,color:'rgba(148,163,184,0.6)',marginBottom:8,marginTop:4}}>Win Rate · {count} trades</div>
                 <div style={{display:'inline-flex',alignItems:'center',gap:6,background:`rgba(${glow},0.08)`,padding:'4px 10px',borderRadius:8,border:`1px solid rgba(${glow},0.2)`}}>
@@ -724,23 +942,11 @@ export default function DashboardPage() {
           <div style={{fontSize:12,fontWeight:700,color:'rgba(226,232,240,0.9)',marginBottom:16,textTransform:'uppercase',letterSpacing:'0.1em'}}>Main Metrics</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
-              {value:`${s.winRate.toFixed(1)}%`,label:'Win Rate',sub:`${s.wins}W / ${s.losses}L`,c:'#22C764',glow:'34,199,100'},
-              {value:fmtK(s.totalPnL),label:'Total P&L',sub:`${closed.length} trades`,c:'#00E5FF',glow:'0,229,255'},
-              {value:s.payoffRatio.toFixed(2),label:'Payoff Ratio',sub:'Gain/Perte',c:'#0A85FF',glow:'10,133,255'},
-              {value:fmtK(-s.fees),label:'Fees',sub:'Total',c:'#BF5AF2',glow:'191,90,242'},
-            ].map(({value,label,sub,c,glow})=>(
-              <div key={label} style={{background:`rgba(${glow},0.06)`,border:`1px solid rgba(${glow},0.2)`,borderRadius:10,padding:'12px 14px',position:'relative',overflow:'hidden',boxShadow:`0 0 15px rgba(${glow},0.05)`}}>
-                <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.5),transparent)`}}/>
-                <motion.div
-                  animate={{textShadow:[`0 0 8px rgba(${glow},0.3)`,`0 0 18px rgba(${glow},0.6)`,`0 0 8px rgba(${glow},0.3)`]}}
-                  transition={{duration:3,repeat:Infinity,delay:Math.random()*2}}
-                  style={{fontSize:20,fontWeight:800,color:c,fontFamily:'JetBrains Mono, monospace',marginBottom:4}}>
-                  {value}
-                </motion.div>
-                <div style={{fontSize:11,color:'rgba(226,232,240,0.8)',fontWeight:600}}>{label}</div>
-                <div style={{fontSize:10,color:`rgba(${glow},0.7)`,marginTop:2}}>{sub}</div>
-              </div>
-            ))}
+              <MetricCell key="wr" value={`${s.winRate.toFixed(1)}%`} label="Win Rate" sub={`${s.wins}W / ${s.losses}L`} c="#22C764" glow="34,199,100" pct={s.winRate} tooltip="% de trades gagnants"/>,
+              <MetricCell key="pnl" value={fmtK(s.totalPnL)} label="Total P&L" sub={`${closed.length} trades`} c="#00E5FF" glow="0,229,255" tooltip="Profit & Loss total cumulé"/>,
+              <MetricCell key="pay" value={s.payoffRatio.toFixed(2)} label="Payoff Ratio" sub="Gain/Perte" c="#0A85FF" glow="10,133,255" pct={(s.payoffRatio/3)*100} tooltip="Ratio moyen gain/perte — idéal > 1.5"/>,
+              <MetricCell key="fee" value={fmtK(-s.fees)} label="Fees" sub="Total payé" c="#BF5AF2" glow="191,90,242" tooltip="Estimation des frais de courtage"/>,
+            ]}
           </div>
         </div>
         {/* Advanced Metrics */}
@@ -750,23 +956,11 @@ export default function DashboardPage() {
           <div style={{fontSize:10,color:'rgba(148,163,184,0.5)',marginBottom:16}}>Drawdown · Sharpe · Expectancy · Streaks</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
-              {value:fmtK(-s.maxDD),label:'Max Drawdown',sub:'Max loss',c:'#FF3B30',glow:'255,59,48'},
-              {value:s.sharpe.toFixed(2),label:'Sharpe Ratio',sub:'Return/Risk',c:'#0A85FF',glow:'10,133,255'},
-              {value:fmtK(s.expectancy),label:'Expectancy',sub:'Avg/trade',c:'#00E5FF',glow:'0,229,255'},
-              {value:String(s.bestStreak),label:'Best Streak',sub:`${s.worstStreak} max losses`,c:'#FF9500',glow:'255,149,0'},
-            ].map(({value,label,sub,c,glow})=>(
-              <div key={label} style={{background:`rgba(${glow},0.06)`,border:`1px solid rgba(${glow},0.2)`,borderRadius:10,padding:'12px 14px',position:'relative',overflow:'hidden',boxShadow:`0 0 15px rgba(${glow},0.05)`}}>
-                <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.5),transparent)`}}/>
-                <motion.div
-                  animate={{textShadow:[`0 0 8px rgba(${glow},0.3)`,`0 0 18px rgba(${glow},0.6)`,`0 0 8px rgba(${glow},0.3)`]}}
-                  transition={{duration:3,repeat:Infinity,delay:Math.random()*2}}
-                  style={{fontSize:20,fontWeight:800,color:c,fontFamily:'JetBrains Mono, monospace',marginBottom:4}}>
-                  {value}
-                </motion.div>
-                <div style={{fontSize:11,color:'rgba(226,232,240,0.8)',fontWeight:600}}>{label}</div>
-                <div style={{fontSize:10,color:`rgba(${glow},0.7)`,marginTop:2}}>{sub}</div>
-              </div>
-            ))}
+              <MetricCell key="dd" value={fmtK(-s.maxDD)} label="Max Drawdown" sub="Perte max" c="#FF3B30" glow="255,59,48" tooltip="Perte maximale depuis un pic — à minimiser"/>,
+              <MetricCell key="sh" value={s.sharpe.toFixed(2)} label="Sharpe Ratio" sub="Return/Risk" c="#0A85FF" glow="10,133,255" pct={(s.sharpe/2)*100} tooltip="Rendement ajusté au risque — idéal > 1"/>,
+              <MetricCell key="ex" value={fmtK(s.expectancy)} label="Expectancy" sub="Gain moyen/trade" c="#00E5FF" glow="0,229,255" tooltip="Gain espéré par trade en moyenne"/>,
+              <MetricCell key="st" value={`${s.bestStreak >= 3 ? '🔥 ' : ''}${s.bestStreak}`} label="Best Streak" sub={`${s.worstStreak} max pertes`} c="#FF9500" glow="255,149,0" pct={(s.bestStreak/10)*100} tooltip="Meilleure série de gains consécutifs"/>,
+            ]}
           </div>
         </div>
       </div>
