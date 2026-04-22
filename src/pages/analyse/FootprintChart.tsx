@@ -1,6 +1,7 @@
-// src/pages/analyse/FootprintChart.tsx
-// Professional footprint / cluster chart — canvas-based
-// Data: Binance aggTrades (spot) aggregated per candle × price bin
+// src/pages/analyse/FootprintChart.tsx — v2
+// Professional footprint / cluster chart
+// Data: sub-kline approach (reliable at all timeframes) + aggTrades for 1m
+// Navigation: horizontal pan + zoom, vertical pan + bin zoom
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 
@@ -9,156 +10,278 @@ interface FPCell   { buyVol: number; sellVol: number }
 interface FPCandle {
   open: number; high: number; low: number; close: number; ts: number
   levels: Map<number, FPCell>
-  poc: number            // price level with highest total volume
-  candleDelta: number    // sum of (buy - sell) across all levels
+  poc: number
+  candleDelta: number
   totalVol: number
 }
-interface Tooltip  { x: number; y: number; price: number; buy: number; sell: number; delta: number; imbalance: string }
+interface Tooltip { x: number; y: number; price: number; buy: number; sell: number; delta: number; imbalance: string }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const TF_OPTIONS = ['1m','3m','5m','15m','30m','1h','4h'] as const
+type TF = typeof TF_OPTIONS[number]
+
+// Sub-timeframe used to approximate intracandle price distribution
+const SUB_TF: Record<TF, string | 'agg'> = {
+  '1m':  'agg',   // use aggTrades for 1m (finest resolution)
+  '3m':  '1m',
+  '5m':  '1m',
+  '15m': '1m',
+  '30m': '3m',
+  '1h':  '5m',
+  '4h':  '15m',
+}
+
+const TF_MS: Record<string, number> = {
+  '1m':14400000,'3m':43200000,'5m':72000000,'15m':216000000,
+  '30m':432000000,'1h':864000000,'4h':3456000000,
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function snapBinSize(raw: number): number {
-  const candidates = [0.01,0.05,0.1,0.25,0.5,1,2,5,10,20,25,50,100,200,250,500,1000]
-  return candidates.find(c => c >= raw) ?? candidates[candidates.length - 1]
+  const c = [0.01,0.05,0.1,0.25,0.5,1,2,5,10,20,25,50,100,200,250,500,1000,2000,5000]
+  return c.find(v => v >= raw) ?? c[c.length - 1]
 }
 function fmtVol(v: number): string {
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
-  if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}K`
+  if (Math.abs(v) >= 1e6) return `${(v/1e6).toFixed(1)}M`
+  if (Math.abs(v) >= 1e3) return `${(v/1e3).toFixed(0)}K`
   return v.toFixed(0)
 }
+function fmtPrice(p: number): string {
+  return p >= 10000 ? p.toFixed(0) : p >= 100 ? p.toFixed(1) : p.toFixed(2)
+}
+function fmtTime(ts: number, tf: TF): string {
+  const d = new Date(ts)
+  if ((tf as string) === '1d') return `${d.getDate()}/${d.getMonth()+1}`
+  return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+}
 
-// ── Core computation ──────────────────────────────────────────────────────────
-function buildFootprint(
+// ── Sub-kline footprint builder ───────────────────────────────────────────────
+function buildFromSubKlines(
+  mainKlines: unknown[][],
+  subKlines: unknown[][],
+  binSize: number,
+): FPCandle[] {
+  return mainKlines.map(mk => {
+    const openTime  = mk[0] as number
+    const closeTime = mk[6] as number
+    const open  = parseFloat(mk[1] as string)
+    const high  = parseFloat(mk[2] as string)
+    const low   = parseFloat(mk[3] as string)
+    const close = parseFloat(mk[4] as string)
+
+    const levels = new Map<number, FPCell>()
+    let candleDelta = 0
+
+    const mySubK = subKlines.filter(sk => {
+      const t = sk[0] as number
+      return t >= openTime && t <= closeTime
+    })
+
+    if (mySubK.length === 0) {
+      // Fallback: kline takerBuy for this candle
+      const buyVol  = parseFloat(mk[10] as string)
+      const totVol  = parseFloat(mk[7] as string)
+      const sellVol = Math.max(0, totVol - buyVol)
+      // Distribute across O-C range with price-weighted bell
+      const lo = Math.floor(low  / binSize) * binSize
+      const hi = Math.ceil(high  / binSize) * binSize
+      let binsArr: number[] = []
+      let b = lo
+      while (b <= hi + binSize * 0.1) {
+        binsArr.push(Math.round(b * 1e8) / 1e8)
+        b = Math.round((b + binSize) * 1e8) / 1e8
+      }
+      if (binsArr.length === 0) binsArr = [Math.round(Math.floor(close / binSize) * binSize * 1e8) / 1e8]
+      const perBin = 1 / binsArr.length
+      for (const lvl of binsArr) {
+        levels.set(lvl, { buyVol: buyVol * perBin, sellVol: sellVol * perBin })
+      }
+      candleDelta = buyVol - sellVol
+    } else {
+      for (const sk of mySubK) {
+        const skHigh    = parseFloat(sk[2] as string)
+        const skLow     = parseFloat(sk[3] as string)
+        const skBuyVol  = parseFloat(sk[10] as string)
+        const skTotVol  = parseFloat(sk[7] as string)
+        const skSellVol = Math.max(0, skTotVol - skBuyVol)
+
+        // Count bins in this sub-candle's range
+        const lo = Math.floor(skLow / binSize) * binSize
+        const hi = Math.ceil(skHigh / binSize) * binSize
+        const bins: number[] = []
+        let bl = lo
+        while (bl <= hi + binSize * 0.1) {
+          bins.push(Math.round(bl * 1e8) / 1e8)
+          bl = Math.round((bl + binSize) * 1e8) / 1e8
+        }
+        if (bins.length === 0) bins.push(Math.round(Math.floor((skHigh + skLow) / 2 / binSize) * binSize * 1e8) / 1e8)
+
+        // Weight: levels near close get more buy weight (simplified Bell)
+        const skClose = parseFloat(sk[4] as string)
+        const skIsBull = skClose >= parseFloat(sk[1] as string)
+        const weights  = bins.map(lvl => {
+          const dist = Math.abs(lvl - skClose) / Math.max(skHigh - skLow, binSize)
+          return Math.exp(-dist * dist * 2) // Gaussian weight
+        })
+        const wSum = weights.reduce((a, b) => a + b, 0) || 1
+
+        bins.forEach((lvl, i) => {
+          if (!levels.has(lvl)) levels.set(lvl, { buyVol: 0, sellVol: 0 })
+          const cell = levels.get(lvl)!
+          const w = weights[i] / wSum
+          // Bulls: more buy at higher levels; bears: more sell at lower levels
+          const buyW  = skIsBull ? w * (0.5 + 0.5 * (lvl - (skLow + skHigh) / 2) / Math.max(skHigh - skLow, binSize)) : w
+          const sellW = skIsBull ? w : w * (0.5 + 0.5 * ((skLow + skHigh) / 2 - lvl) / Math.max(skHigh - skLow, binSize))
+          const bwn = Math.max(0, Math.min(1, buyW)) / (weights.reduce((a, _, j) => a + Math.max(0, Math.min(1, bins.map((l, k) => skIsBull ? weights[k] * (0.5 + 0.5*(l-(skLow+skHigh)/2)/Math.max(skHigh-skLow,binSize)) : weights[k])[j]), 0), 0) || 1)
+          cell.buyVol  += skBuyVol  * w
+          cell.sellVol += skSellVol * w
+        })
+        candleDelta += skBuyVol - skSellVol
+      }
+    }
+
+    // POC
+    let poc = close, pocVol = 0
+    for (const [lvl, cell] of levels) {
+      const tv = cell.buyVol + cell.sellVol
+      if (tv > pocVol) { pocVol = tv; poc = lvl }
+    }
+
+    return { open, high, low, close, ts: openTime, levels, poc, candleDelta, totalVol: parseFloat(mk[5] as string) * close }
+  })
+}
+
+// aggTrades footprint for 1m
+function buildFromTrades(
   klines: unknown[][],
-  trades: { p: string; q: string; m: boolean; T: number }[],
+  trades: { p:string; q:string; m:boolean; T:number }[],
   binSize: number
 ): FPCandle[] {
   return klines.map(k => {
     const openTime  = k[0] as number
     const closeTime = k[6] as number
-    const open  = parseFloat(k[1] as string)
-    const high  = parseFloat(k[2] as string)
-    const low   = parseFloat(k[3] as string)
-    const close = parseFloat(k[4] as string)
-
     const levels = new Map<number, FPCell>()
     let candleDelta = 0
-
-    const candleTrades = trades.filter(t => t.T >= openTime && t.T <= closeTime)
-    for (const t of candleTrades) {
+    for (const t of trades) {
+      if (t.T < openTime || t.T > closeTime) continue
       const price = parseFloat(t.p)
       const vol   = price * parseFloat(t.q)
-      const level = Math.round(Math.floor(price / binSize) * binSize * 1e8) / 1e8 // avoid float issues
-      if (!levels.has(level)) levels.set(level, { buyVol: 0, sellVol: 0 })
-      const cell = levels.get(level)!
-      if (t.m) cell.sellVol += vol   // maker = sell taker hit bid
-      else     cell.buyVol  += vol   // taker = buy taker hit ask
+      const lvl   = Math.round(Math.floor(price / binSize) * binSize * 1e8) / 1e8
+      if (!levels.has(lvl)) levels.set(lvl, { buyVol: 0, sellVol: 0 })
+      const cell = levels.get(lvl)!
+      if (t.m) cell.sellVol += vol; else cell.buyVol += vol
       candleDelta += t.m ? -vol : vol
     }
-
-    // POC = level with max total volume
-    let poc = close, maxPocVol = 0
+    // Kline fallback for delta
+    if (candleDelta === 0) {
+      const buyVol = parseFloat(k[10] as string)
+      const totVol = parseFloat(k[7] as string)
+      candleDelta = buyVol - (totVol - buyVol)
+    }
+    // Fill empty levels from kline takerBuy
+    if (levels.size === 0) {
+      const buyVol  = parseFloat(k[10] as string)
+      const totVol  = parseFloat(k[7] as string)
+      const sellVol = Math.max(0, totVol - buyVol)
+      const close   = parseFloat(k[4] as string)
+      const lvl     = Math.round(Math.floor(close / binSize) * binSize * 1e8) / 1e8
+      levels.set(lvl, { buyVol, sellVol })
+    }
+    let poc = parseFloat(k[4] as string), pocVol = 0
     for (const [lvl, cell] of levels) {
       const tv = cell.buyVol + cell.sellVol
-      if (tv > maxPocVol) { maxPocVol = tv; poc = lvl }
+      if (tv > pocVol) { pocVol = tv; poc = lvl }
     }
-
-    return { open, high, low, close, ts: openTime, levels, poc, candleDelta, totalVol: parseFloat(k[5] as string) * close }
+    return {
+      open: parseFloat(k[1] as string), high: parseFloat(k[2] as string),
+      low: parseFloat(k[3] as string),  close: parseFloat(k[4] as string),
+      ts: openTime, levels, poc, candleDelta,
+      totalVol: parseFloat(k[5] as string) * parseFloat(k[4] as string),
+    }
   })
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-const TF_OPTIONS = ['1m','3m','5m','15m'] as const
-type TF = typeof TF_OPTIONS[number]
-const CANDLE_COUNTS = [10, 15, 20, 30] as const
-
 export default function FootprintChart({ symbol }: { symbol: string }) {
-  const canvasRef  = useRef<HTMLCanvasElement>(null)
-  const wrapRef    = useRef<HTMLDivElement>(null)
-  const [tf,           setTf]           = useState<TF>('5m')
-  const [candleCount,  setCandleCount]  = useState<number>(15)
-  const [candles,      setCandles]      = useState<FPCandle[]>([])
-  const [binSize,      setBinSize]      = useState(1)
-  const [globalMax,    setGlobalMax]    = useState(1)
-  const [loading,      setLoading]      = useState(false)
-  const [error,        setError]        = useState('')
-  const [tooltip,      setTooltip]      = useState<Tooltip|null>(null)
-  const [priceOffset,  setPriceOffset]  = useState(0)   // Y scroll in price units
-  const [cellH,        setCellH]        = useState(18)  // px per price bin
-  const [lastFetch,    setLastFetch]    = useState(0)
-  const dragRef = useRef<{startY:number;startOffset:number}|null>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const wrapRef   = useRef<HTMLDivElement>(null)
 
-  // ── Fetch & build ──────────────────────────────────────────────────────────
+  const [tf,          setTf]         = useState<TF>('5m')
+  const [allCandles,  setAllCandles] = useState<FPCandle[]>([])
+  const [binSize,     setBinSize]    = useState(10)
+  const [globalMax,   setGlobalMax]  = useState(1)
+  const [loading,     setLoading]    = useState(false)
+  const [error,       setError]      = useState('')
+  const [lastFetch,   setLastFetch]  = useState(0)
+
+  // View state
+  const [viewOffset,  setViewOffset] = useState(0)   // candles hidden from right end
+  const [zoomLevel,   setZoomLevel]  = useState(20)  // visible candles count
+  const [priceOffset, setPriceOffset]= useState(0)   // Y center price
+  const [cellH,       setCellH]      = useState(16)  // px per price bin
+
+  const [tooltip, setTooltip] = useState<Tooltip|null>(null)
+
+  const dragRef = useRef<{type:'x'|'y'|'xy';startX:number;startY:number;startOff:number;startPrice:number}|null>(null)
+
+  const IMBALANCE = 3.0
+  const PRICE_W   = 74
+  const DELTA_H   = 30
+  const VP_W      = 68
+  const MIN_ZOOM  = 3
+  const MAX_ZOOM  = 80
+  const BUFFER    = 100 // candles to fetch
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!symbol) return
     setLoading(true); setError('')
     try {
-      // 1. Klines (includes takerBuyQuoteAssetVolume col 10 for delta fallback)
-      const klinesRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${candleCount}`)
-      if (!klinesRes.ok) throw new Error(`Klines ${klinesRes.status}`)
+      // 1. Main klines (100 candle buffer)
+      const klinesRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${BUFFER}`)
+      if (!klinesRes.ok) throw new Error(`HTTP ${klinesRes.status}`)
       const klines: unknown[][] = await klinesRes.json()
-      if (!Array.isArray(klines) || klines.length === 0) throw new Error('Pas de données')
+      if (!Array.isArray(klines) || klines.length === 0) throw new Error('Aucune donnée')
 
       const allH = klines.map(k => parseFloat(k[2] as string))
       const allL = klines.map(k => parseFloat(k[3] as string))
       const rangeH = Math.max(...allH), rangeL = Math.min(...allL)
-      const rawBin = (rangeH - rangeL) / 30  // ~30 levels target
-      const bs = snapBinSize(rawBin)
+      const bs = snapBinSize((rangeH - rangeL) / 30)
       setBinSize(bs)
 
-      // 2. aggTrades — 8 parallel batches covering the full period
-      //    BTC has ~200-2000 trades/min → 1000 trades/batch × 8 = 8000 trades
       const startTime = klines[0][0] as number
       const endTime   = (klines[klines.length - 1][6] as number) || Date.now()
-      const duration  = endTime - startTime
-      const NUM_CHUNKS = 8
-      const chunkMs   = Math.floor(duration / NUM_CHUNKS)
 
-      const batchPromises = Array.from({ length: NUM_CHUNKS }, (_, i) => {
-        const chunkStart = startTime + i * chunkMs
-        return fetch(
-          `https://api.binance.com/api/v3/aggTrades?symbol=${symbol}&startTime=${chunkStart}&limit=1000`
-        ).then(r => r.json()).catch(() => [])
-      })
-      const batches = await Promise.all(batchPromises)
+      let fp: FPCandle[]
 
-      // Deduplicate by aggTrade id
-      const allTrades: { p:string; q:string; m:boolean; T:number }[] = []
-      const seen = new Set<number>()
-      for (const batch of batches) {
-        if (!Array.isArray(batch)) continue
-        for (const t of batch as { a:number; p:string; q:string; m:boolean; T:number }[]) {
-          if (t.T >= startTime && t.T <= endTime && !seen.has(t.a)) {
-            seen.add(t.a)
-            allTrades.push(t)
+      if (tf === '1m') {
+        // aggTrades: 8 parallel batches
+        const dur   = endTime - startTime
+        const chunk = Math.floor(dur / 8)
+        const batches = await Promise.all(
+          Array.from({ length: 8 }, (_, i) =>
+            fetch(`https://api.binance.com/api/v3/aggTrades?symbol=${symbol}&startTime=${startTime + i * chunk}&limit=1000`)
+              .then(r => r.json()).catch(() => [])
+          )
+        )
+        const trades: { p:string; q:string; m:boolean; T:number; a:number }[] = []
+        const seen = new Set<number>()
+        for (const b of batches) {
+          if (!Array.isArray(b)) continue
+          for (const t of b as { a:number; p:string; q:string; m:boolean; T:number }[]) {
+            if (!seen.has(t.a) && t.T >= startTime && t.T <= endTime) { seen.add(t.a); trades.push(t) }
           }
         }
+        fp = buildFromTrades(klines, trades, bs)
+      } else {
+        // Sub-kline approach
+        const subTf = SUB_TF[tf]
+        const subRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${subTf}&startTime=${startTime}&limit=1000`)
+        const subKlines: unknown[][] = subRes.ok ? await subRes.json() : []
+        fp = buildFromSubKlines(klines, Array.isArray(subKlines) ? subKlines : [], bs)
       }
 
-      // 3. Build footprint — with kline takerBuy fallback for delta
-      const fp = buildFootprint(klines, allTrades, bs)
-
-      // Inject kline-level delta fallback for candles that still have 0 trades
-      for (let i = 0; i < fp.length; i++) {
-        const c  = fp[i]
-        const k  = klines[i]
-        const klBuyVol  = parseFloat(k[10] as string) // takerBuyQuoteAssetVolume
-        const klTotVol  = parseFloat(k[7]  as string) // quoteAssetVolume
-        const klSellVol = klTotVol - klBuyVol
-        // Only use kline fallback if footprint has no trades
-        if (c.levels.size === 0) {
-          // Distribute kline volume across price range as a fallback
-          const mid  = (c.open + c.close) / 2
-          const bin  = Math.round(Math.floor(mid / bs) * bs * 1e8) / 1e8
-          c.levels.set(bin, { buyVol: klBuyVol * 0.6, sellVol: klSellVol * 0.6 })
-          c.candleDelta = klBuyVol - klSellVol
-          c.poc = bin
-        } else if (c.candleDelta === 0) {
-          // Correct delta from kline if aggTrades didn't capture it
-          c.candleDelta = klBuyVol - klSellVol
-        }
-      }
-
-      // 4. Global max for cell intensity
+      // Global max
       let gmax = 1
       for (const c of fp) {
         for (const cell of c.levels.values()) {
@@ -167,13 +290,13 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
         }
       }
       setGlobalMax(gmax)
-      setCandles(fp)
+      setAllCandles(fp)
+      setViewOffset(0) // reset to latest
 
-      // 5. Center Y on last candle's mid price
+      // Center on last candle mid
       if (fp.length > 0) {
         const last = fp[fp.length - 1]
-        const mid = (last.high + last.low) / 2
-        setPriceOffset(mid)
+        setPriceOffset((last.high + last.low) / 2)
       }
       setLastFetch(Date.now())
     } catch (e) {
@@ -181,460 +304,420 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
     } finally {
       setLoading(false)
     }
-  }, [symbol, tf, candleCount])
+  }, [symbol, tf])
 
   useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { const t = setInterval(fetchData, 30_000); return () => clearInterval(t) }, [fetchData])
 
-  // Auto-refresh every 30s
-  useEffect(() => {
-    const t = setInterval(fetchData, 30_000)
-    return () => clearInterval(t)
-  }, [fetchData])
+  // ── Visible candles slice ──────────────────────────────────────────────────
+  const visibleCandles = (() => {
+    const end   = allCandles.length - viewOffset
+    const start = Math.max(0, end - zoomLevel)
+    return allCandles.slice(start, end)
+  })()
 
-  // ── Canvas render ──────────────────────────────────────────────────────────
-  const PRICE_W   = 72    // price axis width
-  const CANDLE_W  = 95    // each candle column width
-  const DELTA_H   = 32    // delta bar height at bottom
-  const VP_W      = 70    // volume profile width (right)
-  const IMBALANCE_THRESHOLD = 3.0  // buy/sell ratio to highlight imbalance
-
+  // ── Canvas draw ────────────────────────────────────────────────────────────
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     const wrap   = wrapRef.current
-    if (!canvas || !wrap || candles.length === 0) return
+    if (!canvas || !wrap || visibleCandles.length === 0) return
     const dpr = window.devicePixelRatio || 1
     const W = wrap.offsetWidth || 800
-    const H = wrap.offsetHeight || 520
-    canvas.width  = W * dpr
-    canvas.height = H * dpr
-    canvas.style.width  = `${W}px`
-    canvas.style.height = `${H}px`
+    const H = wrap.offsetHeight || 500
+    canvas.width  = W * dpr; canvas.height = H * dpr
+    canvas.style.width = `${W}px`; canvas.style.height = `${H}px`
     const ctx = canvas.getContext('2d')!
     ctx.scale(dpr, dpr)
 
     const chartH = H - DELTA_H
-    const visibleLevels = Math.floor(chartH / cellH)
-    const halfVisible   = (visibleLevels / 2) * binSize
-    const priceTop      = priceOffset + halfVisible   // highest visible price
-    const priceBot      = priceOffset - halfVisible   // lowest visible price
-    const toY  = (price: number) => chartH - ((price - priceBot) / (priceTop - priceBot)) * chartH
-    const toP  = (y: number)     => priceBot + ((chartH - y) / chartH) * (priceTop - priceBot)
+    const visLevels  = Math.floor(chartH / cellH)
+    const halfPriceH = (visLevels / 2) * binSize
+    const priceTop   = priceOffset + halfPriceH
+    const priceBot   = priceOffset - halfPriceH
+    const toY  = (p: number) => chartH - ((p - priceBot) / (priceTop - priceBot)) * chartH
+    const cW   = (W - PRICE_W - VP_W) / visibleCandles.length
 
     // Background
-    ctx.fillStyle = '#080C14'
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
-    // Horizontal grid lines per price bin
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)'
-    ctx.lineWidth = 0.5
+    // Grid horizontals
     ctx.setLineDash([])
-    let level = Math.floor(priceBot / binSize) * binSize
-    while (level <= priceTop + binSize) {
-      const y = Math.round(toY(level)) + 0.5
-      ctx.beginPath(); ctx.moveTo(PRICE_W, y); ctx.lineTo(W - VP_W, y); ctx.stroke()
-      level = Math.round((level + binSize) * 1e8) / 1e8
+    let gLvl = Math.floor(priceBot / binSize) * binSize
+    while (gLvl <= priceTop + binSize) {
+      const gy = Math.round(toY(gLvl)) + 0.5
+      if (gy >= 0 && gy <= chartH) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.035)'; ctx.lineWidth = 0.5
+        ctx.beginPath(); ctx.moveTo(PRICE_W, gy); ctx.lineTo(W - VP_W, gy); ctx.stroke()
+      }
+      gLvl = Math.round((gLvl + binSize) * 1e8) / 1e8
     }
 
-    // ── Volume Profile (right panel) ──────────────────────────────────────
-    const vpMax = candles.reduce((mx, c) => {
-      let total = 0
+    // ── Volume profile (all visible candles) ──────────────────────────────
+    const vpMap = new Map<number, { buy: number; sell: number }>()
+    let vpMax = 1, globalPOC = 0, globalPOCvol = 0
+    for (const c of visibleCandles) {
       for (const [lvl, cell] of c.levels) {
-        if (lvl >= priceBot && lvl <= priceTop) total += cell.buyVol + cell.sellVol
-      }
-      return Math.max(mx, total)
-    }, 1)
-
-    const vpLevels = new Map<number, { buy: number; sell: number }>()
-    for (const c of candles) {
-      for (const [lvl, cell] of c.levels) {
-        if (!vpLevels.has(lvl)) vpLevels.set(lvl, { buy: 0, sell: 0 })
-        const vp = vpLevels.get(lvl)!
-        vp.buy  += cell.buyVol
-        vp.sell += cell.sellVol
+        if (!vpMap.has(lvl)) vpMap.set(lvl, { buy: 0, sell: 0 })
+        const vp = vpMap.get(lvl)!
+        vp.buy += cell.buyVol; vp.sell += cell.sellVol
+        const tv = vp.buy + vp.sell
+        if (tv > vpMax) vpMax = tv
+        if (tv > globalPOCvol) { globalPOCvol = tv; globalPOC = lvl }
       }
     }
-    // Find global POC
-    let globalPOC = 0, globalPOCvol = 0
-    for (const [lvl, vp] of vpLevels) {
-      const tv = vp.buy + vp.sell
-      if (tv > globalPOCvol) { globalPOCvol = tv; globalPOC = lvl }
+    for (const [lvl, vp] of vpMap) {
+      if (lvl < priceBot || lvl > priceTop + binSize) continue
+      const y   = toY(lvl + binSize * 0.5)
+      const tv  = vp.buy + vp.sell
+      const bw  = (tv / vpMax) * (VP_W - 6)
+      const isG = Math.abs(lvl - globalPOC) < binSize * 0.5
+      ctx.fillStyle = isG ? 'rgba(255,159,28,0.45)' : vp.buy > vp.sell ? 'rgba(52,199,89,0.18)' : 'rgba(255,69,58,0.18)'
+      ctx.fillRect(W - VP_W + 2, y - cellH * 0.45, bw, cellH * 0.9)
+      if (isG) { ctx.fillStyle = 'rgba(255,159,28,0.08)'; ctx.fillRect(W - VP_W, y - cellH*0.5, VP_W, cellH*0.9) }
     }
-    for (const [lvl, vp] of vpLevels) {
-      if (lvl < priceBot || lvl > priceTop) continue
-      const y = toY(lvl + binSize * 0.5)
-      const totalV = vp.buy + vp.sell
-      const barW = (totalV / (vpMax * 1.2)) * VP_W
-      const isGPOC = Math.abs(lvl - globalPOC) < binSize * 0.5
-      ctx.fillStyle = isGPOC ? 'rgba(255,159,28,0.5)' : 'rgba(100,160,240,0.2)'
-      ctx.fillRect(W - VP_W, y - cellH * 0.5, barW, cellH * 0.9)
-      if (isGPOC) {
-        ctx.fillStyle = 'rgba(255,159,28,0.15)'
-        ctx.fillRect(W - VP_W, y - cellH * 0.5, VP_W, cellH * 0.9)
-      }
-    }
-    // VP border
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-    ctx.lineWidth = 1
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(W - VP_W, 0); ctx.lineTo(W - VP_W, chartH); ctx.stroke()
-    ctx.fillStyle = 'rgba(255,255,255,0.25)'
-    ctx.font = '8px JetBrains Mono,monospace'
-    ctx.textAlign = 'center'
-    ctx.fillText('VOL', W - VP_W / 2, 10)
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '8px JetBrains Mono,monospace'
+    ctx.textAlign = 'center'; ctx.fillText('VP', W - VP_W / 2, 9)
 
     // ── Candle columns ────────────────────────────────────────────────────
-    const chartContentW = W - PRICE_W - VP_W
-    const actualCandleW = Math.min(CANDLE_W, chartContentW / candles.length)
-    ctx.textAlign = 'left'
-
-    candles.forEach((c, ci) => {
-      const x = PRICE_W + ci * actualCandleW
-      if (x + actualCandleW > W - VP_W) return
-
-      // Candle body background (light tint across the O-C range)
-      const wickX = x + actualCandleW / 2
-      const yOpen  = toY(c.open)
-      const yClose = toY(c.close)
-      const yHigh  = toY(c.high)
-      const yLow   = toY(c.low)
+    visibleCandles.forEach((c, ci) => {
+      const x   = PRICE_W + ci * cW
       const isBull = c.close >= c.open
-      const bodyTop    = Math.min(yOpen, yClose)
-      const bodyBottom = Math.max(yOpen, yClose)
+
+      // Candle body background (faint)
+      const yO = toY(c.open), yC = toY(c.close)
+      const bodyT = Math.min(yO, yC), bodyB = Math.max(yO, yC)
       ctx.fillStyle = isBull ? 'rgba(52,199,89,0.04)' : 'rgba(255,69,58,0.04)'
-      ctx.fillRect(x + 1, bodyTop, actualCandleW - 2, bodyBottom - bodyTop)
+      ctx.fillRect(x + 1, bodyT, cW - 2, bodyB - bodyT)
 
-      // Candle OHLC line (wick)
-      ctx.strokeStyle = isBull ? 'rgba(52,199,89,0.5)' : 'rgba(255,69,58,0.5)'
+      // Wick
+      const wickX = x + cW / 2
+      ctx.strokeStyle = isBull ? 'rgba(52,199,89,0.45)' : 'rgba(255,69,58,0.45)'
       ctx.lineWidth = 1; ctx.setLineDash([])
-      ctx.beginPath(); ctx.moveTo(wickX, yHigh); ctx.lineTo(wickX, Math.min(yOpen, yClose)); ctx.stroke()
-      ctx.beginPath(); ctx.moveTo(wickX, Math.max(yOpen, yClose)); ctx.lineTo(wickX, yLow); ctx.stroke()
-
-      // Empty level markers within candle range (grid lines for untraded levels)
-      let emptyLvl = Math.floor(c.low / binSize) * binSize
-      while (emptyLvl <= c.high) {
-        const lvlRounded = Math.round(emptyLvl * 1e8) / 1e8
-        if (!c.levels.has(lvlRounded)) {
-          const ey = toY(lvlRounded + binSize * 0.5)
-          if (ey >= 0 && ey <= chartH) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.03)'
-            ctx.lineWidth = 0.5
-            ctx.beginPath(); ctx.moveTo(x + 1, ey); ctx.lineTo(x + actualCandleW - 1, ey); ctx.stroke()
-          }
-        }
-        emptyLvl = Math.round((emptyLvl + binSize) * 1e8) / 1e8
-      }
-
-      // POC highlight line across full candle
-      const pocY = toY(c.poc + binSize * 0.5)
-      ctx.strokeStyle = 'rgba(255,159,28,0.9)'
-      ctx.lineWidth = 1.5
-      ctx.setLineDash([2, 2])
-      ctx.beginPath(); ctx.moveTo(x, pocY); ctx.lineTo(x + actualCandleW - 1, pocY); ctx.stroke()
-      ctx.setLineDash([])
-
-      // Cells
-      for (const [lvl, cell] of c.levels) {
-        if (lvl < priceBot || lvl > priceTop) continue
-        const cy = toY(lvl + binSize * 0.5)
-        const cellY = cy - cellH * 0.5
-        const totalV  = cell.buyVol + cell.sellVol
-        const buyRatio = totalV > 0 ? cell.buyVol / totalV : 0
-        const intensity = Math.min(totalV / globalMax, 1)
-
-        // Cell background — color by buy/sell dominance + volume intensity
-        const isBuyDom  = cell.buyVol > cell.sellVol * IMBALANCE_THRESHOLD
-        const isSellDom = cell.sellVol > cell.buyVol * IMBALANCE_THRESHOLD
-        const isPOC     = Math.abs(lvl - c.poc) < binSize * 0.5
-
-        if (isBuyDom) {
-          ctx.fillStyle = `rgba(52,199,89,${0.25 + intensity * 0.5})`
-        } else if (isSellDom) {
-          ctx.fillStyle = `rgba(255,69,58,${0.25 + intensity * 0.5})`
-        } else {
-          const g = Math.round(buyRatio * 120)
-          const r = Math.round((1 - buyRatio) * 120)
-          ctx.fillStyle = `rgba(${r},${g},80,${0.08 + intensity * 0.25})`
-        }
-        ctx.fillRect(x + 0.5, cellY, actualCandleW - 1, cellH - 1)
-
-        // POC cell extra border
-        if (isPOC) {
-          ctx.strokeStyle = 'rgba(255,159,28,0.7)'
-          ctx.lineWidth = 1
-          ctx.strokeRect(x + 0.5, cellY, actualCandleW - 1, cellH - 1)
-        }
-
-        // Imbalance triangle
-        if (isBuyDom) {
-          ctx.fillStyle = '#34C759'
-          ctx.beginPath()
-          ctx.moveTo(x + actualCandleW - 2, cellY + cellH / 2)
-          ctx.lineTo(x + actualCandleW - 7, cellY + 3)
-          ctx.lineTo(x + actualCandleW - 7, cellY + cellH - 3)
-          ctx.closePath(); ctx.fill()
-        } else if (isSellDom) {
-          ctx.fillStyle = '#FF453A'
-          ctx.beginPath()
-          ctx.moveTo(x + 2, cellY + cellH / 2)
-          ctx.lineTo(x + 7, cellY + 3)
-          ctx.lineTo(x + 7, cellY + cellH - 3)
-          ctx.closePath(); ctx.fill()
-        }
-
-        // Text inside cell (only if large enough)
-        if (cellH >= 14 && actualCandleW >= 60) {
-          const buyTxt  = fmtVol(cell.buyVol)
-          const sellTxt = fmtVol(cell.sellVol)
-          const fontSize = Math.max(7, Math.min(10, cellH - 5))
-          ctx.font = `${fontSize}px JetBrains Mono,monospace`
-          // Buy (left, green)
-          ctx.fillStyle = `rgba(52,199,89,${0.5 + buyRatio * 0.5})`
-          ctx.textAlign = 'left'
-          ctx.fillText(buyTxt, x + 4, cellY + cellH * 0.65)
-          // Sell (right, red)
-          ctx.fillStyle = `rgba(255,69,58,${0.5 + (1 - buyRatio) * 0.5})`
-          ctx.textAlign = 'right'
-          ctx.fillText(sellTxt, x + actualCandleW - 4 - (isBuyDom ? 6 : 0), cellY + cellH * 0.65)
-        }
-      }
-
-      // ── Delta bar at bottom ─────────────────────────────────────────────
-      const delta = c.candleDelta
-      const maxAbs = candles.reduce((m, cc) => Math.max(m, Math.abs(cc.candleDelta)), 1)
-      const barH   = Math.abs(delta / maxAbs) * (DELTA_H - 6)
-      const barY   = chartH + (delta >= 0 ? DELTA_H - 4 - barH : DELTA_H - 4)
-      ctx.fillStyle = delta >= 0 ? 'rgba(52,199,89,0.75)' : 'rgba(255,69,58,0.75)'
-      ctx.fillRect(x + 2, barY, actualCandleW - 4, barH)
-
-      // Delta text
-      if (DELTA_H >= 24) {
-        const fontSize = 8
-        ctx.font = `${fontSize}px JetBrains Mono,monospace`
-        ctx.fillStyle = delta >= 0 ? '#34C759' : '#FF453A'
-        ctx.textAlign = 'center'
-        const dTxt = (delta >= 0 ? '+' : '') + fmtVol(delta)
-        ctx.fillText(dTxt, x + actualCandleW / 2, chartH + DELTA_H - 2)
-      }
-
-      // Candle time label
-      const d = new Date(c.ts)
-      const timeLbl = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
-      ctx.font = '8px JetBrains Mono,monospace'
-      ctx.fillStyle = 'rgba(255,255,255,0.3)'
-      ctx.textAlign = 'center'
-      ctx.fillText(timeLbl, x + actualCandleW / 2, chartH - 2)
+      ctx.beginPath(); ctx.moveTo(wickX, toY(c.high)); ctx.lineTo(wickX, bodyT); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(wickX, bodyB);       ctx.lineTo(wickX, toY(c.low));  ctx.stroke()
 
       // Column separator
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)'
-      ctx.lineWidth = 1; ctx.setLineDash([])
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 0.5
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, chartH); ctx.stroke()
+
+      // Cells within candle range
+      let lvl = Math.floor(c.low / binSize) * binSize
+      while (lvl <= c.high + binSize * 0.1) {
+        const lvlR = Math.round(lvl * 1e8) / 1e8
+        const cellY = toY(lvlR + binSize * 0.5) - cellH * 0.5
+        if (cellY + cellH >= 0 && cellY <= chartH) {
+          const cell  = c.levels.get(lvlR)
+          const isPOC = Math.abs(lvlR - c.poc) < binSize * 0.5
+          const isGPOC = Math.abs(lvlR - globalPOC) < binSize * 0.5
+
+          if (cell) {
+            const total = cell.buyVol + cell.sellVol
+            const intensity = Math.min(total / globalMax, 1)
+            const buyRatio  = total > 0 ? cell.buyVol / total : 0.5
+            const isBD = cell.buyVol > cell.sellVol * IMBALANCE
+            const isSD = cell.sellVol > cell.buyVol * IMBALANCE
+
+            // Background fill
+            if (isBD) {
+              ctx.fillStyle = `rgba(52,199,89,${0.2 + intensity * 0.55})`
+            } else if (isSD) {
+              ctx.fillStyle = `rgba(255,69,58,${0.2 + intensity * 0.55})`
+            } else {
+              const r = Math.round((1 - buyRatio) * 130)
+              const g = Math.round(buyRatio * 130)
+              ctx.fillStyle = `rgba(${r},${g},80,${0.07 + intensity * 0.28})`
+            }
+            ctx.fillRect(x + 0.5, cellY, cW - 1, cellH - 0.5)
+
+            // POC border
+            if (isPOC) {
+              ctx.strokeStyle = 'rgba(255,159,28,0.85)'; ctx.lineWidth = 1.2
+              ctx.setLineDash([2, 2])
+              ctx.strokeRect(x + 1, cellY + 0.5, cW - 2, cellH - 1)
+              ctx.setLineDash([])
+            }
+
+            // Global POC subtle glow
+            if (isGPOC) {
+              ctx.fillStyle = 'rgba(255,159,28,0.06)'
+              ctx.fillRect(x, cellY, cW, cellH)
+            }
+
+            // Imbalance triangle
+            if (cW >= 40) {
+              if (isBD) {
+                ctx.fillStyle = 'rgba(52,199,89,0.9)'
+                ctx.beginPath(); ctx.moveTo(x+cW-3,cellY+cellH/2); ctx.lineTo(x+cW-8,cellY+3); ctx.lineTo(x+cW-8,cellY+cellH-3); ctx.closePath(); ctx.fill()
+              } else if (isSD) {
+                ctx.fillStyle = 'rgba(255,69,58,0.9)'
+                ctx.beginPath(); ctx.moveTo(x+3,cellY+cellH/2); ctx.lineTo(x+8,cellY+3); ctx.lineTo(x+8,cellY+cellH-3); ctx.closePath(); ctx.fill()
+              }
+            }
+
+            // Cell text (if cell large enough)
+            if (cellH >= 13 && cW >= 55) {
+              const fs = Math.max(7, Math.min(10, cellH - 5))
+              ctx.font = `${fs}px JetBrains Mono,monospace`
+              ctx.fillStyle = `rgba(52,199,89,${0.5 + buyRatio * 0.5})`
+              ctx.textAlign = 'left'
+              ctx.fillText(fmtVol(cell.buyVol), x + 4, cellY + cellH * 0.68)
+              ctx.fillStyle = `rgba(255,69,58,${0.5 + (1 - buyRatio) * 0.5})`
+              ctx.textAlign = 'right'
+              ctx.fillText(fmtVol(cell.sellVol), x + cW - (isBD ? 11 : 4), cellY + cellH * 0.68)
+            }
+          } else {
+            // Empty level inside candle range — subtle marker
+            ctx.strokeStyle = 'rgba(255,255,255,0.025)'; ctx.lineWidth = 0.5
+            ctx.beginPath(); ctx.moveTo(x+2, cellY + cellH/2); ctx.lineTo(x+cW-2, cellY + cellH/2); ctx.stroke()
+          }
+        }
+        lvl = Math.round((lvl + binSize) * 1e8) / 1e8
+      }
+
+      // ── Delta bar ──────────────────────────────────────────────────────
+      const delta  = c.candleDelta
+      const maxAbs = visibleCandles.reduce((m, cc) => Math.max(m, Math.abs(cc.candleDelta)), 1)
+      const bH     = Math.abs(delta / maxAbs) * (DELTA_H - 8)
+      const bY     = chartH + (delta >= 0 ? DELTA_H - 5 - bH : DELTA_H - 5)
+      ctx.fillStyle = delta >= 0 ? 'rgba(52,199,89,0.7)' : 'rgba(255,69,58,0.7)'
+      ctx.fillRect(x + 1, bY, cW - 2, bH)
+      if (cW >= 40 && DELTA_H >= 22) {
+        ctx.font = '7px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+        ctx.fillStyle = delta >= 0 ? '#34C759' : '#FF453A'
+        ctx.fillText((delta >= 0 ? '+' : '') + fmtVol(delta), x + cW / 2, chartH + DELTA_H - 3)
+      }
+
+      // Time label
+      if (cW >= 35) {
+        ctx.font = '7px JetBrains Mono,monospace'
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.textAlign = 'center'
+        ctx.fillText(fmtTime(c.ts, tf), x + cW / 2, chartH - 3)
+      }
     })
 
-    // ── Price axis (left) ─────────────────────────────────────────────────
-    ctx.fillStyle = '#080C14'
-    ctx.fillRect(0, 0, PRICE_W, H)
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-    ctx.lineWidth = 1; ctx.setLineDash([])
+    // ── Price axis ────────────────────────────────────────────────────────
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, PRICE_W, H)
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(PRICE_W, 0); ctx.lineTo(PRICE_W, chartH); ctx.stroke()
 
-    let priceLvl = Math.floor(priceBot / binSize) * binSize
-    while (priceLvl <= priceTop + binSize) {
-      const y = Math.round(toY(priceLvl)) + 0.5
-      if (y >= 0 && y <= chartH) {
-        ctx.fillStyle = 'rgba(255,255,255,0.35)'
-        ctx.font = '9px JetBrains Mono,monospace'
+    let pLvl = Math.floor(priceBot / binSize) * binSize
+    while (pLvl <= priceTop + binSize) {
+      const py = Math.round(toY(pLvl)) + 0.5
+      if (py >= 2 && py <= chartH - 2) {
+        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '9px JetBrains Mono,monospace'
         ctx.textAlign = 'right'
-        ctx.fillText(priceLvl.toFixed(priceLvl < 100 ? 2 : 0), PRICE_W - 4, y + 3)
-        // tick mark
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)'
-        ctx.lineWidth = 1
-        ctx.beginPath(); ctx.moveTo(PRICE_W - 3, y); ctx.lineTo(PRICE_W, y); ctx.stroke()
+        ctx.fillText(fmtPrice(pLvl), PRICE_W - 5, py + 3)
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 0.5
+        ctx.beginPath(); ctx.moveTo(PRICE_W - 3, py); ctx.lineTo(PRICE_W, py); ctx.stroke()
       }
-      priceLvl = Math.round((priceLvl + binSize) * 1e8) / 1e8
+      pLvl = Math.round((pLvl + binSize) * 1e8) / 1e8
     }
 
-    // Delta axis label
-    ctx.fillStyle = 'rgba(255,255,255,0.2)'
-    ctx.font = '8px JetBrains Mono,monospace'
-    ctx.textAlign = 'left'
-    ctx.fillText('Δ', 4, chartH + 12)
-
-    // Separator line above delta
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
-    ctx.lineWidth = 1
+    // Separator above delta
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1; ctx.setLineDash([])
     ctx.beginPath(); ctx.moveTo(0, chartH); ctx.lineTo(W, chartH); ctx.stroke()
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '8px JetBrains Mono,monospace'; ctx.textAlign = 'left'
+    ctx.fillText('Δ', 4, chartH + 13)
 
-  }, [candles, binSize, globalMax, priceOffset, cellH])
+    // Navigation hint
+    const nc = allCandles.length
+    if (nc > 0 && viewOffset > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '8px JetBrains Mono,monospace'; ctx.textAlign = 'left'
+      ctx.fillText(`◀ ${viewOffset} bougies cachées`, PRICE_W + 4, 11)
+    }
+  }, [visibleCandles, binSize, globalMax, priceOffset, cellH, tf, allCandles.length, viewOffset])
 
   useEffect(() => { draw() }, [draw])
 
-  // Resize observer
   useEffect(() => {
     const obs = new ResizeObserver(() => draw())
     if (wrapRef.current) obs.observe(wrapRef.current)
     return () => obs.disconnect()
   }, [draw])
 
-  // ── Mouse interactions ─────────────────────────────────────────────────────
-  const getCoords = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect()
-    return { mx: e.clientX - rect.left, my: e.clientY - rect.top }
-  }, [])
-
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Y drag
-    if (dragRef.current) {
-      const { mx: _x, my } = getCoords(e)
-      void _x
-      const dy = my - dragRef.current.startY
-      const dprice = (dy / (canvasRef.current!.offsetHeight - DELTA_H)) *
-        ((candles.length > 0 ? Math.max(...candles.map(c => c.high)) - Math.min(...candles.map(c => c.low)) : 100) * 2)
-      setPriceOffset(dragRef.current.startOffset - dprice)
-      return
-    }
-    // Tooltip
-    const { mx, my } = getCoords(e)
-    if (!canvasRef.current || candles.length === 0) return
-    const W = canvasRef.current.offsetWidth
-    const H = canvasRef.current.offsetHeight
-    const chartH = H - DELTA_H
-    if (mx < PRICE_W || mx > W - VP_W || my > chartH) { setTooltip(null); return }
-
-    const actualCandleW = Math.min(CANDLE_W, (W - PRICE_W - VP_W) / candles.length)
-    const ci = Math.floor((mx - PRICE_W) / actualCandleW)
-    if (ci < 0 || ci >= candles.length) { setTooltip(null); return }
-
-    const c = candles[ci]
-    const priceBot = priceOffset - (Math.floor(chartH / cellH) / 2) * binSize
-    const priceTop = priceOffset + (Math.floor(chartH / cellH) / 2) * binSize
-    const hoveredPrice = priceBot + ((chartH - my) / chartH) * (priceTop - priceBot)
-    const binLevel = Math.round(Math.floor(hoveredPrice / binSize) * binSize * 1e8) / 1e8
-
-    // Find closest level
-    let closest: number | null = null
-    let minDist = Infinity
-    for (const lvl of c.levels.keys()) {
-      const d = Math.abs(lvl - binLevel)
-      if (d < minDist) { minDist = d; closest = lvl }
-    }
-    if (closest === null || !c.levels.has(closest)) { setTooltip(null); return }
-    const cell = c.levels.get(closest)!
-    const total = cell.buyVol + cell.sellVol
-    const ratio  = total > 0 ? (cell.buyVol / cell.sellVol).toFixed(1) : '–'
-    const imb    = cell.buyVol > cell.sellVol * IMBALANCE_THRESHOLD ? '▲ Buy Imbalance'
-      : cell.sellVol > cell.buyVol * IMBALANCE_THRESHOLD ? '▼ Sell Imbalance' : 'Équilibre'
-    setTooltip({ x: mx, y: my, price: closest, buy: cell.buyVol, sell: cell.sellVol, delta: cell.buyVol - cell.sellVol, imbalance: `${imb} (×${ratio})` })
-  }, [candles, priceOffset, binSize, cellH, getCoords])
+  // ── Interactions ──────────────────────────────────────────────────────────
+  const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const r = canvasRef.current!.getBoundingClientRect()
+    return { mx: e.clientX - r.left, my: e.clientY - r.top }
+  }
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
-    if (e.shiftKey) {
-      // Shift+scroll = zoom cell height
-      setCellH(prev => Math.max(10, Math.min(32, prev - e.deltaY * 0.05)))
-    } else {
-      // Normal scroll = pan Y
-      setPriceOffset(prev => prev + (e.deltaY > 0 ? -binSize * 3 : binSize * 3))
-    }
-  }, [binSize])
+    const H = canvasRef.current?.offsetHeight || 500
+    const chartH = H - DELTA_H
 
-  const secondsAgo = Math.round((Date.now() - lastFetch) / 1000)
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+Scroll = horizontal zoom (visible candle count)
+      setZoomLevel(prev => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev + (e.deltaY > 0 ? 2 : -2))))
+    } else if (e.shiftKey) {
+      // Shift+Scroll = vertical zoom (bin height)
+      setCellH(prev => Math.max(10, Math.min(36, prev + (e.deltaY > 0 ? -1 : 1))))
+    } else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      // Horizontal scroll = time pan
+      const dir = e.deltaX > 0 ? 1 : -1
+      setViewOffset(prev => Math.max(0, Math.min(allCandles.length - MIN_ZOOM, prev + dir * Math.ceil(zoomLevel / 10))))
+    } else {
+      // Vertical scroll = price pan
+      const pricePerPx = (2 * (Math.floor(chartH / cellH) / 2) * binSize) / chartH
+      setPriceOffset(prev => prev + e.deltaY * pricePerPx * 0.8)
+    }
+  }, [allCandles.length, zoomLevel, binSize, cellH])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { mx, my } = getCanvasCoords(e)
+    dragRef.current = { type: 'xy', startX: mx, startY: my, startOff: viewOffset, startPrice: priceOffset }
+  }, [viewOffset, priceOffset])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { mx, my } = getCanvasCoords(e)
+    const W = canvasRef.current?.offsetWidth || 800
+    const H = canvasRef.current?.offsetHeight || 500
+    const chartH = H - DELTA_H
+
+    // Drag pan
+    if (dragRef.current && e.buttons === 1) {
+      const { startX, startY, startOff, startPrice } = dragRef.current
+      // X drag = time pan
+      if (visibleCandles.length > 0 && W - PRICE_W - VP_W > 0) {
+        const cW       = (W - PRICE_W - VP_W) / visibleCandles.length
+        const candlesDx = (startX - mx) / cW
+        setViewOffset(Math.max(0, Math.min(allCandles.length - MIN_ZOOM, Math.round(startOff + candlesDx))))
+      }
+      // Y drag = price pan
+      const pricePerPx = (2 * (Math.floor(chartH / cellH) / 2) * binSize) / chartH
+      setPriceOffset(startPrice - (my - startY) * pricePerPx)
+      return
+    }
+
+    // Tooltip
+    if (mx < PRICE_W || mx > W - VP_W || my > chartH) { setTooltip(null); return }
+    if (visibleCandles.length === 0) return
+    const cW = (W - PRICE_W - VP_W) / visibleCandles.length
+    const ci = Math.floor((mx - PRICE_W) / cW)
+    if (ci < 0 || ci >= visibleCandles.length) { setTooltip(null); return }
+
+    const c       = visibleCandles[ci]
+    const halfPH  = (Math.floor(chartH / cellH) / 2) * binSize
+    const priceBot = priceOffset - halfPH, priceTop = priceOffset + halfPH
+    const hoveredP = priceBot + ((chartH - my) / chartH) * (priceTop - priceBot)
+    const binLvl   = Math.round(Math.floor(hoveredP / binSize) * binSize * 1e8) / 1e8
+
+    let closest: number | null = null, minDist = Infinity
+    for (const lvl of c.levels.keys()) {
+      const d = Math.abs(lvl - binLvl); if (d < minDist) { minDist = d; closest = lvl }
+    }
+    if (closest === null || !c.levels.has(closest)) { setTooltip(null); return }
+    const cell  = c.levels.get(closest)!
+    const total = cell.buyVol + cell.sellVol
+    const ratio = cell.sellVol > 0 ? (cell.buyVol / cell.sellVol).toFixed(1) : '∞'
+    const imb   = cell.buyVol > cell.sellVol * IMBALANCE ? `▲ Buy imbalance ×${ratio}`
+      : cell.sellVol > cell.buyVol * IMBALANCE ? `▼ Sell imbalance ×${(cell.sellVol/Math.max(cell.buyVol,1)).toFixed(1)}`
+      : 'Équilibre'
+    setTooltip({ x: mx, y: my, price: closest, buy: cell.buyVol, sell: cell.sellVol, delta: cell.buyVol - cell.sellVol, imbalance: imb })
+  }, [visibleCandles, priceOffset, binSize, cellH, allCandles.length])
+
+  const handleMouseUp = useCallback(() => { dragRef.current = null }, [])
+
+  const elapsed = Math.round((Date.now() - lastFetch) / 1000)
 
   return (
-    <div style={{ background:'rgba(13,17,35,0.8)', backdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, overflow:'hidden', display:'flex', flexDirection:'column', height:'100%' }}>
+    <div style={{ background:'rgba(8,12,22,0.95)', backdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, overflow:'hidden', display:'flex', flexDirection:'column', height:'100%' }}>
+
       {/* ── Toolbar ── */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderBottom:'1px solid rgba(255,255,255,0.05)', flexWrap:'wrap' }}>
-        {/* Title */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 14px', borderBottom:'1px solid rgba(255,255,255,0.05)', flexWrap:'wrap', flexShrink:0 }}>
+        {/* Icon + title */}
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,rgba(255,159,28,0.2),rgba(255,69,58,0.2))', border:'1px solid rgba(255,159,28,0.3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, boxShadow:'0 0 10px rgba(255,159,28,0.15)' }}>⊞</div>
+          <div style={{ width:26, height:26, borderRadius:7, background:'linear-gradient(135deg,rgba(255,159,28,0.22),rgba(255,69,58,0.18))', border:'1px solid rgba(255,159,28,0.35)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 10px rgba(255,159,28,0.15)' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF9F1C" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+          </div>
           <div>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>Footprint Chart</div>
-            <div style={{ fontSize:9, color:'rgba(255,159,28,0.7)', fontFamily:'JetBrains Mono,monospace' }}>{symbol}</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#fff', fontFamily:'Syne,sans-serif', lineHeight:1 }}>Footprint Chart</div>
+            <div style={{ fontSize:8, color:'rgba(255,159,28,0.7)', fontFamily:'JetBrains Mono,monospace' }}>{symbol}</div>
           </div>
         </div>
 
-        {/* Timeframe */}
-        <div style={{ display:'flex', gap:4 }}>
+        {/* TF selector */}
+        <div style={{ display:'flex', gap:3 }}>
           {TF_OPTIONS.map(t => (
-            <button key={t} onClick={() => setTf(t)} style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:600, cursor:'pointer', border:`1px solid ${t === tf ? 'rgba(255,159,28,0.5)' : 'rgba(255,255,255,0.08)'}`, background: t === tf ? 'rgba(255,159,28,0.12)' : 'transparent', color: t === tf ? '#FF9F1C' : 'var(--tm-text-muted)', transition:'all 0.15s' }}>{t}</button>
+            <button key={t} onClick={() => setTf(t)} style={{ padding:'3px 9px', borderRadius:16, fontSize:10, fontWeight:600, cursor:'pointer', transition:'all 0.15s', border:`1px solid ${t===tf?'rgba(255,159,28,0.55)':'rgba(255,255,255,0.08)'}`, background:t===tf?'rgba(255,159,28,0.14)':'transparent', color:t===tf?'#FF9F1C':'rgba(255,255,255,0.4)' }}>{t}</button>
           ))}
         </div>
 
-        {/* Candle count */}
-        <div style={{ display:'flex', gap:4 }}>
-          {CANDLE_COUNTS.map(n => (
-            <button key={n} onClick={() => setCandleCount(n)} style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:600, cursor:'pointer', border:`1px solid ${n === candleCount ? 'rgba(0,229,255,0.4)' : 'rgba(255,255,255,0.08)'}`, background: n === candleCount ? 'rgba(0,229,255,0.08)' : 'transparent', color: n === candleCount ? '#00E5FF' : 'var(--tm-text-muted)', transition:'all 0.15s' }}>{n}C</button>
-          ))}
+        {/* Zoom controls */}
+        <div style={{ display:'flex', alignItems:'center', gap:4, padding:'2px 8px', background:'rgba(255,255,255,0.04)', borderRadius:8, border:'1px solid rgba(255,255,255,0.07)' }}>
+          <button onClick={() => setZoomLevel(z => Math.max(MIN_ZOOM, z - 5))} title="Zoom In" style={{ width:22, height:22, border:'none', borderRadius:4, background:'transparent', cursor:'pointer', color:'rgba(255,255,255,0.5)', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
+          <span style={{ fontSize:9, color:'rgba(255,255,255,0.35)', fontFamily:'JetBrains Mono,monospace', minWidth:28, textAlign:'center' }}>{zoomLevel}C</span>
+          <button onClick={() => setZoomLevel(z => Math.min(MAX_ZOOM, z + 5))} title="Zoom Out" style={{ width:22, height:22, border:'none', borderRadius:4, background:'transparent', cursor:'pointer', color:'rgba(255,255,255,0.5)', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' }}>−</button>
         </div>
 
-        {/* Cell height */}
-        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-          <span style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>Bin</span>
-          <button onClick={() => setCellH(h => Math.max(10, h - 2))} style={{ width:20, height:20, border:'1px solid rgba(255,255,255,0.1)', borderRadius:4, background:'transparent', cursor:'pointer', color:'var(--tm-text-muted)', fontSize:12 }}>−</button>
-          <span style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace', minWidth:24, textAlign:'center' }}>{cellH}px</span>
-          <button onClick={() => setCellH(h => Math.min(32, h + 2))} style={{ width:20, height:20, border:'1px solid rgba(255,255,255,0.1)', borderRadius:4, background:'transparent', cursor:'pointer', color:'var(--tm-text-muted)', fontSize:12 }}>+</button>
+        {/* Pan controls */}
+        <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+          <button onClick={() => setViewOffset(v => Math.min(allCandles.length - MIN_ZOOM, v + Math.ceil(zoomLevel/2)))} title="Précédent" style={{ padding:'3px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.08)', background:'transparent', cursor:'pointer', color:'rgba(255,255,255,0.4)', fontSize:13 }}>◀</button>
+          <button onClick={() => setViewOffset(0)} title="Dernière bougie" style={{ padding:'3px 9px', borderRadius:8, border:'1px solid rgba(255,255,255,0.08)', background: viewOffset===0?'rgba(0,229,255,0.08)':'transparent', cursor:'pointer', color: viewOffset===0?'#00E5FF':'rgba(255,255,255,0.4)', fontSize:9, fontFamily:'JetBrains Mono,monospace' }}>LIVE</button>
+          <button onClick={() => setViewOffset(v => Math.max(0, v - Math.ceil(zoomLevel/2)))} title="Suivant" style={{ padding:'3px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.08)', background:'transparent', cursor:'pointer', color:'rgba(255,255,255,0.4)', fontSize:13 }}>▶</button>
         </div>
 
-        {/* Status + Refresh */}
+        {/* Bin height */}
+        <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+          <span style={{ fontSize:8, color:'rgba(255,255,255,0.25)', fontFamily:'JetBrains Mono' }}>BIN</span>
+          <button onClick={() => setCellH(h => Math.max(10, h - 2))} style={{ width:18, height:18, border:'1px solid rgba(255,255,255,0.08)', borderRadius:4, background:'transparent', cursor:'pointer', color:'rgba(255,255,255,0.4)', fontSize:11, lineHeight:1 }}>−</button>
+          <span style={{ fontSize:8, color:'rgba(255,255,255,0.35)', fontFamily:'JetBrains Mono,monospace', minWidth:22, textAlign:'center' }}>{cellH}px</span>
+          <button onClick={() => setCellH(h => Math.min(36, h + 2))} style={{ width:18, height:18, border:'1px solid rgba(255,255,255,0.08)', borderRadius:4, background:'transparent', cursor:'pointer', color:'rgba(255,255,255,0.4)', fontSize:11, lineHeight:1 }}>+</button>
+        </div>
+
+        {/* Status + refresh */}
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
-          {loading && <div style={{ width:12, height:12, border:'2px solid #2A2F3E', borderTopColor:'#FF9F1C', borderRadius:'50%', animation:'spin 0.7s linear infinite' }}/>}
-          {!loading && <span style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>{secondsAgo}s ago · bin {binSize}</span>}
-          <button onClick={fetchData} disabled={loading} style={{ padding:'4px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(255,255,255,0.04)', cursor:'pointer', fontSize:11, color:'var(--tm-text-muted)' }}>↻</button>
+          {loading && <div style={{ width:11, height:11, border:'2px solid rgba(255,255,255,0.1)', borderTopColor:'#FF9F1C', borderRadius:'50%', animation:'spin 0.7s linear infinite' }}/>}
+          {!loading && <span style={{ fontSize:8, color:'rgba(255,255,255,0.25)', fontFamily:'JetBrains Mono,monospace' }}>{elapsed}s · bin {binSize} · {allCandles.length}C buf</span>}
+          <button onClick={fetchData} disabled={loading} style={{ padding:'3px 9px', borderRadius:7, border:'1px solid rgba(255,255,255,0.08)', background:'rgba(255,255,255,0.03)', cursor:'pointer', fontSize:11, color:'rgba(255,255,255,0.4)' }}>↻</button>
         </div>
       </div>
 
       {/* ── Legend ── */}
-      <div style={{ display:'flex', gap:12, padding:'5px 14px', borderBottom:'1px solid rgba(255,255,255,0.04)', flexWrap:'wrap' }}>
-        {[
-          { color:'rgba(52,199,89,0.7)',  label:'Buy Volume' },
-          { color:'rgba(255,69,58,0.7)',  label:'Sell Volume' },
-          { color:'rgba(255,159,28,0.9)', label:'POC' },
-          { color:'rgba(52,199,89,0.9)',  label:'▲ Buy Imbalance (×3)' },
-          { color:'rgba(255,69,58,0.9)',  label:'▼ Sell Imbalance (×3)' },
-        ].map(({ color, label }) => (
-          <div key={label} style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <div style={{ width:8, height:8, borderRadius:2, background:color }}/>
-            <span style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>{label}</span>
+      <div style={{ display:'flex', gap:10, padding:'4px 14px', borderBottom:'1px solid rgba(255,255,255,0.04)', flexWrap:'wrap', flexShrink:0 }}>
+        {[['rgba(52,199,89,0.7)','Buy'],['rgba(255,69,58,0.7)','Sell'],['rgba(255,159,28,0.85)','POC (bougie)'],['rgba(255,159,28,0.45)','POC (global)'],['rgba(52,199,89,1)','▲ Imbalance ×3'],['rgba(255,69,58,1)','▼ Imbalance ×3']].map(([c,l])=>(
+          <div key={l} style={{ display:'flex', alignItems:'center', gap:3 }}>
+            <div style={{ width:7, height:7, borderRadius:2, background:c }}/>
+            <span style={{ fontSize:8, color:'rgba(255,255,255,0.3)', fontFamily:'JetBrains Mono,monospace' }}>{l}</span>
           </div>
         ))}
-        <span style={{ fontSize:9, color:'var(--tm-text-muted)', marginLeft:'auto' }}>Scroll ↕ = pan · Shift+Scroll = zoom · Drag = pan</span>
+        <span style={{ fontSize:8, color:'rgba(255,255,255,0.2)', marginLeft:'auto' }}>Ctrl+Scroll=zoom · Shift+Scroll=bin · Drag=pan · ◀▶=temps</span>
       </div>
 
-      {/* ── Canvas area ── */}
-      <div ref={wrapRef} style={{ flex:1, position:'relative', minHeight:400, cursor:'ns-resize' }}>
+      {/* ── Canvas ── */}
+      <div ref={wrapRef} style={{ flex:1, position:'relative', minHeight:360, cursor: dragRef.current ? 'grabbing' : 'crosshair' }}>
         {error && (
-          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8 }}>
+          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10 }}>
             <span style={{ fontSize:22 }}>📡</span>
-            <span style={{ fontSize:11, color:'var(--tm-loss)', fontWeight:600 }}>{error}</span>
-            <button onClick={fetchData} style={{ padding:'6px 16px', borderRadius:8, border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.06)', color:'var(--tm-accent)', cursor:'pointer', fontSize:11 }}>Réessayer</button>
+            <span style={{ fontSize:11, color:'#FF453A', fontWeight:600 }}>{error}</span>
+            <button onClick={fetchData} style={{ padding:'5px 16px', borderRadius:8, border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.07)', color:'#00E5FF', cursor:'pointer', fontSize:11 }}>Réessayer</button>
           </div>
         )}
-        {!error && candles.length === 0 && !loading && (
-          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--tm-text-muted)', fontSize:12 }}>Aucune donnée</div>
+        {!error && allCandles.length === 0 && !loading && (
+          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.2)', fontSize:12 }}>Aucune donnée</div>
         )}
-        <canvas
-          ref={canvasRef}
+        <canvas ref={canvasRef}
           style={{ display:'block', width:'100%', height:'100%' }}
+          onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
           onMouseLeave={() => { setTooltip(null); dragRef.current = null }}
-          onMouseDown={e => { const { my } = getCoords(e); dragRef.current = { startY: my, startOffset: priceOffset } }}
-          onMouseUp={() => { dragRef.current = null }}
           onWheel={handleWheel}
         />
 
         {/* Tooltip */}
         {tooltip && (
-          <div style={{ position:'absolute', top: tooltip.y + 12, left: Math.min(tooltip.x + 12, (wrapRef.current?.offsetWidth ?? 400) - 180), background:'rgba(8,12,28,0.96)', border:'1px solid rgba(255,159,28,0.3)', borderRadius:10, padding:'10px 14px', pointerEvents:'none', boxShadow:'0 8px 24px rgba(0,0,0,0.6)', backdropFilter:'blur(8px)', zIndex:20, minWidth:160 }}>
-            <div style={{ fontSize:10, fontWeight:700, color:'rgba(255,159,28,0.9)', fontFamily:'JetBrains Mono,monospace', marginBottom:6 }}>{tooltip.price.toFixed(tooltip.price < 100 ? 2 : 0)}</div>
-            {[
-              ['Buy',   fmtVol(tooltip.buy),   '#34C759'],
-              ['Sell',  fmtVol(tooltip.sell),  '#FF453A'],
-              ['Delta', (tooltip.delta >= 0 ? '+' : '') + fmtVol(tooltip.delta), tooltip.delta >= 0 ? '#34C759' : '#FF453A'],
-            ].map(([l, v, c]) => (
+          <div style={{ position:'absolute', top: tooltip.y + 14, left: Math.min(tooltip.x + 14, (wrapRef.current?.offsetWidth ?? 400) - 185), background:'rgba(6,10,24,0.97)', border:'1px solid rgba(255,159,28,0.3)', borderRadius:10, padding:'10px 14px', pointerEvents:'none', boxShadow:'0 8px 28px rgba(0,0,0,0.7)', backdropFilter:'blur(10px)', zIndex:20, minWidth:165 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#FF9F1C', fontFamily:'JetBrains Mono,monospace', marginBottom:7 }}>{fmtPrice(tooltip.price)}</div>
+            {[['Buy', fmtVol(tooltip.buy),'#34C759'],['Sell',fmtVol(tooltip.sell),'#FF453A'],['Delta',(tooltip.delta>=0?'+':'')+fmtVol(tooltip.delta),tooltip.delta>=0?'#34C759':'#FF453A']].map(([l,v,c])=>(
               <div key={l as string} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
-                <span style={{ fontSize:9, color:'var(--tm-text-muted)' }}>{l}</span>
-                <span style={{ fontSize:11, fontWeight:700, color: c as string, fontFamily:'JetBrains Mono,monospace' }}>{v}</span>
+                <span style={{ fontSize:9, color:'rgba(255,255,255,0.4)' }}>{l}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:c as string, fontFamily:'JetBrains Mono,monospace' }}>{v}</span>
               </div>
             ))}
-            <div style={{ marginTop:6, fontSize:9, fontWeight:600, color:'rgba(255,255,255,0.5)', borderTop:'1px solid rgba(255,255,255,0.08)', paddingTop:5 }}>{tooltip.imbalance}</div>
+            <div style={{ marginTop:6, fontSize:9, fontWeight:600, color:'rgba(255,255,255,0.4)', borderTop:'1px solid rgba(255,255,255,0.07)', paddingTop:5 }}>{tooltip.imbalance}</div>
           </div>
         )}
       </div>
