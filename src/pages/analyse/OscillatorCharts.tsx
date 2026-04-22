@@ -385,8 +385,7 @@ interface Viewport { from: number; to: number }  // fractions 0-1
 function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
   deps: unknown[], viewSize: number,
-  viewport: Viewport, setViewport: (vp:Viewport) => void,
-  onViewportChange?: (from: number, to: number) => void
+  viewport: Viewport, setViewport: (vp:Viewport) => void
 ) {
   const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
@@ -394,9 +393,6 @@ function useInteractiveCanvas(
   const dragRef = useRef<{x:number; vp:Viewport}|null>(null)
   const vpRef   = useRef<Viewport>(viewport)
   vpRef.current = viewport
-  // Keep onViewportChange stable in a ref to avoid stale closures
-  const onVPChangeRef = useRef(onViewportChange)
-  useEffect(() => { onVPChangeRef.current = onViewportChange }, [onViewportChange])
 
   useEffect(() => {
     const c = ref.current; if(!c) return
@@ -411,11 +407,6 @@ function useInteractiveCanvas(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, hoverIdx])
 
-  const applyViewport = useCallback((vp: Viewport) => {
-    setViewport(vp)
-    onVPChangeRef.current?.(vp.from, vp.to)
-  }, [setViewport])
-
   const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault()
     const c = ref.current; if (!c) return
@@ -426,8 +417,8 @@ function useInteractiveCanvas(
     const factor = e.deltaY > 0 ? 1.15 : 0.87
     const newSpan = Math.min(1, Math.max(0.02, span * factor))
     const newFrom = Math.max(0, Math.min(1 - newSpan, vp.from + mouseX * (span - newSpan)))
-    applyViewport({ from: newFrom, to: newFrom + newSpan })
-  }, [applyViewport])
+    setViewport({ from: newFrom, to: newFrom + newSpan })
+  }, [setViewport])
 
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     dragRef.current = { x: e.clientX, vp: vpRef.current }
@@ -440,7 +431,7 @@ function useInteractiveCanvas(
       const { from, to } = dragRef.current.vp
       const span = to - from
       const newFrom = Math.max(0, Math.min(1 - span, from + dx))
-      applyViewport({ from: newFrom, to: newFrom + span })
+      setViewport({ from: newFrom, to: newFrom + span })
     } else {
       const c = ref.current; if (!c || viewSize < 2) return
       const rect = c.getBoundingClientRect()
@@ -448,7 +439,7 @@ function useInteractiveCanvas(
       const idx = Math.round((x / rect.width) * (viewSize - 1))
       setHoverIdx(Math.max(0, Math.min(viewSize - 1, idx)))
     }
-  }, [applyViewport, viewSize])
+  }, [setViewport, viewSize])
 
   const onMouseUp  = useCallback(() => { dragRef.current = null }, [])
   const onLeave    = useCallback(() => { dragRef.current = null; setHoverIdx(null) }, [])
@@ -461,7 +452,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; onViewportChange?: (from: number, to: number) => void }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -471,8 +462,6 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   const [nextRefresh, setNextRefresh] = useState(0)
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
   const obLevel=53, osLevel=-53
-  // Anti-loop: track last emitted viewport so we don't re-apply our own emission
-  const lastEmitted = useRef<{from:number;to:number}|null>(null)
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -496,13 +485,6 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      const eps = 0.001
-      if (lastEmitted.current) {
-        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
-        lastEmitted.current = null  // consume : always clear so subsequent LW pans pass through
-        if (eq) return
-      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -515,17 +497,11 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
 
-  // Wrap onViewportChange to track last emission (anti-loop)
-  const handleVPChange = useCallback((from: number, to: number) => {
-    lastEmitted.current = { from, to }
-    onViewportChange?.(from, to)
-  }, [onViewportChange])
-
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
       drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd)
-    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport, handleVPChange
+    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -537,10 +513,10 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   }, [badge?.label, wt1Last, wt2Last]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
+    <div style={{background:'rgba(13,17,35,0.75)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:16,overflow:'hidden',boxShadow:'0 4px 24px rgba(0,0,0,0.5)'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>〜</div>
-        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
+        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,rgba(255,149,0,0.25),rgba(255,149,0,0.1))',border:'1px solid rgba(255,149,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,boxShadow:'0 0 12px rgba(255,149,0,0.2)'}}>〜</div>
+        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa',fontFamily:'JetBrains Mono,monospace'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
           <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
@@ -580,7 +556,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, sig: number) => void; onViewportChange?: (from: number, to: number) => void }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, sig: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -588,7 +564,6 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
-  const lastEmitted = useRef<{from:number;to:number}|null>(null)
   // obLevel/osLevel are dynamic from result (default PERSONNALISÉ: 40/-40)
   const obLevel=result?.obLevel??40, osLevel=result?.osLevel??-40
 
@@ -610,19 +585,12 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
   }, [candles, symbol, tf.label])
 
-  // Sync viewport from LW chart range fractions — ignore our own emissions
+  // Sync viewport from LW chart range fractions
   useEffect(() => {
     if (!visibleRange) {
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      const eps = 0.001
-      if (lastEmitted.current) {
-        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
-        lastEmitted.current = null
-        if (eq) return
-      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -652,23 +620,18 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
     return []
   }) : []
 
-  const handleVPChange = useCallback((from: number, to: number) => {
-    lastEmitted.current = { from, to }
-    onViewportChange?.(from, to)
-  }, [onViewportChange])
-
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel], vmcViewSize, viewport, setViewport, handleVPChange
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel], vmcViewSize, viewport, setViewport
   )
 
   return (
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
+    <div style={{background:'rgba(13,17,35,0.75)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:16,overflow:'hidden',boxShadow:'0 4px 24px rgba(0,0,0,0.5)'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'white'}}>V</div>
-        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
+        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,rgba(191,90,242,0.25),rgba(191,90,242,0.1))',border:'1px solid rgba(191,90,242,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#BF5AF2',boxShadow:'0 0 12px rgba(191,90,242,0.2)'}}>V</div>
+        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#BF5AF2aa',fontFamily:'JetBrains Mono,monospace'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
           <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefreshVMC/60)}:{String(nextRefreshVMC%60).padStart(2,'0')}</span>
@@ -977,7 +940,7 @@ function drawRSIBollinger(
 }
 
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
-export function RSIBollingerChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from: number, to: number) => void }) {
+export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles]         = useState<Candle[]>([])
@@ -991,7 +954,6 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, onViewpo
   const [showDivergence, setShowDivergence] = useState(false)
   const [bbStdev, setBbStdev] = useState(2)
   const [sigma,   setSigma]   = useState(0.1)
-  const lastEmitted = useRef<{from:number;to:number}|null>(null)
 
   const loadCandles = useCallback(async () => {
     setStatus('loading'); setErrorMsg('')
@@ -1008,19 +970,11 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, onViewpo
     setResult(calcRSIBollinger(candles, 14, 20, bbStdev, sigma, 4, 3, showTrendlines, showDivergence))
   }, [candles, bbStdev, sigma, showTrendlines, showDivergence])
 
-  // Sync viewport from LW chart range fractions — ignore our own emissions
   useEffect(() => {
     if (!visibleRange) {
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      const eps = 0.001
-      if (lastEmitted.current) {
-        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
-        lastEmitted.current = null
-        if (eq) return
-      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -1030,14 +984,9 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, onViewpo
   const viewEnd   = total > 0 ? Math.min(total, Math.ceil(viewport.to * total)) : 0
   const viewSize  = Math.max(viewEnd - viewStart, 2)
 
-  const handleVPChange = useCallback((from: number, to: number) => {
-    lastEmitted.current = { from, to }
-    onViewportChange?.(from, to)
-  }, [onViewportChange])
-
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => { if (result) drawRSIBollinger(ctx, W, H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence) },
-    [result, viewStart, viewEnd, showTrendlines, showDivergence], viewSize, viewport, setViewport, handleVPChange
+    [result, viewStart, viewEnd, showTrendlines, showDivergence], viewSize, viewport, setViewport
   )
 
   const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
@@ -1050,13 +999,13 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, onViewpo
   const activeTLs = (result?.trendlines ?? []).filter(tl => !tl.broken).length
 
   return (
-    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.5)' }}>
       {/* Header */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#00E5FF,#0099bb)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#0D1117', letterSpacing: '-0.5px' }}>BB</div>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,rgba(0,229,255,0.2),rgba(0,229,255,0.08))', border:'1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#00E5FF', letterSpacing: '-0.5px', boxShadow:'0 0 12px rgba(0,229,255,0.2)' }}>BB</div>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>RSI Bollinger</div>
-          <div style={{ fontSize: 10, color: '#00E5FFaa' }}>{symbol}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>RSI Bollinger</div>
+          <div style={{ fontSize: 10, color: '#00E5FFaa', fontFamily:'JetBrains Mono,monospace' }}>{symbol}</div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:5, padding:'2px 8px', background:'rgba(34,199,89,0.1)', border:'1px solid rgba(34,199,89,0.25)', borderRadius:6 }}>
           <div style={{ width:5, height:5, borderRadius:'50%', background:'var(--tm-profit)', animation:'pulse 1.5s ease-in-out infinite' }} />
@@ -1267,7 +1216,7 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 }
 
 // ── RSI Chart Component ──────────────────────────────────────────────────────
-export function RSIChart({ symbol, syncInterval, visibleRange, onViewportChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onViewportChange?: (from: number, to: number) => void }) {
+export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -1276,7 +1225,6 @@ export function RSIChart({ symbol, syncInterval, visibleRange, onViewportChange 
   const [errorMsg, setErrorMsg] = useState('')
   const [viewport, setViewport] = useState<Viewport>({from:0, to:1})
   const [nextRefresh, setNextRefresh] = useState(0)
-  const lastEmitted = useRef<{from:number;to:number}|null>(null)
   const obLevel = 70, osLevel = 30
 
   const loadCandles = useCallback(async () => {
@@ -1294,19 +1242,12 @@ export function RSIChart({ symbol, syncInterval, visibleRange, onViewportChange 
     setRsiData(calcRSI(candles, 14))
   }, [candles])
 
-  // Sync viewport from LW chart range fractions — ignore our own emissions
+  // Sync viewport from LW chart range fractions
   useEffect(() => {
     if (!visibleRange) {
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      const eps = 0.001
-      if (lastEmitted.current) {
-        const eq = Math.abs(visibleRange.from - lastEmitted.current.from) < eps &&
-                   Math.abs(visibleRange.to   - lastEmitted.current.to  ) < eps
-        lastEmitted.current = null
-        if (eq) return
-      }
       setViewport({ from: visibleRange.from, to: visibleRange.to })
     }
   }, [visibleRange, candles.length])
@@ -1323,21 +1264,16 @@ export function RSIChart({ symbol, syncInterval, visibleRange, onViewportChange 
     : lastRsi <= 40 ? { label: 'Faible', color: 'var(--tm-text-secondary)' }
     : { label: 'Neutre', color: 'var(--tm-text-secondary)' }
 
-  const handleVPChange = useCallback((from: number, to: number) => {
-    lastEmitted.current = { from, to }
-    onViewportChange?.(from, to)
-  }, [onViewportChange])
-
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => { drawRSI(ctx, W, H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd) },
-    [rsiData, rsiViewStart, rsiViewEnd], rsiViewSize, viewport, setViewport, handleVPChange
+    [rsiData, rsiViewStart, rsiViewEnd], rsiViewSize, viewport, setViewport
   )
 
   return (
-    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.5)' }}>
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#BF5AF2,#BF5AF2aa)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white' }}>R</div>
-        <div><div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>RSI (14)</div><div style={{ fontSize: 10, color: '#BF5AF2aa' }}>{symbol}</div></div>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,rgba(191,90,242,0.25),rgba(191,90,242,0.1))', border:'1px solid rgba(191,90,242,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#BF5AF2', boxShadow:'0 0 12px rgba(191,90,242,0.2)' }}>R</div>
+        <div><div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>RSI (14)</div><div style={{ fontSize: 10, color: '#BF5AF2aa', fontFamily:'JetBrains Mono,monospace' }}>{symbol}</div></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 8px', background: `rgba(${resolveCSSColor('var(--tm-profit-rgb', '34,199,89')},0.1)`, border: '1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)', borderRadius: 6 }}>
           <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--tm-profit)', animation: 'pulse 1.5s ease-in-out infinite' }} /><span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-profit)', fontFamily: 'monospace' }}>LIVE</span>
           <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'monospace' }}>{Math.floor(nextRefresh / 60)}:{String(nextRefresh % 60).padStart(2, '0')}</span>
