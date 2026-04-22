@@ -58,16 +58,46 @@ interface MTFData { rsi1h: number; rsi4h: number; rsi1d: number }
 
 interface ForexAsset { symbol: string; displaySym: string; label: string; group: string }
 const FOREX_ASSETS: ForexAsset[] = [
+  // ── Majeurs ──
   { symbol: 'EURUSD=X', displaySym: 'EURUSD', label: 'EUR/USD', group: 'Forex' },
   { symbol: 'GBPUSD=X', displaySym: 'GBPUSD', label: 'GBP/USD', group: 'Forex' },
   { symbol: 'USDJPY=X', displaySym: 'USDJPY', label: 'USD/JPY', group: 'Forex' },
   { symbol: 'AUDUSD=X', displaySym: 'AUDUSD', label: 'AUD/USD', group: 'Forex' },
   { symbol: 'USDCHF=X', displaySym: 'USDCHF', label: 'USD/CHF', group: 'Forex' },
-  { symbol: 'GC=F',     displaySym: 'Gold',   label: 'Gold',    group: 'Metals' },
-  { symbol: 'SI=F',     displaySym: 'Silver',  label: 'Silver',  group: 'Metals' },
-  { symbol: 'CL=F',     displaySym: 'WTI',     label: 'Oil WTI', group: 'Energy' },
-  { symbol: 'BZ=F',     displaySym: 'Brent',   label: 'Brent',   group: 'Energy' },
-  { symbol: 'BTC-USD',  displaySym: 'BTC',     label: 'BTC/USD', group: 'Crypto' },
+  { symbol: 'USDCAD=X', displaySym: 'USDCAD', label: 'USD/CAD', group: 'Forex' },
+  { symbol: 'NZDUSD=X', displaySym: 'NZDUSD', label: 'NZD/USD', group: 'Forex' },
+  // ── Croisés ──
+  { symbol: 'EURGBP=X', displaySym: 'EURGBP', label: 'EUR/GBP', group: 'Forex' },
+  { symbol: 'EURJPY=X', displaySym: 'EURJPY', label: 'EUR/JPY', group: 'Forex' },
+  { symbol: 'GBPJPY=X', displaySym: 'GBPJPY', label: 'GBP/JPY', group: 'Forex' },
+  { symbol: 'EURCHF=X', displaySym: 'EURCHF', label: 'EUR/CHF', group: 'Forex' },
+  { symbol: 'AUDJPY=X', displaySym: 'AUDJPY', label: 'AUD/JPY', group: 'Forex' },
+  // ── Exotiques ──
+  { symbol: 'USDMXN=X', displaySym: 'USDMXN', label: 'USD/MXN', group: 'Forex' },
+  { symbol: 'USDNOK=X', displaySym: 'USDNOK', label: 'USD/NOK', group: 'Forex' },
+  { symbol: 'USDSEK=X', displaySym: 'USDSEK', label: 'USD/SEK', group: 'Forex' },
+  { symbol: 'USDSGD=X', displaySym: 'USDSGD', label: 'USD/SGD', group: 'Forex' },
+  // ── Métaux précieux ──
+  { symbol: 'GC=F',  displaySym: 'Gold',    label: 'Gold (XAU)',      group: 'Metals' },
+  { symbol: 'SI=F',  displaySym: 'Silver',  label: 'Silver (XAG)',    group: 'Metals' },
+  { symbol: 'PL=F',  displaySym: 'Plat',    label: 'Platinum (XPT)',  group: 'Metals' },
+  { symbol: 'PA=F',  displaySym: 'Palla',   label: 'Palladium (XPD)', group: 'Metals' },
+  { symbol: 'HG=F',  displaySym: 'Copper',  label: 'Copper',          group: 'Metals' },
+  // ── Énergie ──
+  { symbol: 'CL=F',  displaySym: 'WTI',     label: 'Oil WTI',      group: 'Energy' },
+  { symbol: 'BZ=F',  displaySym: 'Brent',   label: 'Brent',        group: 'Energy' },
+  { symbol: 'NG=F',  displaySym: 'NatGas',  label: 'Natural Gas',  group: 'Energy' },
+  { symbol: 'HO=F',  displaySym: 'HeatOil', label: 'Heating Oil',  group: 'Energy' },
+  { symbol: 'RB=F',  displaySym: 'RBOB',    label: 'RBOB Gasoline', group: 'Energy' },
+  // ── Indices Futures ──
+  { symbol: 'ES=F',  displaySym: 'SP500',   label: 'S&P 500 Fut',  group: 'Indices' },
+  { symbol: 'NQ=F',  displaySym: 'Nasdaq',  label: 'NASDAQ Fut',   group: 'Indices' },
+  { symbol: 'YM=F',  displaySym: 'Dow',     label: 'Dow Jones Fut', group: 'Indices' },
+  { symbol: 'RTY=F', displaySym: 'Russell', label: 'Russell 2000', group: 'Indices' },
+  { symbol: 'GD=F',  displaySym: 'DAX',     label: 'DAX Fut',      group: 'Indices' },
+  // ── Crypto (référence) ──
+  { symbol: 'BTC-USD', displaySym: 'BTC', label: 'BTC/USD', group: 'Crypto' },
+  { symbol: 'ETH-USD', displaySym: 'ETH', label: 'ETH/USD', group: 'Crypto' },
 ]
 
 // ── Crypto sectors (for rotation chart) ──────────────────────────────────────
@@ -1099,7 +1129,7 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
     return () => { cancelled = true }
   }, [timeframe])
 
-  const GROUPS = ['Forex', 'Metals', 'Energy', 'Crypto']
+  const GROUPS = ['Forex', 'Metals', 'Energy', 'Indices', 'Crypto']
 
   if (loading) return (
     <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -1140,19 +1170,24 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
         const groupTokens = groupAssets.map(a => tokens.find(t => t.symbol === a.displaySym)).filter(Boolean) as TokenRSIWithDiv[]
         if (!groupTokens.length) return null
 
-        const groupLabels: Record<string, string> = { Forex:'💱 Paires Forex', Metals:'🥇 Métaux', Energy:'🛢️ Énergie', Crypto:'₿ Crypto' }
+        const groupLabels: Record<string, string> = { Forex:'💱 Paires Forex', Metals:'🥇 Métaux Précieux', Energy:'🛢️ Énergie', Indices:'📊 Indices Futures', Crypto:'₿ Crypto' }
+        const groupColors: Record<string, string> = { Forex:'0,229,255', Metals:'255,215,0', Energy:'255,149,0', Indices:'10,133,255', Crypto:'191,90,242' }
         return (
           <div key={group} style={{ marginBottom:20 }}>
-            <div style={{ fontSize:11, fontWeight:700, color:'rgba(0,229,255,0.5)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10 }}>{groupLabels[group]}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+              <span style={{ fontSize:11, fontWeight:700, color:`rgba(${groupColors[group] ?? '0,229,255'},0.7)`, textTransform:'uppercase', letterSpacing:'0.08em' }}>{groupLabels[group]}</span>
+              <span style={{ fontSize:9, color:`rgba(${groupColors[group] ?? '0,229,255'},0.4)`, background:`rgba(${groupColors[group] ?? '0,229,255'},0.07)`, border:`1px solid rgba(${groupColors[group] ?? '0,229,255'},0.15)`, padding:'1px 7px', borderRadius:99 }}>{groupTokens.length} assets</span>
+            </div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
               {groupTokens.map((tok, i) => {
                 const isPos = tok.change24h >= 0
+                const gc = groupColors[group] ?? '0,229,255'
                 return (
                   <motion.button key={tok.symbol}
-                    initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.05 }}
-                    whileHover={{ y:-3, boxShadow:'0 8px 24px rgba(0,229,255,0.12)' }}
+                    initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.04 }}
+                    whileHover={{ y:-3, boxShadow:`0 8px 24px rgba(${gc},0.14)` }}
                     onClick={() => onTokenClick(tok.symbol)}
-                    style={{ display:'flex', flexDirection:'column', gap:4, padding:'10px 14px', borderRadius:10, cursor:'pointer', background:'rgba(8,12,22,0.8)', border:`1px solid ${rsiColor(tok.rsi)}20`, textAlign:'left', minWidth:100 }}>
+                    style={{ display:'flex', flexDirection:'column', gap:4, padding:'10px 14px', borderRadius:10, cursor:'pointer', background:'rgba(8,12,22,0.8)', border:`1px solid rgba(${gc},0.12)`, textAlign:'left', minWidth:110 }}>
                     <span style={{ fontSize:11, fontWeight:700, color:'rgba(226,232,240,0.85)', fontFamily:'JetBrains Mono, monospace' }}>{tok.symbol}</span>
                     <span style={{ fontSize:15, fontWeight:800, color:rsiColor(tok.rsi), fontFamily:'JetBrains Mono, monospace' }}>RSI {tok.rsi}</span>
                     <span style={{ fontSize:10, color: isPos ? '#22C759' : '#FF3B30' }}>{isPos ? '+' : ''}{tok.change24h}%</span>
@@ -1556,7 +1591,7 @@ export default function MarchesPage() {
               {[
                 { label:'200 Crypto', glow:'191,90,242' },
                 { label:`${totalStocks} Actions`, glow:'10,133,255' },
-                { label:'Forex · Métaux · Énergie', glow:'52,199,89' },
+                { label:'16 Forex · 5 Métaux · 5 Énergie · Indices', glow:'52,199,89' },
                 { label:'RSI · VMC · Divergences', glow:'0,229,255' },
                 { label:'🔴 Live Binance', glow:'255,59,48' },
               ].map(({ label, glow }) => (
