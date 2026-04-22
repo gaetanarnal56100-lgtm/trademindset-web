@@ -428,7 +428,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
   }, [plan, symbol, price, mtfSignal, wtStatus, vmcStatus, aiLoading])
 
   if (price <= 0) return (
-    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
+    <div style={{ background:'rgba(13,17,35,0.75)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, boxShadow:'0 4px 24px rgba(0,0,0,0.5)', padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
       <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-blue)', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 }} />
       <span style={{ fontSize:12, color:'var(--tm-text-muted)' }}>Récupération du prix {symbol}...</span>
     </div>
@@ -439,7 +439,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
   const riskLabel = { low:'Faible', medium:'Modéré', high:'Élevé' }[plan.riskLevel]
 
   return (
-    <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #1E2330', borderRadius:16, overflow:'hidden' }}>
+    <div style={{ background:'rgba(13,17,35,0.75)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, boxShadow:'0 4px 24px rgba(0,0,0,0.5)', overflow:'hidden' }}>
 
       {/* Header */}
       <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }} onClick={() => setExpanded(x=>!x)}>

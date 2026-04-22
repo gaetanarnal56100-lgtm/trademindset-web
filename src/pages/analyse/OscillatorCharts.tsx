@@ -513,10 +513,10 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   }, [badge?.label, wt1Last, wt2Last]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
+    <div style={{background:'rgba(13,17,35,0.75)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:16,overflow:'hidden',boxShadow:'0 4px 24px rgba(0,0,0,0.5)'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>〜</div>
-        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
+        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,rgba(255,149,0,0.25),rgba(255,149,0,0.1))',border:'1px solid rgba(255,149,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,boxShadow:'0 0 12px rgba(255,149,0,0.2)'}}>〜</div>
+        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>WaveTrend Oscillator</div><div style={{fontSize:10,color:'#F59714aa',fontFamily:'JetBrains Mono,monospace'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
           <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefresh/60)}:{String(nextRefresh%60).padStart(2,'0')}</span>
@@ -628,10 +628,10 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
   )
 
   return (
-    <div style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden'}}>
+    <div style={{background:'rgba(13,17,35,0.75)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:16,overflow:'hidden',boxShadow:'0 4px 24px rgba(0,0,0,0.5)'}}>
       <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,#FF9500,#FF9500aa)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'white'}}>V</div>
-        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#F59714aa'}}>{symbol}</div></div>
+        <div style={{width:32,height:32,borderRadius:9,background:'linear-gradient(135deg,rgba(191,90,242,0.25),rgba(191,90,242,0.1))',border:'1px solid rgba(191,90,242,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#BF5AF2',boxShadow:'0 0 12px rgba(191,90,242,0.2)'}}>V</div>
+        <div><div style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>VMC Oscillator</div><div style={{fontSize:10,color:'#BF5AF2aa',fontFamily:'JetBrains Mono,monospace'}}>{symbol}</div></div>
         <div style={{display:'flex',alignItems:'center',gap:5,padding:'2px 8px',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`,border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)',borderRadius:6}}>
           <div style={{width:5,height:5,borderRadius:'50%',background:'var(--tm-profit)',animation:'pulse 1.5s ease-in-out infinite'}}/><span style={{fontSize:9,fontWeight:700,color:'var(--tm-profit)',fontFamily:'monospace'}}>LIVE</span>
           <span style={{fontSize:9,color:'var(--tm-text-muted)',fontFamily:'monospace'}}>{Math.floor(nextRefreshVMC/60)}:{String(nextRefreshVMC%60).padStart(2,'0')}</span>
@@ -999,13 +999,13 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symb
   const activeTLs = (result?.trendlines ?? []).filter(tl => !tl.broken).length
 
   return (
-    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.5)' }}>
       {/* Header */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#00E5FF,#0099bb)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#0D1117', letterSpacing: '-0.5px' }}>BB</div>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,rgba(0,229,255,0.2),rgba(0,229,255,0.08))', border:'1px solid rgba(0,229,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#00E5FF', letterSpacing: '-0.5px', boxShadow:'0 0 12px rgba(0,229,255,0.2)' }}>BB</div>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>RSI Bollinger</div>
-          <div style={{ fontSize: 10, color: '#00E5FFaa' }}>{symbol}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>RSI Bollinger</div>
+          <div style={{ fontSize: 10, color: '#00E5FFaa', fontFamily:'JetBrains Mono,monospace' }}>{symbol}</div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:5, padding:'2px 8px', background:'rgba(34,199,89,0.1)', border:'1px solid rgba(34,199,89,0.25)', borderRadius:6 }}>
           <div style={{ width:5, height:5, borderRadius:'50%', background:'var(--tm-profit)', animation:'pulse 1.5s ease-in-out infinite' }} />
@@ -1270,10 +1270,10 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
   )
 
   return (
-    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.5)' }}>
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#BF5AF2,#BF5AF2aa)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white' }}>R</div>
-        <div><div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>RSI (14)</div><div style={{ fontSize: 10, color: '#BF5AF2aa' }}>{symbol}</div></div>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,rgba(191,90,242,0.25),rgba(191,90,242,0.1))', border:'1px solid rgba(191,90,242,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#BF5AF2', boxShadow:'0 0 12px rgba(191,90,242,0.2)' }}>R</div>
+        <div><div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>RSI (14)</div><div style={{ fontSize: 10, color: '#BF5AF2aa', fontFamily:'JetBrains Mono,monospace' }}>{symbol}</div></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 8px', background: `rgba(${resolveCSSColor('var(--tm-profit-rgb', '34,199,89')},0.1)`, border: '1px solid rgba(var(--tm-profit-rgb,34,199,89),0.25)', borderRadius: 6 }}>
           <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--tm-profit)', animation: 'pulse 1.5s ease-in-out infinite' }} /><span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-profit)', fontFamily: 'monospace' }}>LIVE</span>
           <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'monospace' }}>{Math.floor(nextRefresh / 60)}:{String(nextRefresh % 60).padStart(2, '0')}</span>

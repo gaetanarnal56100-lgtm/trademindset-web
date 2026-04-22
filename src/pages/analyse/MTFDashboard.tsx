@@ -457,7 +457,7 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
   }, [symbol])
 
   if (loading) return (
-    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, padding: '24px', textAlign: 'center' }}>
+    <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.5)', padding: '24px', textAlign: 'center' }}>
       <div style={{ width: 24, height: 24, border: '2px solid #2A2F3E', borderTopColor: 'var(--tm-warning)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
       <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>Calcul RSI + VMC sur {TIMEFRAMES.length} timeframes...</div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -465,7 +465,7 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
   )
 
   if (error) return (
-    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, padding: '16px', textAlign: 'center' }}>
+    <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.5)', padding: '16px', textAlign: 'center' }}>
       <div style={{ fontSize: 12, color: 'var(--tm-text-muted)', marginBottom: 8 }}>{error}</div>
       <button onClick={load} style={{ fontSize: 11, color: 'var(--tm-accent)', background: 'none', border: '1px solid #00E5FF40', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}>Réessayer</button>
     </div>
@@ -478,7 +478,7 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
   const scoreColor = snap.globalScore < -40 ? 'var(--tm-profit)' : snap.globalScore < -10 ? '#FFD60A' : snap.globalScore > 40 ? 'var(--tm-loss)' : snap.globalScore > 10 ? 'var(--tm-warning)' : 'var(--tm-text-secondary)'
 
   return (
-    <div style={{ background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
+    <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.5)', overflow: 'hidden', position: 'relative' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)' }} />
 
       {/* Header */}
