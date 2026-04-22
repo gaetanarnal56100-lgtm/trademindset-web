@@ -3,6 +3,7 @@
 // 3 modes : Micro / Structure / Dérivés + Derivatives Confluence Card + vraie recherche
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import ReactDOM from 'react-dom'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import type { MTFSnapshot } from './MTFDashboard'
@@ -148,6 +149,12 @@ interface WhaleTrendPt { t: number; cum: number; ema: number; retail: number }
 interface WhaleSummary { trend: string; trendColor: string; netCVD: number; momentum: number; divergence: string }
 interface ContextData  { lsRatio: number|null; lsLongPct: number|null; oiUSD: number|null; oiChange1h: number|null; cvdDelta: number|null; cvdBias: CVDBias; overallBias: CVDBias; fetchedAt: Date }
 interface SearchResult { symbol: string; name: string; type: 'crypto'|'stock'|'forex'; exchange?: string; icon: string }
+// ── New feature types ────────────────────────────────────────────────────
+interface FngData      { value: number; label: string; history: number[] }
+interface DominancePt  { btcD: number; ethD: number }
+interface LiqEvent     { id: string; side: 'LONG'|'SHORT'; usd: number; sym: string; ts: number }
+interface LSRatioPt    { t: number; ratio: number; longPct: number; shortPct: number }
+interface HeatmapCell  { sym: string; tfs: number[] } // RSI per TF [15m,1h,4h,1d]
 
 // Canvas cannot use CSS vars — resolve at draw time
 function resolveCSSColor(varName: string, fallback: string): string {
@@ -903,6 +910,229 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
   )
 }
 
+// ── Fear & Greed Widget ──────────────────────────────────────────────────────
+function FearGreedWidget({ data }: { data: FngData }) {
+  const { value, label, history } = data
+  const clr = value <= 25 ? '#FF3B30' : value <= 45 ? '#FF9500' : value <= 55 ? '#FFCC00' : value <= 75 ? '#34C759' : '#00E5FF'
+  const delta = history.length >= 2 ? value - history[history.length - 2] : 0
+  // SVG semi-circle gauge: radius 36, stroke 7, arc from 180° to 0° = π rad
+  const R = 36, SW = 7, cx = 44, cy = 44
+  const angle = (value / 100) * Math.PI
+  const ex = cx - R * Math.cos(angle), ey = cy - R * Math.sin(angle)
+  const arcD = `M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${ex} ${ey}`
+  const arcBg = `M ${cx - R} ${cy} A ${R} ${R} 0 0 1 ${cx + R} ${cy}`
+  // Mini sparkline
+  const W = 60, H = 18
+  const mn = Math.min(...history), mx = Math.max(...history), rng = mx - mn || 1
+  const pts = history.map((v, i) => `${(i / (history.length - 1)) * W},${H - ((v - mn) / rng) * H}`).join(' ')
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 14px', background:'rgba(13,17,35,0.7)', backdropFilter:'blur(12px)', border:`1px solid ${clr}25`, borderRadius:14, boxShadow:`0 0 16px ${clr}10` }}>
+      {/* Gauge */}
+      <svg width={88} height={50} viewBox="0 0 88 50">
+        <path d={arcBg} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={SW} strokeLinecap="round"/>
+        <path d={arcD}  fill="none" stroke={clr} strokeWidth={SW} strokeLinecap="round" style={{filter:`drop-shadow(0 0 4px ${clr}80)`}}/>
+        <text x={cx} y={cy+2} textAnchor="middle" fill={clr} fontSize={14} fontWeight={800} fontFamily="JetBrains Mono,monospace">{value}</text>
+      </svg>
+      {/* Label + delta + sparkline */}
+      <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:clr, fontFamily:'Syne,sans-serif' }}>{label}</div>
+        <div style={{ fontSize:10, color: delta >= 0 ? '#34C759' : '#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>
+          {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)} vs hier
+        </div>
+        <svg width={W} height={H} style={{ overflow:'visible' }}>
+          <polyline points={pts} fill="none" stroke={clr} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7}/>
+        </svg>
+        <div style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>Fear & Greed · 30j</div>
+      </div>
+    </div>
+  )
+}
+
+// ── Dominance Sparklines ─────────────────────────────────────────────────────
+function DominanceBar({ pts, current }: { pts: DominancePt[]; current: DominancePt }) {
+  const W = 80, H = 28
+  if (pts.length < 2) return null
+  const btcVals = pts.map(p => p.btcD), ethVals = pts.map(p => p.ethD)
+  const btcMn = Math.min(...btcVals), btcMx = Math.max(...btcVals), btcRng = btcMx - btcMn || 0.01
+  const ethMn = Math.min(...ethVals), ethMx = Math.max(...ethVals), ethRng = ethMx - ethMn || 0.01
+  const btcPts = btcVals.map((v, i) => `${(i / (btcVals.length - 1)) * W},${H - ((v - btcMn) / btcRng) * H}`).join(' ')
+  const ethPts = ethVals.map((v, i) => `${(i / (ethVals.length - 1)) * W},${H - ((v - ethMn) / ethRng) * H}`).join(' ')
+  const prevBtc = pts[0].btcD, prevEth = pts[0].ethD
+  const btcDelta = current.btcD - prevBtc, ethDelta = current.ethD - prevEth
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'rgba(13,17,35,0.7)', backdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:12 }}>
+      <svg width={W} height={H}>
+        <polyline points={btcPts} fill="none" stroke="#00E5FF" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.8}/>
+        <polyline points={ethPts} fill="none" stroke="#BF5AF2" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7}/>
+      </svg>
+      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+        <div style={{ display:'flex', gap:8 }}>
+          <span style={{ fontSize:10, fontWeight:700, color:'#00E5FF', fontFamily:'JetBrains Mono,monospace' }}>BTC.D {current.btcD.toFixed(1)}%<span style={{ fontSize:9, color: btcDelta >= 0 ? '#34C759' : '#FF3B30' }}> {btcDelta >= 0 ? '▲' : '▼'}{Math.abs(btcDelta).toFixed(1)}</span></span>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <span style={{ fontSize:10, fontWeight:700, color:'#BF5AF2', fontFamily:'JetBrains Mono,monospace' }}>ETH.D {current.ethD.toFixed(1)}%<span style={{ fontSize:9, color: ethDelta >= 0 ? '#34C759' : '#FF3B30' }}> {ethDelta >= 0 ? '▲' : '▼'}{Math.abs(ethDelta).toFixed(1)}</span></span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Live Liquidations Ticker ─────────────────────────────────────────────────
+function LiqTicker({ liqs, long1h, short1h }: { liqs: LiqEvent[]; long1h: number; short1h: number }) {
+  const tickerRef = React.useRef<HTMLDivElement>(null)
+  const total1h = long1h + short1h
+  if (liqs.length === 0 && total1h === 0) return null
+  return (
+    <div style={{ borderRadius:12, overflow:'hidden', border:'1px solid rgba(255,255,255,0.06)', background:'rgba(13,17,35,0.6)', backdropFilter:'blur(8px)', marginBottom:10 }}>
+      {/* Stats bar */}
+      <div style={{ display:'flex', gap:12, padding:'6px 14px', borderBottom:'1px solid rgba(255,255,255,0.04)', alignItems:'center' }}>
+        <span style={{ fontSize:10, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>⚡ LIQ 1h</span>
+        <span style={{ fontSize:10, fontWeight:700, color:'#FF3B30' }}>LONG {fmtU(long1h)}</span>
+        <span style={{ fontSize:10, fontWeight:700, color:'#34C759' }}>SHORT {fmtU(short1h)}</span>
+        {total1h > 0 && <span style={{ fontSize:9, color:'var(--tm-text-muted)' }}>Ratio: {total1h > 0 ? (long1h / total1h * 100).toFixed(0) : 50}% longs liquidés</span>}
+      </div>
+      {/* Scrolling ticker */}
+      {liqs.length > 0 && (
+        <div style={{ overflowX:'auto', display:'flex', gap:6, padding:'6px 10px', scrollbarWidth:'none' }} ref={tickerRef}>
+          {liqs.slice(0, 20).map(l => (
+            <div key={l.id} style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:20, flexShrink:0, background: l.side === 'LONG' ? 'rgba(255,59,48,0.12)' : 'rgba(52,199,89,0.12)', border: `1px solid ${l.side === 'LONG' ? 'rgba(255,59,48,0.3)' : 'rgba(52,199,89,0.3)'}` }}>
+              <span style={{ fontSize:9, fontWeight:700, color: l.side === 'LONG' ? '#FF3B30' : '#34C759' }}>{l.side}</span>
+              <span style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>{l.sym}</span>
+              <span style={{ fontSize:9, fontWeight:700, color: l.side === 'LONG' ? '#FF3B30' : '#34C759', fontFamily:'JetBrains Mono,monospace' }}>{fmtU(l.usd)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── L/S Ratio History Canvas ─────────────────────────────────────────────────
+function LSRatioChart({ pts }: { pts: LSRatioPt[] }) {
+  const ref = React.useRef<HTMLCanvasElement>(null)
+  React.useEffect(() => {
+    const canvas = ref.current; if (!canvas || pts.length < 2) return
+    const ctx = canvas.getContext('2d'); if (!ctx) return
+    const W = canvas.offsetWidth || 600, H = 100
+    canvas.width = W; canvas.height = H
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
+    const ratios = pts.map(p => p.ratio)
+    const mn = Math.min(...ratios, 0.3), mx = Math.max(...ratios, 2.5)
+    const toY = (v: number) => H - ((v - mn) / (mx - mn)) * (H - 10) - 5
+    const toX = (i: number) => (i / (pts.length - 1)) * W
+    // Reference lines
+    for (const [ref2, col, lbl] of [[1.0,'rgba(255,255,255,0.15)','1.0'],[2.0,'rgba(255,59,48,0.3)','2.0'],[0.5,'rgba(52,199,89,0.3)','0.5']] as [number,string,string][]) {
+      const y = toY(ref2); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
+      ctx.fillStyle = col; ctx.font = '9px JetBrains Mono,monospace'; ctx.fillText(lbl, 4, y - 2)
+    }
+    ctx.setLineDash([])
+    // Fill gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H)
+    grad.addColorStop(0, 'rgba(255,59,48,0.2)'); grad.addColorStop(0.5, 'rgba(255,255,255,0.02)'); grad.addColorStop(1, 'rgba(52,199,89,0.15)')
+    ctx.fillStyle = grad; ctx.beginPath()
+    ctx.moveTo(toX(0), H)
+    pts.forEach((p, i) => { const y = toY(p.ratio); i === 0 ? ctx.lineTo(toX(i), y) : ctx.lineTo(toX(i), y) })
+    ctx.lineTo(toX(pts.length - 1), H); ctx.closePath(); ctx.fill()
+    // Line
+    ctx.strokeStyle = '#00E5FF'; ctx.lineWidth = 1.5; ctx.beginPath()
+    pts.forEach((p, i) => { const x = toX(i), y = toY(p.ratio); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.stroke()
+    // Last value dot
+    const lx = toX(pts.length - 1), ly = toY(ratios[ratios.length - 1])
+    ctx.fillStyle = '#00E5FF'; ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI * 2); ctx.fill()
+  }, [pts])
+  if (pts.length < 2) return <div style={{ height:100, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--tm-text-muted)', fontSize:11 }}>Chargement...</div>
+  const last = pts[pts.length - 1]
+  return (
+    <div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginBottom:8 }}>
+        {[
+          { l:'L/S Ratio', v: last.ratio.toFixed(3), c: last.ratio > 2 ? '#FF3B30' : last.ratio < 0.5 ? '#34C759' : '#00E5FF' },
+          { l:'Longs',     v: `${last.longPct.toFixed(1)}%`,  c:'#34C759' },
+          { l:'Shorts',    v: `${last.shortPct.toFixed(1)}%`, c:'#FF3B30' },
+        ].map(({ l, v, c }) => (
+          <div key={l} style={{ background:'rgba(0,0,0,0.3)', borderRadius:8, padding:'6px 8px', textAlign:'center' }}>
+            <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginBottom:2 }}>{l}</div>
+            <div style={{ fontSize:12, fontWeight:700, color:c, fontFamily:'JetBrains Mono,monospace' }}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <canvas ref={ref} style={{ width:'100%', height:100, display:'block', borderRadius:8 }}/>
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, color:'var(--tm-text-muted)', marginTop:4 }}>
+        <span style={{ color:'rgba(52,199,89,0.6)' }}>─ 0.5 surchauffe short</span>
+        <span>Long/Short Ratio · 24h</span>
+        <span style={{ color:'rgba(255,59,48,0.6)' }}>─ 2.0 surchauffe long</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Market RSI Heatmap Modal (createPortal) ──────────────────────────────────
+const HEATMAP_ASSETS = ['BTC','ETH','SOL','BNB','XRP','ADA','DOGE','AVAX']
+const HEATMAP_TFS    = ['15m','1h','4h','1d'] as const
+function rsiHue(v: number) {
+  if (v < 30) return '#FF3B30'
+  if (v < 42) return '#FF9500'
+  if (v < 58) return '#607D8B'
+  if (v < 70) return '#34C759'
+  return '#00E5FF'
+}
+function MarketHeatmapModal({ cells, loading, onClose }: { cells: HeatmapCell[]; loading: boolean; onClose: () => void }) {
+  return ReactDOM.createPortal(
+    <div style={{ position:'fixed', inset:0, zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.75)', backdropFilter:'blur(6px)' }} onClick={onClose}>
+      <div style={{ background:'rgba(13,17,35,0.95)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:20, padding:24, minWidth:520, maxWidth:'90vw', boxShadow:'0 0 60px rgba(0,229,255,0.1)' }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+          <div>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne,sans-serif' }}>🌡️ Contexte de Marché</div>
+            <div style={{ fontSize:10, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>RSI par asset · 4 timeframes</div>
+          </div>
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, padding:'4px 10px', cursor:'pointer', fontSize:12, color:'var(--tm-text-muted)' }}>✕</button>
+        </div>
+        {loading ? (
+          <div style={{ textAlign:'center', padding:32, color:'var(--tm-text-muted)', fontSize:12 }}>
+            <div style={{ width:20, height:20, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 8px' }}/>Calcul des RSI...
+          </div>
+        ) : (
+          <div>
+            {/* TF header */}
+            <div style={{ display:'grid', gridTemplateColumns:`120px repeat(${HEATMAP_TFS.length},1fr)`, gap:4, marginBottom:6 }}>
+              <div/>
+              {HEATMAP_TFS.map(tf => (
+                <div key={tf} style={{ textAlign:'center', fontSize:10, fontWeight:700, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>{tf}</div>
+              ))}
+            </div>
+            {/* Rows */}
+            {cells.map(({ sym, tfs }) => (
+              <div key={sym} style={{ display:'grid', gridTemplateColumns:`120px repeat(${HEATMAP_TFS.length},1fr)`, gap:4, marginBottom:4 }}>
+                <div style={{ display:'flex', alignItems:'center', fontSize:11, fontWeight:700, color:'var(--tm-text-primary)', fontFamily:'JetBrains Mono,monospace', paddingRight:8 }}>{sym}USDT</div>
+                {tfs.map((rsi, i) => {
+                  const c = rsiHue(rsi)
+                  return (
+                    <div key={i} style={{ textAlign:'center', padding:'7px 4px', borderRadius:8, background:`${c}18`, border:`1px solid ${c}30` }}>
+                      <div style={{ fontSize:12, fontWeight:700, color:c, fontFamily:'JetBrains Mono,monospace' }}>{rsi.toFixed(0)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+            {/* Legend */}
+            <div style={{ display:'flex', gap:10, marginTop:14, flexWrap:'wrap' }}>
+              {[['<30','Survendu','#FF3B30'],['30-42','Faible','#FF9500'],['42-58','Neutre','#607D8B'],['58-70','Fort','#34C759'],['>70','Suracheté','#00E5FF']].map(([r,l,c]) => (
+                <div key={r} style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <div style={{ width:8, height:8, borderRadius:2, background:c as string }}/>
+                  <span style={{ fontSize:9, color:'var(--tm-text-muted)' }}>{r} {l}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 export default function AnalysePage() {
   const [symbol, setSymbol] = useState(() => {
     // Read symbol passed from Marchés page via localStorage
@@ -1040,6 +1270,20 @@ export default function AnalysePage() {
   const [funding,   setFunding]   = useState<Funding|null>(null)
   const [derivLoad, setDerivLoad] = useState(false)
 
+  // ── New features state ───────────────────────────────────────────────────
+  const [fng,         setFng]         = useState<FngData|null>(null)
+  const [domPts,      setDomPts]      = useState<DominancePt[]>([])
+  const [domCurrent,  setDomCurrent]  = useState<DominancePt>({btcD:0,ethD:0})
+  const [liquidations,setLiquidations]= useState<LiqEvent[]>([])
+  const [liqLong1h,   setLiqLong1h]   = useState(0)
+  const [liqShort1h,  setLiqShort1h]  = useState(0)
+  const [lsHistory,   setLsHistory]   = useState<LSRatioPt[]>([])
+  const [heatmapOpen, setHeatmapOpen] = useState(false)
+  const [heatmapCells,setHeatmapCells]= useState<HeatmapCell[]>([])
+  const [heatmapLoad, setHeatmapLoad] = useState(false)
+  const liqRef = useRef<LiqEvent[]>([])
+  const liqWs  = useRef<WebSocket|null>(null)
+
   const tickBuf   = useRef<Tick[]>([])
   const cvdAcc    = useRef<Record<Seg,number>>({small:0,medium:0,large:0,institutional:0,whales:0,all:0})
   const priceRef  = useRef(0)
@@ -1155,6 +1399,126 @@ export default function AnalysePage() {
       .finally(() => setSegHistLoad(false))
   }, [symbol, mode])
 
+  // ── Fear & Greed (crypto only, once per symbol) ──────────────────────────
+  useEffect(() => {
+    if (!isCryptoSymbol(symbol) && symbol !== '') return
+    fetch('https://api.alternative.me/fng/?limit=30')
+      .then(r => r.json())
+      .then((d: { data: { value: string; value_classification: string }[] }) => {
+        if (!Array.isArray(d.data) || d.data.length === 0) return
+        const history = d.data.map(i => parseInt(i.value)).reverse()
+        const latest  = d.data[0]
+        setFng({ value: parseInt(latest.value), label: latest.value_classification, history })
+      })
+      .catch(() => {})
+  }, [symbol])
+
+  // ── BTC/ETH Dominance ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isCryptoSymbol(symbol) && symbol !== '') return
+    Promise.all([
+      fetch('https://api.binance.com/api/v3/klines?symbol=BTCDOMUSDT&interval=1h&limit=48').then(r => r.json()),
+      fetch('https://api.binance.com/api/v3/klines?symbol=ETHBTC&interval=1h&limit=48').then(r => r.json()),
+    ]).then(([btcRaw, ethRaw]) => {
+      if (!Array.isArray(btcRaw) || !Array.isArray(ethRaw)) return
+      const btcPts = (btcRaw as unknown[][]).map(c => parseFloat(c[4] as string))
+      // ETH dominance approximation: ETH/BTC * BTC.D * ETH_circulating_factor (~20%)
+      const ethPts = (ethRaw as unknown[][]).map((c, i) => parseFloat(c[4] as string) * btcPts[i] * 0.5)
+      const pts: DominancePt[] = btcPts.map((b, i) => ({ btcD: b, ethD: ethPts[i] }))
+      setDomPts(pts)
+      setDomCurrent(pts[pts.length - 1] ?? { btcD: 0, ethD: 0 })
+    }).catch(() => {})
+  }, [symbol])
+
+  // ── Live Liquidations WebSocket ───────────────────────────────────────────
+  useEffect(() => {
+    if (!isCryptoSymbol(symbol) && symbol !== '') { liqWs.current?.close(); return }
+    let ws: WebSocket
+    let reconnT: ReturnType<typeof setTimeout>
+    function connect() {
+      ws = new WebSocket('wss://fstream.binance.com/ws/!forceOrder@arr')
+      liqWs.current = ws
+      ws.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data)
+          if (d.e !== 'forceOrder') return
+          const o = d.o
+          const price = parseFloat(o.ap || o.p)
+          const qty   = parseFloat(o.q)
+          const usd   = price * qty
+          if (usd < 50000) return // filter < $50k
+          const side: 'LONG'|'SHORT' = o.S === 'SELL' ? 'LONG' : 'SHORT'
+          const ev: LiqEvent = { id: `${Date.now()}-${Math.random()}`, side, usd, sym: o.s.replace('USDT',''), ts: Date.now() }
+          liqRef.current = [ev, ...liqRef.current].slice(0, 30)
+          setLiquidations([...liqRef.current])
+          // update 1h stats
+          const now = Date.now()
+          const recent = liqRef.current.filter(l => l.ts > now - 3600000)
+          setLiqLong1h(recent.filter(l => l.side === 'LONG').reduce((s, l) => s + l.usd, 0))
+          setLiqShort1h(recent.filter(l => l.side === 'SHORT').reduce((s, l) => s + l.usd, 0))
+        } catch { /**/ }
+      }
+      ws.onclose = () => { reconnT = setTimeout(connect, 3000) }
+      ws.onerror = () => ws.close()
+    }
+    connect()
+    return () => { ws?.close(); clearTimeout(reconnT) }
+  }, [symbol])
+
+  // ── L/S Ratio History (Dérivés only) ─────────────────────────────────────
+  useEffect(() => {
+    if (mode !== 'derivees') return
+    if (!isCryptoSymbol(symbol)) return
+    fetch(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=15m&limit=96`)
+      .then(r => r.json())
+      .then((data: { timestamp: number; longShortRatio: string; longAccount: string; shortAccount: string }[]) => {
+        if (!Array.isArray(data)) return
+        const pts: LSRatioPt[] = data.map(d => ({
+          t:        d.timestamp,
+          ratio:    parseFloat(d.longShortRatio),
+          longPct:  parseFloat(d.longAccount) * 100,
+          shortPct: parseFloat(d.shortAccount) * 100,
+        }))
+        setLsHistory(pts)
+      })
+      .catch(() => {})
+  }, [symbol, mode])
+
+  // ── Market Heatmap RSI fetch ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!heatmapOpen) return
+    setHeatmapLoad(true)
+    const intervals = ['15m', '1h', '4h', '1d'] as const
+    const assets = HEATMAP_ASSETS
+    // Reuse same RSI calculation as MarchesPage
+    async function calcRSI(closes: number[], period = 14): Promise<number> {
+      if (closes.length < period + 1) return 50
+      let gains = 0, losses = 0
+      for (let i = 1; i <= period; i++) { const d = closes[i] - closes[i-1]; if (d > 0) gains += d; else losses -= d }
+      let avgG = gains / period, avgL = losses / period
+      for (let i = period + 1; i < closes.length; i++) {
+        const d = closes[i] - closes[i-1]
+        avgG = (avgG * (period - 1) + Math.max(d, 0)) / period
+        avgL = (avgL * (period - 1) + Math.max(-d, 0)) / period
+      }
+      return avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL)
+    }
+    Promise.all(assets.map(async (sym) => {
+      const tfs = await Promise.all(intervals.map(async (tf) => {
+        try {
+          const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}USDT&interval=${tf}&limit=100`)
+          const raw = await r.json() as unknown[][]
+          const closes = raw.map(c => parseFloat(c[4] as string))
+          return calcRSI(closes)
+        } catch { return 50 }
+      }))
+      return { sym, tfs } as HeatmapCell
+    })).then(cells => {
+      setHeatmapCells(cells)
+      setHeatmapLoad(false)
+    }).catch(() => setHeatmapLoad(false))
+  }, [heatmapOpen])
+
   // ── Dérivés ──
   useEffect(()=>{
     if(mode!=='derivees')return
@@ -1268,6 +1632,14 @@ export default function AnalysePage() {
         </div>
         {/* Right — actions */}
         <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          {/* Heatmap Contexte button — crypto only */}
+          {isCrypto && symbol && (
+            <button onClick={() => setHeatmapOpen(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 13px', borderRadius:10, background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', color:'var(--tm-accent)', cursor:'pointer', fontSize:11, fontWeight:600, backdropFilter:'blur(8px)', transition:'all 0.15s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,255,0.12)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,229,255,0.4)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,255,0.06)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,229,255,0.2)' }}>
+              🌡️ Contexte
+            </button>
+          )}
           <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
           {symbol && (
             <button
@@ -1303,6 +1675,17 @@ export default function AnalysePage() {
           )}
         </div>
       </div>
+
+      {/* ── Fear & Greed + Dominance strip (crypto) ── */}
+      {isCrypto && symbol && (fng || domPts.length > 0) && (
+        <div style={{ position:'relative', zIndex:1, display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
+          {fng && <FearGreedWidget data={fng} />}
+          {domPts.length > 0 && <DominanceBar pts={domPts} current={domCurrent} />}
+        </div>
+      )}
+
+      {/* Heatmap modal */}
+      {heatmapOpen && <MarketHeatmapModal cells={heatmapCells} loading={heatmapLoad} onClose={() => setHeatmapOpen(false)} />}
 
       {/* État vide — deux colonnes : recherche | analyse photo */}
       {!symbol && (
@@ -1455,6 +1838,8 @@ export default function AnalysePage() {
 
       {/* ── MICRO — crypto only ── */}
       {isCrypto&&mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
+        {/* Liquidations Ticker */}
+        <LiqTicker liqs={liquidations} long1h={liqLong1h} short1h={liqShort1h} />
         {/* Summary Banner */}
         <div style={{...C.card,padding:C.p,borderColor:`${biasColor}25`,boxShadow:`0 4px 24px rgba(0,0,0,0.4), inset 0 0 40px ${biasColor}05`}} className="analyse-card-hover">
           <div style={C.top}/>
@@ -1699,6 +2084,19 @@ export default function AnalysePage() {
                 <div key={l} style={{background:'var(--tm-bg-tertiary)',borderRadius:8,padding:'8px',textAlign:'center'}}><div style={{fontSize:9,color:'var(--tm-text-muted)',marginBottom:2}}>{l}</div><div style={{fontSize:12,fontWeight:600,color:c,fontFamily:'monospace'}}>{v}</div></div>
               ))}
             </div>
+          </div>
+        </div>}
+
+        {/* L/S Ratio History */}
+        {lsHistory.length > 0 && <div style={{...C.card, borderColor:'rgba(0,229,255,0.15)'}} className="analyse-card-hover">
+          <div style={C.top}/>
+          <div style={{padding:C.p}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(0,229,255,0.08),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(0,229,255,0.5)'}}>
+                <span style={{paddingLeft:8}}>⚖️ Long / Short Ratio · 24h</span>
+              </span>
+            </div>
+            <LSRatioChart pts={lsHistory}/>
           </div>
         </div>}
       </div>}
