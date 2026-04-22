@@ -1194,23 +1194,79 @@ export default function AnalysePage() {
   const isCrypto = isCryptoSymbol(symbol)
 
   const C = {
-    card: {background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden' as const,position:'relative' as const},
-    top: {position:'absolute' as const,top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(255,255,255,0.05),transparent)'},
-    p: '10px 14px',
+    card: {
+      background:'rgba(13,17,35,0.7)',
+      backdropFilter:'blur(12px)',
+      WebkitBackdropFilter:'blur(12px)',
+      border:'1px solid rgba(255,255,255,0.06)',
+      borderRadius:16,
+      overflow:'hidden' as const,
+      position:'relative' as const,
+      boxShadow:'0 4px 24px rgba(0,0,0,0.4)',
+    },
+    top: {position:'absolute' as const,top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.15),transparent)'},
+    p: '12px 16px',
   }
 
   return (
-    <div style={{padding:'28px 28px 40px',maxWidth:1600,margin:'0 auto'}}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+    <div style={{
+      padding:'28px 28px 40px',maxWidth:1600,margin:'0 auto',
+      minHeight:'100vh',
+      position:'relative' as const,
+    }}>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+        @keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
+        @keyframes neonPulse{0%,100%{opacity:0.6}50%{opacity:1}}
+        .analyse-grid-bg::before{
+          content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+          background-image:linear-gradient(rgba(0,229,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.03) 1px,transparent 1px);
+          background-size:40px 40px;
+        }
+        .analyse-grid-bg::after{
+          content:'';position:fixed;top:0;left:0;right:0;height:2px;pointer-events:none;z-index:0;
+          background:linear-gradient(90deg,transparent,rgba(0,229,255,0.06),rgba(191,90,242,0.06),transparent);
+          animation:neonPulse 4s ease-in-out infinite;
+        }
+        .analyse-card-hover{transition:border-color 0.2s,box-shadow 0.2s}
+        .analyse-card-hover:hover{border-color:rgba(0,229,255,0.15)!important;box-shadow:0 4px 32px rgba(0,229,255,0.06)!important}
+        .mode-tab-active{background:linear-gradient(135deg,rgba(0,229,255,0.18),rgba(191,90,242,0.12))!important;border:1px solid rgba(0,229,255,0.4)!important;box-shadow:0 0 16px rgba(0,229,255,0.15)!important}
+        .mode-tab{border:1px solid transparent;transition:all 0.2s}
+        .analyse-section-label{
+          font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
+          color:var(--tm-text-primary);letter-spacing:0.02em;
+          display:flex;align-items:center;gap:8px;
+        }
+      `}</style>
+      <div className="analyse-grid-bg" style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0}}/>
 
       {/* Header */}
-      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:14}}>
-        <div>
-          <h1 style={{fontSize:24,fontWeight:700,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em'}}>Analyse</h1>
-          <p style={{fontSize:13,color:'var(--tm-text-muted)',margin:'4px 0 0'}}>
-            {!symbol ? 'Recherchez un actif pour commencer' : isCrypto ? 'Liquidation Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Plan de Trade'}
-          </p>
+      <div style={{position:'relative',zIndex:1,display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:24,flexWrap:'wrap',gap:14}}>
+        {/* Left — Title HUD */}
+        <div style={{display:'flex',alignItems:'center',gap:14}}>
+          <div style={{
+            width:44,height:44,borderRadius:14,flexShrink:0,
+            background:'linear-gradient(135deg,rgba(0,229,255,0.15),rgba(191,90,242,0.15))',
+            border:'1px solid rgba(0,229,255,0.25)',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            boxShadow:'0 0 20px rgba(0,229,255,0.1)',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tm-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </div>
+          <div>
+            <h1 style={{fontSize:22,fontWeight:800,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em',
+              background:'linear-gradient(135deg,#fff 40%,rgba(0,229,255,0.8))',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>
+              Analyse
+            </h1>
+            <p style={{fontSize:12,color:'var(--tm-text-muted)',margin:'2px 0 0',fontFamily:'JetBrains Mono,monospace',letterSpacing:'0.04em'}}>
+              {!symbol ? '// rechercher un actif pour commencer' : isCrypto ? 'Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Trade Plan'}
+            </p>
+          </div>
         </div>
+        {/* Right — actions */}
         <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
           <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
           {symbol && (
@@ -1227,6 +1283,7 @@ export default function AnalysePage() {
                 fontSize:12,fontWeight:600,
                 transition:'all 0.15s',flexShrink:0,
                 opacity: pdfGenerating ? 0.7 : 1,
+                boxShadow: pdfGenerating ? 'none' : '0 0 12px rgba(0,229,255,0.1)',
               }}
             >
               {pdfGenerating ? (
@@ -1249,7 +1306,7 @@ export default function AnalysePage() {
 
       {/* État vide — deux colonnes : recherche | analyse photo */}
       {!symbol && (
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,alignItems:'start'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,alignItems:'start',position:'relative',zIndex:1}}>
 
           {/* ── Colonne gauche : recherche par symbole ── */}
           <div>
@@ -1267,16 +1324,16 @@ export default function AnalysePage() {
                 {title:'📈 Actions US',items:[{s:'AAPL',n:'Apple'},{s:'TSLA',n:'Tesla'},{s:'MSFT',n:'Microsoft'},{s:'NVDA',n:'Nvidia'}]},
                 {title:'💱 Forex & Indices',items:[{s:'EURUSD=X',n:'EUR/USD',d:'EURUSD'},{s:'GC=F',n:'Or (Gold)',d:'Gold'},{s:'^FCHI',n:'CAC 40',d:'^FCHI'},{s:'MC.PA',n:'LVMH',d:'MC.PA'}]},
               ].map(cat=>(
-                <div key={cat.title} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:14,overflow:'hidden'}}>
+                <div key={cat.title} style={{background:'rgba(13,17,35,0.7)',backdropFilter:'blur(12px)',WebkitBackdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,overflow:'hidden',boxShadow:'0 4px 20px rgba(0,0,0,0.3)'}}>
                   <div style={{padding:'8px 14px',borderBottom:'1px solid #1E2330'}}>
                     <span style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)'}}>{cat.title}</span>
                   </div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',padding:'4px 0'}}>
                     {cat.items.map(item=>(
                       <button key={item.s} onClick={()=>{setSymbol(item.s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}}
-                        style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}
-                        onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.03)'}
-                        onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
+                        style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left',borderRadius:8,transition:'all 0.15s'}}
+                        onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.background='rgba(0,229,255,0.04)';(e.currentTarget as HTMLElement).style.transform='translateX(2px)'}}
+                        onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.background='transparent';(e.currentTarget as HTMLElement).style.transform='translateX(0)'}}>
                         <div style={{flex:1}}>
                           <div style={{fontSize:11,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{(item as any).d || item.s}</div>
                           <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{item.n}</div>
@@ -1318,10 +1375,10 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} />}
+      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} /></div>}
 
       {/* Oscillateurs synchronisés sous le chart */}
-      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
+      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16, position:'relative', zIndex:1 }}>
         <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
           onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
         <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
@@ -1332,7 +1389,7 @@ export default function AnalysePage() {
 
 
       {/* Plan de Trade IA — tous les actifs, en premier */}
-      {symbol && <ShareWrapper label="Trade Plan">
+      {symbol && <div style={{position:'relative',zIndex:1}}><ShareWrapper label="Trade Plan">
         <TradePlanCard
           symbol={symbol}
           price={price || 0}
@@ -1342,51 +1399,70 @@ export default function AnalysePage() {
           vmcStatus={pdfVmcStatus || 'NEUTRAL'}
           onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
         />
-      </ShareWrapper>}
+      </ShareWrapper></div>}
 
       {/* MTF Dashboard — tous les actifs */}
-      {symbol && <ShareWrapper label="MTF Dashboard">
+      {symbol && <div style={{position:'relative',zIndex:1}}><ShareWrapper label="MTF Dashboard">
         <MTFDashboard symbol={symbol} onSnapshotReady={snap => setPdfMtfSnap(snap)} />
-      </ShareWrapper>}
+      </ShareWrapper></div>}
 
       {/* WaveTrend + VMC + RSI sont maintenant affichés directement sous le chart (ci-dessus) */}
 
       {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
-      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16,position:'relative',zIndex:1}}>
         <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} onLevelsReady={(lvls, p) => { setPdfLevels(lvls); setPdfLevelsPrice(p) }} /></ShareWrapper>
         <ChartScreenshotAnalysis symbol={symbol} />
       </div>}
 
       {/* ══ CRYPTO ONLY ══ Heatmap + CVD/Structure/Dérivés */}
-      {isCrypto && <>
+      {isCrypto && <div style={{position:'relative',zIndex:1}}><>
         {/* Heatmap */}
         <ShareWrapper label="Liquidation Heatmap"><LiquidationHeatmap symbol={symbol} /></ShareWrapper>
 
-        {/* Mode tabs */}
-        <div style={{display:'flex',background:'var(--tm-bg)',borderRadius:12,padding:3,marginBottom:16,border:'1px solid #1E2330',width:'fit-content'}}>
+        {/* Mode tabs — neon cyberpunk */}
+        <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
           {([
-            {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel'},
-            {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine'},
-            {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq'},
-          ] as {id:Mode;icon:string;label:string;sub:string}[]).map(m=>(
-            <button key={m.id} onClick={()=>setMode(m.id)} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 20px',borderRadius:10,border:'none',cursor:'pointer',background:mode===m.id?'var(--tm-accent)':'transparent',transition:'all 0.15s'}}>
-              <span style={{fontSize:14}}>{m.icon}</span>
-              <div style={{textAlign:'left'}}>
-                <div style={{fontSize:12,fontWeight:600,color:mode===m.id?'var(--tm-bg)':'var(--tm-text-secondary)'}}>{m.label}</div>
-                <div style={{fontSize:9,color:mode===m.id?'rgba(0,0,0,0.6)':'var(--tm-text-muted)'}}>{m.sub}</div>
-              </div>
-            </button>
-          ))}
+            {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel',   color:'rgba(0,229,255,0.9)'},
+            {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine',  color:'rgba(191,90,242,0.9)'},
+            {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq',color:'rgba(255,149,0,0.9)'},
+          ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m=>{
+            const active = mode === m.id
+            return (
+              <button key={m.id} className="mode-tab" onClick={()=>setMode(m.id)} style={{
+                display:'flex',alignItems:'center',gap:8,
+                padding:'9px 18px',borderRadius:12,
+                cursor:'pointer',
+                background: active
+                  ? `linear-gradient(135deg,${m.color.replace('0.9','0.12')},rgba(13,17,35,0.6))`
+                  : 'rgba(13,17,35,0.5)',
+                border: active
+                  ? `1px solid ${m.color.replace('0.9','0.5')}`
+                  : '1px solid rgba(255,255,255,0.06)',
+                boxShadow: active ? `0 0 16px ${m.color.replace('0.9','0.15')}` : 'none',
+                backdropFilter:'blur(8px)',
+                transition:'all 0.2s',
+              }}>
+                <span style={{fontSize:14}}>{m.icon}</span>
+                <div style={{textAlign:'left'}}>
+                  <div style={{fontSize:12,fontWeight:700,color:active?m.color:'var(--tm-text-secondary)',fontFamily:'Syne,sans-serif'}}>{m.label}</div>
+                  <div style={{fontSize:9,color:active?m.color.replace('0.9','0.6'):'var(--tm-text-muted)',fontFamily:'JetBrains Mono,monospace'}}>{m.sub}</div>
+                </div>
+              </button>
+            )
+          })}
         </div>
-      </>}
+      </></div>}
 
       {/* ── MICRO — crypto only ── */}
-      {isCrypto&&mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {isCrypto&&mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
         {/* Summary Banner */}
-        <div style={{...C.card,padding:C.p}}>
+        <div style={{...C.card,padding:C.p,borderColor:`${biasColor}25`,boxShadow:`0 4px 24px rgba(0,0,0,0.4), inset 0 0 40px ${biasColor}05`}} className="analyse-card-hover">
           <div style={C.top}/>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
-            <div><div style={{fontSize:14,fontWeight:700,color:biasColor}}>{biasLabel}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{bullConf+bearConf>0?`${Math.max(bullConf,bearConf)} confirmation${Math.max(bullConf,bearConf)>1?'s':''} active${Math.max(bullConf,bearConf)>1?'s':''}`:'En attente de données'}</div></div>
+            <div>
+              <div style={{fontSize:15,fontWeight:800,color:biasColor,fontFamily:'Syne,sans-serif',textShadow:`0 0 12px ${biasColor}60`}}>{biasLabel}</div>
+              <div style={{fontSize:10,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono,monospace'}}>{bullConf+bearConf>0?`${Math.max(bullConf,bearConf)} confirmation${Math.max(bullConf,bearConf)>1?'s':''} active${Math.max(bullConf,bearConf)>1?'s':''}`:'// en attente de données'}</div>
+            </div>
             <div style={{display:'flex',gap:6}}>
               {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:pressure.score>0?'var(--tm-profit)':'var(--tm-loss)',background:`${pressure.score>0?'var(--tm-profit)':'var(--tm-loss)'}`,padding:'2px 8px',borderRadius:5}}>CVD {pressure.score>0?'↑':'↓'}</span>}
               {pressure&&Math.abs(pressure.score)>0.1&&<span style={{fontSize:10,fontWeight:700,color:'var(--tm-accent)',background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)',padding:'2px 8px',borderRadius:5}}>Whales</span>}
@@ -1396,11 +1472,13 @@ export default function AnalysePage() {
         </div>
 
         {/* CVD Panel */}
-        <div style={C.card}><div style={C.top}/>
+        <div style={C.card} className="analyse-card-hover"><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:8}}>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <span style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)'}}>CVD Segmenté</span>
+                <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(0,229,255,0.08),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(0,229,255,0.5)'}}>
+                  <span style={{paddingLeft:8}}>CVD Segmenté</span>
+                </span>
                 <div style={{display:'flex',alignItems:'center',gap:4}}>
                   <div style={{width:6,height:6,borderRadius:'50%',background:connected?'var(--tm-profit)':'var(--tm-loss)',animation:connected?'pulse 2s infinite':'none'}}/>
                   <span style={{fontSize:9,fontWeight:700,color:connected?'var(--tm-profit)':'var(--tm-loss)'}}>{connected?'LIVE':'Connexion...'}</span>
@@ -1444,10 +1522,12 @@ export default function AnalysePage() {
         </div>
 
         {/* Order Flow */}
-        <div style={C.card}><div style={C.top}/>
+        <div style={C.card} className="analyse-card-hover"><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-              <div style={{display:'flex',alignItems:'center',gap:6}}><span>⚡</span><span style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)'}}>Order-Flow Intelligence</span></div>
+              <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(191,90,242,0.08),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(191,90,242,0.5)'}}>
+                <span style={{paddingLeft:8}}>⚡ Order-Flow Intelligence</span>
+              </span>
               <span style={{fontSize:9,fontWeight:700,color:connected?'var(--tm-purple)':'var(--tm-text-muted)'}}>LIVE</span>
             </div>
             {pressure&&<>
@@ -1470,10 +1550,12 @@ export default function AnalysePage() {
         </div>
 
         {/* Absorption */}
-        <div style={C.card}><div style={C.top}/>
+        <div style={C.card} className="analyse-card-hover"><div style={C.top}/>
           <div style={{padding:C.p}}>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}>
-              <span style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)'}}>🔍 Absorption</span>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(0,229,255,0.06),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(0,229,255,0.3)'}}>
+                <span style={{paddingLeft:8}}>🔍 Absorption</span>
+              </span>
               <span style={{fontSize:11,fontWeight:700,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',padding:'1px 7px',borderRadius:4}}>{absorbs.length}</span>
             </div>
             {absorbs.length===0?<div style={{fontSize:12,color:'var(--tm-text-muted)',textAlign:'center',padding:'8px 0'}}>Aucun événement détecté</div>:
@@ -1491,10 +1573,12 @@ export default function AnalysePage() {
         </div>
 
         {/* Traps */}
-        <div style={C.card}><div style={C.top}/>
+        <div style={C.card} className="analyse-card-hover"><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-              <span style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)'}}>⚠️ Liquidity Traps</span>
+              <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(255,149,0,0.08),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(255,149,0,0.5)'}}>
+                <span style={{paddingLeft:8}}>⚠️ Liquidity Traps</span>
+              </span>
               <span style={{fontSize:11,fontWeight:700,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.12)',padding:'1px 7px',borderRadius:4}}>{traps.length}</span>
             </div>
             {traps.length===0?<div style={{fontSize:12,color:'var(--tm-text-muted)',textAlign:'center',padding:'8px 0'}}>Aucun événement</div>:
@@ -1516,12 +1600,14 @@ export default function AnalysePage() {
       </div>}
 
       {/* ── STRUCTURE ── */}
-      {isCrypto&&mode==='structure'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
-        <div style={C.card}><div style={C.top}/>
+      {isCrypto&&mode==='structure'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
+        <div style={C.card} className="analyse-card-hover"><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <span>🐋</span><span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>Whale CVD Structurel</span>
+                <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(191,90,242,0.08),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(191,90,242,0.5)'}}>
+                  <span style={{paddingLeft:8}}>🐋 Whale CVD Structurel</span>
+                </span>
                 {wtSummary&&<span style={{fontSize:11,fontWeight:700,color:wtSummary.trendColor,background:`${wtSummary.trendColor}15`,padding:'2px 8px',borderRadius:5}}>● {wtSummary.trend}</span>}
               </div>
             </div>
@@ -1545,11 +1631,12 @@ export default function AnalysePage() {
         </div>
 
         {/* Segmented CVD History */}
-        <div style={C.card}><div style={C.top}/>
+        <div style={C.card} className="analyse-card-hover"><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-              <span>📊</span>
-              <span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>CVD par Taille d'Ordre</span>
+              <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(0,229,255,0.08),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(0,229,255,0.4)'}}>
+                <span style={{paddingLeft:8}}>📊 CVD par Taille d'Ordre</span>
+              </span>
               <span style={{fontSize:10,color:'var(--tm-text-muted)',background:'var(--tm-bg-tertiary)',padding:'1px 7px',borderRadius:4}}>Récent · Futures</span>
               {segHistLoad&&<div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>}
             </div>
@@ -1559,7 +1646,7 @@ export default function AnalysePage() {
       </div>}
 
       {/* ── DÉRIVÉS ── */}
-      {isCrypto&&mode==='derivees'&&<div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {isCrypto&&mode==='derivees'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
         {/* Confluence Card en premier */}
         <DerivativesConfluenceCard symbol={symbol}/>
 
@@ -1567,11 +1654,13 @@ export default function AnalysePage() {
           <div style={{width:20,height:20,border:'2px solid #2A2F3E',borderTopColor:'#F59714',borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 8px'}}/>Chargement...
         </div>}
 
-        {oi&&<div style={{...C.card,background:'rgba(245,151,20,0.04)',borderColor:'rgba(245,151,20,0.2)'}}>
-          <div style={{...C.top,background:'linear-gradient(90deg,transparent,rgba(245,151,20,0.2),transparent)'}}/>
+        {oi&&<div style={{...C.card,borderColor:'rgba(245,151,20,0.25)',boxShadow:'0 4px 24px rgba(0,0,0,0.4),0 0 20px rgba(245,151,20,0.05)'}} className="analyse-card-hover">
+          <div style={{...C.top,background:'linear-gradient(90deg,transparent,rgba(245,151,20,0.3),transparent)'}}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12}}>
-              <span>📊</span><span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>Open Interest</span>
+              <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(245,151,20,0.1),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(245,151,20,0.6)'}}>
+                <span style={{paddingLeft:8}}>📊 Open Interest</span>
+              </span>
               <span style={{marginLeft:'auto',fontSize:9,fontWeight:700,color:oi.bullish===true?'var(--tm-profit)':oi.bullish===false?'var(--tm-loss)':'var(--tm-text-secondary)',background:`${oi.bullish===true?'var(--tm-profit)':oi.bullish===false?'var(--tm-loss)':'var(--tm-text-secondary)'}`,padding:'1px 7px',borderRadius:4}}>{oi.signal}</span>
             </div>
             <div style={{fontSize:28,fontWeight:700,color:'white',fontFamily:'JetBrains Mono,monospace',letterSpacing:'-0.02em',marginBottom:4}}>{fmtU(oi.usd)}</div>
@@ -1585,11 +1674,13 @@ export default function AnalysePage() {
           </div>
         </div>}
 
-        {funding&&<div style={{...C.card,background:'rgba(66,165,245,0.04)',borderColor:'rgba(66,165,245,0.18)'}}>
-          <div style={{...C.top,background:'linear-gradient(90deg,transparent,rgba(66,165,245,0.15),transparent)'}}/>
+        {funding&&<div style={{...C.card,borderColor:'rgba(66,165,245,0.25)',boxShadow:'0 4px 24px rgba(0,0,0,0.4),0 0 20px rgba(66,165,245,0.05)'}} className="analyse-card-hover">
+          <div style={{...C.top,background:'linear-gradient(90deg,transparent,rgba(66,165,245,0.25),transparent)'}}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-              <div style={{display:'flex',alignItems:'center',gap:6}}><span>💸</span><span style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)'}}>Funding Rate & Basis</span></div>
+              <span className="analyse-section-label" style={{background:'linear-gradient(90deg,rgba(66,165,245,0.1),transparent)',padding:'3px 10px 3px 0',borderLeft:'2px solid rgba(66,165,245,0.6)'}}>
+                <span style={{paddingLeft:8}}>💸 Funding Rate & Basis</span>
+              </span>
               <span style={{fontSize:10,color:'#42A5F5',background:'rgba(66,165,245,0.1)',padding:'2px 8px',borderRadius:5}}>prochain {funding.nextIn}</span>
             </div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
