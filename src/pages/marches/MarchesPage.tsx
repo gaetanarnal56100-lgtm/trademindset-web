@@ -823,11 +823,12 @@ function FundingRatesPanel({ rates, tokens }: { rates: Record<string, number>; t
 
 // ── Screener Panel ────────────────────────────────────────────────────────────
 
-function ScreenerPanel({ state, onChange, onReset, resultCount }: {
+function ScreenerPanel({ state, onChange, onReset, resultCount, hideVolume = false }: {
   state: ScreenerState
   onChange: (s: ScreenerState) => void
   onReset: () => void
   resultCount: number
+  hideVolume?: boolean
 }) {
   const isActive = state.rsiPreset !== 'all' || state.vmcZone !== 'all' || state.volumeFilter !== 'all' || state.divOnly
 
@@ -885,17 +886,100 @@ function ScreenerPanel({ state, onChange, onReset, resultCount }: {
 
         {/* Volume + Divergence */}
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-          <span style={{ fontSize:9, fontWeight:700, color:'rgba(0,229,255,0.5)', textTransform:'uppercase', letterSpacing:'0.1em', width:50 }}>Vol.</span>
-          {pill('Tous', state.volumeFilter === 'all', () => onChange({ ...state, volumeFilter:'all' }))}
-          {pill('> $10M', state.volumeFilter === '10m', () => onChange({ ...state, volumeFilter:'10m' }))}
-          {pill('> $100M', state.volumeFilter === '100m', () => onChange({ ...state, volumeFilter:'100m' }))}
-          {pill('> $1B', state.volumeFilter === '1b', () => onChange({ ...state, volumeFilter:'1b' }))}
-          <div style={{ marginLeft:8 }}>
+          {!hideVolume && <>
+            <span style={{ fontSize:9, fontWeight:700, color:'rgba(0,229,255,0.5)', textTransform:'uppercase', letterSpacing:'0.1em', width:50 }}>Vol.</span>
+            {pill('Tous', state.volumeFilter === 'all', () => onChange({ ...state, volumeFilter:'all' }))}
+            {pill('> $10M', state.volumeFilter === '10m', () => onChange({ ...state, volumeFilter:'10m' }))}
+            {pill('> $100M', state.volumeFilter === '100m', () => onChange({ ...state, volumeFilter:'100m' }))}
+            {pill('> $1B', state.volumeFilter === '1b', () => onChange({ ...state, volumeFilter:'1b' }))}
+          </>}
+          <div style={{ marginLeft: hideVolume ? 0 : 8 }}>
             {pill(state.divOnly ? '✓ Divergences only' : '📡 Divergences only', state.divOnly, () => onChange({ ...state, divOnly: !state.divOnly }), '255,149,0')}
           </div>
         </div>
       </div>
     </motion.div>
+  )
+}
+
+// ── Forex MTF fetcher (Yahoo Finance — 1H / 1D / 1W) ─────────────────────────
+
+const FOREX_DISPLAY_TO_YAHOO: Record<string, string> = Object.fromEntries(
+  FOREX_ASSETS.map(a => [a.displaySym, a.symbol])
+)
+
+async function fetchMTFForexRSI(displaySymbols: string[]): Promise<Record<string, MTFData>> {
+  const result: Record<string, MTFData> = {}
+  await Promise.allSettled(displaySymbols.map(async ds => {
+    try {
+      const yahooSym = FOREX_DISPLAY_TO_YAHOO[ds]
+      if (!yahooSym) return
+      const fn = httpsCallable<Record<string, unknown>, YahooFn>(fbFunctions, 'fetchYahooCandles')
+      const [r1h, r1d, r1w] = await Promise.all([
+        fn({ symbol: yahooSym, interval: '1h',  range: '1mo' }),
+        fn({ symbol: yahooSym, interval: '1d',  range: '3mo' }),
+        fn({ symbol: yahooSym, interval: '1wk', range: '1y'  }),
+      ])
+      const gc = (res: { data: YahooFn }) => res.data.s === 'ok' ? res.data.candles.map(c => c.c).filter(v => !isNaN(v)) : []
+      result[ds] = { rsi1h: calcRSI(gc(r1h)), rsi4h: calcRSI(gc(r1d)), rsi1d: calcRSI(gc(r1w)) }
+    } catch { /* skip */ }
+  }))
+  return result
+}
+
+// ── Generic Rotation Panel (stocks / forex) ───────────────────────────────────
+
+interface RotationItem { label: string; emoji?: string; avgRSI: number; count: number; color: string; topLabel?: string }
+
+function GenericRotationPanel({ title, subtitle, items, onClose }: {
+  title: string; subtitle?: string; items: RotationItem[]; onClose: () => void
+}) {
+  const sorted = [...items].filter(i => i.count > 0).sort((a, b) => b.avgRSI - a.avgRSI)
+
+  return createPortal(
+    <div style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+      <motion.div initial={{ opacity:0, scale:0.95, y:20 }} animate={{ opacity:1, scale:1, y:0 }} exit={{ opacity:0, scale:0.95 }}
+        onClick={e => e.stopPropagation()}
+        style={{ width:'min(540px,90vw)', background:'rgba(8,12,22,0.97)', border:'1px solid rgba(52,199,89,0.2)', borderRadius:16, padding:'24px', position:'relative', overflow:'hidden', boxShadow:'0 0 60px rgba(52,199,89,0.06)' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(52,199,89,0.5),transparent)'}}/>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ fontSize:18 }}>🔄</span>
+            <div>
+              <span style={{ fontSize:16, fontWeight:800, color:'rgba(226,232,240,0.95)', fontFamily:'Syne, sans-serif' }}>{title}</span>
+              {subtitle && <div style={{ fontSize:10, color:'rgba(148,163,184,0.4)', marginTop:2 }}>{subtitle}</div>}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background:'none', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, color:'rgba(148,163,184,0.6)', fontSize:16, cursor:'pointer', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {sorted.map((item, i) => {
+            const pct = (item.avgRSI / 100) * 100
+            return (
+              <div key={item.label}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:5 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    {item.emoji && <span style={{ fontSize:14 }}>{item.emoji}</span>}
+                    <span style={{ fontSize:12, fontWeight:700, color:'rgba(226,232,240,0.9)' }}>{item.label}</span>
+                    <span style={{ fontSize:9, color:`rgba(${item.color},0.5)`, background:`rgba(${item.color},0.08)`, padding:'1px 6px', borderRadius:99, border:`1px solid rgba(${item.color},0.2)` }}>{item.count} assets</span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    {item.topLabel && <span style={{ fontSize:10, color:'rgba(148,163,184,0.5)', fontFamily:'JetBrains Mono, monospace' }}>{item.topLabel}</span>}
+                    <span style={{ fontSize:13, fontWeight:800, color:rsiColor(item.avgRSI), fontFamily:'JetBrains Mono, monospace' }}>{item.avgRSI}</span>
+                  </div>
+                </div>
+                <div style={{ height:6, background:'rgba(255,255,255,0.04)', borderRadius:3, overflow:'hidden' }}>
+                  <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.8, delay:i*0.07, ease:'easeOut' }}
+                    style={{ height:'100%', background:`linear-gradient(90deg, rgba(${item.color},0.6), rgba(${item.color},0.9))`, borderRadius:3, boxShadow:`0 0 8px rgba(${item.color},0.4)` }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <p style={{ fontSize:10, color:'rgba(148,163,184,0.3)', textAlign:'center', marginTop:16, marginBottom:0 }}>RSI moyen par groupe · timeframe courant</p>
+      </motion.div>
+    </div>,
+    document.body
   )
 }
 
@@ -908,14 +992,22 @@ function getMTFAlign(rsi1h: number, rsi4h: number, rsi1d: number): 'bull' | 'bea
   return 'mixed'
 }
 
-function MTFView({ tokens, onTokenClick }: { tokens: TokenRSIWithDiv[]; onTokenClick: (s: string) => void }) {
+type MTFFetcher = (symbols: string[]) => Promise<Record<string, MTFData>>
+
+function MTFView({ tokens, onTokenClick, fetcher = fetchMTFRSI, tfLabels = ['RSI 1H','RSI 4H','RSI 1D'], accentColor = '0,229,255' }: {
+  tokens: TokenRSIWithDiv[]
+  onTokenClick: (s: string) => void
+  fetcher?: MTFFetcher
+  tfLabels?: [string, string, string]
+  accentColor?: string
+}) {
   const [mtfData, setMtfData] = useState<Record<string, MTFData>>({})
   const [loading, setLoading] = useState(true)
   const symbols = tokens.map(t => t.symbol)
 
   useEffect(() => {
     setLoading(true)
-    fetchMTFRSI(symbols).then(d => { setMtfData(d); setLoading(false) })
+    fetcher(symbols).then(d => { setMtfData(d); setLoading(false) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbols.join(',')])
 
@@ -938,11 +1030,11 @@ function MTFView({ tokens, onTokenClick }: { tokens: TokenRSIWithDiv[]; onTokenC
     <div style={{ display:'flex', flexDirection:'column', gap:3, marginTop:8 }}>
       {/* Header */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 90px 90px 90px 80px', gap:8, padding:'4px 12px', marginBottom:4 }}>
-        <span style={{ fontSize:9, fontWeight:700, color:'rgba(0,229,255,0.4)', textTransform:'uppercase' }}>Asset</span>
-        {['RSI 1H','RSI 4H','RSI 1D'].map(l => (
-          <span key={l} style={{ fontSize:9, fontWeight:700, color:'rgba(0,229,255,0.4)', textTransform:'uppercase', textAlign:'center' }}>{l}</span>
+        <span style={{ fontSize:9, fontWeight:700, color:`rgba(${accentColor},0.4)`, textTransform:'uppercase' }}>Asset</span>
+        {tfLabels.map(l => (
+          <span key={l} style={{ fontSize:9, fontWeight:700, color:`rgba(${accentColor},0.4)`, textTransform:'uppercase', textAlign:'center' }}>{l}</span>
         ))}
-        <span style={{ fontSize:9, fontWeight:700, color:'rgba(0,229,255,0.4)', textTransform:'uppercase', textAlign:'center' }}>Align.</span>
+        <span style={{ fontSize:9, fontWeight:700, color:`rgba(${accentColor},0.4)`, textTransform:'uppercase', textAlign:'center' }}>Align.</span>
       </div>
       {tokens.map((tok, i) => {
         const mtf = mtfData[tok.symbol]
@@ -1107,9 +1199,14 @@ function CorrelationMatrix({ tokens, onClose }: { tokens: TokenRSIWithDiv[]; onC
 // ── Forex Tab ─────────────────────────────────────────────────────────────────
 
 function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
-  const [tokens, setTokens] = useState<TokenRSIWithDiv[]>([])
-  const [loading, setLoading] = useState(true)
-  const [timeframe, setTimeframe] = useState<Timeframe>('1d')
+  const [tokens,       setTokens]       = useState<TokenRSIWithDiv[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [timeframe,    setTimeframe]    = useState<Timeframe>('1d')
+  const [screenerOpen, setScreenerOpen] = useState(false)
+  const [screener,     setScreener]     = useState<ScreenerState>(DEFAULT_SCREENER)
+  const [mtfMode,      setMtfMode]      = useState(false)
+  const [showRotation, setShowRotation] = useState(false)
+  const [showCorr,     setShowCorr]     = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1130,6 +1227,37 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
   }, [timeframe])
 
   const GROUPS = ['Forex', 'Metals', 'Energy', 'Indices', 'Crypto']
+  const GROUP_COLORS: Record<string, string> = { Forex:'0,229,255', Metals:'255,215,0', Energy:'255,149,0', Indices:'10,133,255', Crypto:'191,90,242' }
+
+  const screenerTokens = useMemo(() => applyScreener(tokens, screener), [tokens, screener])
+  const screenerActive = screener.rsiPreset !== 'all' || screener.vmcZone !== 'all' || screener.divOnly
+
+  const rotationItems = useMemo((): RotationItem[] =>
+    GROUPS.map(g => {
+      const gt = tokens.filter(t => FOREX_ASSETS.find(a => a.displaySym === t.symbol && a.group === g))
+      const avg = avgRSI(gt) ?? 50
+      const top = [...gt].sort((a, b) => b.rsi - a.rsi)[0]
+      const GL: Record<string, string> = { Forex:'💱 Forex', Metals:'🥇 Métaux', Energy:'🛢️ Énergie', Indices:'📊 Indices', Crypto:'₿ Crypto' }
+      return { label: GL[g] ?? g, avgRSI: avg, count: gt.length, color: GROUP_COLORS[g] ?? '148,163,184', topLabel: top ? `↑ ${top.symbol} ${top.rsi}` : undefined }
+    })
+  , [tokens])
+
+  const ForexToolBtn = ({ label, active, onClick, color = '52,199,89' }: { label: string; active?: boolean; onClick: () => void; color?: string }) => (
+    <motion.button onClick={onClick} whileHover={{ y:-1 }}
+      style={{
+        padding:'5px 12px', borderRadius:8, fontSize:11, fontWeight:600, cursor:'pointer',
+        border:`1px solid ${active ? `rgba(${color},0.5)` : 'rgba(255,255,255,0.08)'}`,
+        background: active ? `rgba(${color},0.12)` : 'rgba(255,255,255,0.02)',
+        color: active ? `rgb(${color})` : 'rgba(148,163,184,0.5)',
+        boxShadow: active ? `0 0 10px rgba(${color},0.15)` : 'none',
+        transition:'all 0.15s', display:'flex', alignItems:'center', gap:4,
+      }}>
+      {label}
+      {screenerActive && label.includes('Screener') && (
+        <span style={{ fontSize:9, fontWeight:800, background:`rgba(${color},0.2)`, padding:'1px 5px', borderRadius:99, color:`rgb(${color})` }}>{screenerTokens.length}</span>
+      )}
+    </motion.button>
+  )
 
   if (loading) return (
     <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -1156,7 +1284,7 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
 
   return (
     <div>
-      <div style={{ marginBottom:12 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12, flexWrap:'wrap' }}>
         <FilterPills
           label="Timeframe"
           options={(['1d','4h','1h'] as Timeframe[]).map(v => ({ value:v, label:v.toUpperCase() }))}
@@ -1165,41 +1293,80 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
         />
       </div>
 
-      {GROUPS.map(group => {
-        const groupAssets = FOREX_ASSETS.filter(a => a.group === group)
-        const groupTokens = groupAssets.map(a => tokens.find(t => t.symbol === a.displaySym)).filter(Boolean) as TokenRSIWithDiv[]
-        if (!groupTokens.length) return null
+      {/* Tool buttons */}
+      <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
+        <ForexToolBtn label="🔍 Screener" active={screenerOpen || screenerActive} onClick={() => setScreenerOpen(o => !o)} color="0,229,255" />
+        <ForexToolBtn label="📊 Multi-TF" active={mtfMode} onClick={() => setMtfMode(m => !m)} color="191,90,242" />
+        <ForexToolBtn label="🔄 Rotation" onClick={() => setShowRotation(true)} />
+        <ForexToolBtn label="🔗 Corrélation" onClick={() => setShowCorr(true)} color="255,149,0" />
+      </div>
 
-        const groupLabels: Record<string, string> = { Forex:'💱 Paires Forex', Metals:'🥇 Métaux Précieux', Energy:'🛢️ Énergie', Indices:'📊 Indices Futures', Crypto:'₿ Crypto' }
-        const groupColors: Record<string, string> = { Forex:'0,229,255', Metals:'255,215,0', Energy:'255,149,0', Indices:'10,133,255', Crypto:'191,90,242' }
-        return (
-          <div key={group} style={{ marginBottom:20 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-              <span style={{ fontSize:11, fontWeight:700, color:`rgba(${groupColors[group] ?? '0,229,255'},0.7)`, textTransform:'uppercase', letterSpacing:'0.08em' }}>{groupLabels[group]}</span>
-              <span style={{ fontSize:9, color:`rgba(${groupColors[group] ?? '0,229,255'},0.4)`, background:`rgba(${groupColors[group] ?? '0,229,255'},0.07)`, border:`1px solid rgba(${groupColors[group] ?? '0,229,255'},0.15)`, padding:'1px 7px', borderRadius:99 }}>{groupTokens.length} assets</span>
-            </div>
-            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-              {groupTokens.map((tok, i) => {
-                const isPos = tok.change24h >= 0
-                const gc = groupColors[group] ?? '0,229,255'
-                return (
-                  <motion.button key={tok.symbol}
-                    initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.04 }}
-                    whileHover={{ y:-3, boxShadow:`0 8px 24px rgba(${gc},0.14)` }}
-                    onClick={() => onTokenClick(tok.symbol)}
-                    style={{ display:'flex', flexDirection:'column', gap:4, padding:'10px 14px', borderRadius:10, cursor:'pointer', background:'rgba(8,12,22,0.8)', border:`1px solid rgba(${gc},0.12)`, textAlign:'left', minWidth:110 }}>
-                    <span style={{ fontSize:11, fontWeight:700, color:'rgba(226,232,240,0.85)', fontFamily:'JetBrains Mono, monospace' }}>{tok.symbol}</span>
-                    <span style={{ fontSize:15, fontWeight:800, color:rsiColor(tok.rsi), fontFamily:'JetBrains Mono, monospace' }}>RSI {tok.rsi}</span>
-                    <span style={{ fontSize:10, color: isPos ? '#22C759' : '#FF3B30' }}>{isPos ? '+' : ''}{tok.change24h}%</span>
-                  </motion.button>
-                )
-              })}
-            </div>
+      <AnimatePresence>
+        {screenerOpen && (
+          <ScreenerPanel state={screener} onChange={setScreener} onReset={() => setScreener(DEFAULT_SCREENER)} resultCount={screenerTokens.length} hideVolume />
+        )}
+      </AnimatePresence>
+
+      {/* MTF mode */}
+      {mtfMode ? (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12, padding:'8px 12px', background:'rgba(191,90,242,0.06)', border:'1px solid rgba(191,90,242,0.2)', borderRadius:8 }}>
+            <span style={{ fontSize:11, color:'rgba(191,90,242,0.8)', fontWeight:600 }}>📊 Multi-Timeframe · RSI 1H / 1D / 1W</span>
+            <span style={{ fontSize:10, color:'rgba(148,163,184,0.4)' }}>via Yahoo Finance</span>
           </div>
-        )
-      })}
+          <MTFView
+            tokens={screenerTokens}
+            onTokenClick={onTokenClick}
+            fetcher={fetchMTFForexRSI}
+            tfLabels={['RSI 1H', 'RSI 1D', 'RSI 1W']}
+            accentColor="191,90,242"
+          />
+        </div>
+      ) : (
+        <>
+          {GROUPS.map(group => {
+            const groupAssets = FOREX_ASSETS.filter(a => a.group === group)
+            const allGroupTokens = groupAssets.map(a => tokens.find(t => t.symbol === a.displaySym)).filter(Boolean) as TokenRSIWithDiv[]
+            const groupTokens = screenerActive ? allGroupTokens.filter(t => screenerTokens.some(s => s.symbol === t.symbol)) : allGroupTokens
+            if (!groupTokens.length) return null
+            const groupLabels: Record<string, string> = { Forex:'💱 Paires Forex', Metals:'🥇 Métaux Précieux', Energy:'🛢️ Énergie', Indices:'📊 Indices Futures', Crypto:'₿ Crypto' }
+            const gc = GROUP_COLORS[group] ?? '0,229,255'
+            return (
+              <div key={group} style={{ marginBottom:20 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:`rgba(${gc},0.7)`, textTransform:'uppercase', letterSpacing:'0.08em' }}>{groupLabels[group]}</span>
+                  <span style={{ fontSize:9, color:`rgba(${gc},0.4)`, background:`rgba(${gc},0.07)`, border:`1px solid rgba(${gc},0.15)`, padding:'1px 7px', borderRadius:99 }}>{groupTokens.length} assets</span>
+                </div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                  {groupTokens.map((tok, i) => {
+                    const isPos = tok.change24h >= 0
+                    return (
+                      <motion.button key={tok.symbol}
+                        initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.04 }}
+                        whileHover={{ y:-3, boxShadow:`0 8px 24px rgba(${gc},0.14)` }}
+                        onClick={() => onTokenClick(tok.symbol)}
+                        style={{ display:'flex', flexDirection:'column', gap:4, padding:'10px 14px', borderRadius:10, cursor:'pointer', background:'rgba(8,12,22,0.8)', border:`1px solid rgba(${gc},0.12)`, textAlign:'left', minWidth:110 }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:'rgba(226,232,240,0.85)', fontFamily:'JetBrains Mono, monospace' }}>{tok.symbol}</span>
+                        <span style={{ fontSize:15, fontWeight:800, color:rsiColor(tok.rsi), fontFamily:'JetBrains Mono, monospace' }}>RSI {tok.rsi}</span>
+                        <span style={{ fontSize:10, color: isPos ? '#22C759' : '#FF3B30' }}>{isPos ? '+' : ''}{tok.change24h}%</span>
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </>
+      )}
 
       <div ref={shareRef} style={{ display:'none' }} />
+
+      <AnimatePresence>
+        {showRotation && <GenericRotationPanel title="Rotation par Groupe" subtitle="RSI moyen · Forex / Métaux / Énergie / Indices" items={rotationItems} onClose={() => setShowRotation(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showCorr && <CorrelationMatrix tokens={screenerTokens} onClose={() => setShowCorr(false)} />}
+      </AnimatePresence>
     </div>
   )
 }
@@ -1215,6 +1382,10 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   const [subset,        setSubset]        = useState<StockSubset>('all')
   const [refKey,        setRefKey]        = useState<StockRef>('none')
   const [strength,      setStrength]      = useState<StrengthFilter>('all')
+  const [screenerOpen,  setScreenerOpen]  = useState(false)
+  const [screener,      setScreener]      = useState<ScreenerState>(DEFAULT_SCREENER)
+  const [showRotation,  setShowRotation]  = useState(false)
+  const [showCorr,      setShowCorr]      = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1279,6 +1450,49 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   const stronger = refRSI !== null ? subsetTokens.filter(t => (t.rsi ?? 50) > refRSI).length : 0
   const weaker   = refRSI !== null ? subsetTokens.filter(t => (t.rsi ?? 50) < refRSI).length : 0
 
+  const screenerTokens = useMemo(() => applyScreener(finalTokens, screener), [finalTokens, screener])
+  const screenerActive = screener.rsiPreset !== 'all' || screener.vmcZone !== 'all' || screener.divOnly
+
+  // Group rotation items from loaded data
+  const rotationItems = useMemo((): RotationItem[] => {
+    const COLORS: Record<string, string> = {
+      '🇺🇸 US Tech':'0,229,255', '🇺🇸 US Finance':'10,133,255', '🇺🇸 US Santé':'52,199,89',
+      '🇺🇸 US Industrie & Énergie':'255,149,0', '🇺🇸 US Consommation & Médias':'191,90,242',
+      '🇫🇷 CAC 40':'0,122,255', '🇩🇪 DAX':'255,59,48', '🇬🇧 FTSE 100':'255,214,10',
+      '🇪🇺 Europe (Autres)':'52,199,89', '🌏 Asie & International':'175,82,222',
+      '📊 ETF & Matières premières':'100,210,255',
+    }
+    return STOCK_GROUPS.map(g => {
+      const toks = groupData[g.label] ?? []
+      const avg = avgRSI(toks) ?? 50
+      const top = [...toks].sort((a, b) => b.rsi - a.rsi)[0]
+      return {
+        label: g.label.replace(/^[\u{1F1A0}-\u{1F9FF}\uFE0F\u{1F300}-\u{1FFFF} ]+/u, '').trim(),
+        emoji: g.label.match(/^([\u{1F1A0}-\u{1F9FF}\uFE0F\u{1F300}-\u{1FFFF}📊]+)/u)?.[0],
+        avgRSI: avg, count: toks.length,
+        color: COLORS[g.label] ?? '148,163,184',
+        topLabel: top ? `↑ ${top.symbol} ${top.rsi}` : undefined,
+      }
+    })
+  }, [groupData])
+
+  const StockToolBtn = ({ label, active, onClick, color = '10,133,255' }: { label: string; active?: boolean; onClick: () => void; color?: string }) => (
+    <motion.button onClick={onClick} whileHover={{ y:-1 }}
+      style={{
+        padding:'5px 12px', borderRadius:8, fontSize:11, fontWeight:600, cursor:'pointer',
+        border:`1px solid ${active ? `rgba(${color},0.5)` : 'rgba(255,255,255,0.08)'}`,
+        background: active ? `rgba(${color},0.12)` : 'rgba(255,255,255,0.02)',
+        color: active ? `rgb(${color})` : 'rgba(148,163,184,0.5)',
+        boxShadow: active ? `0 0 10px rgba(${color},0.15)` : 'none',
+        transition:'all 0.15s', display:'flex', alignItems:'center', gap:4,
+      }}>
+      {label}
+      {screenerActive && label.includes('Screener') && (
+        <span style={{ fontSize:9, fontWeight:800, background:`rgba(${color},0.2)`, padding:'1px 5px', borderRadius:99, color:`rgb(${color})` }}>{screenerTokens.length}</span>
+      )}
+    </motion.button>
+  )
+
   return (
     <div>
       {!allLoaded && (
@@ -1322,18 +1536,38 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         />
       </div>
 
+      {/* Tool buttons */}
+      <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
+        <StockToolBtn label="🔍 Screener" active={screenerOpen || screenerActive} onClick={() => setScreenerOpen(o => !o)} />
+        <StockToolBtn label="🔄 Rotation" onClick={() => setShowRotation(true)} color="52,199,89" />
+        <StockToolBtn label="🔗 Corrélation" onClick={() => setShowCorr(true)} color="255,149,0" />
+      </div>
+
+      <AnimatePresence>
+        {screenerOpen && (
+          <ScreenerPanel state={screener} onChange={setScreener} onReset={() => setScreener(DEFAULT_SCREENER)} resultCount={screenerTokens.length} hideVolume />
+        )}
+      </AnimatePresence>
+
       {isFirstLoad && STOCK_GROUPS.filter(g => !loadedGroups.has(g.label)).map(g => {
         const prog = groupProgress[g.label]
         return <SkeletonGroup key={g.label} label={`${g.label} ${prog ? `(${prog.done}/${prog.total})` : ''}`} count={g.symbols.length} />
       })}
 
-      {finalTokens.length > 0 && <DivergenceScanner tokens={finalTokens as TokenRSIWithDiv[]} onTokenClick={onTokenClick} timeframe={timeframe} />}
+      {screenerTokens.length > 0 && <DivergenceScanner tokens={screenerTokens as TokenRSIWithDiv[]} onTokenClick={onTokenClick} timeframe={timeframe} />}
 
-      {finalTokens.length > 0 && (
+      {screenerTokens.length > 0 && (
         <div ref={shareRef}>
-          <RsiHeatmap tokens={finalTokens} timeframe={timeframe} defaultTimeframe="1d" onTimeframeChange={setTimeframe} onTokenClick={onTokenClick} />
+          <RsiHeatmap tokens={screenerTokens} timeframe={timeframe} defaultTimeframe="1d" onTimeframeChange={setTimeframe} onTokenClick={onTokenClick} />
         </div>
       )}
+
+      <AnimatePresence>
+        {showRotation && <GenericRotationPanel title="Rotation par Secteur" subtitle="RSI moyen par groupe d'actions" items={rotationItems} onClose={() => setShowRotation(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showCorr && <CorrelationMatrix tokens={screenerTokens} onClose={() => setShowCorr(false)} />}
+      </AnimatePresence>
     </div>
   )
 }
