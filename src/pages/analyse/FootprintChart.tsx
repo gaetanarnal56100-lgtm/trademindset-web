@@ -92,7 +92,7 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
     if (!symbol) return
     setLoading(true); setError('')
     try {
-      // 1. Klines
+      // 1. Klines (includes takerBuyQuoteAssetVolume col 10 for delta fallback)
       const klinesRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${candleCount}`)
       if (!klinesRes.ok) throw new Error(`Klines ${klinesRes.status}`)
       const klines: unknown[][] = await klinesRes.json()
@@ -101,27 +101,62 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
       const allH = klines.map(k => parseFloat(k[2] as string))
       const allL = klines.map(k => parseFloat(k[3] as string))
       const rangeH = Math.max(...allH), rangeL = Math.min(...allL)
-      const rawBin = (rangeH - rangeL) / 40
+      const rawBin = (rangeH - rangeL) / 30  // ~30 levels target
       const bs = snapBinSize(rawBin)
       setBinSize(bs)
 
-      // 2. aggTrades — up to 2 batches for better coverage
+      // 2. aggTrades — 8 parallel batches covering the full period
+      //    BTC has ~200-2000 trades/min → 1000 trades/batch × 8 = 8000 trades
       const startTime = klines[0][0] as number
-      const batches = await Promise.all([
-        fetch(`https://api.binance.com/api/v3/aggTrades?symbol=${symbol}&startTime=${startTime}&limit=1000`).then(r => r.json()),
-        fetch(`https://api.binance.com/api/v3/aggTrades?symbol=${symbol}&startTime=${startTime + Math.floor((Date.now()-startTime)/2)}&limit=1000`).then(r => r.json()),
-      ])
+      const endTime   = (klines[klines.length - 1][6] as number) || Date.now()
+      const duration  = endTime - startTime
+      const NUM_CHUNKS = 8
+      const chunkMs   = Math.floor(duration / NUM_CHUNKS)
+
+      const batchPromises = Array.from({ length: NUM_CHUNKS }, (_, i) => {
+        const chunkStart = startTime + i * chunkMs
+        return fetch(
+          `https://api.binance.com/api/v3/aggTrades?symbol=${symbol}&startTime=${chunkStart}&limit=1000`
+        ).then(r => r.json()).catch(() => [])
+      })
+      const batches = await Promise.all(batchPromises)
+
+      // Deduplicate by aggTrade id
       const allTrades: { p:string; q:string; m:boolean; T:number }[] = []
       const seen = new Set<number>()
       for (const batch of batches) {
         if (!Array.isArray(batch)) continue
-        for (const t of batch as {a:number;p:string;q:string;m:boolean;T:number}[]) {
-          if (!seen.has(t.a)) { seen.add(t.a); allTrades.push(t) }
+        for (const t of batch as { a:number; p:string; q:string; m:boolean; T:number }[]) {
+          if (t.T >= startTime && t.T <= endTime && !seen.has(t.a)) {
+            seen.add(t.a)
+            allTrades.push(t)
+          }
         }
       }
 
-      // 3. Build footprint
+      // 3. Build footprint — with kline takerBuy fallback for delta
       const fp = buildFootprint(klines, allTrades, bs)
+
+      // Inject kline-level delta fallback for candles that still have 0 trades
+      for (let i = 0; i < fp.length; i++) {
+        const c  = fp[i]
+        const k  = klines[i]
+        const klBuyVol  = parseFloat(k[10] as string) // takerBuyQuoteAssetVolume
+        const klTotVol  = parseFloat(k[7]  as string) // quoteAssetVolume
+        const klSellVol = klTotVol - klBuyVol
+        // Only use kline fallback if footprint has no trades
+        if (c.levels.size === 0) {
+          // Distribute kline volume across price range as a fallback
+          const mid  = (c.open + c.close) / 2
+          const bin  = Math.round(Math.floor(mid / bs) * bs * 1e8) / 1e8
+          c.levels.set(bin, { buyVol: klBuyVol * 0.6, sellVol: klSellVol * 0.6 })
+          c.candleDelta = klBuyVol - klSellVol
+          c.poc = bin
+        } else if (c.candleDelta === 0) {
+          // Correct delta from kline if aggTrades didn't capture it
+          c.candleDelta = klBuyVol - klSellVol
+        }
+      }
 
       // 4. Global max for cell intensity
       let gmax = 1
@@ -255,17 +290,38 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
       const x = PRICE_W + ci * actualCandleW
       if (x + actualCandleW > W - VP_W) return
 
-      // Candle OHLC line (wick)
+      // Candle body background (light tint across the O-C range)
       const wickX = x + actualCandleW / 2
       const yOpen  = toY(c.open)
       const yClose = toY(c.close)
       const yHigh  = toY(c.high)
       const yLow   = toY(c.low)
       const isBull = c.close >= c.open
+      const bodyTop    = Math.min(yOpen, yClose)
+      const bodyBottom = Math.max(yOpen, yClose)
+      ctx.fillStyle = isBull ? 'rgba(52,199,89,0.04)' : 'rgba(255,69,58,0.04)'
+      ctx.fillRect(x + 1, bodyTop, actualCandleW - 2, bodyBottom - bodyTop)
+
+      // Candle OHLC line (wick)
       ctx.strokeStyle = isBull ? 'rgba(52,199,89,0.5)' : 'rgba(255,69,58,0.5)'
       ctx.lineWidth = 1; ctx.setLineDash([])
       ctx.beginPath(); ctx.moveTo(wickX, yHigh); ctx.lineTo(wickX, Math.min(yOpen, yClose)); ctx.stroke()
       ctx.beginPath(); ctx.moveTo(wickX, Math.max(yOpen, yClose)); ctx.lineTo(wickX, yLow); ctx.stroke()
+
+      // Empty level markers within candle range (grid lines for untraded levels)
+      let emptyLvl = Math.floor(c.low / binSize) * binSize
+      while (emptyLvl <= c.high) {
+        const lvlRounded = Math.round(emptyLvl * 1e8) / 1e8
+        if (!c.levels.has(lvlRounded)) {
+          const ey = toY(lvlRounded + binSize * 0.5)
+          if (ey >= 0 && ey <= chartH) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.03)'
+            ctx.lineWidth = 0.5
+            ctx.beginPath(); ctx.moveTo(x + 1, ey); ctx.lineTo(x + actualCandleW - 1, ey); ctx.stroke()
+          }
+        }
+        emptyLvl = Math.round((emptyLvl + binSize) * 1e8) / 1e8
+      }
 
       // POC highlight line across full candle
       const pocY = toY(c.poc + binSize * 0.5)
