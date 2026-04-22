@@ -16,6 +16,7 @@ import type { LightweightChartHandle } from './LightweightChart'
 import KeyLevelsCard from './KeyLevelsCard'
 import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
+import FootprintChart from './FootprintChart'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
@@ -134,7 +135,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'micro' | 'structure' | 'derivees'
+type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -1805,9 +1806,10 @@ export default function AnalysePage() {
         {/* Mode tabs — neon cyberpunk */}
         <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
           {([
-            {id:'micro',    icon:'📊',label:'Micro',    sub:'Flux temps réel',   color:'rgba(0,229,255,0.9)'},
-            {id:'structure',icon:'🐋',label:'Structure', sub:'Tendance baleine',  color:'rgba(191,90,242,0.9)'},
-            {id:'derivees', icon:'📈',label:'Dérivés',   sub:'OI · Funding · Liq',color:'rgba(255,149,0,0.9)'},
+            {id:'micro',     icon:'📊',label:'Micro',      sub:'Flux temps réel',   color:'rgba(0,229,255,0.9)'},
+            {id:'structure', icon:'🐋',label:'Structure',  sub:'Tendance baleine',  color:'rgba(191,90,242,0.9)'},
+            {id:'derivees',  icon:'📈',label:'Dérivés',    sub:'OI · Funding · L/S',color:'rgba(255,149,0,0.9)'},
+            {id:'orderflow', icon:'⊞', label:'Order Flow', sub:'Footprint · Cluster',color:'rgba(255,69,58,0.9)'},
           ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m=>{
             const active = mode === m.id
             return (
@@ -2088,7 +2090,7 @@ export default function AnalysePage() {
         </div>}
 
         {/* L/S Ratio History */}
-        {lsHistory.length > 0 && <div style={{...C.card, borderColor:'rgba(0,229,255,0.15)'}} className="analyse-card-hover">
+        {mode === 'derivees' && lsHistory.length > 0 && <div style={{...C.card, borderColor:'rgba(0,229,255,0.15)'}} className="analyse-card-hover">
           <div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
@@ -2100,6 +2102,13 @@ export default function AnalysePage() {
           </div>
         </div>}
       </div>}
+
+      {/* ── ORDER FLOW — footprint chart ── */}
+      {isCrypto && mode === 'orderflow' && (
+        <div style={{ position:'relative', zIndex:1, height:'calc(100vh - 340px)', minHeight:500, marginBottom:16 }}>
+          <FootprintChart symbol={symbol} />
+        </div>
+      )}
 
     </div>
   )
