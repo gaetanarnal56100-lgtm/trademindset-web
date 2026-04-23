@@ -355,8 +355,8 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const [q, setQ] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
-  const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const portalRef  = useRef<HTMLDivElement>(null)
   const [dropPos, setDropPos] = useState<{top:number;left:number;width:number}>({top:0,left:0,width:300})
 
   // Recalculate dropdown position on open + scroll/resize
@@ -364,7 +364,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
     if (!open || !triggerRef.current) return
     const calc = () => {
       const r = triggerRef.current!.getBoundingClientRect()
-      setDropPos({ top: r.bottom + 6, left: r.left, width: Math.max(r.width, 300) })
+      setDropPos({ top: r.bottom + 6, left: r.left, width: Math.max(r.width, 320) })
     }
     calc()
     window.addEventListener('scroll', calc, true)
@@ -372,10 +372,13 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
     return () => { window.removeEventListener('scroll', calc, true); window.removeEventListener('resize', calc) }
   }, [open])
 
+  // Close when clicking outside trigger OR portal
   useEffect(() => {
     function h(e: MouseEvent) {
       const t = e.target as Node
-      if (ref.current && !ref.current.contains(t)) setOpen(false)
+      const inTrigger = triggerRef.current?.contains(t) ?? false
+      const inPortal  = portalRef.current?.contains(t)  ?? false
+      if (!inTrigger && !inPortal) setOpen(false)
     }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
@@ -429,8 +432,112 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
 
   const showHistory = !q && history.length > 0
 
+  // onMouseDown sur les items : preventDefault empêche le blur input + fire avant click
+  const selectItem = (r: SearchResult | HistoryEntry) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    handleSelect(r)
+  }
+
+  const dropdownContent = open ? (
+    <div
+      ref={portalRef}
+      style={{
+        position:'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width,
+        background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:14,
+        zIndex:99999, boxShadow:'0 16px 48px rgba(0,0,0,0.8)', overflow:'hidden',
+        minWidth:320,
+      }}
+    >
+      {/* Search input */}
+      <div style={{padding:'10px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8}}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+          placeholder="BTC, ETH, AAPL…"
+          style={{flex:1,background:'transparent',border:'none',color:'var(--tm-text-primary)',fontSize:13,outline:'none'}} />
+        {loading && <div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>}
+        {q && <button onMouseDown={e=>{e.preventDefault();setQ('')}} style={{background:'none',border:'none',color:'var(--tm-text-muted)',cursor:'pointer',fontSize:14,padding:'0 2px'}}>✕</button>}
+      </div>
+
+      {/* Historique */}
+      {showHistory && (
+        <>
+          <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🕐 Historique</span>
+            <button onMouseDown={e=>{e.preventDefault();setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer tout</button>
+          </div>
+          <div style={{maxHeight:320, overflowY:'auto'}}>
+            {history.map(entry => (
+              <button key={entry.symbol} onMouseDown={selectItem(entry as any)}
+                style={{width:'100%',textAlign:'left',padding:'8px 14px',background:entry.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>
+                  {entry.icon}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+                    <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</span>
+                    {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>● actif</span>}
+                  </div>
+                  <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
+                </div>
+                {entry.price != null && (
+                  <div style={{textAlign:'right',flexShrink:0}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{fmtPrice(entry.price)}</div>
+                    <div style={{fontSize:10,fontWeight:600,color:(entry.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
+                      {(entry.change24h??0)>=0?'+':''}{entry.change24h?.toFixed(2)}%
+                    </div>
+                  </div>
+                )}
+                <div onMouseDown={e=>{e.stopPropagation();removeFromHistory(entry.symbol,e)}} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.04)',color:'var(--tm-text-muted)',fontSize:11,flexShrink:0,cursor:'pointer'}}>×</div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Résultats de recherche */}
+      {q && (
+        <>
+          {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Résultats</div>}
+          <div style={{maxHeight:300,overflowY:'auto'}}>
+            {results.length === 0 ? (
+              <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun résultat pour "{q}"</div>
+            ) : results.map(r => (
+              <button key={r.symbol} onMouseDown={selectItem(r)}
+                style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>
+                  {r.icon}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
+                  <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
+                </div>
+                {r.symbol===symbol && <span style={{fontSize:9,color:'var(--tm-accent)'}}>●</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Populaires si pas de query et pas d'historique */}
+      {!q && !history.length && (
+        <>
+          <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>⭐ Populaires</div>
+          <div style={{maxHeight:280,overflowY:'auto'}}>
+            {results.map(r => (
+              <button key={r.symbol} onMouseDown={selectItem(r)}
+                style={{width:'100%',textAlign:'left',padding:'9px 14px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
+                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}</div></div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  ) : null
+
   return (
-    <div ref={ref} style={{position:'relative', flex: 1}}>
+    <div style={{position:'relative', flex: 1}}>
       {/* Trigger button */}
       <button ref={triggerRef} onClick={() => setOpen(x => !x)} style={{
         display:'flex', alignItems:'center', gap:8, background:'var(--tm-bg-secondary)',
@@ -449,105 +556,8 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
         <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="var(--tm-text-muted)" strokeWidth="1.5" strokeLinecap="round"/></svg>
       </button>
 
-      {/* Dropdown — position:fixed pour sortir des stacking contexts */}
-      {open && (
-        <div style={{
-          position:'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width,
-          background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:14,
-          zIndex:9000, boxShadow:'0 16px 48px rgba(0,0,0,0.8)', overflow:'hidden',
-          minWidth:300,
-        }}>
-          {/* Search input */}
-          <div style={{padding:'10px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
-              placeholder="BTC, ETH, AAPL…"
-              style={{flex:1,background:'transparent',border:'none',color:'var(--tm-text-primary)',fontSize:13,outline:'none'}} />
-            {loading && <div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>}
-            {q && <button onClick={()=>setQ('')} style={{background:'none',border:'none',color:'var(--tm-text-muted)',cursor:'pointer',fontSize:14,padding:'0 2px'}}>✕</button>}
-          </div>
-
-          {/* Historique */}
-          {showHistory && (
-            <>
-              <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🕐 Historique</span>
-                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer tout</button>
-              </div>
-              <div style={{maxHeight:320, overflowY:'auto'}}>
-                {history.map(entry => (
-                  <button key={entry.symbol} onClick={()=>handleSelect(entry as any)}
-                    style={{width:'100%',textAlign:'left',padding:'8px 14px',background:entry.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
-                    {/* Icon */}
-                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>
-                      {entry.icon}
-                    </div>
-                    {/* Info */}
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'baseline',gap:6}}>
-                        <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</span>
-                        {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>● actif</span>}
-                      </div>
-                      <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
-                    </div>
-                    {/* Bilan prix */}
-                    {entry.price != null && (
-                      <div style={{textAlign:'right',flexShrink:0}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{fmtPrice(entry.price)}</div>
-                        <div style={{fontSize:10,fontWeight:600,color:(entry.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
-                          {(entry.change24h??0)>=0?'+':''}{entry.change24h?.toFixed(2)}%
-                        </div>
-                      </div>
-                    )}
-                    {/* Remove */}
-                    <div onClick={e=>removeFromHistory(entry.symbol,e)} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.04)',color:'var(--tm-text-muted)',fontSize:11,flexShrink:0,cursor:'pointer'}}>×</div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Résultats de recherche */}
-          {q && (
-            <>
-              {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Résultats</div>}
-              <div style={{maxHeight:300,overflowY:'auto'}}>
-                {results.length === 0 ? (
-                  <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun résultat pour "{q}"</div>
-                ) : results.map(r => (
-                  <button key={r.symbol} onClick={()=>handleSelect(r)}
-                    style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
-                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>
-                      {r.icon}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
-                      <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
-                    </div>
-                    {r.symbol===symbol && <span style={{fontSize:9,color:'var(--tm-accent)'}}>●</span>}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Populaires si pas de query et pas d'historique */}
-          {!q && !history.length && (
-            <>
-              <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>⭐ Populaires</div>
-              <div style={{maxHeight:280,overflowY:'auto'}}>
-                {results.map(r => (
-                  <button key={r.symbol} onClick={()=>handleSelect(r)}
-                    style={{width:'100%',textAlign:'left',padding:'9px 14px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
-                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
-                    <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}</div></div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {/* Dropdown rendu dans document.body via portal — évite tout problème de stacking context/overflow */}
+      {ReactDOM.createPortal(dropdownContent, document.body)}
     </div>
   )
 }
