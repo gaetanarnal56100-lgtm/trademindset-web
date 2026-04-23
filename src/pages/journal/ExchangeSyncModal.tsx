@@ -30,6 +30,8 @@ interface ExchangeDef {
   category: 'crypto' | 'forex' | 'stocks'
   docs: string
   comingSoon?: boolean
+  noApi?: boolean         // no REST API available — import via CSV only
+  noSecret?: boolean      // no secret needed (e.g. Trading 212)
   fields: { keyLabel: string; secretLabel: string; passphraseLabel?: string }
 }
 
@@ -43,33 +45,33 @@ const EXCHANGES: ExchangeDef[] = [
   { id:'gateio',        name:'Gate.io',          domain:'gate.io',                color:'#2354E6', initials:'GT',  category:'crypto', docs:'https://www.gate.io/myaccount/api_key_manage',             fields:{keyLabel:'API Key', secretLabel:'API Secret'} },
   { id:'mexc',          name:'MEXC Global',      domain:'mexc.com',               color:'#0ECBA1', initials:'MX',  category:'crypto', docs:'https://www.mexc.com/user/openapi',                        fields:{keyLabel:'API Key', secretLabel:'API Secret'} },
   { id:'htx',           name:'HTX (Huobi)',      domain:'htx.com',                color:'#167AFF', initials:'HT',  category:'crypto', docs:'https://www.htx.com/en-us/user/apikey',                   fields:{keyLabel:'API Key', secretLabel:'Secret Key'} },
-  { id:'kraken',        name:'Kraken',           domain:'kraken.com',             color:'#5741D9', initials:'KR',  category:'crypto', docs:'https://www.kraken.com/u/security/api',                    fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
+  { id:'kraken',        name:'Kraken',           domain:'kraken.com',             color:'#5741D9', initials:'KR',  category:'crypto', docs:'https://www.kraken.com/u/security/api',                    fields:{keyLabel:'API Key', secretLabel:'Private Key (Base64)'} },
   { id:'coinbase',      name:'Coinbase Advanced',domain:'coinbase.com',           color:'#0052FF', initials:'CB',  category:'crypto', docs:'https://www.coinbase.com/settings/api',                    fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
-  { id:'phemex',        name:'Phemex',           domain:'phemex.com',             color:'#4D6AFF', initials:'PH',  category:'crypto', docs:'https://phemex.com/user-settings/api-management',         fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
-  { id:'deribit',       name:'Deribit',          domain:'deribit.com',            color:'#1B8B43', initials:'DR',  category:'crypto', docs:'https://www.deribit.com/main#/account/api',                fields:{keyLabel:'Client ID', secretLabel:'Client Secret'}, comingSoon:true },
+  { id:'phemex',        name:'Phemex',           domain:'phemex.com',             color:'#4D6AFF', initials:'PH',  category:'crypto', docs:'https://phemex.com/user-settings/api-management',         fields:{keyLabel:'API Key', secretLabel:'API Secret'} },
+  { id:'deribit',       name:'Deribit',          domain:'deribit.com',            color:'#1B8B43', initials:'DR',  category:'crypto', docs:'https://www.deribit.com/main#/account/api',                fields:{keyLabel:'Client ID', secretLabel:'Client Secret'} },
 
   // ══ FOREX / CFD ═══════════════════════════════════════════════════════════
   { id:'oanda',         name:'OANDA',            domain:'oanda.com',              color:'#00A99D', initials:'OA',  category:'forex',  docs:'https://www.oanda.com/account/#/user/security',            fields:{keyLabel:'API Token (Bearer)', secretLabel:'Account ID'} },
   { id:'fxcm',          name:'FXCM',             domain:'fxcm.com',               color:'#E31E24', initials:'FX',  category:'forex',  docs:'https://www.fxcm.com/uk/algorithmic-trading/api-trading/', fields:{keyLabel:'Bearer Token', secretLabel:'Account ID'}, comingSoon:true },
-  { id:'ig',            name:'IG Group',         domain:'ig.com',                 color:'#1F87E8', initials:'IG',  category:'forex',  docs:'https://labs.ig.com/apioverviewv2',                        fields:{keyLabel:'API Key', secretLabel:'Password'}, comingSoon:true },
-  { id:'capitalcom',    name:'Capital.com',      domain:'capital.com',            color:'#00D09C', initials:'CC',  category:'forex',  docs:'https://open-api.capital.com/',                            fields:{keyLabel:'API Key', secretLabel:'Password'}, comingSoon:true },
+  { id:'ig',            name:'IG Group',         domain:'ig.com',                 color:'#1F87E8', initials:'IG',  category:'forex',  docs:'https://labs.ig.com/apioverviewv2',                        fields:{keyLabel:'API Key', secretLabel:'Password', passphraseLabel:'Username'} },
+  { id:'capitalcom',    name:'Capital.com',      domain:'capital.com',            color:'#00D09C', initials:'CC',  category:'forex',  docs:'https://open-api.capital.com/',                            fields:{keyLabel:'API Key', secretLabel:'Password', passphraseLabel:'Email'} },
   { id:'saxo',          name:'Saxo Bank',        domain:'home.saxo',              color:'#0033A0', initials:'SX',  category:'forex',  docs:'https://www.developer.saxo/openapi',                       fields:{keyLabel:'App Key', secretLabel:'App Secret'}, comingSoon:true },
-  { id:'etoro',         name:'eToro',            domain:'etoro.com',              color:'#00C896', initials:'ET',  category:'forex',  docs:'https://www.etoro.com/',                                   fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
+  { id:'etoro',         name:'eToro',            domain:'etoro.com',              color:'#00C896', initials:'ET',  category:'forex',  docs:'https://www.etoro.com/',                                   fields:{keyLabel:'N/A', secretLabel:'N/A'}, noApi:true },
   { id:'xtb',           name:'XTB',              domain:'xtb.com',                color:'#E60000', initials:'XTB', category:'forex',  docs:'https://developers.xtb.com/',                              fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
-  { id:'pepperstone',   name:'Pepperstone',      domain:'pepperstone.com',        color:'#00B140', initials:'PP',  category:'forex',  docs:'https://pepperstone.com/',                                 fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
-  { id:'cmc',           name:'CMC Markets',      domain:'cmcmarkets.com',         color:'#003882', initials:'CMC', category:'forex',  docs:'https://www.cmcmarkets.com/',                              fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
+  { id:'pepperstone',   name:'Pepperstone',      domain:'pepperstone.com',        color:'#00B140', initials:'PP',  category:'forex',  docs:'https://pepperstone.com/',                                 fields:{keyLabel:'N/A', secretLabel:'N/A'}, noApi:true },
+  { id:'cmc',           name:'CMC Markets',      domain:'cmcmarkets.com',         color:'#003882', initials:'CMC', category:'forex',  docs:'https://www.cmcmarkets.com/',                              fields:{keyLabel:'N/A', secretLabel:'N/A'}, noApi:true },
   { id:'interactivebrokers', name:'Interactive Brokers', domain:'interactivebrokers.com', color:'#E3001B', initials:'IB', category:'forex', docs:'https://ibkr.info/article/2746', fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
 
   // ══ STOCKS / ACTIONS ══════════════════════════════════════════════════════
   { id:'alpaca',        name:'Alpaca',           domain:'alpaca.markets',         color:'#FBDF02', initials:'AL',  category:'stocks', docs:'https://app.alpaca.markets/paper-accounts',                fields:{keyLabel:'API Key ID', secretLabel:'API Secret Key'} },
-  { id:'tastytrade',    name:'Tastytrade',       domain:'tastytrade.com',         color:'#FF6720', initials:'TT',  category:'stocks', docs:'https://tastytrade.com/',                                  fields:{keyLabel:'Username', secretLabel:'Password'}, comingSoon:true },
+  { id:'tastytrade',    name:'Tastytrade',       domain:'tastytrade.com',         color:'#FF6720', initials:'TT',  category:'stocks', docs:'https://tastytrade.com/',                                  fields:{keyLabel:'Email / Username', secretLabel:'Password'} },
   { id:'schwab',        name:'Charles Schwab',   domain:'schwab.com',             color:'#00A0DF', initials:'CS',  category:'stocks', docs:'https://developer.schwab.com/',                            fields:{keyLabel:'App Key', secretLabel:'App Secret'}, comingSoon:true },
   { id:'etrade',        name:'E*TRADE',          domain:'etrade.com',             color:'#7B2D8B', initials:'ET',  category:'stocks', docs:'https://developer.etrade.com/',                            fields:{keyLabel:'Consumer Key', secretLabel:'Consumer Secret'}, comingSoon:true },
   { id:'tradestation',  name:'TradeStation',     domain:'tradestation.com',       color:'#FF6600', initials:'TS',  category:'stocks', docs:'https://developer.tradestation.com/',                      fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
-  { id:'webull',        name:'Webull',           domain:'webull.com',             color:'#0FB7E4', initials:'WB',  category:'stocks', docs:'https://www.webull.com/',                                  fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
-  { id:'moomoo',        name:'moomoo',           domain:'moomoo.com',             color:'#FF5C2E', initials:'MM',  category:'stocks', docs:'https://www.moomoo.com/',                                  fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
-  { id:'degiro',        name:'DEGIRO',           domain:'degiro.eu',              color:'#FF5F00', initials:'DG',  category:'stocks', docs:'https://www.degiro.eu/',                                   fields:{keyLabel:'Username', secretLabel:'Password'}, comingSoon:true },
-  { id:'trading212',    name:'Trading 212',      domain:'trading212.com',         color:'#22D672', initials:'T2',  category:'stocks', docs:'https://www.trading212.com/',                              fields:{keyLabel:'API Key', secretLabel:'API Secret'}, comingSoon:true },
+  { id:'webull',        name:'Webull',           domain:'webull.com',             color:'#0FB7E4', initials:'WB',  category:'stocks', docs:'https://www.webull.com/',                                  fields:{keyLabel:'N/A', secretLabel:'N/A'}, noApi:true },
+  { id:'moomoo',        name:'moomoo',           domain:'moomoo.com',             color:'#FF5C2E', initials:'MM',  category:'stocks', docs:'https://www.moomoo.com/',                                  fields:{keyLabel:'N/A', secretLabel:'N/A'}, noApi:true },
+  { id:'degiro',        name:'DEGIRO',           domain:'degiro.eu',              color:'#FF5F00', initials:'DG',  category:'stocks', docs:'https://www.degiro.eu/',                                   fields:{keyLabel:'N/A', secretLabel:'N/A'}, noApi:true },
+  { id:'trading212',    name:'Trading 212',      domain:'trading212.com',         color:'#22D672', initials:'T2',  category:'stocks', docs:'https://app.trading212.com/rest/v0/user/profile',          fields:{keyLabel:'API Key', secretLabel:'(non utilisé — mets "x")'}, noSecret:true },
 ]
 
 const CATEGORIES = [
@@ -78,7 +80,7 @@ const CATEGORIES = [
   { id: 'stocks' as const,  label: 'Stocks / Actions' },
 ]
 
-const ACTIVE_EXCHANGES = EXCHANGES.filter(e => !e.comingSoon).map(e => e.id)
+const ACTIVE_EXCHANGES = EXCHANGES.filter(e => !e.comingSoon && !e.noApi).map(e => e.id)
 
 // ── Cloud Function callables ──────────────────────────────────────────────────
 const cfSaveKey   = httpsCallable<{ exchange: Exchange; apiKey: string; apiSecret: string; passphrase?: string }, { success: boolean; message: string }>(functions, 'saveExchangeAPIKey')
@@ -142,9 +144,11 @@ function ExchangeCard({ ex, status, onRefreshStatus }: {
 
   const connected = status?.connected ?? false
   const needsPassphrase = !!ex.fields.passphraseLabel
+  const needsSecret = !ex.noSecret
 
   const handleSave = async () => {
-    if (!apiKey.trim() || !secret.trim()) return
+    if (!apiKey.trim()) return
+    if (needsSecret && !secret.trim()) return
     if (needsPassphrase && !passphrase.trim()) return
     setSaving(true); setMsg(null)
     try {
@@ -175,6 +179,20 @@ function ExchangeCard({ ex, status, onRefreshStatus }: {
       onRefreshStatus()
     } catch (e: any) { setMsg({ type:'err', text: e?.message ?? 'Erreur suppression' }) }
     finally { setDeleting(false) }
+  }
+
+  if (ex.noApi) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:'1px solid rgba(255,255,255,0.04)', background:'rgba(255,255,255,0.01)', opacity:0.35 }}>
+        <ExchangeLogo domain={ex.domain} name={ex.name} color={ex.color} initials={ex.initials} size={32} />
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:12, fontWeight:600, color:'#9CA3AF' }}>{ex.name}</div>
+        </div>
+        <span style={{ fontSize:9, padding:'2px 7px', borderRadius:20, background:'rgba(255,255,255,0.06)', color:'#6B7280', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>
+          Via CSV
+        </span>
+      </div>
+    )
   }
 
   if (ex.comingSoon) {
@@ -240,7 +258,7 @@ function ExchangeCard({ ex, status, onRefreshStatus }: {
           </div>
           {[
             { label: ex.fields.keyLabel,         value: apiKey,     set: setApiKey,     type: 'text' as const,              toggle: false },
-            { label: ex.fields.secretLabel,      value: secret,     set: setSecret,     type: (showSec?'text':'password') as const, toggle: true  },
+            ...(needsSecret ? [{ label: ex.fields.secretLabel, value: secret, set: setSecret, type: (showSec?'text':'password') as const, toggle: true }] : []),
             ...(needsPassphrase ? [{ label: ex.fields.passphraseLabel!, value: passphrase, set: setPassphrase, type: 'text' as const, toggle: false }] : []),
           ].map(f => (
             <div key={f.label}>
@@ -256,7 +274,7 @@ function ExchangeCard({ ex, status, onRefreshStatus }: {
               </div>
             </div>
           ))}
-          <button onClick={handleSave} disabled={saving || !apiKey.trim() || !secret.trim() || (needsPassphrase && !passphrase.trim())}
+          <button onClick={handleSave} disabled={saving || !apiKey.trim() || (needsSecret && !secret.trim()) || (needsPassphrase && !passphrase.trim())}
             style={{ padding:'9px', borderRadius:8, border:'none', background: saving?'rgba(255,255,255,0.05)':`${ex.color}CC`, color:'#0D1117', fontSize:12, fontWeight:700, cursor:saving?'wait':'pointer', transition:'all 0.2s' }}>
             {saving ? '⏳ Validation…' : `🔗 Connecter ${ex.name}`}
           </button>
@@ -275,7 +293,7 @@ export default function ExchangeSyncModal({ onClose }: { onClose: () => void }) 
 
   const refreshStatuses = async () => {
     try {
-      const active = EXCHANGES.filter(e => !e.comingSoon)
+      const active = EXCHANGES.filter(e => !e.comingSoon && !e.noApi)
       const results = await Promise.all(active.map(ex => cfGetStatus({ exchange: ex.id }).catch(() => ({ data: { connected: false } as KeyStatus }))))
       setStatuses(prev => {
         const next = { ...prev }
@@ -330,7 +348,7 @@ export default function ExchangeSyncModal({ onClose }: { onClose: () => void }) 
           <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
             {CATEGORIES.map(cat => {
               const exList = EXCHANGES.filter(e => e.category === cat.id)
-              const activeCount = exList.filter(e => !e.comingSoon).length
+              const activeCount = exList.filter(e => !e.comingSoon && !e.noApi).length
               const comingSoonCount = exList.filter(e => e.comingSoon).length
               return (
                 <div key={cat.id}>
