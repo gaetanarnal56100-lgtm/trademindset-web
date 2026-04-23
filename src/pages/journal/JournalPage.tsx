@@ -431,7 +431,7 @@ export default function JournalPage() {
             onClick={() => setShowImport(true)}
             style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)', color:'#FF9500', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
           >
-            📥 Importer
+            📥 Importer via API
           </button>
           <button
             onClick={() => setShowDelay(true)}

@@ -8,7 +8,12 @@ import {
   tradePnL, type Trade, type TradingSystem, type Exchange
 } from '@/services/firestore'
 import { TradeDetailModal } from '@/components/trades/TradeDetailModal'
-import ExchangeSyncModal from '@/pages/journal/ExchangeSyncModal'
+import ExchangeSyncModal, { cfSync, type Exchange as ExchangeId } from '@/pages/journal/ExchangeSyncModal'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/services/firebase/config'
+
+const cfGetStatus = httpsCallable<{ exchange: ExchangeId }, { connected: boolean }>(functions, 'getExchangeKeyStatus')
+const ALL_EXCHANGES: ExchangeId[] = ['binance', 'bybit', 'okx', 'kucoinfutures', 'bitget', 'oanda', 'alpaca']
 
 // ── Asset Panel ────────────────────────────────────────────────────────────
 export interface AssetTicker {
@@ -238,6 +243,8 @@ export default function TradesPage() {
   const [showExchangeSync, setShowExchangeSync] = useState(false)
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null)
+  const [lastAutoSync, setLastAutoSync] = useState<number | null>(null)
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -245,6 +252,23 @@ export default function TradesPage() {
     const unsubS = subscribeSystems(setSystems)
     const unsubE = subscribeExchanges(setExchanges)
     return () => { unsubT(); unsubS(); unsubE() }
+  }, [user])
+
+  // Auto-sync toutes les 30s pour les exchanges API connectés
+  useEffect(() => {
+    if (!user) return
+    const runSync = async () => {
+      try {
+        const statusResults = await Promise.all(ALL_EXCHANGES.map(ex => cfGetStatus({ exchange: ex }).catch(() => ({ data: { connected: false } }))))
+        const connected = ALL_EXCHANGES.filter((_, i) => statusResults[i].data.connected)
+        if (connected.length === 0) return
+        await Promise.allSettled(connected.map(ex => cfSync({ exchange: ex })))
+        setLastAutoSync(Date.now())
+      } catch { /* silent */ }
+    }
+    runSync()
+    syncIntervalRef.current = setInterval(runSync, 30_000)
+    return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current) }
   }, [user])
 
   const filtered = trades
@@ -332,7 +356,7 @@ export default function TradesPage() {
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={() => setShowExchangeSync(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)', color:'#FF9500', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-            📥 Importer
+            📥 Importer via API
           </button>
           <button onClick={() => setShowImport(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-warning)', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
             {t('trades.importCSV')}
