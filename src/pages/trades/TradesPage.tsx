@@ -8,6 +8,7 @@ import {
   tradePnL, type Trade, type TradingSystem, type Exchange
 } from '@/services/firestore'
 import { TradeDetailModal } from '@/components/trades/TradeDetailModal'
+import ExchangeSyncModal from '@/pages/journal/ExchangeSyncModal'
 
 // ── Asset Panel ────────────────────────────────────────────────────────────
 export interface AssetTicker {
@@ -234,6 +235,7 @@ export default function TradesPage() {
   const [filter,  setFilter]  = useState<'all'|'open'|'closed'>('all')
   const [search,  setSearch]  = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [showExchangeSync, setShowExchangeSync] = useState(false)
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null)
 
@@ -329,6 +331,9 @@ export default function TradesPage() {
           </p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
+          <button onClick={() => setShowExchangeSync(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)', color:'#FF9500', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            📥 Importer
+          </button>
           <button onClick={() => setShowImport(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-warning)', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
             {t('trades.importCSV')}
           </button>
@@ -512,6 +517,7 @@ export default function TradesPage() {
 
       {showAdd && <AddTradeModal systems={systems} onClose={() => setShowAdd(false)} />}
       {showImport && <ImportCSVModal onClose={() => setShowImport(false)} />}
+      {showExchangeSync && <ExchangeSyncModal onClose={() => setShowExchangeSync(false)} />}
       {selectedTrade && (
         <TradeDetailModal
           trade={selectedTrade}
