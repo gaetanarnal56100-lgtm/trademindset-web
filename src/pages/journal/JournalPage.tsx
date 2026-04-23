@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { subscribeMoods, subscribeTrades, createMood, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
 import ShareStatsModal from '@/components/share/ShareStatsModal'
 import PropFirmTracker from './PropFirmTracker'
+import BehaviorPatternEngine from './BehaviorPatternEngine'
+import DecisionDelayModal from './DecisionDelayModal'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; labelKey: string; fallback: string; color: string }[] = [
   { v:'confident',  emoji:'😎', labelKey:'journal.emotions.confident',  fallback:'Confident',   color:'#4CAF50' },
@@ -347,6 +349,7 @@ export default function JournalPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [showShare, setShowShare] = useState(false)
+  const [showDelay, setShowDelay] = useState(false)  // Decision Delay System
   const [filter,  setFilter]  = useState<EmotionalState | 'all'>('all')
 
   useEffect(() => {
@@ -421,10 +424,16 @@ export default function JournalPage() {
             {loading ? t('journal.loading') : `${t('journal.entries', { count: moods.length })} · ${t('journal.avgIntensity')} ${avgIntensity}/10`}
           </p>
         </div>
-        <div style={{ display:'flex', gap:8 }}>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button
+            onClick={() => setShowDelay(true)}
+            style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(34,199,89,0.3)', background:'rgba(34,199,89,0.06)', color:'#22C759', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
+          >
+            ⚡ Avant un trade
+          </button>
           <button
             onClick={() => setShowShare(true)}
-            style={{ padding:'8px 16px', borderRadius:10, border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.06)', color:'var(--tm-accent)', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
+            style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.06)', color:'var(--tm-accent)', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
           >
             📤 Partager
           </button>
@@ -472,6 +481,9 @@ export default function JournalPage() {
               ))}
             </div>
           )}
+
+          {/* Behavior Pattern Engine */}
+          {!loading && <BehaviorPatternEngine trades={trades} />}
 
           {/* Emotion curve chart */}
           {!loading && moods.length >= 2 && <EmotionCurve moods={moods} />}
@@ -578,6 +590,12 @@ export default function JournalPage() {
           trades={trades}
           moods={moods}
           onClose={() => setShowShare(false)}
+        />
+      )}
+      {showDelay && (
+        <DecisionDelayModal
+          onConfirm={() => { setShowDelay(false); setShowAdd(true) }}
+          onCancel={() => setShowDelay(false)}
         />
       )}
     </div>
