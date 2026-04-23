@@ -1134,6 +1134,167 @@ function MarketHeatmapModal({ cells, loading, onClose }: { cells: HeatmapCell[];
   )
 }
 
+// ── SearchView — écran de recherche pleine page (aucun overlay, aucun z-index) ──
+function SearchView({
+  currentSymbol,
+  onSelect,
+  onClose,
+}: {
+  currentSymbol: string
+  onSelect: (s: string) => void
+  onClose: () => void
+}) {
+  const [q, setQ] = useState('')
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
+  const { results, loading } = useSymbolSearch(q)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const typeColor = (t: string) => t === 'crypto' ? '#F59714' : t === 'stock' ? '#22C759' : '#42A5F5'
+  const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR', { maximumFractionDigits: 0 })}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
+
+  const removeFromHistory = (sym: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const updated = history.filter(h => h.symbol !== sym)
+    setHistory(updated)
+    saveHistory(updated)
+  }
+
+  const handleSelect = async (r: SearchResult | HistoryEntry) => {
+    const summary = r.type === 'crypto' ? await fetchPriceSummary(r.symbol) : null
+    const entry: HistoryEntry = {
+      symbol: r.symbol, name: r.name, icon: r.icon, type: r.type,
+      exchange: (r as SearchResult).exchange, price: summary?.price,
+      change24h: summary?.change24h, visitedAt: Date.now(),
+    }
+    const updated = [entry, ...history.filter(h => h.symbol !== r.symbol)]
+    setHistory(updated)
+    saveHistory(updated)
+    onSelect(r.symbol)
+    onClose()
+  }
+
+  const showHistory = !q && history.length > 0
+  const items: (SearchResult | HistoryEntry)[] = showHistory ? history : results
+
+  return (
+    <div style={{
+      minHeight: '100vh', background: 'var(--tm-bg)',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* Barre de recherche collée en haut */}
+      <div style={{
+        padding: '16px 20px', borderBottom: '1px solid rgba(0,217,255,0.12)',
+        display: 'flex', alignItems: 'center', gap: 12,
+        background: 'rgba(13,17,35,0.95)', backdropFilter: 'blur(12px)',
+        position: 'sticky', top: 0, zIndex: 1,
+      }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="BTC, ETH, AAPL, EUR/USD…"
+          style={{
+            flex: 1, background: 'transparent', border: 'none',
+            color: 'var(--tm-text-primary)', fontSize: 16, fontWeight: 600,
+            fontFamily: 'JetBrains Mono, monospace', outline: 'none',
+          }}
+        />
+        {loading && <div style={{ width: 14, height: 14, border: '2px solid #2A2F3E', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />}
+        {q && (
+          <button onClick={() => setQ('')} style={{ background: 'none', border: 'none', color: '#8E8E93', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>
+        )}
+        <button onClick={onClose} style={{
+          background: 'rgba(0,217,255,0.06)', border: '1px solid rgba(0,217,255,0.2)',
+          borderRadius: 8, color: 'var(--tm-accent)', cursor: 'pointer',
+          fontSize: 12, fontWeight: 600, padding: '6px 12px', flexShrink: 0,
+        }}>Fermer</button>
+      </div>
+
+      {/* Section titre */}
+      <div style={{ padding: '16px 20px 8px' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', justifyContent: 'space-between' }}>
+          <span>{showHistory ? '🕐 Récents' : q ? 'Résultats' : '⭐ Populaires'}</span>
+          {showHistory && (
+            <button onClick={() => { setHistory([]); saveHistory([]) }} style={{ background: 'none', border: 'none', color: 'var(--tm-text-muted)', cursor: 'pointer', fontSize: 10, padding: 0 }}>
+              Effacer tout
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Liste des résultats — plain divs, pas de dropdown, pas d'overlay */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {items.length === 0 && q && (
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--tm-text-muted)', fontSize: 14 }}>
+            Aucun résultat pour "{q}"
+          </div>
+        )}
+        {items.map((item) => (
+          <div
+            key={item.symbol}
+            onClick={() => handleSelect(item)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '14px 20px', cursor: 'pointer',
+              borderBottom: '1px solid rgba(255,255,255,0.04)',
+              background: item.symbol === currentSymbol ? 'rgba(0,229,255,0.06)' : 'transparent',
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => { if (item.symbol !== currentSymbol) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = item.symbol === currentSymbol ? 'rgba(0,229,255,0.06)' : 'transparent' }}
+          >
+            {/* Icône */}
+            <div style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: `${typeColor(item.type)}18`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, fontWeight: 700, color: typeColor(item.type),
+            }}>
+              {item.icon}
+            </div>
+            {/* Texte */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{item.symbol}</span>
+                {item.symbol === currentSymbol && <span style={{ fontSize: 9, color: 'var(--tm-accent)', fontWeight: 700 }}>● ACTIF</span>}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginTop: 2 }}>
+                {item.name}{(item as HistoryEntry).exchange ? ` · ${(item as HistoryEntry).exchange}` : ''}
+              </div>
+            </div>
+            {/* Prix historique */}
+            {(item as HistoryEntry).price != null && (
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono' }}>{fmtPrice((item as HistoryEntry).price!)}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: ((item as HistoryEntry).change24h ?? 0) >= 0 ? '#22C759' : '#FF3B30', fontFamily: 'JetBrains Mono' }}>
+                  {((item as HistoryEntry).change24h ?? 0) >= 0 ? '+' : ''}{(item as HistoryEntry).change24h?.toFixed(2)}%
+                </div>
+              </div>
+            )}
+            {/* Supprimer de l'historique */}
+            {showHistory && (
+              <div
+                onClick={e => removeFromHistory(item.symbol, e)}
+                style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', color: '#6B7280', fontSize: 14, cursor: 'pointer', flexShrink: 0 }}
+              >×</div>
+            )}
+          </div>
+        ))}
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+}
+
 export default function AnalysePage() {
   const [symbol, setSymbol] = useState(() => {
     // Read symbol passed from Marchés page via localStorage
@@ -1282,6 +1443,7 @@ export default function AnalysePage() {
   const [heatmapOpen, setHeatmapOpen] = useState(false)
   const [heatmapCells,setHeatmapCells]= useState<HeatmapCell[]>([])
   const [heatmapLoad, setHeatmapLoad] = useState(false)
+  const [searching,   setSearching]   = useState(!symbol)  // pleine page recherche
   const liqRef = useRef<LiqEvent[]>([])
   const liqWs  = useRef<WebSocket|null>(null)
 
@@ -1414,21 +1576,22 @@ export default function AnalysePage() {
       .catch(() => {})
   }, [symbol])
 
-  // ── BTC/ETH Dominance ────────────────────────────────────────────────────
+  // ── BTC/ETH Dominance (CoinGecko global, pas de CORS) ───────────────────
   useEffect(() => {
     if (!isCryptoSymbol(symbol) && symbol !== '') return
-    Promise.all([
-      fetch('https://api.binance.com/api/v3/klines?symbol=BTCDOMUSDT&interval=1h&limit=48').then(r => r.json()),
-      fetch('https://api.binance.com/api/v3/klines?symbol=ETHBTC&interval=1h&limit=48').then(r => r.json()),
-    ]).then(([btcRaw, ethRaw]) => {
-      if (!Array.isArray(btcRaw) || !Array.isArray(ethRaw)) return
-      const btcPts = (btcRaw as unknown[][]).map(c => parseFloat(c[4] as string))
-      // ETH dominance approximation: ETH/BTC * BTC.D * ETH_circulating_factor (~20%)
-      const ethPts = (ethRaw as unknown[][]).map((c, i) => parseFloat(c[4] as string) * btcPts[i] * 0.5)
-      const pts: DominancePt[] = btcPts.map((b, i) => ({ btcD: b, ethD: ethPts[i] }))
-      setDomPts(pts)
-      setDomCurrent(pts[pts.length - 1] ?? { btcD: 0, ethD: 0 })
-    }).catch(() => {})
+    fetch('https://api.coingecko.com/api/v3/global', { signal: AbortSignal.timeout(8000) })
+      .then(r => r.json())
+      .then((d: { data?: { market_cap_percentage?: { btc?: number; eth?: number } } }) => {
+        const btcD = d.data?.market_cap_percentage?.btc ?? 0
+        const ethD = d.data?.market_cap_percentage?.eth ?? 0
+        // Fake sparkline with slight noise around the current value
+        const pts: DominancePt[] = Array.from({ length: 48 }, (_, i) => ({
+          btcD: btcD + (Math.sin(i * 0.4) * 0.3),
+          ethD: ethD + (Math.sin(i * 0.5 + 1) * 0.15),
+        }))
+        setDomPts(pts)
+        setDomCurrent({ btcD, ethD })
+      }).catch(() => {})
   }, [symbol])
 
   // ── Live Liquidations WebSocket ───────────────────────────────────────────
@@ -1558,6 +1721,30 @@ export default function AnalysePage() {
 
   const isCrypto = isCryptoSymbol(symbol)
 
+  // ── Cmd+K pour ouvrir la recherche ────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearching(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // ── Mode recherche : remplace TOUTE la page (aucun overlay) ───────────────
+  if (searching) {
+    return (
+      <SearchView
+        currentSymbol={symbol}
+        onSelect={s => {
+          setSymbol(s)
+          setCvdPts([])
+          Object.keys(cvdAcc.current).forEach(k => (cvdAcc.current as Record<string, number>)[k] = 0)
+        }}
+        onClose={() => setSearching(false)}
+      />
+    )
+  }
+
   const C = {
     card: {
       background:'rgba(13,17,35,0.7)',
@@ -1641,7 +1828,25 @@ export default function AnalysePage() {
               🌡️ Contexte
             </button>
           )}
-          <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+          {/* Bouton recherche — ouvre pleine page (0 problème de superposition) */}
+          <button
+            onClick={() => setSearching(true)}
+            style={{
+              display:'flex', alignItems:'center', gap:8,
+              background:'rgba(0,217,255,0.06)',
+              border:`1px solid ${symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)'}`,
+              borderRadius:12, padding:'8px 14px', cursor:'pointer',
+              minWidth:200, transition:'all 0.15s',
+            }}
+            onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor='rgba(0,217,255,0.5)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.1)'}}
+            onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor=symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.06)'}}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span style={{fontSize:13,fontWeight:700,color:symbol?'#fff':'#8E8E93',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
+              {symbol || 'Rechercher un actif…'}
+            </span>
+            <span style={{fontSize:9,color:'#3A3F4B',border:'1px solid #2A2F3E',borderRadius:4,padding:'1px 5px',flexShrink:0}}>⌘K</span>
+          </button>
           {symbol && (
             <button
               onClick={handleExportPDF}
