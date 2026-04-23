@@ -6,6 +6,7 @@ import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/services/firebase/config'
 import PnLCurve from './PnLModal'
+import ShareStatsModal from '@/components/share/ShareStatsModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function safeTime(d: any): number {
@@ -766,6 +767,7 @@ export default function DashboardPage() {
   const [period,  setPeriod]  = useState('1M')
   const [userCount, setUserCount] = useState<number|null>(null)
   const [activeTab, setActiveTab] = useState<'journal' | 'modular'>('journal')
+  const [showShare, setShowShare] = useState(false)
 
   useEffect(()=>{
     const u1=subscribeTrades(t=>{setTrades(t);setLoading(false)})
@@ -836,6 +838,14 @@ export default function DashboardPage() {
           <a href="mailto:trademindsetapp@gmail.com" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'var(--tm-profit)'}}>
             Contact
           </a>
+          <button
+            onClick={() => setShowShare(true)}
+            style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(191,90,242,0.08)',border:'1px solid rgba(191,90,242,0.25)',borderRadius:8,cursor:'pointer',fontSize:10,fontWeight:600,color:'#BF5AF2'}}
+            onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.background='rgba(191,90,242,0.16)'}}
+            onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.background='rgba(191,90,242,0.08)'}}
+          >
+            📤 Partager
+          </button>
           <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
           <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',borderRadius:8,fontSize:10,fontWeight:600,color:'var(--tm-warning)'}}>
             <span style={{width:6,height:6,borderRadius:'50%',background:'var(--tm-warning)',display:'inline-block',boxShadow:'0 0 6px rgba(var(--tm-warning-rgb,255,149,0),0.4)'}}/>
@@ -1079,6 +1089,15 @@ export default function DashboardPage() {
         <div style={{marginTop:8}}>
           <ModularDashboard />
         </div>
+      )}
+
+      {/* Share card modal */}
+      {showShare && (
+        <ShareStatsModal
+          trades={trades}
+          moods={moods}
+          onClose={() => setShowShare(false)}
+        />
       )}
     </div>
   )
