@@ -1,7 +1,8 @@
-// src/pages/analyse/FootprintChart.tsx — v2
+// src/pages/analyse/FootprintChart.tsx — v3
 // Professional footprint / cluster chart
 // Data: sub-kline approach (reliable at all timeframes) + aggTrades for 1m
 // Navigation: horizontal pan + zoom, vertical pan + bin zoom
+// v3: crosshair overlay, improved cell colors, center-on-price button
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 
@@ -203,8 +204,9 @@ function buildFromTrades(
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function FootprintChart({ symbol }: { symbol: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const wrapRef   = useRef<HTMLDivElement>(null)
+  const canvasRef     = useRef<HTMLCanvasElement>(null)
+  const crosshairRef  = useRef<HTMLCanvasElement>(null)
+  const wrapRef       = useRef<HTMLDivElement>(null)
 
   const [tf,          setTf]         = useState<TF>('5m')
   const [allCandles,  setAllCandles] = useState<FPCandle[]>([])
@@ -419,21 +421,25 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
             const isBD = cell.buyVol > cell.sellVol * IMBALANCE
             const isSD = cell.sellVol > cell.buyVol * IMBALANCE
 
-            // Background fill
+            // Background fill — more vivid distinction between buy/sell dominant
             if (isBD) {
-              ctx.fillStyle = `rgba(52,199,89,${0.2 + intensity * 0.55})`
+              ctx.fillStyle = `rgba(52,199,89,${0.18 + intensity * 0.52})`
             } else if (isSD) {
-              ctx.fillStyle = `rgba(255,69,58,${0.2 + intensity * 0.55})`
+              ctx.fillStyle = `rgba(255,69,58,${0.18 + intensity * 0.52})`
+            } else if (buyRatio > 0.55) {
+              ctx.fillStyle = `rgba(52,199,89,${0.04 + (buyRatio - 0.5) * intensity * 0.55})`
+            } else if (buyRatio < 0.45) {
+              ctx.fillStyle = `rgba(255,69,58,${0.04 + (0.5 - buyRatio) * intensity * 0.55})`
             } else {
-              const r = Math.round((1 - buyRatio) * 130)
-              const g = Math.round(buyRatio * 130)
-              ctx.fillStyle = `rgba(${r},${g},80,${0.07 + intensity * 0.28})`
+              ctx.fillStyle = `rgba(90,95,115,${0.05 + intensity * 0.10})`
             }
             ctx.fillRect(x + 0.5, cellY, cW - 1, cellH - 0.5)
 
-            // POC border
+            // POC border (full row highlight + dotted border)
             if (isPOC) {
-              ctx.strokeStyle = 'rgba(255,159,28,0.85)'; ctx.lineWidth = 1.2
+              ctx.fillStyle = 'rgba(255,159,28,0.07)'
+              ctx.fillRect(x, cellY, cW, cellH)
+              ctx.strokeStyle = 'rgba(255,159,28,0.9)'; ctx.lineWidth = 1.2
               ctx.setLineDash([2, 2])
               ctx.strokeRect(x + 1, cellY + 0.5, cW - 2, cellH - 1)
               ctx.setLineDash([])
@@ -441,31 +447,37 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
 
             // Global POC subtle glow
             if (isGPOC) {
-              ctx.fillStyle = 'rgba(255,159,28,0.06)'
+              ctx.fillStyle = 'rgba(255,159,28,0.05)'
               ctx.fillRect(x, cellY, cW, cellH)
             }
 
             // Imbalance triangle
             if (cW >= 40) {
               if (isBD) {
-                ctx.fillStyle = 'rgba(52,199,89,0.9)'
-                ctx.beginPath(); ctx.moveTo(x+cW-3,cellY+cellH/2); ctx.lineTo(x+cW-8,cellY+3); ctx.lineTo(x+cW-8,cellY+cellH-3); ctx.closePath(); ctx.fill()
+                ctx.fillStyle = 'rgba(52,199,89,0.92)'
+                ctx.beginPath(); ctx.moveTo(x+cW-3,cellY+cellH/2); ctx.lineTo(x+cW-9,cellY+3); ctx.lineTo(x+cW-9,cellY+cellH-3); ctx.closePath(); ctx.fill()
               } else if (isSD) {
-                ctx.fillStyle = 'rgba(255,69,58,0.9)'
-                ctx.beginPath(); ctx.moveTo(x+3,cellY+cellH/2); ctx.lineTo(x+8,cellY+3); ctx.lineTo(x+8,cellY+cellH-3); ctx.closePath(); ctx.fill()
+                ctx.fillStyle = 'rgba(255,69,58,0.92)'
+                ctx.beginPath(); ctx.moveTo(x+3,cellY+cellH/2); ctx.lineTo(x+9,cellY+3); ctx.lineTo(x+9,cellY+cellH-3); ctx.closePath(); ctx.fill()
               }
             }
 
             // Cell text (if cell large enough)
             if (cellH >= 13 && cW >= 55) {
-              const fs = Math.max(7, Math.min(10, cellH - 5))
+              const fs = Math.max(7, Math.min(10, cellH - 4))
               ctx.font = `${fs}px JetBrains Mono,monospace`
-              ctx.fillStyle = `rgba(52,199,89,${0.5 + buyRatio * 0.5})`
+              // Buy vol (left)
+              ctx.fillStyle = isBD ? 'rgba(52,199,89,1)' : `rgba(52,199,89,${0.55 + buyRatio * 0.45})`
               ctx.textAlign = 'left'
-              ctx.fillText(fmtVol(cell.buyVol), x + 4, cellY + cellH * 0.68)
-              ctx.fillStyle = `rgba(255,69,58,${0.5 + (1 - buyRatio) * 0.5})`
+              ctx.fillText(fmtVol(cell.buyVol), x + 4, cellY + cellH * 0.67)
+              // Center separator
+              ctx.fillStyle = 'rgba(255,255,255,0.18)'
+              ctx.textAlign = 'center'
+              ctx.fillText('|', x + cW / 2, cellY + cellH * 0.67)
+              // Sell vol (right)
+              ctx.fillStyle = isSD ? 'rgba(255,69,58,1)' : `rgba(255,69,58,${0.55 + (1-buyRatio) * 0.45})`
               ctx.textAlign = 'right'
-              ctx.fillText(fmtVol(cell.sellVol), x + cW - (isBD ? 11 : 4), cellY + cellH * 0.68)
+              ctx.fillText(fmtVol(cell.sellVol), x + cW - (isBD ? 12 : 4), cellY + cellH * 0.67)
             }
           } else {
             // Empty level inside candle range — subtle marker
@@ -570,10 +582,65 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
     dragRef.current = { type: 'xy', startX: mx, startY: my, startOff: viewOffset, startPrice: priceOffset }
   }, [viewOffset, priceOffset])
 
+  // ── Crosshair (overlay canvas) ────────────────────────────────────────────
+  const drawCrosshair = useCallback((mx: number, my: number) => {
+    const canvas = crosshairRef.current
+    const wrap   = wrapRef.current
+    if (!canvas || !wrap) return
+    const dpr = window.devicePixelRatio || 1
+    const W = wrap.offsetWidth, H = wrap.offsetHeight
+    const chartH = H - DELTA_H
+    canvas.width  = W * dpr; canvas.height = H * dpr
+    canvas.style.width = `${W}px`; canvas.style.height = `${H}px`
+    const ctx = canvas.getContext('2d')!
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, W, H)
+
+    if (mx < PRICE_W || mx > W - VP_W || my < 0 || my > chartH) return
+
+    const visLevels = Math.floor(chartH / cellH)
+    const halfPH    = (visLevels / 2) * binSize
+    const priceBot  = priceOffset - halfPH
+    const priceTop  = priceOffset + halfPH
+    const hoveredP  = priceBot + ((chartH - my) / chartH) * (priceTop - priceBot)
+    const snapPrice = Math.round(Math.floor(hoveredP / binSize) * binSize * 1e8) / 1e8
+    const snapY     = chartH - ((snapPrice + binSize / 2 - priceBot) / (priceTop - priceBot)) * chartH
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 0.75; ctx.setLineDash([5, 5])
+    ctx.beginPath(); ctx.moveTo(PRICE_W, snapY); ctx.lineTo(W - VP_W, snapY); ctx.stroke()
+    ctx.setLineDash([])
+
+    if (visibleCandles.length > 0) {
+      const cW = (W - PRICE_W - VP_W) / visibleCandles.length
+      const ci = Math.floor((mx - PRICE_W) / cW)
+      if (ci >= 0 && ci < visibleCandles.length) {
+        const colX = PRICE_W + ci * cW
+        ctx.fillStyle = 'rgba(255,255,255,0.028)'
+        ctx.fillRect(colX, 0, cW, chartH)
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.setLineDash([5, 5])
+        ctx.beginPath(); ctx.moveTo(colX + cW / 2, 0); ctx.lineTo(colX + cW / 2, chartH); ctx.stroke()
+        ctx.setLineDash([])
+      }
+    }
+
+    ctx.fillStyle = 'rgba(255,159,28,0.92)'
+    ctx.fillRect(1, snapY - 9, PRICE_W - 2, 18)
+    ctx.fillStyle = '#080C14'
+    ctx.font = 'bold 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+    ctx.fillText(fmtPrice(snapPrice), PRICE_W / 2, snapY + 3.5)
+  }, [visibleCandles, priceOffset, binSize, cellH])
+
+  const clearCrosshair = useCallback(() => {
+    const cv = crosshairRef.current
+    if (!cv) return
+    const ctx = cv.getContext('2d')
+    if (ctx) ctx.clearRect(0, 0, cv.width, cv.height)
+  }, [])
+
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const { mx, my } = getCanvasCoords(e)
     const W = canvasRef.current?.offsetWidth || 800
-    const H = canvasRef.current?.offsetHeight || 500
+    const H = wrapRef.current?.offsetHeight || 500
     const chartH = H - DELTA_H
 
     // Drag pan
@@ -590,6 +657,9 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
       setPriceOffset(startPrice - (my - startY) * pricePerPx)
       return
     }
+
+    // Crosshair overlay
+    drawCrosshair(mx, my)
 
     // Tooltip
     if (mx < PRICE_W || mx > W - VP_W || my > chartH) { setTooltip(null); return }
@@ -616,9 +686,21 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
       : cell.sellVol > cell.buyVol * IMBALANCE ? `▼ Sell imbalance ×${(cell.sellVol/Math.max(cell.buyVol,1)).toFixed(1)}`
       : 'Équilibre'
     setTooltip({ x: mx, y: my, price: closest, buy: cell.buyVol, sell: cell.sellVol, delta: cell.buyVol - cell.sellVol, imbalance: imb })
-  }, [visibleCandles, priceOffset, binSize, cellH, allCandles.length])
+  }, [visibleCandles, priceOffset, binSize, cellH, allCandles.length, drawCrosshair])
 
   const handleMouseUp = useCallback(() => { dragRef.current = null }, [])
+
+  // Center price view on visible candles midpoint
+  const centerOnPrice = useCallback(() => {
+    if (allCandles.length === 0) return
+    const end = allCandles.length - viewOffset
+    const start = Math.max(0, end - zoomLevel)
+    const slice = allCandles.slice(start, end)
+    if (slice.length === 0) return
+    const midH = Math.max(...slice.map(c => c.high))
+    const midL = Math.min(...slice.map(c => c.low))
+    setPriceOffset((midH + midL) / 2)
+  }, [allCandles, viewOffset, zoomLevel])
 
   const elapsed = Math.round((Date.now() - lastFetch) / 1000)
 
@@ -659,6 +741,9 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
           <button onClick={() => setViewOffset(v => Math.max(0, v - Math.ceil(zoomLevel/2)))} title="Suivant" style={{ padding:'3px 10px', borderRadius:8, border:'1px solid rgba(255,255,255,0.08)', background:'transparent', cursor:'pointer', color:'rgba(255,255,255,0.4)', fontSize:13 }}>▶</button>
         </div>
 
+        {/* Center on price */}
+        <button onClick={centerOnPrice} title="Centrer sur le prix" style={{ padding:'3px 10px', borderRadius:8, border:'1px solid rgba(0,229,255,0.2)', background:'rgba(0,229,255,0.05)', cursor:'pointer', color:'rgba(0,229,255,0.55)', fontSize:11, fontFamily:'JetBrains Mono,monospace' }}>⊙</button>
+
         {/* Bin height */}
         <div style={{ display:'flex', alignItems:'center', gap:3 }}>
           <span style={{ fontSize:8, color:'rgba(255,255,255,0.25)', fontFamily:'JetBrains Mono' }}>BIN</span>
@@ -698,13 +783,18 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
         {!error && allCandles.length === 0 && !loading && (
           <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.2)', fontSize:12 }}>Aucune donnée</div>
         )}
+        {/* Main chart canvas */}
         <canvas ref={canvasRef}
-          style={{ display:'block', width:'100%', height:'100%' }}
+          style={{ display:'block', position:'absolute', inset:0, width:'100%', height:'100%' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          onMouseLeave={() => { setTooltip(null); dragRef.current = null }}
+          onMouseLeave={() => { setTooltip(null); dragRef.current = null; clearCrosshair() }}
           onWheel={handleWheel}
+        />
+        {/* Crosshair overlay canvas — pointer-events:none so mouse events pass through */}
+        <canvas ref={crosshairRef}
+          style={{ display:'block', position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}
         />
 
         {/* Tooltip */}
