@@ -356,7 +356,6 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const portalRef  = useRef<HTMLDivElement>(null)
   const [dropPos, setDropPos] = useState<{top:number;left:number;width:number}>({top:0,left:0,width:300})
 
   // Recalculate dropdown position on open + scroll/resize
@@ -371,18 +370,6 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
     window.addEventListener('resize', calc)
     return () => { window.removeEventListener('scroll', calc, true); window.removeEventListener('resize', calc) }
   }, [open])
-
-  // Close when clicking outside trigger OR portal
-  useEffect(() => {
-    function h(e: MouseEvent) {
-      const t = e.target as Node
-      const inTrigger = triggerRef.current?.contains(t) ?? false
-      const inPortal  = portalRef.current?.contains(t)  ?? false
-      if (!inTrigger && !inPortal) setOpen(false)
-    }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
 
   // Mise à jour des prix de l'historique en temps réel
   useEffect(() => {
@@ -432,22 +419,28 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
 
   const showHistory = !q && history.length > 0
 
-  // onMouseDown sur les items : preventDefault empêche le blur input + fire avant click
   const selectItem = (r: SearchResult | HistoryEntry) => (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     handleSelect(r)
   }
 
   const dropdownContent = open ? (
-    <div
-      ref={portalRef}
-      style={{
-        position:'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width,
-        background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:14,
-        zIndex:99999, boxShadow:'0 16px 48px rgba(0,0,0,0.8)', overflow:'hidden',
-        minWidth:320,
-      }}
-    >
+    <>
+      {/* Backdrop transparent — capture les clics extérieurs */}
+      <div
+        style={{ position:'fixed', inset:0, zIndex:99998 }}
+        onMouseDown={() => setOpen(false)}
+      />
+      {/* Dropdown — au-dessus du backdrop */}
+      <div
+        style={{
+          position:'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width,
+          background:'#161B22', border:'1px solid #2A2F3E', borderRadius:14,
+          zIndex:99999, boxShadow:'0 16px 48px rgba(0,0,0,0.9)', overflow:'hidden',
+          minWidth:320,
+        }}
+      >
       {/* Search input */}
       <div style={{padding:'10px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8}}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -534,6 +527,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
         </>
       )}
     </div>
+    </>
   ) : null
 
   return (
