@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { subscribeMoods, subscribeTrades, createMood, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
+import ShareStatsModal from '@/components/share/ShareStatsModal'
+import PropFirmTracker from './PropFirmTracker'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; labelKey: string; fallback: string; color: string }[] = [
   { v:'confident',  emoji:'😎', labelKey:'journal.emotions.confident',  fallback:'Confident',   color:'#4CAF50' },
@@ -344,6 +346,7 @@ export default function JournalPage() {
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [showShare, setShowShare] = useState(false)
   const [filter,  setFilter]  = useState<EmotionalState | 'all'>('all')
 
   useEffect(() => {
@@ -365,6 +368,43 @@ export default function JournalPage() {
     ? (moods.reduce((s, m) => s + m.intensity, 0) / moods.length).toFixed(1)
     : '—'
 
+  // FOMO / Revenge trading detector
+  const fomoAlerts = useMemo(() => {
+    const alerts: { type: 'revenge' | 'fomo' | 'oversize'; message: string; tradeId?: string }[] = []
+    const closedTrades = trades
+      .filter(t => t.status === 'closed')
+      .sort((a, b) => {
+        const ta = typeof a.date?.seconds === 'number' ? a.date.seconds * 1000 : typeof a.date?.getTime === 'function' ? a.date.getTime() : 0
+        const tb = typeof b.date?.seconds === 'number' ? b.date.seconds * 1000 : typeof b.date?.getTime === 'function' ? b.date.getTime() : 0
+        return ta - tb
+      })
+    for (let i = 1; i < closedTrades.length; i++) {
+      const prev = closedTrades[i - 1]
+      const curr = closedTrades[i]
+      const prevPnL = tradePnL(prev)
+      const currPnL = tradePnL(curr)
+      // Revenge trade: negative then immediately another trade, possibly larger
+      if (prevPnL < 0) {
+        const ta = typeof curr.date?.seconds === 'number' ? curr.date.seconds * 1000 : 0
+        const tb = typeof prev.date?.seconds === 'number' ? prev.date.seconds * 1000 : 0
+        const gapMinutes = (ta - tb) / 60000
+        if (gapMinutes < 30 && gapMinutes >= 0) {
+          alerts.push({ type: 'revenge', message: `Trade potentiellement revanche : ${curr.symbol} ouvert ${Math.round(gapMinutes)}min après une perte sur ${prev.symbol}`, tradeId: curr.id })
+        }
+      }
+      // Streak of losses -> possible FOMO
+      if (i >= 3) {
+        const last3 = closedTrades.slice(i - 3, i).map(t => tradePnL(t))
+        if (last3.every(p => p < 0) && currPnL < 0) {
+          alerts.push({ type: 'fomo', message: `4 pertes consécutives détectées — risque de revenge trading élevé`, tradeId: curr.id })
+        }
+      }
+    }
+    // Deduplicate
+    const seen = new Set<string>()
+    return alerts.filter(a => { const k = a.type + a.message; if (seen.has(k)) return false; seen.add(k); return true }).slice(0, 5)
+  }, [trades])
+
   const tradeName = (id?: string) => {
     if (!id) return null
     const trade = trades.find(tr => tr.id === id)
@@ -381,9 +421,17 @@ export default function JournalPage() {
             {loading ? t('journal.loading') : `${t('journal.entries', { count: moods.length })} · ${t('journal.avgIntensity')} ${avgIntensity}/10`}
           </p>
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-          {t('journal.addEntry')}
-        </button>
+        <div style={{ display:'flex', gap:8 }}>
+          <button
+            onClick={() => setShowShare(true)}
+            style={{ padding:'8px 16px', borderRadius:10, border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.06)', color:'var(--tm-accent)', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
+          >
+            📤 Partager
+          </button>
+          <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            {t('journal.addEntry')}
+          </button>
+        </div>
       </div>
 
       {/* Two-column layout */}
@@ -407,6 +455,21 @@ export default function JournalPage() {
                   <button onClick={() => setFilter('all')} style={{ padding:'5px 10px', borderRadius:20, border:'1px solid #2A2F3E', background:'none', cursor:'pointer', fontSize:11, color:'var(--tm-text-muted)' }}>{t('journal.showAll')}</button>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* FOMO / Revenge Detector */}
+          {!loading && fomoAlerts.length > 0 && (
+            <div style={{ background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', borderRadius:12, padding:'12px 16px', marginBottom:16 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'#FF3B30', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
+                ⚠️ Détecteur FOMO / Revenge Trading
+              </div>
+              {fomoAlerts.map((a, i) => (
+                <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, padding:'6px 0', borderTop: i > 0 ? '1px solid rgba(255,59,48,0.1)' : 'none' }}>
+                  <span style={{ fontSize:14, flexShrink:0 }}>{a.type === 'revenge' ? '🔄' : a.type === 'fomo' ? '😱' : '📊'}</span>
+                  <span style={{ fontSize:11, color:'rgba(255,255,255,0.7)', lineHeight:1.5 }}>{a.message}</span>
+                </div>
+              ))}
             </div>
           )}
 
@@ -479,6 +542,7 @@ export default function JournalPage() {
 
         {/* Right — AI Analysis sticky panel */}
         <div style={{ position:'sticky', top:20, display:'flex', flexDirection:'column', gap:12 }}>
+          <PropFirmTracker trades={trades} />
           <AIAnalysisPanel moods={moods} trades={trades} />
 
           {/* Quick Stats mini-card */}
@@ -509,6 +573,13 @@ export default function JournalPage() {
       </div>
 
       {showAdd && <AddMoodModal trades={trades} onClose={() => setShowAdd(false)} />}
+      {showShare && (
+        <ShareStatsModal
+          trades={trades}
+          moods={moods}
+          onClose={() => setShowShare(false)}
+        />
+      )}
     </div>
   )
 }

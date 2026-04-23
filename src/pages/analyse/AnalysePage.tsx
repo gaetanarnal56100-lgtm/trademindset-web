@@ -18,6 +18,7 @@ import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import FootprintChart from './FootprintChart'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
+import MarketStateEngine from './MarketStateEngine'
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
@@ -1847,6 +1848,7 @@ export default function AnalysePage() {
             </span>
             <span style={{fontSize:9,color:'#3A3F4B',border:'1px solid #2A2F3E',borderRadius:4,padding:'1px 5px',flexShrink:0}}>⌘K</span>
           </button>
+          {symbol && <MarketStateEngine symbol={symbol} />}
           {symbol && (
             <button
               onClick={handleExportPDF}
