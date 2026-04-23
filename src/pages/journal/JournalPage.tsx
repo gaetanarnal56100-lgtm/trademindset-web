@@ -7,6 +7,7 @@ import ShareStatsModal from '@/components/share/ShareStatsModal'
 import PropFirmTracker from './PropFirmTracker'
 import BehaviorPatternEngine from './BehaviorPatternEngine'
 import DecisionDelayModal from './DecisionDelayModal'
+import ExchangeSyncModal from './ExchangeSyncModal'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; labelKey: string; fallback: string; color: string }[] = [
   { v:'confident',  emoji:'😎', labelKey:'journal.emotions.confident',  fallback:'Confident',   color:'#4CAF50' },
@@ -350,6 +351,7 @@ export default function JournalPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [showDelay, setShowDelay] = useState(false)  // Decision Delay System
+  const [showImport, setShowImport] = useState(false) // Exchange Import
   const [filter,  setFilter]  = useState<EmotionalState | 'all'>('all')
 
   useEffect(() => {
@@ -425,6 +427,12 @@ export default function JournalPage() {
           </p>
         </div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button
+            onClick={() => setShowImport(true)}
+            style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)', color:'#FF9500', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
+          >
+            📥 Importer
+          </button>
           <button
             onClick={() => setShowDelay(true)}
             style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(34,199,89,0.3)', background:'rgba(34,199,89,0.06)', color:'#22C759', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
@@ -598,6 +606,7 @@ export default function JournalPage() {
           onCancel={() => setShowDelay(false)}
         />
       )}
+      {showImport && <ExchangeSyncModal onClose={() => setShowImport(false)} />}
     </div>
   )
 }
