@@ -3,7 +3,6 @@
 // 3 modes : Micro / Structure / Dérivés + Derivatives Confluence Card + vraie recherche
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import ReactDOM from 'react-dom'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import type { MTFSnapshot } from './MTFDashboard'
@@ -355,14 +354,27 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const [q, setQ] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
+  const dialogRef = useRef<HTMLDialogElement>(null)
 
-  // Ferme sur Escape
+  // Ouvrir/fermer la <dialog> native (top layer — aucun z-index fight possible)
   useEffect(() => {
-    if (!open) return
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
+    const d = dialogRef.current
+    if (!d) return
+    if (open) {
+      if (!d.open) d.showModal()
+    } else {
+      if (d.open) d.close()
+    }
   }, [open])
+
+  // Escape natif de <dialog> ferme aussi notre état
+  useEffect(() => {
+    const d = dialogRef.current
+    if (!d) return
+    const h = () => setOpen(false)
+    d.addEventListener('cancel', h)
+    return () => d.removeEventListener('cancel', h)
+  }, [])
 
   // Mise à jour des prix de l'historique en temps réel
   useEffect(() => {
@@ -411,21 +423,20 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR', {maximumFractionDigits:0})}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
   const showHistory = !q && history.length > 0
 
-  // Modal centré rendu dans document.body — aucun z-index fight possible
-  const modal = open ? ReactDOM.createPortal(
-    <div
-      style={{
-        position:'fixed', inset:0,
-        background:'rgba(0,0,0,0.75)',
-        display:'flex', alignItems:'flex-start', justifyContent:'center',
-        paddingTop:'12vh',
-        zIndex:2147483647,       // valeur CSS maximale
-      }}
-      onClick={() => setOpen(false)}   // clic backdrop = ferme
-    >
-      {/* Panel — stopPropagation empêche le backdrop de fermer */}
+  // <dialog> native — rendu dans le "top layer" du navigateur, au-dessus de TOUT (transforms, z-index, backdrop-filter ignorés)
+  const modal = (
+    <>
+      <style>{`
+        dialog.tm-search-dialog { padding:0; background:transparent; border:none; max-width:none; width:100%; height:100vh; max-height:100vh; overflow:hidden; position:fixed; inset:0; display:flex; align-items:flex-start; justify-content:center; padding-top:12vh; box-sizing:border-box; }
+        dialog.tm-search-dialog::backdrop { background:rgba(0,0,0,0.82); backdrop-filter:blur(4px); }
+        dialog.tm-search-dialog[open] { display:flex; }
+      `}</style>
+      <dialog
+        ref={dialogRef}
+        className="tm-search-dialog"
+        onClick={(e) => { if (e.target === e.currentTarget) setOpen(false) }}
+      >
       <div
-        onClick={e => e.stopPropagation()}
         style={{
           width:'100%', maxWidth:540,
           background:'#0D1117',
@@ -434,6 +445,9 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           boxShadow:'0 0 0 1px rgba(0,217,255,0.08), 0 24px 64px rgba(0,0,0,0.9)',
           overflow:'hidden',
           margin:'0 16px',
+          maxHeight:'80vh',
+          display:'flex',
+          flexDirection:'column',
         }}
       >
         {/* Search input */}
@@ -454,7 +468,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
         </div>
 
         {/* Contenu scroll */}
-        <div style={{maxHeight:'55vh',overflowY:'auto'}}>
+        <div style={{flex:1,overflowY:'auto'}}>
           {/* Historique */}
           {showHistory && (
             <>
@@ -519,15 +533,15 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
           )}
 
           {/* Aide bas */}
-          <div style={{padding:'10px 16px',display:'flex',gap:16,borderTop:'1px solid #1E2330'}}>
+          <div style={{padding:'10px 16px',display:'flex',gap:16,borderTop:'1px solid #1E2330',flexShrink:0}}>
             <span style={{fontSize:10,color:'#3A3F4B'}}>↵ Sélectionner</span>
             <span style={{fontSize:10,color:'#3A3F4B'}}>ESC Fermer</span>
           </div>
         </div>
       </div>
-    </div>,
-    document.body
-  ) : null
+      </dialog>
+    </>
+  )
 
   return (
     <div style={{flex:1}}>

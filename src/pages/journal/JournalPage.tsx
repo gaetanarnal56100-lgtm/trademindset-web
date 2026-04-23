@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { subscribeMoods, subscribeTrades, createMood, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
 import BehavioralAnalysis from './BehavioralAnalysis'
+import ShareStatsModal from '@/components/share/ShareStatsModal'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; labelKey: string; fallback: string; color: string }[] = [
   { v:'confident',  emoji:'😎', labelKey:'journal.emotions.confident',  fallback:'Confident',   color:'#4CAF50' },
@@ -346,7 +347,8 @@ export default function JournalPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [filter,  setFilter]  = useState<EmotionalState | 'all'>('all')
-  const [view,    setView]    = useState<'journal' | 'behavioral'>('journal')
+  const [view,      setView]      = useState<'journal' | 'behavioral'>('journal')
+  const [showShare, setShowShare] = useState(false)
 
   useEffect(() => {
     const unsubM = subscribeMoods(m => { setMoods(m); setLoading(false) })
@@ -398,9 +400,14 @@ export default function JournalPage() {
             ))}
           </div>
           {view === 'journal' && (
-            <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-              {t('journal.addEntry')}
-            </button>
+            <>
+              <button onClick={() => setShowShare(true)} style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(0,217,255,0.25)', background:'rgba(0,217,255,0.06)', color:'#00D9FF', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+                📤 Partager
+              </button>
+              <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                {t('journal.addEntry')}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -533,6 +540,7 @@ export default function JournalPage() {
       </div>}
 
       {showAdd && <AddMoodModal trades={trades} onClose={() => setShowAdd(false)} />}
+      {showShare && <ShareStatsModal trades={trades} moods={moods} onClose={() => setShowShare(false)} />}
     </div>
   )
 }
