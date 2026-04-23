@@ -1186,6 +1186,165 @@ function MarketHeatmapModal({ cells, loading, onClose }: { cells: HeatmapCell[];
   )
 }
 
+// ── Full-page search view ─────────────────────────────────────────────────────
+// Remplace TOUTE la page pendant la recherche — aucune superposition possible
+function SearchView({
+  currentSymbol, onSelect, onClose,
+}: { currentSymbol: string; onSelect: (s: string) => void; onClose: () => void }) {
+  const [q, setQ] = useState('')
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
+  const { results, loading } = useSymbolSearch(q)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const typeColor = (t: string) => t==='crypto'?'#F59714':t==='stock'?'#34C759':'#42A5F5'
+  const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR',{maximumFractionDigits:0})}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
+
+  const handleSelect = async (r: SearchResult | HistoryEntry) => {
+    onSelect(r.symbol)
+    const summary = r.type === 'crypto' ? await fetchPriceSummary(r.symbol) : null
+    const entry: HistoryEntry = { symbol:r.symbol, name:r.name, icon:r.icon, type:r.type, exchange:(r as SearchResult).exchange, price:summary?.price, change24h:summary?.change24h, visitedAt:Date.now() }
+    const updated = [entry, ...history.filter(h => h.symbol !== r.symbol)]
+    setHistory(updated); saveHistory(updated)
+    onClose()
+  }
+
+  const removeFromHistory = (sym: string) => {
+    const updated = history.filter(h => h.symbol !== sym)
+    setHistory(updated); saveHistory(updated)
+  }
+
+  const showHistory = !q && history.length > 0
+  const items: (SearchResult | HistoryEntry)[] = q
+    ? results
+    : showHistory ? history : results
+
+  return (
+    <div style={{
+      minHeight:'100vh', background:'var(--tm-bg)',
+      padding:'0', display:'flex', flexDirection:'column',
+    }}>
+      {/* Search bar */}
+      <div style={{
+        padding:'20px 28px', borderBottom:'1px solid rgba(0,217,255,0.12)',
+        background:'rgba(0,217,255,0.02)',
+        display:'flex', alignItems:'center', gap:12,
+        position:'sticky', top:0, zIndex:1,
+      }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00D9FF" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Chercher BTC, ETH, AAPL, ASML, SPY…"
+          style={{
+            flex:1, background:'transparent', border:'none', outline:'none',
+            color:'#fff', fontSize:18, fontWeight:600,
+            fontFamily:'JetBrains Mono, monospace',
+          }}
+        />
+        {loading && <div style={{width:16,height:16,border:'2px solid #1E2330',borderTopColor:'#00D9FF',borderRadius:'50%',animation:'spin 0.7s linear infinite',flexShrink:0}}/>}
+        {q && <button onClick={() => setQ('')} style={{background:'none',border:'none',color:'#8E8E93',cursor:'pointer',fontSize:18,padding:'0 4px',flexShrink:0}}>✕</button>}
+        <button
+          onClick={onClose}
+          style={{padding:'6px 14px',borderRadius:8,border:'1px solid rgba(255,255,255,0.1)',background:'transparent',color:'#8E8E93',cursor:'pointer',fontSize:12,fontWeight:500,flexShrink:0}}
+        >
+          ✕ Fermer
+        </button>
+      </div>
+
+      {/* Results — inline, NO absolute positioning, NO overlay */}
+      <div style={{flex:1, overflowY:'auto', padding:'8px 0'}}>
+        {/* Section header */}
+        {!q && showHistory && (
+          <div style={{padding:'10px 28px 6px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <span style={{fontSize:10,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.12em'}}>🕐 Récents</span>
+            <button onClick={() => { setHistory([]); saveHistory([]) }} style={{fontSize:10,color:'#3A3F4B',background:'none',border:'none',cursor:'pointer'}}>Effacer tout</button>
+          </div>
+        )}
+        {q && items.length === 0 && !loading && (
+          <div style={{padding:'60px 28px',textAlign:'center',color:'#8E8E93',fontSize:14}}>
+            Aucun résultat pour "<strong style={{color:'#fff'}}>{q}</strong>"
+          </div>
+        )}
+        {!q && !showHistory && (
+          <div style={{padding:'10px 28px 6px'}}>
+            <span style={{fontSize:10,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.12em'}}>⭐ Populaires</span>
+          </div>
+        )}
+        {q && items.length > 0 && (
+          <div style={{padding:'10px 28px 6px'}}>
+            <span style={{fontSize:10,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.12em'}}>{items.length} résultat{items.length>1?'s':''}</span>
+          </div>
+        )}
+
+        {items.map((item) => (
+          <div
+            key={item.symbol}
+            onClick={() => handleSelect(item)}
+            style={{
+              display:'flex', alignItems:'center', gap:14,
+              padding:'12px 28px', cursor:'pointer',
+              background: item.symbol===currentSymbol ? 'rgba(0,217,255,0.06)' : 'transparent',
+              borderBottom:'1px solid rgba(255,255,255,0.03)',
+              transition:'background 0.1s',
+            }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = item.symbol===currentSymbol ? 'rgba(0,217,255,0.06)' : 'transparent'}
+          >
+            <div style={{
+              width:42, height:42, borderRadius:12, flexShrink:0,
+              background:`${typeColor(item.type)}15`,
+              border:`1px solid ${typeColor(item.type)}30`,
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:16, fontWeight:800, color:typeColor(item.type),
+            }}>
+              {item.icon}
+            </div>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{fontSize:15,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono,monospace'}}>{item.symbol}</div>
+              <div style={{fontSize:12,color:'#8E8E93',marginTop:2}}>
+                {item.name}{(item as SearchResult).exchange ? ` · ${(item as SearchResult).exchange}` : ''}
+              </div>
+            </div>
+            {'price' in item && item.price != null && (
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono'}}>{fmtPrice(item.price)}</div>
+                <div style={{fontSize:11,color:(item.change24h??0)>=0?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
+                  {(item.change24h??0)>=0?'+':''}{item.change24h?.toFixed(2)}%
+                </div>
+              </div>
+            )}
+            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+              {item.symbol===currentSymbol && <span style={{fontSize:9,color:'#00D9FF',border:'1px solid rgba(0,217,255,0.3)',borderRadius:4,padding:'2px 6px'}}>actif</span>}
+              {!q && 'visitedAt' in item && (
+                <button
+                  onClick={e => { e.stopPropagation(); removeFromHistory(item.symbol) }}
+                  style={{width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.06)',color:'#8E8E93',fontSize:13,cursor:'pointer',border:'none',flexShrink:0}}
+                >×</button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bottom hint */}
+      <div style={{padding:'12px 28px',borderTop:'1px solid rgba(255,255,255,0.04)',display:'flex',gap:20,alignItems:'center'}}>
+        <span style={{fontSize:11,color:'#3A3F4B'}}>↵ Sélectionner</span>
+        <span style={{fontSize:11,color:'#3A3F4B'}}>ESC Fermer</span>
+        <span style={{fontSize:11,color:'#3A3F4B'}}>⌘K Ouvrir</span>
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+}
+
 export default function AnalysePage() {
   const [symbol, setSymbol] = useState(() => {
     // Read symbol passed from Marchés page via localStorage
@@ -1193,9 +1352,19 @@ export default function AnalysePage() {
     if (stored) { localStorage.removeItem('tm_analyse_symbol'); return stored }
     return ''
   })
+  const [searching, setSearching] = useState(!symbol)
   const [mode,   setMode]   = useState<Mode>('micro')
   const [syncInterval, setSyncInterval] = useState<string>('1h')
   const [syncRange,    setSyncRange]    = useState<{from:number;to:number}|null>(null)
+
+  // Cmd+K ouvre la recherche
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearching(true) }
+    }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [])
 
   // ── PDF export state ──────────────────────────────────────────────────────
   const lwChartRef   = useRef<LightweightChartHandle>(null)
@@ -1625,6 +1794,21 @@ export default function AnalysePage() {
     p: '12px 16px',
   }
 
+  // ── Mode recherche : remplace TOUTE la page ─────────────────────────────
+  if (searching) {
+    return (
+      <SearchView
+        currentSymbol={symbol}
+        onSelect={s => {
+          setSymbol(s)
+          setCvdPts([])
+          Object.keys(cvdAcc.current).forEach(k => (cvdAcc.current as Record<string, number>)[k] = 0)
+        }}
+        onClose={() => setSearching(false)}
+      />
+    )
+  }
+
   return (
     <div style={{
       padding:'28px 28px 40px',maxWidth:1600,margin:'0 auto',
@@ -1693,7 +1877,23 @@ export default function AnalysePage() {
               🌡️ Contexte
             </button>
           )}
-          <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+          {/* Bouton recherche — ouvre une page dédiée (pas d'overlay) */}
+          <button
+            onClick={() => setSearching(true)}
+            style={{
+              display:'flex', alignItems:'center', gap:8,
+              background:'rgba(0,217,255,0.06)',
+              border:`1px solid ${symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)'}`,
+              borderRadius:12, padding:'8px 14px', cursor:'pointer',
+              minWidth:200, transition:'all 0.15s',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span style={{fontSize:13,fontWeight:700,color:symbol?'#fff':'#8E8E93',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
+              {symbol || 'Rechercher un actif…'}
+            </span>
+            <span style={{fontSize:9,color:'#3A3F4B',border:'1px solid #2A2F3E',borderRadius:4,padding:'1px 5px',flexShrink:0}}>⌘K</span>
+          </button>
           {symbol && <MarketStateEngine symbol={symbol} />}
           {symbol && (
             <button
