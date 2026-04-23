@@ -424,33 +424,47 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR', {maximumFractionDigits:0})}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
   const showHistory = !q && history.length > 0
 
-  // <dialog> native — rendu dans le "top layer" du navigateur, au-dessus de TOUT (transforms, z-index, backdrop-filter ignorés)
+  // <dialog> native — top layer du navigateur, pas de z-index fight possible
+  // Le dialog EST le panneau (pas full-screen) — centré par margin:auto
+  // ::backdrop gère l'overlay, onPointerDown sur les items bypasse les délais de focus
   const modal = (
     <>
       <style>{`
-        dialog.tm-search-dialog { padding:0; background:transparent; border:none; max-width:none; width:100%; height:100vh; max-height:100vh; overflow:hidden; position:fixed; inset:0; display:flex; align-items:flex-start; justify-content:center; padding-top:12vh; box-sizing:border-box; }
-        dialog.tm-search-dialog::backdrop { background:rgba(0,0,0,0.82); backdrop-filter:blur(4px); }
-        dialog.tm-search-dialog[open] { display:flex; }
+        dialog.tm-search-dialog {
+          padding: 0;
+          background: #0D1117;
+          border: 1px solid rgba(0,217,255,0.25);
+          border-radius: 16px;
+          box-shadow: 0 0 0 1px rgba(0,217,255,0.08), 0 24px 64px rgba(0,0,0,0.9);
+          max-width: 540px;
+          width: calc(100vw - 32px);
+          max-height: 80vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          position: fixed;
+          top: 12vh;
+          left: 50%;
+          transform: translateX(-50%);
+        }
+        dialog.tm-search-dialog::backdrop {
+          background: rgba(0,0,0,0.82);
+          backdrop-filter: blur(4px);
+        }
       `}</style>
       <dialog
         ref={dialogRef}
         className="tm-search-dialog"
-        onClick={(e) => { if (e.target === e.currentTarget) setOpen(false) }}
-      >
-      <div
-        style={{
-          width:'100%', maxWidth:540,
-          background:'#0D1117',
-          border:'1px solid rgba(0,217,255,0.25)',
-          borderRadius:16,
-          boxShadow:'0 0 0 1px rgba(0,217,255,0.08), 0 24px 64px rgba(0,0,0,0.9)',
-          overflow:'hidden',
-          margin:'0 16px',
-          maxHeight:'80vh',
-          display:'flex',
-          flexDirection:'column',
+        onClick={(e) => {
+          // Clic en-dehors du rectangle du dialog = backdrop → fermer
+          const rect = (e.currentTarget as HTMLDialogElement).getBoundingClientRect()
+          if (e.clientX < rect.left || e.clientX > rect.right ||
+              e.clientY < rect.top  || e.clientY > rect.bottom) {
+            setOpen(false)
+          }
         }}
       >
+      <div style={{ display:'flex', flexDirection:'column', maxHeight:'80vh', overflow:'hidden' }}>
         {/* Search input */}
         <div style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:10,borderBottom:'1px solid #1E2330'}}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D9FF" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -478,7 +492,8 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
                 <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'#3A3F4B',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer</button>
               </div>
               {history.map(entry => (
-                <button key={entry.symbol} onClick={()=>handleSelect(entry as any)}
+                <button key={entry.symbol}
+                  onPointerDown={(e)=>{e.preventDefault();handleSelect(entry as any)}}
                   style={{width:'100%',textAlign:'left',padding:'10px 16px',background:entry.symbol===symbol?'rgba(0,217,255,0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>{entry.icon}</div>
                   <div style={{flex:1,minWidth:0}}>
@@ -493,7 +508,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
                       </div>
                     </div>
                   )}
-                  <button onClick={e=>{e.stopPropagation();removeFromHistory(entry.symbol,e)}} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.06)',color:'#8E8E93',fontSize:12,flexShrink:0,cursor:'pointer',border:'none'}}>×</button>
+                  <button onPointerDown={e=>{e.stopPropagation();e.preventDefault();removeFromHistory(entry.symbol,e as any)}} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.06)',color:'#8E8E93',fontSize:12,flexShrink:0,cursor:'pointer',border:'none'}}>×</button>
                 </button>
               ))}
             </>
@@ -506,7 +521,8 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
               {results.length === 0 && !loading
                 ? <div style={{padding:'24px',textAlign:'center',color:'#8E8E93',fontSize:13}}>Aucun résultat pour "{q}"</div>
                 : results.map(r => (
-                  <button key={r.symbol} onClick={()=>handleSelect(r)}
+                  <button key={r.symbol}
+                    onPointerDown={(e)=>{e.preventDefault();handleSelect(r)}}
                     style={{width:'100%',textAlign:'left',padding:'10px 16px',background:r.symbol===symbol?'rgba(0,217,255,0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
                     <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
                     <div style={{flex:1,minWidth:0}}>
@@ -524,7 +540,8 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
             <>
               <div style={{padding:'8px 16px 4px',fontSize:9,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.1em'}}>⭐ Populaires</div>
               {results.map(r => (
-                <button key={r.symbol} onClick={()=>handleSelect(r)}
+                <button key={r.symbol}
+                  onPointerDown={(e)=>{e.preventDefault();handleSelect(r)}}
                   style={{width:'100%',textAlign:'left',padding:'10px 16px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
                   <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:11,color:'#8E8E93',marginTop:1}}>{r.name}</div></div>
@@ -543,6 +560,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
       </dialog>
     </>
   )
+
 
   return (
     <div style={{flex:1}}>
