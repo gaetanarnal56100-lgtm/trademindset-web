@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { subscribeMoods, subscribeTrades, createMood, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
+import BehavioralAnalysis from './BehavioralAnalysis'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; labelKey: string; fallback: string; color: string }[] = [
   { v:'confident',  emoji:'😎', labelKey:'journal.emotions.confident',  fallback:'Confident',   color:'#4CAF50' },
@@ -345,6 +346,7 @@ export default function JournalPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [filter,  setFilter]  = useState<EmotionalState | 'all'>('all')
+  const [view,    setView]    = useState<'journal' | 'behavioral'>('journal')
 
   useEffect(() => {
     const unsubM = subscribeMoods(m => { setMoods(m); setLoading(false) })
@@ -374,20 +376,42 @@ export default function JournalPage() {
   return (
     <div style={{ padding:'24px 28px 60px', maxWidth:1400, margin:'0 auto' }}>
       {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:12 }}>
         <div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne, sans-serif' }}>{t('journal.title')}</h1>
           <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'3px 0 0' }}>
             {loading ? t('journal.loading') : `${t('journal.entries', { count: moods.length })} · ${t('journal.avgIntensity')} ${avgIntensity}/10`}
           </p>
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-          {t('journal.addEntry')}
-        </button>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          {/* View toggle */}
+          <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', borderRadius:10, padding:3, gap:2 }}>
+            {(['journal', 'behavioral'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)} style={{
+                padding:'6px 14px', borderRadius:8, border:'none', cursor:'pointer',
+                fontSize:12, fontWeight:600, transition:'all 0.2s',
+                background: view === v ? 'rgba(0,217,255,0.15)' : 'transparent',
+                color: view === v ? '#00D9FF' : '#8E8E93',
+              }}>
+                {v === 'journal' ? '📝 Journal' : '🧠 Psychology'}
+              </button>
+            ))}
+          </div>
+          {view === 'journal' && (
+            <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              {t('journal.addEntry')}
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Behavioral Analysis View */}
+      {view === 'behavioral' && (
+        <BehavioralAnalysis moods={moods} trades={trades} />
+      )}
+
       {/* Two-column layout */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:20, alignItems:'start' }}>
+      {view === 'journal' && <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:20, alignItems:'start' }}>
         {/* Left — journal content */}
         <div>
           {/* Emotion breakdown */}
@@ -506,7 +530,7 @@ export default function JournalPage() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {showAdd && <AddMoodModal trades={trades} onClose={() => setShowAdd(false)} />}
     </div>
