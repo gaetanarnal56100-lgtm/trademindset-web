@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { subscribeMoods, subscribeTrades, createMood, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
+import { subscribeMoods, subscribeTrades, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
 import BehavioralAnalysis from './BehavioralAnalysis'
 import ShareStatsModal from '@/components/share/ShareStatsModal'
+import AddMoodModal from './AddMoodModal'
+import PropFirmTracker from './PropFirmTracker'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; labelKey: string; fallback: string; color: string }[] = [
   { v:'confident',  emoji:'😎', labelKey:'journal.emotions.confident',  fallback:'Confident',   color:'#4CAF50' },
@@ -421,6 +423,7 @@ export default function JournalPage() {
       {view === 'journal' && <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:20, alignItems:'start' }}>
         {/* Left — journal content */}
         <div>
+          <PropFirmTracker trades={trades} />
           {/* Emotion breakdown */}
           {!loading && moods.length > 0 && (
             <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:12, padding:'14px 16px', marginBottom:16 }}>
@@ -774,95 +777,4 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
   )
 }
 
-// ── Add Mood Modal ─────────────────────────────────────────────────────────
 
-function AddMoodModal({ trades, onClose }: { trades: Trade[]; onClose: () => void }) {
-  const { t } = useTranslation()
-  const [state,   setState]   = useState<EmotionalState>('calm')
-  const [intensity, setIntensity] = useState(5)
-  const [context, setContext] = useState<MoodContext>('general')
-  const [notes,   setNotes]   = useState('')
-  const [tradeId, setTradeId] = useState('')
-  const [saving,  setSaving]  = useState(false)
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      await createMood({
-        id: crypto.randomUUID(),
-        emotionalState: state,
-        intensity,
-        timestamp: new Date(),
-        context,
-        tags: [],
-        isExceptional: intensity >= 9,
-        tradeId: tradeId || undefined,
-        notes: notes || undefined,
-      })
-      onClose()
-    } catch(e) { alert((e as Error).message) }
-    finally { setSaving(false) }
-  }
-
-  const em = emotionInfo(state)
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-      <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:460, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('journal.newEntry')}</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
-        </div>
-
-        {/* Emotion grid */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8 }}>{t('journal.emotionalState')}</div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:6, marginBottom:14 }}>
-          {EMOTIONS.map(e => (
-            <button key={e.v} onClick={() => setState(e.v)} style={{ padding:'8px 4px', borderRadius:8, border:`1px solid ${state===e.v?e.color:'var(--tm-border)'}`, background: state===e.v?`${e.color}`:'var(--tm-bg-tertiary)', cursor:'pointer', textAlign:'center' }}>
-              <div style={{ fontSize:18 }}>{e.emoji}</div>
-              <div style={{ fontSize:9, color: state===e.v?e.color:'var(--tm-text-muted)', marginTop:2 }}>{t(e.labelKey)}</div>
-            </button>
-          ))}
-        </div>
-
-        {/* Intensity */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.intensityLabel', { value: intensity })}</div>
-        <input type="range" min={1} max={10} value={intensity} onChange={e => setIntensity(Number(e.target.value))}
-          style={{ width:'100%', marginBottom:14, accentColor:em.color }} />
-
-        {/* Context */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.context')}</div>
-        <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
-          {CONTEXTS.map(c => (
-            <button key={c.v} onClick={() => setContext(c.v)} style={{ padding:'5px 10px', borderRadius:6, border:`1px solid ${context===c.v?'var(--tm-accent)':'var(--tm-border)'}`, background: context===c.v?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.1)`:'var(--tm-bg-tertiary)', cursor:'pointer', fontSize:11, color: context===c.v?'var(--tm-accent)':'var(--tm-text-secondary)' }}>
-              {t(c.labelKey)}
-            </button>
-          ))}
-        </div>
-
-        {/* Linked trade */}
-        {trades.length > 0 && (
-          <>
-            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.linkedTrade')}</div>
-            <select value={tradeId} onChange={e => setTradeId(e.target.value)}
-              style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none', marginBottom:14, cursor:'pointer' }}>
-              <option value="">{t('journal.noTrade')}</option>
-              {trades.slice(0,20).map(tr => (
-                <option key={tr.id} value={tr.id}>{tr.symbol} {tr.type} {tr.date.toLocaleDateString('fr-FR')}</option>
-              ))}
-            </select>
-          </>
-        )}
-
-        {/* Notes */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.notes')}</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('journal.notesPlaceholder')} rows={3}
-          style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none', resize:'vertical', marginBottom:16, boxSizing:'border-box' }} />
-
-        <button onClick={save} disabled={saving} style={{ width:'100%', padding:10, borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:14, fontWeight:600, cursor:'pointer' }}>
-          {saving ? t('common.saving') : `${t('common.save')} — ${em.emoji} ${t(em.labelKey)} ${intensity}/10`}
-        </button>
-      </div>
-    </div>
-  )
-}

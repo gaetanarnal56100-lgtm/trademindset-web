@@ -17,6 +17,7 @@ import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import FootprintChart from './FootprintChart'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
+import MarketStateEngine from './MarketStateEngine'
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
@@ -1675,6 +1676,7 @@ export default function AnalysePage() {
             </button>
           )}
           <SymbolSearch symbol={symbol} onSelect={s=>{setSymbol(s);setCvdPts([]);Object.keys(cvdAcc.current).forEach(k=>(cvdAcc.current as Record<string,number>)[k]=0)}} />
+          {symbol && <MarketStateEngine symbol={symbol} />}
           {symbol && (
             <button
               onClick={handleExportPDF}
