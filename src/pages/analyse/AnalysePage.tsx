@@ -355,20 +355,13 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const [q, setQ] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const [dropPos, setDropPos] = useState<{top:number;left:number;width:number}>({top:0,left:0,width:300})
 
-  // Recalculate dropdown position on open + scroll/resize
+  // Ferme sur Escape
   useEffect(() => {
-    if (!open || !triggerRef.current) return
-    const calc = () => {
-      const r = triggerRef.current!.getBoundingClientRect()
-      setDropPos({ top: r.bottom + 6, left: r.left, width: Math.max(r.width, 320) })
-    }
-    calc()
-    window.addEventListener('scroll', calc, true)
-    window.addEventListener('resize', calc)
-    return () => { window.removeEventListener('scroll', calc, true); window.removeEventListener('resize', calc) }
+    if (!open) return
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
   }, [open])
 
   // Mise à jour des prix de l'historique en temps réel
@@ -414,144 +407,148 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
     addToHistory(r as SearchResult, summary?.price, summary?.change24h)
   }
 
-  const typeColor = (t: string) => t==='crypto'?'#F59714':t==='stock'?'var(--tm-profit)':'#42A5F5'
+  const typeColor = (t: string) => t==='crypto'?'#F59714':t==='stock'?'#34C759':'#42A5F5'
   const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR', {maximumFractionDigits:0})}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
-
   const showHistory = !q && history.length > 0
 
-  const selectItem = (r: SearchResult | HistoryEntry) => (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    handleSelect(r)
-  }
-
-  const dropdownContent = open ? (
-    <>
-      {/* Backdrop transparent — capture les clics extérieurs */}
+  // Modal centré rendu dans document.body — aucun z-index fight possible
+  const modal = open ? ReactDOM.createPortal(
+    <div
+      style={{
+        position:'fixed', inset:0,
+        background:'rgba(0,0,0,0.75)',
+        display:'flex', alignItems:'flex-start', justifyContent:'center',
+        paddingTop:'12vh',
+        zIndex:2147483647,       // valeur CSS maximale
+      }}
+      onClick={() => setOpen(false)}   // clic backdrop = ferme
+    >
+      {/* Panel — stopPropagation empêche le backdrop de fermer */}
       <div
-        style={{ position:'fixed', inset:0, zIndex:99998 }}
-        onMouseDown={() => setOpen(false)}
-      />
-      {/* Dropdown — au-dessus du backdrop */}
-      <div
+        onClick={e => e.stopPropagation()}
         style={{
-          position:'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width,
-          background:'#161B22', border:'1px solid #2A2F3E', borderRadius:14,
-          zIndex:99999, boxShadow:'0 16px 48px rgba(0,0,0,0.9)', overflow:'hidden',
-          minWidth:320,
+          width:'100%', maxWidth:540,
+          background:'#0D1117',
+          border:'1px solid rgba(0,217,255,0.25)',
+          borderRadius:16,
+          boxShadow:'0 0 0 1px rgba(0,217,255,0.08), 0 24px 64px rgba(0,0,0,0.9)',
+          overflow:'hidden',
+          margin:'0 16px',
         }}
       >
-      {/* Search input */}
-      <div style={{padding:'10px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8}}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
-          placeholder="BTC, ETH, AAPL…"
-          style={{flex:1,background:'transparent',border:'none',color:'var(--tm-text-primary)',fontSize:13,outline:'none'}} />
-        {loading && <div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>}
-        {q && <button onMouseDown={e=>{e.preventDefault();setQ('')}} style={{background:'none',border:'none',color:'var(--tm-text-muted)',cursor:'pointer',fontSize:14,padding:'0 2px'}}>✕</button>}
-      </div>
+        {/* Search input */}
+        <div style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:10,borderBottom:'1px solid #1E2330'}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D9FF" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input
+            autoFocus
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Chercher BTC, ETH, AAPL, ASML…"
+            style={{flex:1,background:'transparent',border:'none',color:'#fff',fontSize:15,outline:'none',fontFamily:'JetBrains Mono,monospace'}}
+          />
+          {loading && <div style={{width:14,height:14,border:'2px solid #1E2330',borderTopColor:'#00D9FF',borderRadius:'50%',animation:'spin 0.7s linear infinite',flexShrink:0}}/>}
+          {q
+            ? <button onClick={()=>setQ('')} style={{background:'none',border:'none',color:'#8E8E93',cursor:'pointer',fontSize:16,padding:'0 2px',flexShrink:0}}>✕</button>
+            : <span style={{fontSize:10,color:'#3A3F4B',border:'1px solid #2A2F3E',borderRadius:4,padding:'1px 6px',flexShrink:0}}>ESC</span>
+          }
+        </div>
 
-      {/* Historique */}
-      {showHistory && (
-        <>
-          <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🕐 Historique</span>
-            <button onMouseDown={e=>{e.preventDefault();setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer tout</button>
-          </div>
-          <div style={{maxHeight:320, overflowY:'auto'}}>
-            {history.map(entry => (
-              <button key={entry.symbol} onMouseDown={selectItem(entry as any)}
-                style={{width:'100%',textAlign:'left',padding:'8px 14px',background:entry.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
-                <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>
-                  {entry.icon}
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:'flex',alignItems:'baseline',gap:6}}>
-                    <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</span>
-                    {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>● actif</span>}
+        {/* Contenu scroll */}
+        <div style={{maxHeight:'55vh',overflowY:'auto'}}>
+          {/* Historique */}
+          {showHistory && (
+            <>
+              <div style={{padding:'8px 16px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:9,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.1em'}}>🕐 Récents</span>
+                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'#3A3F4B',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer</button>
+              </div>
+              {history.map(entry => (
+                <button key={entry.symbol} onClick={()=>handleSelect(entry as any)}
+                  style={{width:'100%',textAlign:'left',padding:'10px 16px',background:entry.symbol===symbol?'rgba(0,217,255,0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>{entry.icon}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</div>
+                    <div style={{fontSize:11,color:'#8E8E93',marginTop:1}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
                   </div>
-                  <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
-                </div>
-                {entry.price != null && (
-                  <div style={{textAlign:'right',flexShrink:0}}>
-                    <div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{fmtPrice(entry.price)}</div>
-                    <div style={{fontSize:10,fontWeight:600,color:(entry.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
-                      {(entry.change24h??0)>=0?'+':''}{entry.change24h?.toFixed(2)}%
+                  {entry.price != null && (
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono'}}>{fmtPrice(entry.price)}</div>
+                      <div style={{fontSize:10,color:(entry.change24h??0)>=0?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
+                        {(entry.change24h??0)>=0?'+':''}{entry.change24h?.toFixed(2)}%
+                      </div>
                     </div>
-                  </div>
-                )}
-                <div onMouseDown={e=>{e.stopPropagation();removeFromHistory(entry.symbol,e)}} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.04)',color:'var(--tm-text-muted)',fontSize:11,flexShrink:0,cursor:'pointer'}}>×</div>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+                  )}
+                  <button onClick={e=>{e.stopPropagation();removeFromHistory(entry.symbol,e)}} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.06)',color:'#8E8E93',fontSize:12,flexShrink:0,cursor:'pointer',border:'none'}}>×</button>
+                </button>
+              ))}
+            </>
+          )}
 
-      {/* Résultats de recherche */}
-      {q && (
-        <>
-          {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Résultats</div>}
-          <div style={{maxHeight:300,overflowY:'auto'}}>
-            {results.length === 0 ? (
-              <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun résultat pour "{q}"</div>
-            ) : results.map(r => (
-              <button key={r.symbol} onMouseDown={selectItem(r)}
-                style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
-                <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>
-                  {r.icon}
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
-                  <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
-                </div>
-                {r.symbol===symbol && <span style={{fontSize:9,color:'var(--tm-accent)'}}>●</span>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+          {/* Résultats de recherche */}
+          {q && (
+            <>
+              <div style={{padding:'8px 16px 4px',fontSize:9,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.1em'}}>Résultats</div>
+              {results.length === 0 && !loading
+                ? <div style={{padding:'24px',textAlign:'center',color:'#8E8E93',fontSize:13}}>Aucun résultat pour "{q}"</div>
+                : results.map(r => (
+                  <button key={r.symbol} onClick={()=>handleSelect(r)}
+                    style={{width:'100%',textAlign:'left',padding:'10px 16px',background:r.symbol===symbol?'rgba(0,217,255,0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
+                    <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
+                      <div style={{fontSize:11,color:'#8E8E93',marginTop:1}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
+                    </div>
+                    {r.symbol===symbol && <span style={{fontSize:9,color:'#00D9FF',border:'1px solid rgba(0,217,255,0.3)',borderRadius:4,padding:'1px 6px'}}>actif</span>}
+                  </button>
+                ))}
+            </>
+          )}
 
-      {/* Populaires si pas de query et pas d'historique */}
-      {!q && !history.length && (
-        <>
-          <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>⭐ Populaires</div>
-          <div style={{maxHeight:280,overflowY:'auto'}}>
-            {results.map(r => (
-              <button key={r.symbol} onMouseDown={selectItem(r)}
-                style={{width:'100%',textAlign:'left',padding:'9px 14px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
-                <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
-                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}</div></div>
-              </button>
-            ))}
+          {/* Populaires si vide */}
+          {!q && !history.length && (
+            <>
+              <div style={{padding:'8px 16px 4px',fontSize:9,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.1em'}}>⭐ Populaires</div>
+              {results.map(r => (
+                <button key={r.symbol} onClick={()=>handleSelect(r)}
+                  style={{width:'100%',textAlign:'left',padding:'10px 16px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:11,color:'#8E8E93',marginTop:1}}>{r.name}</div></div>
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Aide bas */}
+          <div style={{padding:'10px 16px',display:'flex',gap:16,borderTop:'1px solid #1E2330'}}>
+            <span style={{fontSize:10,color:'#3A3F4B'}}>↵ Sélectionner</span>
+            <span style={{fontSize:10,color:'#3A3F4B'}}>ESC Fermer</span>
           </div>
-        </>
-      )}
-    </div>
-    </>
+        </div>
+      </div>
+    </div>,
+    document.body
   ) : null
 
   return (
-    <div style={{position:'relative', flex: 1}}>
-      {/* Trigger button */}
-      <button ref={triggerRef} onClick={() => setOpen(x => !x)} style={{
+    <div style={{flex:1}}>
+      {/* Trigger */}
+      <button onClick={() => setOpen(true)} style={{
         display:'flex', alignItems:'center', gap:8, background:'var(--tm-bg-secondary)',
-        border:`1px solid ${open?'var(--tm-accent)':'var(--tm-border)'}`, borderRadius:12,
+        border:`1px solid ${open?'#00D9FF':'var(--tm-border)'}`, borderRadius:12,
         padding:'8px 14px', cursor:'pointer', width:'100%', transition:'border-color 0.15s',
       }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span style={{fontSize:13,fontWeight:700,color:symbol?'var(--tm-text-primary)':'var(--tm-text-muted)',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span style={{fontSize:13,fontWeight:700,color:symbol?'#fff':'#8E8E93',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
           {symbol || 'Rechercher un actif…'}
         </span>
         {symbol && history.find(h=>h.symbol===symbol)?.change24h != null && (
-          <span style={{fontSize:10,fontWeight:700,color:(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
+          <span style={{fontSize:10,fontWeight:700,color:(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
             {(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'+':''}{history.find(h=>h.symbol===symbol)?.change24h?.toFixed(2)}%
           </span>
         )}
-        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="var(--tm-text-muted)" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="#8E8E93" strokeWidth="1.5" strokeLinecap="round"/></svg>
       </button>
-
-      {/* Dropdown rendu dans document.body via portal — évite tout problème de stacking context/overflow */}
-      {ReactDOM.createPortal(dropdownContent, document.body)}
+      {modal}
     </div>
   )
 }
