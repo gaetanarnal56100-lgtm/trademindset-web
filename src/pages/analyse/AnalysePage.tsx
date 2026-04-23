@@ -356,9 +356,27 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [dropPos, setDropPos] = useState<{top:number;left:number;width:number}>({top:0,left:0,width:300})
+
+  // Recalculate dropdown position on open + scroll/resize
+  useEffect(() => {
+    if (!open || !triggerRef.current) return
+    const calc = () => {
+      const r = triggerRef.current!.getBoundingClientRect()
+      setDropPos({ top: r.bottom + 6, left: r.left, width: Math.max(r.width, 300) })
+    }
+    calc()
+    window.addEventListener('scroll', calc, true)
+    window.addEventListener('resize', calc)
+    return () => { window.removeEventListener('scroll', calc, true); window.removeEventListener('resize', calc) }
+  }, [open])
 
   useEffect(() => {
-    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    function h(e: MouseEvent) {
+      const t = e.target as Node
+      if (ref.current && !ref.current.contains(t)) setOpen(false)
+    }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [])
@@ -414,7 +432,7 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   return (
     <div ref={ref} style={{position:'relative', flex: 1}}>
       {/* Trigger button */}
-      <button onClick={() => setOpen(x => !x)} style={{
+      <button ref={triggerRef} onClick={() => setOpen(x => !x)} style={{
         display:'flex', alignItems:'center', gap:8, background:'var(--tm-bg-secondary)',
         border:`1px solid ${open?'var(--tm-accent)':'var(--tm-border)'}`, borderRadius:12,
         padding:'8px 14px', cursor:'pointer', width:'100%', transition:'border-color 0.15s',
@@ -431,12 +449,12 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
         <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="var(--tm-text-muted)" strokeWidth="1.5" strokeLinecap="round"/></svg>
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown — position:fixed pour sortir des stacking contexts */}
       {open && (
         <div style={{
-          position:'absolute', top:'calc(100% + 6px)', left:0, right:0,
+          position:'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width,
           background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:14,
-          zIndex:200, boxShadow:'0 16px 48px rgba(0,0,0,0.8)', overflow:'hidden',
+          zIndex:9000, boxShadow:'0 16px 48px rgba(0,0,0,0.8)', overflow:'hidden',
           minWidth:300,
         }}>
           {/* Search input */}
