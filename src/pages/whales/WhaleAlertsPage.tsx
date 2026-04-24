@@ -18,7 +18,7 @@ interface WhaleAlert {
   timestamp: number
   chain: string
   score: number
-  scoreCategory: 'legendary' | 'major' | 'significant' | 'notable'
+  scoreCategory: 'MEGA_WHALE' | 'WHALE' | 'BIG_FISH' | 'SHARK'
   scoreBreakdown: { amountScore: number; relativeVolumeScore: number; velocityBonus: number }
   pairVolume24h: number
   priceAtTime: number
@@ -46,10 +46,10 @@ function timeAgo(ts: number) {
 }
 
 const CATEGORY_CONFIG = {
-  legendary:   { label: '🔥 Légendaire', color: '#FF9500', bg: 'rgba(255,149,0,0.12)',   border: 'rgba(255,149,0,0.3)' },
-  major:       { label: '⚡ Majeur',     color: '#BF5AF2', bg: 'rgba(191,90,242,0.10)', border: 'rgba(191,90,242,0.25)' },
-  significant: { label: '🐋 Significatif', color: '#0A85FF', bg: 'rgba(10,133,255,0.10)', border: 'rgba(10,133,255,0.25)' },
-  notable:     { label: '📊 Notable',    color: '#00E5FF', bg: 'rgba(0,229,255,0.08)',   border: 'rgba(0,229,255,0.2)' },
+  MEGA_WHALE: { label: '🔥 Mega Whale', color: '#FF9500', bg: 'rgba(255,149,0,0.12)',   border: 'rgba(255,149,0,0.3)' },
+  WHALE:      { label: '🐋 Whale',      color: '#BF5AF2', bg: 'rgba(191,90,242,0.10)', border: 'rgba(191,90,242,0.25)' },
+  BIG_FISH:   { label: '🐠 Big Fish',   color: '#0A85FF', bg: 'rgba(10,133,255,0.10)', border: 'rgba(10,133,255,0.25)' },
+  SHARK:      { label: '🦈 Shark',      color: '#00E5FF', bg: 'rgba(0,229,255,0.08)',  border: 'rgba(0,229,255,0.2)' },
 }
 
 const SCORE_COLORS = [
@@ -68,7 +68,7 @@ export default function WhaleAlertsPage() {
   const user = useUser()
   const [alerts, setAlerts] = useState<WhaleAlert[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'legendary' | 'major' | 'significant' | 'notable'>('all')
+  const [filter, setFilter] = useState<'all' | 'MEGA_WHALE' | 'WHALE' | 'BIG_FISH' | 'SHARK'>('all')
   const [tokenFilter, setTokenFilter] = useState<string>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
 
@@ -104,8 +104,8 @@ export default function WhaleAlertsPage() {
   // Stats
   const stats = {
     total:     alerts.length,
-    legendary: alerts.filter(a => a.scoreCategory === 'legendary').length,
-    major:     alerts.filter(a => a.scoreCategory === 'major').length,
+    legendary: alerts.filter(a => a.scoreCategory === 'MEGA_WHALE').length,
+    major:     alerts.filter(a => a.scoreCategory === 'WHALE').length,
     volume:    alerts.reduce((s, a) => s + a.usdValue, 0),
   }
 
@@ -137,8 +137,8 @@ export default function WhaleAlertsPage() {
         <div className="grid grid-cols-4 gap-3">
           {[
             { label: 'Total alertes',  value: stats.total.toString(),        color: 'var(--tm-accent)' },
-            { label: '🔥 Légendaires', value: stats.legendary.toString(),    color: '#FF9500' },
-            { label: '⚡ Majeures',    value: stats.major.toString(),        color: '#BF5AF2' },
+            { label: '🔥 Mega Whales', value: stats.legendary.toString(),    color: '#FF9500' },
+            { label: '🐋 Whales',      value: stats.major.toString(),        color: '#BF5AF2' },
             { label: 'Volume total',   value: formatUSD(stats.volume),       color: '#34C759' },
           ].map(s => (
             <div key={s.label} className="rounded-xl px-4 py-3"
@@ -154,7 +154,7 @@ export default function WhaleAlertsPage() {
       <div className="px-6 py-3 flex items-center gap-3 flex-wrap" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
         {/* Catégorie */}
         <div className="flex gap-1.5">
-          {(['all', 'legendary', 'major', 'significant', 'notable'] as const).map(f => (
+          {(['all', 'MEGA_WHALE', 'WHALE', 'BIG_FISH', 'SHARK'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className="text-xs px-3 py-1.5 rounded-lg transition-all cursor-pointer"
               style={{
@@ -204,7 +204,7 @@ export default function WhaleAlertsPage() {
         )}
 
         {filtered.map(alert => {
-          const cat = CATEGORY_CONFIG[alert.scoreCategory]
+          const cat = CATEGORY_CONFIG[alert.scoreCategory] ?? CATEGORY_CONFIG['SHARK']
           const isOpen = expanded === alert.id
           const sc = scoreColor(alert.score)
 
