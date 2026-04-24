@@ -23,7 +23,7 @@ export default function Sidebar() {
     { to: '/app/trades',      label: t('nav.trades'),      Icon: IconTrades },
     { to: '/app/analyse',     label: t('nav.analyse'),     Icon: IconAnalyse },
     { to: '/app/marches',     label: t('nav.marches'),     Icon: IconMarches },
-    { to: '/app/whales',      label: '🐋 Whale Alerts',    Icon: IconWhale },
+    { to: '/app/whales',      label: 'Whale Alerts',        Icon: IconWhale },
     { to: '/app/journal',     label: t('nav.journal'),     Icon: IconJournal },
     { to: '/app/calendrier',  label: t('nav.calendrier'),  Icon: IconCalendrier },
     { to: '/app/systemes',    label: t('nav.systemes'),    Icon: IconSystemes },
