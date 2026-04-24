@@ -1,18 +1,18 @@
 // AssetDetailSheet.tsx
 // ─────────────────────────────────────────────────────────────────────────────
 // Fiche complète d'un actif (action ou crypto) :
-//  Stocks : fondamentaux Yahoo Finance, dividendes, prochain earnings, news ticker
-//  Crypto : market cap CoinGecko, ATH, performance, news filtrée
+//  Stocks : fondamentaux Yahoo Finance, dividendes + historique, earnings, news Finnhub
+//  Crypto : market cap CoinGecko, ATH, performance, news Yahoo RSS
+//  News & fondamentaux via Cloud Function (pas de CORS)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import { AssetPriceChart, KlineBar, fmtU } from '@/pages/trades/TradesPage'
 
-const _fbFns = getFunctions(app, 'europe-west1')
-type _YFn = { s: string; candles: { t:number; o:number; h:number; l:number; c:number; v:number }[] }
+const fbFns = getFunctions(app, 'europe-west1')
 
 const TF_YAHOO_SHEET: Record<string, { interval: string; range: string }> = {
   '1j': { interval: '15m', range: '5d'  },
@@ -23,23 +23,21 @@ const TF_YAHOO_SHEET: Record<string, { interval: string; range: string }> = {
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface StockFundamentals {
-  companyName:    string
-  price:          number
-  change24h:      number
-  changePct:      number
-  marketCap:      number | null
-  peRatio:        number | null
-  eps:            number | null
-  beta:           number | null
-  dividendYield:  number | null
-  dividendAnnual: number | null
-  exDividendDate: string | null
-  payDate:        string | null
-  week52High:     number | null
-  week52Low:      number | null
-  earningsDate:   string | null
-  epsEstimate:    number | null
-  volume:         number | null
+  companyName:     string
+  marketCap:       number | null
+  peRatio:         number | null
+  eps:             number | null
+  beta:            number | null
+  volume:          number | null
+  week52High:      number | null
+  week52Low:       number | null
+  dividendYield:   number | null
+  dividendAnnual:  number | null
+  exDividendDate:  string | null
+  payDate:         string | null
+  earningsDate:    string | null
+  epsEstimate:     number | null
+  dividendHistory: { date: string; amount: number }[]
 }
 
 interface CryptoFundamentals {
@@ -58,17 +56,19 @@ interface CryptoFundamentals {
 }
 
 interface NewsItem {
-  title: string
-  url:   string
-  date:  string
+  title:   string
+  url:     string
+  date:    string
+  source?: string
+  image?:  string
 }
 
 export interface AssetDetailSheetProps {
-  symbol:       string    // ex: 'AAPL', 'BTC' (sans USDT)
-  isCrypto:     boolean
-  rsi?:         number
-  divergence?:  string
-  onClose:      () => void
+  symbol:         string    // ex: 'AAPL', 'BTC' (sans USDT)
+  isCrypto:       boolean
+  rsi?:           number
+  divergence?:    string
+  onClose:        () => void
   onOpenAnalysis: () => void
 }
 
@@ -91,20 +91,9 @@ const CG_ID: Record<string, string> = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function fmtDate(ts: number | null): string {
-  if (!ts) return '—'
-  return new Date(ts * 1000).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })
-}
-
 function fmtDateStr(s: string | null): string {
   if (!s) return '—'
   try { return new Date(s).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) } catch { return s }
-}
-
-function daysUntil(ts: number | null): number | null {
-  if (!ts) return null
-  const d = Math.ceil((ts * 1000 - Date.now()) / 86_400_000)
-  return d
 }
 
 const fmtBig = (v: number | null) => {
@@ -118,97 +107,11 @@ const fmtBig = (v: number | null) => {
 const fmtPct = (v: number | null, digits = 2) =>
   v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(digits)}%`
 
-// ── CORS proxy (même pattern que NewsTickerBanner) ─────────────────────────
-
-async function proxiedFetch(url: string): Promise<string> {
-  const proxies = [
-    (u: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  ]
-  for (const proxy of proxies) {
-    try {
-      const r = await fetch(proxy(url), { signal: AbortSignal.timeout(8000) })
-      if (!r.ok) continue
-      const json = await r.json()
-      // allorigins → json.contents, corsproxy → raw text dans .contents ou directement
-      return typeof json?.contents === 'string' ? json.contents : JSON.stringify(json)
-    } catch { continue }
-  }
-  throw new Error('Proxy unavailable')
-}
-
-// ── Fetch Stocks fundamentals (Yahoo Finance v8/chart — no crumb needed) ───
-
-interface ChartMeta {
-  longName?: string; shortName?: string
-  regularMarketPrice?: number; regularMarketChangePercent?: number
-  regularMarketVolume?: number; fiftyTwoWeekHigh?: number; fiftyTwoWeekLow?: number
-  marketCap?: number; trailingPE?: number
-  trailingAnnualDividendRate?: number; trailingAnnualDividendYield?: number
-}
-
-async function fetchStockFundamentals(symbol: string): Promise<StockFundamentals> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1y&interval=1d&events=div&includePrePost=false`
-  const raw = await proxiedFetch(url)
-
-  let parsed: Record<string, unknown>
-  try { parsed = JSON.parse(raw) } catch { throw new Error('Parse error') }
-
-  const chartArr = (parsed?.chart as Record<string, unknown[]>)?.result
-  const result = chartArr?.[0] as Record<string, unknown> | undefined
-  if (!result) throw new Error('No chart data')
-
-  const meta = (result.meta ?? {}) as ChartMeta
-  if (!meta.regularMarketPrice) throw new Error('No price data')
-
-  // Dividends from events
-  type DivEvent = { amount: number; date: number }
-  const divEvents = (result.events as Record<string, Record<string, DivEvent>> | undefined)?.dividends
-  const oneYearAgo = Date.now() / 1000 - 365 * 86400
-  let dividendAnnual: number | null = null
-  let exDividendDate: string | null = null
-
-  if (divEvents) {
-    const recent = Object.values(divEvents).filter(d => d.date > oneYearAgo)
-    if (recent.length > 0) {
-      dividendAnnual = recent.reduce((s, d) => s + d.amount, 0)
-      const latest = recent.sort((a, b) => b.date - a.date)[0]
-      exDividendDate = new Date(latest.date * 1000).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })
-    }
-  }
-
-  const price = meta.regularMarketPrice ?? 0
-  const divYield = dividendAnnual != null && price > 0
-    ? (dividendAnnual / price) * 100
-    : meta.trailingAnnualDividendYield != null ? meta.trailingAnnualDividendYield * 100 : null
-
-  return {
-    companyName:    meta.longName ?? meta.shortName ?? symbol,
-    price,
-    change24h:      price * ((meta.regularMarketChangePercent ?? 0) / 100),
-    changePct:      meta.regularMarketChangePercent ?? 0,
-    marketCap:      meta.marketCap ?? null,
-    peRatio:        meta.trailingPE ?? null,
-    eps:            null,
-    beta:           null,
-    dividendYield:  divYield,
-    dividendAnnual,
-    exDividendDate,
-    payDate:        null,
-    week52High:     meta.fiftyTwoWeekHigh ?? null,
-    week52Low:      meta.fiftyTwoWeekLow  ?? null,
-    earningsDate:   null,
-    epsEstimate:    null,
-    volume:         meta.regularMarketVolume ?? null,
-  }
-}
-
 // ── Fetch Crypto fundamentals (CoinGecko, CORS OK) ─────────────────────────
 
 async function fetchCryptoFundamentals(symbol: string): Promise<CryptoFundamentals> {
   const id = CG_ID[symbol.toUpperCase()]
   if (!id) throw new Error(`Coin ${symbol} non mappé`)
-
   const r = await fetch(
     `https://api.coingecko.com/api/v3/coins/${id}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false`,
     { signal: AbortSignal.timeout(8000) }
@@ -230,7 +133,6 @@ async function fetchCryptoFundamentals(symbol: string): Promise<CryptoFundamenta
       ath_change_percentage: { usd: number }
     }
   }
-
   const md = d.market_data
   return {
     name:          d.name,
@@ -246,36 +148,6 @@ async function fetchCryptoFundamentals(symbol: string): Promise<CryptoFundamenta
     ath:           md.ath.usd,
     athChange:     md.ath_change_percentage.usd,
   }
-}
-
-// ── Fetch news (Yahoo Finance RSS by ticker via proxy) ─────────────────────
-
-async function fetchTickerNews(symbol: string, isCrypto: boolean): Promise<NewsItem[]> {
-  const url = isCrypto
-    ? `https://finance.yahoo.com/rss/headline?s=${symbol}-USD`
-    : `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${symbol}&region=US&lang=en-US`
-
-  const raw = await proxiedFetch(url)
-  const items: NewsItem[] = []
-  const blocks = raw.match(/<item>([\s\S]*?)<\/item>/g) ?? []
-
-  for (const block of blocks.slice(0, 5)) {
-    const titleM = block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ?? block.match(/<title>(.*?)<\/title>/)
-    const linkM  = block.match(/<link>(.*?)<\/link>/) ?? block.match(/<guid>(https?:\/\/[^<]+)<\/guid>/)
-    const dateM  = block.match(/<pubDate>(.*?)<\/pubDate>/)
-
-    const title = titleM?.[1]?.trim()
-    const url   = linkM?.[1]?.trim()
-    const date  = dateM?.[1]?.trim()
-
-    if (title && url) {
-      try {
-        const d = date ? new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) : ''
-        items.push({ title, url, date: d })
-      } catch { items.push({ title, url, date: '' }) }
-    }
-  }
-  return items
 }
 
 // ── Fetch klines (Binance pour crypto, Firebase CF pour stocks) ────────────
@@ -300,11 +172,10 @@ async function fetchBarsForSheet(symbol: string, isCrypto: boolean, tf: string):
     }
     return []
   }
-
-  // Stocks : Firebase Cloud Function fetchYahooCandles
   try {
+    type YFn = { s: string; candles: { t:number; o:number; h:number; l:number; c:number; v:number }[] }
     const { interval, range } = TF_YAHOO_SHEET[tf] ?? TF_YAHOO_SHEET['7j']
-    const fn = httpsCallable<Record<string, unknown>, _YFn>(_fbFns, 'fetchYahooCandles')
+    const fn = httpsCallable<Record<string, unknown>, YFn>(fbFns, 'fetchYahooCandles')
     const res = await fn({ symbol, interval, range })
     if (res.data.s !== 'ok' || !res.data.candles?.length) return []
     return res.data.candles.map(c => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c }))
@@ -342,6 +213,26 @@ function Week52Bar({ low, high, current }: { low: number; high: number; current:
   )
 }
 
+function DividendHistory({ history, price }: { history: { date: string; amount: number }[]; price: number }) {
+  if (!history.length) return null
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+      {history.slice(0, 6).map((d, i) => {
+        const yieldPct = price > 0 ? (d.amount / price * 100).toFixed(3) : null
+        return (
+          <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', background:'rgba(255,195,0,0.04)', borderRadius:8, border:'1px solid rgba(255,195,0,0.1)' }}>
+            <span style={{ fontSize:10, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>{d.date}</span>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <span style={{ fontSize:12, fontWeight:700, color:'#FFD700', fontFamily:'JetBrains Mono,monospace' }}>${d.amount.toFixed(4)}</span>
+              {yieldPct && <span style={{ fontSize:9, color:'rgba(255,215,0,0.6)', background:'rgba(255,195,0,0.08)', padding:'1px 5px', borderRadius:4 }}>{yieldPct}%</span>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function NewsSection({ items, loading }: { items: NewsItem[]; loading: boolean }) {
   const { t } = useTranslation()
   if (loading) return (
@@ -350,20 +241,32 @@ function NewsSection({ items, loading }: { items: NewsItem[]; loading: boolean }
       {t('assetSheet.loadingNews')}
     </div>
   )
-  if (!items.length) return <div style={{ fontSize:11, color:'var(--tm-text-muted)', padding:'8px 0' }}>{t('assetSheet.noNews')}</div>
+  if (!items.length) return (
+    <div style={{ padding:'16px', textAlign:'center', background:'rgba(255,255,255,0.02)', borderRadius:8, border:'1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ fontSize:20, marginBottom:8 }}>📰</div>
+      <div style={{ fontSize:11, color:'var(--tm-text-muted)' }}>{t('assetSheet.noNews')}</div>
+    </div>
+  )
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
       {items.map((n, i) => (
-        <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration:'none', display:'flex', gap:10, alignItems:'flex-start', padding:'10px 12px', background:'rgba(255,255,255,0.02)', borderRadius:8, border:'1px solid rgba(255,255,255,0.05)', transition:'background 0.12s', cursor:'pointer' }}
+        <a key={i} href={n.url} target="_blank" rel="noopener noreferrer"
+          style={{ textDecoration:'none', display:'flex', gap:10, alignItems:'flex-start', padding:'10px 12px', background:'rgba(255,255,255,0.02)', borderRadius:8, border:'1px solid rgba(255,255,255,0.05)', transition:'background 0.12s', cursor:'pointer' }}
           onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
         >
-          <span style={{ fontSize:14 }}>📰</span>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-primary)', lineHeight:1.4 }}>{n.title}</div>
-            {n.date && <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginTop:3 }}>{n.date}</div>}
+          {n.image
+            ? <img src={n.image} alt="" style={{ width:44, height:44, borderRadius:6, objectFit:'cover', flexShrink:0, background:'rgba(255,255,255,0.04)' }} onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+            : <span style={{ fontSize:18, flexShrink:0, marginTop:2 }}>📰</span>
+          }
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-primary)', lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{n.title}</div>
+            <div style={{ display:'flex', gap:8, marginTop:4, alignItems:'center' }}>
+              {n.source && <span style={{ fontSize:9, color:'var(--tm-accent)', fontFamily:'JetBrains Mono,monospace' }}>{n.source}</span>}
+              {n.date && <span style={{ fontSize:9, color:'var(--tm-text-muted)' }}>{n.date}</span>}
+            </div>
           </div>
-          <span style={{ fontSize:10, color:'var(--tm-accent)' }}>↗</span>
+          <span style={{ fontSize:10, color:'var(--tm-accent)', flexShrink:0 }}>↗</span>
         </a>
       ))}
     </div>
@@ -403,38 +306,67 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
       .finally(() => setBarsLoad(false))
   }, [symbol, isCrypto, tf])
 
-  // Fetch fundamentals
+  // Fetch crypto fundamentals (CoinGecko — CORS OK)
   useEffect(() => {
+    if (!isCrypto) return
     setFundLoad(true); setFundErr(null)
-    const p = isCrypto
-      ? fetchCryptoFundamentals(symbol).then(d => { setCryptoData(d); setStockData(null) })
-      : fetchStockFundamentals(symbol).then(d => { setStockData(d); setCryptoData(null) })
-    p.catch(e => setFundErr((e as Error).message)).finally(() => setFundLoad(false))
+    fetchCryptoFundamentals(symbol)
+      .then(d => { setCryptoData(d); setStockData(null) })
+      .catch(e => setFundErr((e as Error).message))
+      .finally(() => setFundLoad(false))
   }, [symbol, isCrypto])
 
-  // Fetch news
+  // Fetch stock fundamentals + news via Cloud Function (pas de CORS)
   useEffect(() => {
-    setNewsLoad(true)
-    fetchTickerNews(symbol, isCrypto)
-      .then(setNews)
-      .catch(() => setNews([]))
-      .finally(() => setNewsLoad(false))
+    type CFResult = { news: NewsItem[]; fundamentals: StockFundamentals | null }
+    const fn = httpsCallable<Record<string, unknown>, CFResult>(fbFns, 'fetchYahooFinanceData')
+
+    if (!isCrypto) {
+      // Stocks : fondamentaux + news en un seul appel CF
+      setFundLoad(true); setNewsLoad(true); setFundErr(null)
+      fn({ symbol, isCrypto: false })
+        .then(res => {
+          setStockData(res.data.fundamentals)
+          setCryptoData(null)
+          setNews(res.data.news)
+        })
+        .catch(e => setFundErr((e as Error).message))
+        .finally(() => { setFundLoad(false); setNewsLoad(false) })
+    } else {
+      // Crypto : news seulement via CF
+      setNewsLoad(true)
+      fn({ symbol, isCrypto: true })
+        .then(res => setNews(res.data.news))
+        .catch(() => setNews([]))
+        .finally(() => setNewsLoad(false))
+    }
   }, [symbol, isCrypto])
 
-  const price = isCrypto ? cryptoData?.price : stockData?.price
-  const changePct = isCrypto ? cryptoData?.change24h : stockData?.changePct
+  const price = isCrypto ? cryptoData?.price : undefined
+  const changePct = isCrypto ? cryptoData?.change24h : undefined
   const name = isCrypto ? (cryptoData?.name ?? symbol) : (stockData?.companyName ?? symbol)
   const isUp = (changePct ?? 0) >= 0
 
+  // Compute next dividend countdown
+  const daysToDiv = (() => {
+    if (!stockData?.exDividendDate) return null
+    try {
+      const d = new Date(stockData.exDividendDate.split(' ').reverse().join(' '))
+      const diff = Math.ceil((d.getTime() - Date.now()) / 86_400_000)
+      return diff > 0 && diff < 120 ? diff : null
+    } catch { return null }
+  })()
+
   return (
     <>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes slideIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
+        @keyframes pulse { 0%,100% { opacity:0.5 } 50% { opacity:1 } }
+      `}</style>
 
       {/* Overlay */}
-      <div
-        onClick={onClose}
-        style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1000, backdropFilter:'blur(3px)' }}
-      />
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1000, backdropFilter:'blur(3px)' }} />
 
       {/* Sheet */}
       <div style={{
@@ -455,33 +387,36 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
               </div>
               <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginBottom:8 }}>{name}</div>
               <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
-                {fundLoad
+                {fundLoad && isCrypto
                   ? <div style={{ width:80, height:20, background:'rgba(255,255,255,0.06)', borderRadius:4, animation:'pulse 1.5s ease infinite' }} />
-                  : <>
+                  : isCrypto && price != null ? <>
                     <span style={{ fontSize:22, fontWeight:800, fontFamily:'JetBrains Mono, monospace', color:'var(--tm-text-primary)' }}>
-                      {price != null ? `$${price >= 1000 ? price.toFixed(0) : price >= 1 ? price.toFixed(2) : price.toFixed(4)}` : '—'}
+                      {`$${price >= 1000 ? price.toFixed(0) : price >= 1 ? price.toFixed(2) : price.toFixed(4)}`}
                     </span>
                     {changePct != null && (
                       <span style={{ fontSize:12, fontWeight:700, color: isUp ? 'var(--tm-profit)' : 'var(--tm-loss)', background: isUp ? 'rgba(34,199,89,0.12)' : 'rgba(255,59,48,0.12)', padding:'3px 8px', borderRadius:6 }}>
                         {isUp ? '▲' : '▼'} {Math.abs(changePct).toFixed(2)}%
                       </span>
                     )}
-                  </>
+                  </> : null
                 }
               </div>
             </div>
-            <button
-              onClick={onClose}
-              style={{ width:32, height:32, borderRadius:'50%', border:'1px solid var(--tm-border-sub)', background:'var(--tm-bg-secondary)', color:'var(--tm-text-muted)', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}
-            >×</button>
+            <button onClick={onClose} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid var(--tm-border-sub)', background:'var(--tm-bg-secondary)', color:'var(--tm-text-muted)', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>×</button>
           </div>
 
-          {/* RSI badge si dispo */}
+          {/* RSI + divergence badges */}
           {rsi != null && (
             <div style={{ display:'flex', gap:6, marginTop:8 }}>
               <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(255,255,255,0.06)', color:'var(--tm-text-muted)' }}>RSI {rsi}</span>
               {divergence === 'bull' && <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(34,199,89,0.12)', color:'var(--tm-profit)' }}>{t('assetSheet.rsiBull')}</span>}
               {divergence === 'bear' && <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(255,59,48,0.12)', color:'var(--tm-loss)' }}>{t('assetSheet.rsiBear')}</span>}
+              {/* Alerte dividende imminente */}
+              {daysToDiv != null && daysToDiv <= 7 && (
+                <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:'rgba(255,195,0,0.15)', color:'#FFD700' }}>
+                  💰 Ex-div dans {daysToDiv}j
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -564,41 +499,88 @@ export default function AssetDetailSheet({ symbol, isCrypto, rsi, divergence, on
               {stockData.week52High != null && stockData.week52Low != null && (
                 <>
                   <SectionTitle>{t('assetSheet.range52w')}</SectionTitle>
-                  <Week52Bar low={stockData.week52Low} high={stockData.week52High} current={stockData.price} />
+                  <Week52Bar low={stockData.week52Low} high={stockData.week52High} current={bars.length > 0 ? bars[bars.length-1].c : stockData.week52Low} />
                 </>
               )}
 
+              {/* ── Dividendes ── */}
               {(stockData.dividendYield != null || stockData.dividendAnnual != null) && (
                 <>
-                  <SectionTitle>{t('assetSheet.dividends')}</SectionTitle>
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
-                    <MetricCell label={t('assetSheet.yield')} value={stockData.dividendYield != null ? `${stockData.dividendYield.toFixed(2)}%` : '—'} color="#FFD700" />
-                    <MetricCell label={t('assetSheet.annualDividend')} value={stockData.dividendAnnual != null ? `$${stockData.dividendAnnual.toFixed(2)}` : '—'} />
-                    <MetricCell label={t('assetSheet.exDividend')} value={fmtDateStr(stockData.exDividendDate)} />
-                    <MetricCell label={t('assetSheet.volume')} value={stockData.volume != null ? fmtU(stockData.volume) : '—'} />
-                  </div>
+                  <SectionTitle>💰 {t('assetSheet.dividends')}</SectionTitle>
+
+                  {/* Next dividend highlight */}
+                  {stockData.exDividendDate && (
+                    <div style={{ padding:'12px 16px', background:'rgba(255,195,0,0.06)', borderRadius:10, border:'1px solid rgba(255,195,0,0.2)', display:'flex', gap:12, alignItems:'center', marginBottom:4 }}>
+                      <span style={{ fontSize:22 }}>💵</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:'flex', gap:10, alignItems:'baseline', flexWrap:'wrap' }}>
+                          {stockData.dividendAnnual != null && (
+                            <span style={{ fontSize:16, fontWeight:800, color:'#FFD700', fontFamily:'JetBrains Mono,monospace' }}>
+                              ${stockData.dividendAnnual.toFixed(2)}/an
+                            </span>
+                          )}
+                          {stockData.dividendYield != null && (
+                            <span style={{ fontSize:12, color:'rgba(255,215,0,0.7)', fontFamily:'JetBrains Mono,monospace' }}>
+                              {stockData.dividendYield.toFixed(2)}% yield
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display:'flex', gap:16, marginTop:4 }}>
+                          <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>
+                            Ex-div : <b style={{ color:'var(--tm-text-secondary)' }}>{stockData.exDividendDate}</b>
+                            {daysToDiv != null && <span style={{ marginLeft:6, color: daysToDiv <= 7 ? '#FFD700' : '#34C759', fontWeight:700 }}>({daysToDiv <= 0 ? 'passé' : `dans ${daysToDiv}j`})</span>}
+                          </span>
+                          {stockData.payDate && (
+                            <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>
+                              Paiement : <b style={{ color:'var(--tm-text-secondary)' }}>{stockData.payDate}</b>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dividend history */}
+                  {stockData.dividendHistory.length > 0 && (
+                    <>
+                      <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6, fontFamily:'JetBrains Mono,monospace' }}>
+                        Historique 2 ans ({stockData.dividendHistory.length} versements)
+                      </div>
+                      <DividendHistory history={stockData.dividendHistory} price={bars.length > 0 ? bars[bars.length-1].c : 0} />
+                    </>
+                  )}
                 </>
               )}
 
+              {/* ── Prochains résultats ── */}
               {stockData.earningsDate && (
                 <>
-                  <SectionTitle>{t('assetSheet.nextEarnings')}</SectionTitle>
-                  <div style={{ padding:'12px 16px', background:'rgba(255,195,0,0.06)', borderRadius:8, border:'1px solid rgba(255,195,0,0.2)', display:'flex', gap:12, alignItems:'center' }}>
-                    <span style={{ fontSize:22 }}>📅</span>
+                  <SectionTitle>📅 {t('assetSheet.nextEarnings')}</SectionTitle>
+                  <div style={{ padding:'12px 16px', background:'rgba(0,229,255,0.04)', borderRadius:10, border:'1px solid rgba(0,229,255,0.15)', display:'flex', gap:12, alignItems:'center' }}>
+                    <span style={{ fontSize:22 }}>📊</span>
                     <div>
-                      <div style={{ fontSize:13, fontWeight:700, color:'#FFD700' }}>{stockData.earningsDate}</div>
-                      <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginTop:2 }}>
-                        {t('assetSheet.epsEstimate')} {stockData.epsEstimate != null ? `$${stockData.epsEstimate.toFixed(2)}` : '—'}
-                      </div>
+                      <div style={{ fontSize:14, fontWeight:700, color:'var(--tm-accent)' }}>{stockData.earningsDate}</div>
+                      {stockData.epsEstimate != null && (
+                        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginTop:2 }}>
+                          {t('assetSheet.epsEstimate')} <b style={{ color:'var(--tm-text-secondary)' }}>${stockData.epsEstimate.toFixed(2)}</b>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>
+              )}
+
+              {/* Volume */}
+              {stockData.volume != null && (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  <MetricCell label={t('assetSheet.volume')} value={fmtU(stockData.volume)} />
+                </div>
               )}
             </>
           ) : null}
 
           {/* ── News ──────────────────────────────────────────────────────── */}
-          <SectionTitle>{t('assetSheet.recentNews')}</SectionTitle>
+          <SectionTitle>📰 {t('assetSheet.recentNews')}</SectionTitle>
           <NewsSection items={news} loading={newsLoad} />
 
         </div>
