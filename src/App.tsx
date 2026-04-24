@@ -20,8 +20,9 @@ import SettingsPage   from '@/pages/settings/SettingsPage'
 import ExchangesPage  from '@/pages/exchanges/ExchangesPage'
 import ReferralPage   from '@/pages/referral/ReferralPage'
 import CoachIAPage    from '@/pages/coach/CoachIAPage'
-import BadgesPage   from '@/pages/badges/BadgesPage'
-import PredictPage  from '@/pages/predict/PredictPage'
+import BadgesPage    from '@/pages/badges/BadgesPage'
+import PredictPage   from '@/pages/predict/PredictPage'
+import WhaleAlertsPage from '@/pages/whales/WhaleAlertsPage'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
 import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
 import { LanguageProvider } from '@/contexts/LanguageContext'
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="coach"            element={<CoachIAPage />} />
         <Route path="badges"           element={<BadgesPage />} />
         <Route path="predict"          element={<PredictPage />} />
+        <Route path="whales"           element={<WhaleAlertsPage />} />
       </Route>
 
       {/* ── Fallback ── */}

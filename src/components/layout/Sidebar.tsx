@@ -10,7 +10,7 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
-  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconAI, IconMarches, IconPredict,
+  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconMarches, IconWhale,
 } from '@/components/ui/Icons'
 
 export default function Sidebar() {
@@ -23,7 +23,7 @@ export default function Sidebar() {
     { to: '/app/trades',      label: t('nav.trades'),      Icon: IconTrades },
     { to: '/app/analyse',     label: t('nav.analyse'),     Icon: IconAnalyse },
     { to: '/app/marches',     label: t('nav.marches'),     Icon: IconMarches },
-    { to: '/app/predict',     label: t('nav.predictions'), Icon: IconPredict },
+    { to: '/app/whales',      label: '🐋 Whale Alerts',    Icon: IconWhale },
     { to: '/app/journal',     label: t('nav.journal'),     Icon: IconJournal },
     { to: '/app/calendrier',  label: t('nav.calendrier'),  Icon: IconCalendrier },
     { to: '/app/systemes',    label: t('nav.systemes'),    Icon: IconSystemes },
@@ -104,17 +104,7 @@ export default function Sidebar() {
           </NavLink>
         ))}
 
-        {/* Coach IA — Coming Soon */}
-        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-not-allowed opacity-40 text-sm"
-          style={{ color: 'var(--tm-text-muted)' }}
-          title={t('nav.comingSoon')}>
-          <IconAI size={15} />
-          <span>{t('nav.coachIA')}</span>
-          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-            style={{ background: 'linear-gradient(135deg, #BF5AF222, #0A85FF22)', border: '1px solid #BF5AF244', color: '#BF5AF2' }}>
-            Soon
-          </span>
-        </div>
+        {/* Coach IA — temporairement masqué */}
       </nav>
 
       {/* ── Bottom ── */}
