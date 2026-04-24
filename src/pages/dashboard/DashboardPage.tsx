@@ -1,10 +1,12 @@
 // DashboardPage.tsx — Dashboard enrichi v2 (heatmap compact + interactif + analytics tabs)
 import { motion } from 'framer-motion'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/services/firebase/config'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { db, auth } from '@/services/firebase/config'
 import PnLCurve from './PnLModal'
 import ShareStatsModal from '@/components/share/ShareStatsModal'
 
@@ -94,16 +96,187 @@ function RingProgress({ value, max=100, glow, size=64, strokeWidth=5 }: { value:
   )
 }
 
-// ── Live UTC Clock ─────────────────────────────────────────────────────────
+// ── Live Clock with timezone selector ─────────────────────────────────────
+const POPULAR_TIMEZONES = [
+  { tz:'UTC',                  label:'UTC' },
+  { tz:'Europe/Paris',         label:'Paris (CET/CEST)' },
+  { tz:'Europe/London',        label:'London (GMT/BST)' },
+  { tz:'Europe/Berlin',        label:'Berlin (CET/CEST)' },
+  { tz:'Europe/Madrid',        label:'Madrid (CET/CEST)' },
+  { tz:'Europe/Rome',          label:'Rome (CET/CEST)' },
+  { tz:'Europe/Amsterdam',     label:'Amsterdam (CET/CEST)' },
+  { tz:'Europe/Zurich',        label:'Zurich (CET/CEST)' },
+  { tz:'Europe/Brussels',      label:'Brussels (CET/CEST)' },
+  { tz:'Europe/Lisbon',        label:'Lisbon (WET/WEST)' },
+  { tz:'Europe/Stockholm',     label:'Stockholm (CET/CEST)' },
+  { tz:'Europe/Warsaw',        label:'Warsaw (CET/CEST)' },
+  { tz:'Europe/Moscow',        label:'Moscow (MSK)' },
+  { tz:'America/New_York',     label:'New York (EST/EDT)' },
+  { tz:'America/Chicago',      label:'Chicago (CST/CDT)' },
+  { tz:'America/Denver',       label:'Denver (MST/MDT)' },
+  { tz:'America/Los_Angeles',  label:'Los Angeles (PST/PDT)' },
+  { tz:'America/Toronto',      label:'Toronto (EST/EDT)' },
+  { tz:'America/Sao_Paulo',    label:'São Paulo (BRT)' },
+  { tz:'America/Mexico_City',  label:'Mexico City (CST/CDT)' },
+  { tz:'America/Buenos_Aires', label:'Buenos Aires (ART)' },
+  { tz:'Asia/Tokyo',           label:'Tokyo (JST)' },
+  { tz:'Asia/Shanghai',        label:'Shanghai (CST)' },
+  { tz:'Asia/Singapore',       label:'Singapore (SGT)' },
+  { tz:'Asia/Hong_Kong',       label:'Hong Kong (HKT)' },
+  { tz:'Asia/Seoul',           label:'Seoul (KST)' },
+  { tz:'Asia/Dubai',           label:'Dubai (GST)' },
+  { tz:'Asia/Kolkata',         label:'Mumbai (IST)' },
+  { tz:'Asia/Bangkok',         label:'Bangkok (ICT)' },
+  { tz:'Asia/Jakarta',         label:'Jakarta (WIB)' },
+  { tz:'Australia/Sydney',     label:'Sydney (AEDT/AEST)' },
+  { tz:'Australia/Melbourne',  label:'Melbourne (AEDT/AEST)' },
+  { tz:'Pacific/Auckland',     label:'Auckland (NZST/NZDT)' },
+  { tz:'Africa/Cairo',         label:'Cairo (EET)' },
+  { tz:'Africa/Johannesburg',  label:'Johannesburg (SAST)' },
+  { tz:'Africa/Lagos',         label:'Lagos (WAT)' },
+]
+
+function fmtTzOffset(tz: string): string {
+  try {
+    const d = new Date()
+    const s = d.toLocaleString('en', { timeZone: tz, timeZoneName: 'shortOffset' })
+    const m = s.match(/GMT[+-]\d+(?::\d+)?/)
+    return m ? m[0] : tz
+  } catch { return tz }
+}
+
 function LiveClock() {
-  const [time, setTime] = useState(new Date())
-  useEffect(() => { const id = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(id) }, [])
+  const [time, setTime]       = useState(new Date())
+  const [timezone, setTimezone] = useState('UTC')
+  const [open, setOpen]       = useState(false)
+  const [saving, setSaving]   = useState(false)
+  const [search, setSearch]   = useState('')
+  const popoverRef            = useRef<HTMLDivElement>(null)
+
+  // Load timezone from Firestore on mount
+  useEffect(() => {
+    const uid = auth.currentUser?.uid
+    if (!uid) return
+    getDoc(doc(db, 'users', uid)).then(snap => {
+      const tz = snap.data()?.tradingPrefs?.timezone || snap.data()?.clockTimezone
+      if (tz) setTimezone(tz)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Close popover on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setOpen(false); setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const saveTz = useCallback(async (tz: string) => {
+    setSaving(true)
+    setTimezone(tz)
+    setOpen(false); setSearch('')
+    const uid = auth.currentUser?.uid
+    if (uid) {
+      try {
+        await setDoc(doc(db, 'users', uid), { clockTimezone: tz }, { merge: true })
+      } catch {}
+    }
+    setSaving(false)
+  }, [])
+
   const p = (n: number) => n.toString().padStart(2, '0')
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: timezone, hour:'2-digit', minute:'2-digit', second:'2-digit', hour12: false,
+  }).formatToParts(time)
+  const hh = parts.find(x => x.type === 'hour')?.value ?? '00'
+  const mm = parts.find(x => x.type === 'minute')?.value ?? '00'
+  const ss = parts.find(x => x.type === 'second')?.value ?? '00'
+
+  const tzLabel = timezone === 'UTC' ? 'UTC'
+    : POPULAR_TIMEZONES.find(t => t.tz === timezone)?.label.replace(/\s*\(.*?\)/, '') ?? timezone.split('/').pop() ?? timezone
+
+  const filtered = POPULAR_TIMEZONES.filter(t =>
+    !search || t.label.toLowerCase().includes(search.toLowerCase()) || t.tz.toLowerCase().includes(search.toLowerCase())
+  )
+
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:6, fontFamily:'JetBrains Mono, monospace', fontSize:12, fontWeight:700, color:'#00E5FF', letterSpacing:'0.1em', background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', padding:'3px 10px', borderRadius:6 }}>
-      <motion.div style={{ width:5, height:5, borderRadius:'50%', background:'#00E5FF', boxShadow:'0 0 6px #00E5FF' }} animate={{ opacity:[1,0.2,1] }} transition={{ duration:1, repeat:Infinity }}/>
-      {p(time.getUTCHours())}:{p(time.getUTCMinutes())}:<span style={{opacity:0.45}}>{p(time.getUTCSeconds())}</span>
-      <span style={{fontSize:8,opacity:0.5,marginLeft:2}}>UTC</span>
+    <div style={{ position:'relative' }} ref={popoverRef}>
+      <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+        {/* Gear button */}
+        <button
+          onClick={() => setOpen(o => !o)}
+          title="Changer le fuseau horaire"
+          style={{
+            background: open ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${open ? 'rgba(0,229,255,0.3)' : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: 6, width: 24, height: 24, cursor:'pointer',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            color: open ? '#00E5FF' : '#6B7280', transition:'all 0.15s', flexShrink:0,
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+
+        {/* Clock display */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, fontFamily:'JetBrains Mono, monospace', fontSize:12, fontWeight:700, color:'#00E5FF', letterSpacing:'0.1em', background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', padding:'3px 10px', borderRadius:6, cursor:'pointer' }} onClick={() => setOpen(o => !o)}>
+          <motion.div style={{ width:5, height:5, borderRadius:'50%', background:'#00E5FF', boxShadow:'0 0 6px #00E5FF' }} animate={{ opacity:[1,0.2,1] }} transition={{ duration:1, repeat:Infinity }}/>
+          {hh}:{mm}:<span style={{opacity:0.45}}>{ss}</span>
+          <span style={{fontSize:8, opacity:0.6, marginLeft:2, letterSpacing:'0.05em'}}>{saving ? '…' : tzLabel}</span>
+        </div>
+      </div>
+
+      {/* Popover */}
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 8px)', left:0, zIndex:9999,
+          background:'#0D1117', border:'1px solid rgba(0,229,255,0.15)',
+          borderRadius:12, padding:'10px', width:260,
+          boxShadow:'0 8px 32px rgba(0,0,0,0.6)',
+        }}>
+          <div style={{ fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>
+            🌍 Fuseau horaire de l'horloge
+          </div>
+          <input
+            autoFocus
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher…"
+            style={{ width:'100%', padding:'6px 9px', borderRadius:7, border:'1px solid rgba(255,255,255,0.08)', background:'rgba(255,255,255,0.05)', color:'#F0F2F5', fontSize:11, outline:'none', boxSizing:'border-box', marginBottom:6 }}
+          />
+          <div style={{ maxHeight:220, overflowY:'auto', display:'flex', flexDirection:'column', gap:1 }}>
+            {filtered.map(t => (
+              <button
+                key={t.tz}
+                onClick={() => saveTz(t.tz)}
+                style={{
+                  display:'flex', justifyContent:'space-between', alignItems:'center',
+                  padding:'6px 8px', borderRadius:7, border:'none', cursor:'pointer', textAlign:'left',
+                  background: timezone === t.tz ? 'rgba(0,229,255,0.1)' : 'transparent',
+                  color: timezone === t.tz ? '#00E5FF' : '#C5C8D6',
+                  fontSize:11, transition:'background 0.1s',
+                }}
+                onMouseEnter={e => { if (timezone !== t.tz) (e.target as HTMLElement).closest('button')!.style.background = 'rgba(255,255,255,0.04)' }}
+                onMouseLeave={e => { if (timezone !== t.tz) (e.target as HTMLElement).closest('button')!.style.background = 'transparent' }}
+              >
+                <span>{t.label}</span>
+                <span style={{ fontSize:9, color:'#4B5563', fontFamily:'JetBrains Mono, monospace' }}>{fmtTzOffset(t.tz)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
