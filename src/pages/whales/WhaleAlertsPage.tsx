@@ -1,6 +1,6 @@
 // src/pages/whales/WhaleAlertsPage.tsx
 import { useState, useEffect } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 import { useUser } from '@/hooks/useAuth'
 
@@ -12,11 +12,13 @@ interface WhaleAlert {
   tokenSymbol: string
   tokenName: string
   from: string
+  fromLabel?: string
   to: string
+  toLabel?: string
   usdValue: number
   blockNumber: number
   timestamp: number
-  chain: string
+  chain: 'ethereum' | 'bitcoin' | 'bsc' | string
   score: number
   scoreCategory: 'MEGA_WHALE' | 'WHALE' | 'BIG_FISH' | 'SHARK'
   scoreBreakdown: { amountScore: number; relativeVolumeScore: number; velocityBonus: number }
@@ -26,6 +28,23 @@ interface WhaleAlert {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+const CHAIN_CONFIG: Record<string, { label: string; color: string; bg: string; explorer: (hash: string) => string }> = {
+  bitcoin:  { label: 'BTC', color: '#F7931A', bg: 'rgba(247,147,26,0.12)',  explorer: (h) => `https://mempool.space/tx/${h}` },
+  ethereum: { label: 'ETH', color: '#627EEA', bg: 'rgba(98,126,234,0.12)', explorer: (h) => `https://etherscan.io/tx/${h}` },
+  bsc:      { label: 'BSC', color: '#F3BA2F', bg: 'rgba(243,186,47,0.12)', explorer: (h) => `https://bscscan.com/tx/${h}` },
+}
+
+function getChain(chain: string) {
+  return CHAIN_CONFIG[chain] ?? CHAIN_CONFIG['ethereum']
+}
+
+function formatAddr(raw: string, label?: string) {
+  if (!raw || raw === 'unknown') return '?'
+  if (raw === 'coinbase') return '⛏ Coinbase tx'
+  if (label && label !== raw) return label
+  return `${raw.slice(0, 6)}…${raw.slice(-4)}`
+}
+
 function formatUSD(n: number) {
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`
   if (n >= 1_000_000)     return `$${(n / 1_000_000).toFixed(2)}M`
@@ -224,7 +243,7 @@ export default function WhaleAlertsPage() {
 
                 {/* Token + montant */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm" style={{ color: 'var(--tm-text-primary)' }}>
                       {alert.tokenSymbol}
                     </span>
@@ -232,9 +251,19 @@ export default function WhaleAlertsPage() {
                       style={{ background: `${cat.color}20`, color: cat.color }}>
                       {cat.label}
                     </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
+                      style={{ background: getChain(alert.chain).bg, color: getChain(alert.chain).color }}>
+                      {getChain(alert.chain).label}
+                    </span>
                   </div>
                   <div className="text-xs mt-0.5" style={{ color: 'var(--tm-text-muted)' }}>
-                    {shortAddr(alert.from)} → {shortAddr(alert.to)}
+                    <span style={{ color: formatAddr(alert.from, alert.fromLabel) !== formatAddr(alert.from) ? '#F7931A' : 'inherit' }}>
+                      {formatAddr(alert.from, alert.fromLabel)}
+                    </span>
+                    {' → '}
+                    <span style={{ color: formatAddr(alert.to, alert.toLabel) !== formatAddr(alert.to) ? '#34C759' : 'inherit' }}>
+                      {formatAddr(alert.to, alert.toLabel)}
+                    </span>
                   </div>
                 </div>
 
@@ -303,14 +332,14 @@ export default function WhaleAlertsPage() {
                       </div>
                     </div>
 
-                    {/* Lien Etherscan */}
+                    {/* Lien Explorer */}
                     <div className="col-span-2">
-                      <a href={`https://etherscan.io/tx/${alert.txHash}`}
+                      <a href={getChain(alert.chain).explorer(alert.txHash)}
                         target="_blank" rel="noopener noreferrer"
                         onClick={e => e.stopPropagation()}
                         className="text-[11px] underline"
                         style={{ color: 'var(--tm-accent)' }}>
-                        Voir sur Etherscan ↗
+                        Voir sur {alert.chain === 'bitcoin' ? 'mempool.space' : alert.chain === 'bsc' ? 'BscScan' : 'Etherscan'} ↗
                       </a>
                     </div>
                   </div>

@@ -19,6 +19,7 @@ import {
   batchWriteAlerts,
 } from "../utils/firestore";
 import {parseTokenAmount} from "../utils/format";
+import {labelAddress} from "../utils/labels";
 import type {WhaleAlert} from "../types";
 import type {CoinGeckoToken} from "../services/coingecko";
 import type {MonitoredToken} from "../config/tokens";
@@ -149,7 +150,9 @@ export const whaleScanner = onSchedule(
               tokenSymbol: token.symbol,
               tokenName: token.name,
               from: tx.from,
+              fromLabel: labelAddress(tx.from, "ethereum"),
               to: tx.to,
+              toLabel: labelAddress(tx.to, "ethereum"),
               rawValue: tx.value,
               usdValue: Math.round(usdValue),
               blockNumber: parseInt(tx.blockNumber, 10),

@@ -1,7 +1,7 @@
 import type {FieldValue, Timestamp} from "firebase-admin/firestore";
 
 export type ScoreCategory = "MEGA_WHALE" | "WHALE" | "BIG_FISH" | "SHARK";
-export type Chain = "ethereum" | "bsc";
+export type Chain = "ethereum" | "bsc" | "bitcoin";
 
 export interface ScoreBreakdown {
   amountScore: number; // 0–40 : magnitude USD
@@ -15,7 +15,9 @@ export interface WhaleAlert {
   tokenSymbol: string;
   tokenName: string;
   from: string;
+  fromLabel?: string; // exchange name or raw address
   to: string;
+  toLabel?: string; // exchange name or raw address
   rawValue: string; // valeur brute avant division decimals
   usdValue: number;
   blockNumber: number;
