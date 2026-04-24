@@ -30,11 +30,11 @@ type TokenRSIWithDiv = TokenRSI & {
 }
 
 type CryptoSubset   = 'all' | 'top50' | 'alts'
-type StockSubset    = 'all' | 'us' | 'europe' | 'cac40' | 'dax' | 'ftse' | 'asia' | 'etf'
+type StockSubset    = 'all' | 'us' | 'europe' | 'cac40' | 'dax' | 'ftse' | 'asia' | 'etf' | 'brics' | 'reit' | 'biotech' | 'canada'
 type CryptoRef      = 'none' | 'btc' | 'eth' | 'top10avg'
 type StockRef       = 'none' | 'spy' | 'qqq' | 'cac40avg' | 'sp500avg'
 type StrengthFilter = 'all' | 'stronger' | 'weaker'
-type Tab            = 'crypto' | 'actions' | 'forex'
+type Tab            = 'crypto' | 'actions' | 'forex' | 'calendrier'
 
 // ── Screener ─────────────────────────────────────────────────────────────────
 
@@ -72,43 +72,74 @@ const FOREX_ASSETS: ForexAsset[] = [
   { symbol: 'GBPJPY=X', displaySym: 'GBPJPY', label: 'GBP/JPY', group: 'Forex' },
   { symbol: 'EURCHF=X', displaySym: 'EURCHF', label: 'EUR/CHF', group: 'Forex' },
   { symbol: 'AUDJPY=X', displaySym: 'AUDJPY', label: 'AUD/JPY', group: 'Forex' },
+  { symbol: 'EURAUD=X', displaySym: 'EURAUD', label: 'EUR/AUD', group: 'Forex' },
+  { symbol: 'EURCAD=X', displaySym: 'EURCAD', label: 'EUR/CAD', group: 'Forex' },
+  { symbol: 'GBPAUD=X', displaySym: 'GBPAUD', label: 'GBP/AUD', group: 'Forex' },
+  { symbol: 'CADJPY=X', displaySym: 'CADJPY', label: 'CAD/JPY', group: 'Forex' },
+  { symbol: 'CHFJPY=X', displaySym: 'CHFJPY', label: 'CHF/JPY', group: 'Forex' },
+  { symbol: 'NZDJPY=X', displaySym: 'NZDJPY', label: 'NZD/JPY', group: 'Forex' },
   // ── Exotiques ──
   { symbol: 'USDMXN=X', displaySym: 'USDMXN', label: 'USD/MXN', group: 'Forex' },
   { symbol: 'USDNOK=X', displaySym: 'USDNOK', label: 'USD/NOK', group: 'Forex' },
   { symbol: 'USDSEK=X', displaySym: 'USDSEK', label: 'USD/SEK', group: 'Forex' },
   { symbol: 'USDSGD=X', displaySym: 'USDSGD', label: 'USD/SGD', group: 'Forex' },
+  { symbol: 'USDBRL=X', displaySym: 'USDBRL', label: 'USD/BRL', group: 'Forex' },
+  { symbol: 'USDTRY=X', displaySym: 'USDTRY', label: 'USD/TRY', group: 'Forex' },
+  { symbol: 'USDZAR=X', displaySym: 'USDZAR', label: 'USD/ZAR', group: 'Forex' },
+  { symbol: 'USDPLN=X', displaySym: 'USDPLN', label: 'USD/PLN', group: 'Forex' },
+  { symbol: 'USDHUF=X', displaySym: 'USDHUF', label: 'USD/HUF', group: 'Forex' },
+  { symbol: 'USDCZK=X', displaySym: 'USDCZK', label: 'USD/CZK', group: 'Forex' },
+  { symbol: 'USDTHB=X', displaySym: 'USDTHB', label: 'USD/THB', group: 'Forex' },
+  { symbol: 'USDINR=X', displaySym: 'USDINR', label: 'USD/INR', group: 'Forex' },
   // ── Métaux précieux ──
   { symbol: 'GC=F',  displaySym: 'Gold',    label: 'Gold (XAU)',      group: 'Metals' },
   { symbol: 'SI=F',  displaySym: 'Silver',  label: 'Silver (XAG)',    group: 'Metals' },
   { symbol: 'PL=F',  displaySym: 'Plat',    label: 'Platinum (XPT)',  group: 'Metals' },
   { symbol: 'PA=F',  displaySym: 'Palla',   label: 'Palladium (XPD)', group: 'Metals' },
   { symbol: 'HG=F',  displaySym: 'Copper',  label: 'Copper',          group: 'Metals' },
+  { symbol: 'ALI=F', displaySym: 'Alumin',  label: 'Aluminium',       group: 'Metals' },
   // ── Énergie ──
-  { symbol: 'CL=F',  displaySym: 'WTI',     label: 'Oil WTI',      group: 'Energy' },
-  { symbol: 'BZ=F',  displaySym: 'Brent',   label: 'Brent',        group: 'Energy' },
-  { symbol: 'NG=F',  displaySym: 'NatGas',  label: 'Natural Gas',  group: 'Energy' },
-  { symbol: 'HO=F',  displaySym: 'HeatOil', label: 'Heating Oil',  group: 'Energy' },
-  { symbol: 'RB=F',  displaySym: 'RBOB',    label: 'RBOB Gasoline', group: 'Energy' },
+  { symbol: 'CL=F',  displaySym: 'WTI',     label: 'Oil WTI',         group: 'Energy' },
+  { symbol: 'BZ=F',  displaySym: 'Brent',   label: 'Brent',           group: 'Energy' },
+  { symbol: 'NG=F',  displaySym: 'NatGas',  label: 'Natural Gas',     group: 'Energy' },
+  { symbol: 'HO=F',  displaySym: 'HeatOil', label: 'Heating Oil',     group: 'Energy' },
+  { symbol: 'RB=F',  displaySym: 'RBOB',    label: 'RBOB Gasoline',   group: 'Energy' },
+  { symbol: 'UX=F',  displaySym: 'Uranium', label: 'Uranium',         group: 'Energy' },
+  // ── Agricoles ──
+  { symbol: 'ZW=F',  displaySym: 'Wheat',   label: 'Blé (Wheat)',     group: 'Agri' },
+  { symbol: 'ZC=F',  displaySym: 'Corn',    label: 'Maïs (Corn)',     group: 'Agri' },
+  { symbol: 'ZS=F',  displaySym: 'Soja',    label: 'Soja (Soybeans)', group: 'Agri' },
+  { symbol: 'CC=F',  displaySym: 'Cocoa',   label: 'Cacao (Cocoa)',   group: 'Agri' },
+  { symbol: 'KC=F',  displaySym: 'Coffee',  label: 'Café (Coffee)',   group: 'Agri' },
+  { symbol: 'SB=F',  displaySym: 'Sugar',   label: 'Sucre (Sugar)',   group: 'Agri' },
+  { symbol: 'CT=F',  displaySym: 'Cotton',  label: 'Coton (Cotton)',  group: 'Agri' },
+  { symbol: 'OJ=F',  displaySym: 'OrangeJ', label: 'Jus d\'orange',  group: 'Agri' },
   // ── Indices Futures ──
-  { symbol: 'ES=F',  displaySym: 'SP500',   label: 'S&P 500 Fut',  group: 'Indices' },
-  { symbol: 'NQ=F',  displaySym: 'Nasdaq',  label: 'NASDAQ Fut',   group: 'Indices' },
-  { symbol: 'YM=F',  displaySym: 'Dow',     label: 'Dow Jones Fut', group: 'Indices' },
-  { symbol: 'RTY=F', displaySym: 'Russell', label: 'Russell 2000', group: 'Indices' },
-  { symbol: 'GD=F',  displaySym: 'DAX',     label: 'DAX Fut',      group: 'Indices' },
+  { symbol: 'ES=F',  displaySym: 'SP500',   label: 'S&P 500 Fut',    group: 'Indices' },
+  { symbol: 'NQ=F',  displaySym: 'Nasdaq',  label: 'NASDAQ Fut',     group: 'Indices' },
+  { symbol: 'YM=F',  displaySym: 'Dow',     label: 'Dow Jones Fut',  group: 'Indices' },
+  { symbol: 'RTY=F', displaySym: 'Russell', label: 'Russell 2000',   group: 'Indices' },
+  { symbol: 'GD=F',  displaySym: 'DAX',     label: 'DAX Fut',        group: 'Indices' },
+  { symbol: 'NKD=F', displaySym: 'Nikkei',  label: 'Nikkei 225 Fut', group: 'Indices' },
+  { symbol: '^VIX',  displaySym: 'VIX',     label: 'VIX (Fear)',     group: 'Indices' },
   // ── Crypto (référence) ──
   { symbol: 'BTC-USD', displaySym: 'BTC', label: 'BTC/USD', group: 'Crypto' },
   { symbol: 'ETH-USD', displaySym: 'ETH', label: 'ETH/USD', group: 'Crypto' },
+  { symbol: 'SOL-USD', displaySym: 'SOL', label: 'SOL/USD', group: 'Crypto' },
 ]
 
 // ── Crypto sectors (for rotation chart) ──────────────────────────────────────
 
 const CRYPTO_SECTORS = [
-  { label: 'Layer 1',  emoji: '⛓️',  symbols: ['BTC','ETH','SOL','ADA','AVAX','DOT','NEAR','ATOM'], color: '0,229,255' },
-  { label: 'DeFi',     emoji: '🏦',  symbols: ['UNI','AAVE','CRV','COMP','MKR','SNX','BAL','SUSHI'], color: '10,133,255' },
-  { label: 'Layer 2',  emoji: '⚡',  symbols: ['MATIC','ARB','OP','IMX','METIS'], color: '191,90,242' },
-  { label: 'Meme',     emoji: '🐸',  symbols: ['DOGE','SHIB','PEPE','FLOKI','BONK','WIF'], color: '255,149,0' },
-  { label: 'AI / Tech',emoji: '🤖',  symbols: ['FET','AGIX','RNDR','GRT','OCEAN'], color: '52,199,89' },
-  { label: 'Exchange', emoji: '🔄',  symbols: ['BNB','OKB','HT'], color: '255,59,48' },
+  { label: 'Layer 1',    emoji: '⛓️',  symbols: ['BTC','ETH','SOL','ADA','AVAX','DOT','NEAR','ATOM','APT','SUI','TIA','HBAR','ALGO','VET'], color: '0,229,255' },
+  { label: 'DeFi',       emoji: '🏦',  symbols: ['UNI','AAVE','CRV','COMP','MKR','SNX','BAL','SUSHI','RUNE','CAKE','GMX','DYDX','LDO'], color: '10,133,255' },
+  { label: 'Layer 2',    emoji: '⚡',  symbols: ['MATIC','ARB','OP','IMX','METIS','LRC','BOBA','ZKS'], color: '191,90,242' },
+  { label: 'Meme',       emoji: '🐸',  symbols: ['DOGE','SHIB','PEPE','FLOKI','BONK','WIF','MEME','TURBO'], color: '255,149,0' },
+  { label: 'AI / Tech',  emoji: '🤖',  symbols: ['FET','AGIX','RNDR','GRT','OCEAN','WLD','TAO','ARKM','PHALA'], color: '52,199,89' },
+  { label: 'Exchange',   emoji: '🔄',  symbols: ['BNB','OKB','HT','CRO','KCS','GT'], color: '255,59,48' },
+  { label: 'GameFi',     emoji: '🎮',  symbols: ['AXS','SAND','MANA','ENJ','GALA','ILV','YGG','BEAM'], color: '255,195,0' },
+  { label: 'Interop',    emoji: '🌉',  symbols: ['LINK','BAND','API3','UMA','PYTH','JUP'], color: '100,200,255' },
+  { label: 'Privacy',    emoji: '🔒',  symbols: ['XMR','ZEC','DASH','SCRT','ROSE'], color: '150,150,150' },
 ]
 
 // ── Timeframe mappings ───────────────────────────────────────────────────────
@@ -315,6 +346,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'AAPL','MSFT','GOOGL','AMZN','META','NVDA','AMD','TSLA','NFLX','ORCL',
       'CRM','ADBE','INTC','QCOM','UBER','PYPL','SHOP','SNOW','PLTR','MSTR',
       'PANW','CRWD','ZS','NET','DDOG','MDB','GTLB','BILL','HUBS','WDAY',
+      'ARM','SMCI','DELL','HPE','WDC','AMAT','LRCX','KLAC','MRVL','AVGO',
     ],
   },
   {
@@ -322,7 +354,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
     symbols: [
       'JPM','GS','MS','BAC','V','MA','COIN','WFC','BLK','C',
       'AXP','SCHW','SPGI','MCO','ICE','PGR','MET','PRU','AON','MMC',
-      'TFC','USB','FITB','KEY','CFG',
+      'TFC','USB','FITB','KEY','CFG','HOOD','SQ','AFRM','SOFI','UPST',
     ],
   },
   {
@@ -334,11 +366,18 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
     ],
   },
   {
+    label: '💊 Biotech',
+    symbols: [
+      'ILMN','BMRN','INCY','ALNY','RETA','RCKT','BEAM','CRSP','EDIT','NTLA',
+      'ARVN','KYMR','PCVX','RXRX','SAGE','ZNTL','TBIO','IMVT','ACMR','CCXI',
+    ],
+  },
+  {
     label: '🇺🇸 US Industrie & Énergie',
     symbols: [
       'XOM','CVX','BA','CAT','GE','HON','RTX','LMT','DE','MMM',
       'EMR','ETN','GD','NOC','FDX','UPS','WM','CSX','NSC','COP',
-      'EOG','SLB','HAL','OXY','MPC',
+      'EOG','SLB','HAL','OXY','MPC','VST','CEG','NRG','FSLR','ENPH',
     ],
   },
   {
@@ -347,6 +386,13 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'WMT','TGT','COST','HD','LOW','NKE','SBUX','MCD','PEP','KO',
       'PM','MO','DIS','CMCSA','T','VZ','CHTR','PARA','WBD','EA',
       'TTWO','RBLX','SPOT','LYFT','DASH',
+    ],
+  },
+  {
+    label: '🏘️ Immobilier (REIT)',
+    symbols: [
+      'AMT','PLD','EQR','SPG','O','DLR','VTR','WELL','CCI','PSA',
+      'AVB','EXR','ARE','BXP','WPC','NNN','STAG','REXR','ELS','SBA',
     ],
   },
   {
@@ -365,6 +411,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'SAP.DE','SIE.DE','ALV.DE','BMW.DE','MBG.DE','BAS.DE','BAYN.DE',
       'DTE.DE','VOW3.DE','ADS.DE','DBK.DE','MUV2.DE','RWE.DE','BEI.DE',
       'DHL.DE','HEN3.DE','MTX.DE','VNA.DE','CON.DE','DHER.DE',
+      'AIR.DE','MBB.DE','PUMA.DE','ZAL.DE','CARL.DE',
     ],
   },
   {
@@ -373,6 +420,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'HSBA.L','BP.L','SHEL.L','AZN.L','ULVR.L','LLOY.L','GSK.L',
       'RIO.L','BT-A.L','BATS.L','NG.L','LGEN.L','STAN.L',
       'EXPN.L','REL.L','WPP.L','IMB.L','GLEN.L','AAL.L','PRU.L',
+      'BARC.L','VOD.L','DGE.L','BA.L','MNDI.L',
     ],
   },
   {
@@ -383,35 +431,56 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'NOVO-B.CO','ORSTED.CO',
       'ERIC-B.ST','VOLV-B.ST','SAND.ST','SEB-A.ST',
       'ENI.MI','ENEL.MI','ISP.MI','UCG.MI',
+      'ITX.MC','SAN.MC','BBVA.MC','IBE.MC','TEF.MC',
     ],
   },
   {
-    label: '🌏 Asie & International',
+    label: '🌏 Asie & Japon',
     symbols: [
-      'TSM','BABA','JD','PDD','BIDU',
-      'TM','HMC','SONY','NVO','SHOP',
-      'RY','TD','BNS','ENB','CNQ',
+      'TSM','TM','HMC','SONY','7203.T','6758.T','9984.T','8306.T','8316.T',
+      'NTT','NTDOY','FUJIY','MUFG','SMFG','KB','SHG','LG',
     ],
   },
   {
-    label: '📊 ETF & Matières premières',
+    label: '🌍 BRICS & Émergents',
     symbols: [
-      'SPY','QQQ','IWM','EEM','EFA',
+      'BABA','JD','PDD','BIDU','NIO','XPEV','LI','TCOM','EDU','TAL',
+      'VALE','PBR','ITUB','BBD','ABEV',
+      'INFY','WIT','HDB','IBN','VEDL',
+      'GOLD','HL','AG','PAAS',
+    ],
+  },
+  {
+    label: '🇨🇦 Canada',
+    symbols: [
+      'RY','TD','BNS','ENB','CNQ','SU','CCO','ABX','FM','G',
+      'CP','CNR','MFC','SLF','BCE',
+    ],
+  },
+  {
+    label: '📊 ETF & Indices',
+    symbols: [
+      'SPY','QQQ','IWM','EEM','EFA','VTI','VOO','VEA','VWO','IEFA',
       'GLD','SLV','USO','GDX','IAU',
       'TLT','HYG','LQD','VXX','PDBC',
+      'ARKK','ARKG','ARKF','SMH','SOXX','XBI','XLF','XLE','XLK','XLV',
     ],
   },
 ]
 
 const STOCK_SUBSET_GROUPS: Record<StockSubset, string[]> = {
-  all:    STOCK_GROUPS.map(g => g.label),
-  us:     ['🇺🇸 US Tech','🇺🇸 US Finance','🇺🇸 US Santé','🇺🇸 US Industrie & Énergie','🇺🇸 US Consommation & Médias'],
-  europe: ['🇫🇷 CAC 40','🇩🇪 DAX','🇬🇧 FTSE 100','🇪🇺 Europe (Autres)'],
-  cac40:  ['🇫🇷 CAC 40'],
-  dax:    ['🇩🇪 DAX'],
-  ftse:   ['🇬🇧 FTSE 100'],
-  asia:   ['🌏 Asie & International'],
-  etf:    ['📊 ETF & Matières premières'],
+  all:     STOCK_GROUPS.map(g => g.label),
+  us:      ['🇺🇸 US Tech','🇺🇸 US Finance','🇺🇸 US Santé','💊 Biotech','🇺🇸 US Industrie & Énergie','🇺🇸 US Consommation & Médias'],
+  europe:  ['🇫🇷 CAC 40','🇩🇪 DAX','🇬🇧 FTSE 100','🇪🇺 Europe (Autres)'],
+  cac40:   ['🇫🇷 CAC 40'],
+  dax:     ['🇩🇪 DAX'],
+  ftse:    ['🇬🇧 FTSE 100'],
+  asia:    ['🌏 Asie & Japon','🌍 BRICS & Émergents'],
+  etf:     ['📊 ETF & Indices'],
+  brics:   ['🌍 BRICS & Émergents'],
+  reit:    ['🏘️ Immobilier (REIT)'],
+  biotech: ['💊 Biotech'],
+  canada:  ['🇨🇦 Canada'],
 }
 
 // ── Share button ──────────────────────────────────────────────────────────────
@@ -1572,6 +1641,227 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   )
 }
 
+// ── Calendrier Tab ───────────────────────────────────────────────────────────
+
+interface EarningsEvent {
+  symbol: string; date: string; hour: string
+  epsEstimate: number | null; revenueEstimate: number | null
+}
+interface EconomicEvent {
+  event: string; country: string; date: string; impact: string
+  estimate: string | null; prev: string | null; unit: string | null
+}
+interface GeoEvent { title: string; date: string; category: string; source: string; url: string }
+
+function CalendrierTab() {
+  type CalSection = 'earnings' | 'macro' | 'geo'
+  const [section, setSection] = useState<CalSection>('earnings')
+  const [earnings, setEarnings] = useState<EarningsEvent[]>([])
+  const [economic, setEconomic] = useState<EconomicEvent[]>([])
+  const [geoNews,  setGeoNews]  = useState<GeoEvent[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true); setError(null)
+    type CFResult = { earnings: EarningsEvent[]; economic: EconomicEvent[]; geopolitical: GeoEvent[] }
+    const fn = httpsCallable<Record<string, unknown>, CFResult>(fbFunctions, 'fetchMarketCalendar')
+    fn({})
+      .then(res => {
+        setEarnings(res.data.earnings ?? [])
+        setEconomic(res.data.economic ?? [])
+        setGeoNews(res.data.geopolitical ?? [])
+      })
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  // Group earnings by date
+  const earningsByDate = useMemo(() => {
+    const map = new Map<string, EarningsEvent[]>()
+    for (const e of earnings) {
+      const arr = map.get(e.date) ?? []
+      arr.push(e); map.set(e.date, arr)
+    }
+    return [...map.entries()].sort(([a],[b]) => a.localeCompare(b))
+  }, [earnings])
+
+  // Group economic by date
+  const econByDate = useMemo(() => {
+    const map = new Map<string, EconomicEvent[]>()
+    for (const e of economic) {
+      const arr = map.get(e.date) ?? []
+      arr.push(e); map.set(e.date, arr)
+    }
+    return [...map.entries()].sort(([a],[b]) => a.localeCompare(b))
+  }, [economic])
+
+  const fmtCal = (d: string) => {
+    try {
+      return new Date(d).toLocaleDateString('fr-FR', { weekday:'short', day:'2-digit', month:'short' })
+    } catch { return d }
+  }
+
+  const impactColor = (impact: string) => {
+    if (impact === 'high' || impact === '3') return '#FF3B30'
+    if (impact === 'medium' || impact === '2') return '#FF9500'
+    return '#607D8B'
+  }
+
+  const SECTIONS: { id: CalSection; label: string; color: string; count: number }[] = [
+    { id:'earnings', label:'📊 Résultats', color:'0,229,255', count: earnings.length },
+    { id:'macro',    label:'🏦 Macro',     color:'255,149,0', count: economic.length },
+    { id:'geo',      label:'🌍 Géopolitique', color:'191,90,242', count: geoNews.length },
+  ]
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+      {/* Sub-tabs */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+        {SECTIONS.map(s => (
+          <button key={s.id} onClick={() => setSection(s.id)}
+            style={{ padding:'6px 16px', borderRadius:8, fontSize:11, fontWeight:600, cursor:'pointer',
+              background: section === s.id ? `rgba(${s.color},0.12)` : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${section === s.id ? `rgba(${s.color},0.4)` : 'rgba(255,255,255,0.08)'}`,
+              color: section === s.id ? `rgb(${s.color})` : 'rgba(148,163,184,0.6)',
+              transition:'all 0.15s',
+            }}>
+            {s.label}
+            {s.count > 0 && !loading && (
+              <span style={{ marginLeft:6, fontSize:9, background:`rgba(${s.color},0.15)`, padding:'1px 5px', borderRadius:99, color:`rgb(${s.color})` }}>
+                {s.count}
+              </span>
+            )}
+          </button>
+        ))}
+        {loading && <div style={{ width:16, height:16, border:'1.5px solid rgba(255,255,255,0.1)', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.8s linear infinite', alignSelf:'center', marginLeft:6 }} />}
+      </div>
+
+      {/* Error */}
+      {error && !loading && (
+        <div style={{ padding:'10px 14px', borderRadius:8, background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', fontSize:11, color:'#FF3B30' }}>
+          Erreur : {error}
+        </div>
+      )}
+
+      {/* ── Earnings ── */}
+      {section === 'earnings' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          {loading ? (
+            Array.from({length:3}).map((_,i) => (
+              <div key={i} style={{ height:90, borderRadius:10, background:'rgba(255,255,255,0.04)', animation:'pulse 1.5s ease infinite' }} />
+            ))
+          ) : earningsByDate.length === 0 ? (
+            <div style={{ padding:24, textAlign:'center', color:'rgba(148,163,184,0.5)', fontSize:12 }}>Aucun résultat trouvé pour les 14 prochains jours</div>
+          ) : earningsByDate.map(([date, evts]) => (
+            <div key={date}>
+              <div style={{ fontSize:10, fontWeight:700, color:'rgba(148,163,184,0.5)', textTransform:'uppercase', letterSpacing:1, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+                📅 {fmtCal(date)}
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8 }}>
+                {evts.map((e, i) => (
+                  <div key={i} style={{ padding:'10px 14px', background:'rgba(0,229,255,0.04)', border:'1px solid rgba(0,229,255,0.12)', borderRadius:10 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                      <span style={{ fontSize:13, fontWeight:800, color:'#fff', fontFamily:'JetBrains Mono,monospace' }}>{e.symbol}</span>
+                      <span style={{ fontSize:9, fontWeight:600, color:'rgba(148,163,184,0.6)', background:'rgba(255,255,255,0.06)', padding:'2px 6px', borderRadius:4 }}>
+                        {e.hour === 'bmo' ? '🌅 Avant ouverture' : e.hour === 'amc' ? '🌙 Après clôture' : '—'}
+                      </span>
+                    </div>
+                    {e.epsEstimate != null && (
+                      <div style={{ fontSize:10, color:'rgba(148,163,184,0.7)' }}>
+                        EPS est. <b style={{ color:'#00E5FF', fontFamily:'JetBrains Mono,monospace' }}>${e.epsEstimate.toFixed(2)}</b>
+                      </div>
+                    )}
+                    {e.revenueEstimate != null && (
+                      <div style={{ fontSize:9, color:'rgba(148,163,184,0.5)', marginTop:2 }}>
+                        Rev. est. <b style={{ fontFamily:'JetBrains Mono,monospace' }}>
+                          {e.revenueEstimate >= 1e9 ? `$${(e.revenueEstimate/1e9).toFixed(1)}B` : `$${(e.revenueEstimate/1e6).toFixed(0)}M`}
+                        </b>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Macro ── */}
+      {section === 'macro' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          {loading ? (
+            Array.from({length:4}).map((_,i) => (
+              <div key={i} style={{ height:60, borderRadius:8, background:'rgba(255,255,255,0.04)', animation:'pulse 1.5s ease infinite' }} />
+            ))
+          ) : econByDate.length === 0 ? (
+            <div style={{ padding:24, textAlign:'center', color:'rgba(148,163,184,0.5)', fontSize:12 }}>Aucun événement macro disponible</div>
+          ) : econByDate.map(([date, evts]) => (
+            <div key={date}>
+              <div style={{ fontSize:10, fontWeight:700, color:'rgba(148,163,184,0.5)', textTransform:'uppercase', letterSpacing:1, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+                📅 {fmtCal(date)}
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                {evts.sort((a,b) => (b.impact === 'high' ? 1 : b.impact === 'medium' ? 0 : -1) - (a.impact === 'high' ? 1 : a.impact === 'medium' ? 0 : -1)).map((e, i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'rgba(255,255,255,0.02)', border:`1px solid ${impactColor(e.impact)}20`, borderLeft:`3px solid ${impactColor(e.impact)}`, borderRadius:8 }}>
+                    <div style={{ width:6, height:6, borderRadius:'50%', background:impactColor(e.impact), flexShrink:0 }} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:'#fff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.event}</div>
+                      <div style={{ fontSize:9, color:'rgba(148,163,184,0.5)', marginTop:2 }}>{e.country}</div>
+                    </div>
+                    {(e.estimate || e.prev) && (
+                      <div style={{ textAlign:'right', flexShrink:0 }}>
+                        {e.estimate && <div style={{ fontSize:10, fontWeight:700, color:'#FF9500', fontFamily:'JetBrains Mono,monospace' }}>{e.estimate}{e.unit ?? ''}</div>}
+                        {e.prev && <div style={{ fontSize:9, color:'rgba(148,163,184,0.5)', fontFamily:'JetBrains Mono,monospace' }}>Préc: {e.prev}{e.unit ?? ''}</div>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Géopolitique ── */}
+      {section === 'geo' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {loading ? (
+            Array.from({length:5}).map((_,i) => (
+              <div key={i} style={{ height:70, borderRadius:8, background:'rgba(255,255,255,0.04)', animation:'pulse 1.5s ease infinite' }} />
+            ))
+          ) : geoNews.length === 0 ? (
+            <div style={{ padding:24, textAlign:'center', color:'rgba(148,163,184,0.5)', fontSize:12 }}>Aucun événement géopolitique disponible</div>
+          ) : geoNews.map((g, i) => (
+            <a key={i} href={g.url} target="_blank" rel="noopener noreferrer"
+              style={{ textDecoration:'none', display:'flex', gap:10, alignItems:'flex-start', padding:'10px 14px', background:'rgba(191,90,242,0.04)', border:'1px solid rgba(191,90,242,0.12)', borderRadius:10, transition:'background 0.12s', cursor:'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.background='rgba(191,90,242,0.08)')}
+              onMouseLeave={e => (e.currentTarget.style.background='rgba(191,90,242,0.04)')}
+            >
+              <span style={{ fontSize:18, flexShrink:0 }}>
+                {g.category === 'election' ? '🗳️' : g.category === 'war' ? '⚔️' : g.category === 'summit' ? '🤝' : g.category === 'trade' ? '📦' : g.category === 'sanctions' ? '🚫' : '🌍'}
+              </span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:11, fontWeight:600, color:'#fff', lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{g.title}</div>
+                <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                  <span style={{ fontSize:9, color:'#BF5AF2' }}>{g.source}</span>
+                  <span style={{ fontSize:9, color:'rgba(148,163,184,0.5)' }}>{g.date}</span>
+                </div>
+              </div>
+              <span style={{ fontSize:10, color:'#BF5AF2', flexShrink:0 }}>↗</span>
+            </a>
+          ))}
+        </div>
+      )}
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:0.5}50%{opacity:1}}`}</style>
+    </div>
+  )
+}
+
 // ── Crypto Tab ────────────────────────────────────────────────────────────────
 
 function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
@@ -1791,9 +2081,10 @@ export default function MarchesPage() {
   const totalStocks = STOCK_GROUPS.reduce((s, g) => s + g.symbols.length, 0)
 
   const TABS: { id: Tab; label: string; glow: string }[] = [
-    { id:'crypto',  label:'🪙 Crypto',     glow:'191,90,242' },
-    { id:'actions', label:'📈 Actions',    glow:'10,133,255' },
-    { id:'forex',   label:'💱 Forex & Commodités', glow:'52,199,89' },
+    { id:'crypto',      label:'🪙 Crypto',             glow:'191,90,242' },
+    { id:'actions',     label:'📈 Actions',             glow:'10,133,255' },
+    { id:'forex',       label:'💱 Forex & Commodités',  glow:'52,199,89'  },
+    { id:'calendrier',  label:'📅 Calendrier',          glow:'255,149,0'  },
   ]
 
   const activeRef = tab === 'crypto' ? cryptoShareRef : tab === 'actions' ? stocksShareRef : forexShareRef
@@ -1875,9 +2166,10 @@ export default function MarchesPage() {
         <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.25),transparent)'}}/>
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-8 }} transition={{ duration:0.25 }}>
-            {tab === 'crypto'  && <CryptoTab onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
-            {tab === 'actions' && <StocksTab onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
-            {tab === 'forex'   && <ForexTab  onTokenClick={handleTokenClick} shareRef={forexShareRef}  />}
+            {tab === 'crypto'      && <CryptoTab     onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
+            {tab === 'actions'     && <StocksTab     onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
+            {tab === 'forex'       && <ForexTab       onTokenClick={handleTokenClick} shareRef={forexShareRef}  />}
+            {tab === 'calendrier'  && <CalendrierTab />}
           </motion.div>
         </AnimatePresence>
       </div>
