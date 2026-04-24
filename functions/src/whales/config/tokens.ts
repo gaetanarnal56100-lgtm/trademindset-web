@@ -11,6 +11,14 @@ export interface MonitoredToken {
 
 export const MONITORED_TOKENS: MonitoredToken[] = [
   {
+    symbol: "WBTC",
+    name: "Wrapped Bitcoin",
+    contract: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+    chain: "ethereum", chainId: "ethereum",
+    dexPairAddress: "0xcbcdf9626bc03e24f779434178a73a0b4bad62ed",
+    decimals: 8,
+  },
+  {
     symbol: "WETH",
     name: "Wrapped Ether",
     contract: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
