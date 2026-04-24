@@ -430,3 +430,11 @@ export const deleteExchangeAPIKey = functions
     await db.collection('users').doc(uid).collection('apiKeys').doc(data.exchange).delete()
     return { success: true }
   })
+
+// ══════════════════════════════════════════════════════════════════════
+// Whale Alerts — détection de grosses transactions on-chain
+// Sources : Etherscan (transactions) + Dexscreener (prix + volume)
+// ══════════════════════════════════════════════════════════════════════
+export { whaleScanner }        from "./whales/scheduler/whaleScanner";
+export { refreshWatchlist }    from "./whales/scheduler/refreshWatchlist";
+export { onWhaleAlertCreated } from "./whales/triggers/onAlertCreated";
