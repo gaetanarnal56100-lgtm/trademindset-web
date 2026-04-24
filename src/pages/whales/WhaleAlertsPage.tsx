@@ -76,7 +76,7 @@ export default function WhaleAlertsPage() {
   useEffect(() => {
     if (!user?.uid) return
 
-    const col = collection(db, 'whale_alerts')
+    const col = collection(db, 'alerts')
     const q = query(col, orderBy('timestamp', 'desc'), limit(100))
 
     const unsub = onSnapshot(q, (snap) => {
