@@ -122,23 +122,63 @@ function MacroMetricsBanner() {
     async function load() {
       const cards: MetricData[] = []
 
-      // ── 1. Fear & Greed (30-day history) ────────────────────────────
+      // ── 1a. Glassnode: Accumulation Trend Score ─────────────────────
+      //       (remplace Fear & Greed — source on-chain fiable)
       try {
-        const r  = await fetch('https://api.alternative.me/fng/?limit=30')
-        const d  = await r.json() as { data: { value: string; value_classification: string }[] }
-        const vals = [...d.data].reverse().map(x => parseInt(x.value))
-        const cur  = vals[vals.length - 1]
-        const prev = vals[vals.length - 2]
-        const mn = Math.min(...vals), mx = Math.max(...vals)
-        const label = cur >= 75 ? 'Avidité extrême' : cur >= 55 ? 'Avidité' : cur >= 45 ? 'Neutre' : cur >= 25 ? 'Peur' : 'Peur extrême'
-        cards.push({
-          label: 'Fear & Greed', value: String(cur), sub: label,
-          delta: prev ? cur - prev : null, deltaLabel: 'pts',
-          spark: vals.map(v => (v - mn) / (mx - mn || 1)),
-          color: cur >= 60 ? '#34C759' : cur >= 40 ? '#FF9500' : '#FF3B30',
-          icon: cur >= 60 ? '🟢' : cur >= 40 ? '🟡' : '🔴',
-        })
-      } catch { /* skip */ }
+        const fn = httpsCallable<Record<string,never>, {
+          cdd90:  { points: number[]; current: number | null; prev: number | null };
+          accum:  { points: number[]; current: number | null; prev: number | null };
+        }>(fbFn, 'fetchGlassnodeMetrics')
+        const res = await fn({})
+        const { cdd90, accum } = res.data
+
+        // Accumulation Trend Score (0–1, >0.5 = accumulation)
+        if (accum.current !== null) {
+          const cur   = accum.current
+          const prev  = accum.prev
+          const delta = prev !== null ? cur - prev : null
+          const label = cur > 0.65 ? 'Accumulation forte' : cur > 0.45 ? 'Accumulation modérée' : cur > 0.25 ? 'Distribution légère' : 'Distribution forte'
+          cards.push({
+            label: 'Accum. Score', value: cur.toFixed(2), sub: label,
+            delta, deltaLabel: 'pts',
+            spark: accum.points,
+            color: cur > 0.5 ? '#34C759' : cur > 0.3 ? '#FF9500' : '#FF3B30',
+            icon: cur > 0.5 ? '🐋' : '📤',
+          })
+        }
+
+        // CDD90 Age Adjusted (coin days destroyed — vieux coins qui bougent)
+        if (cdd90.current !== null) {
+          const cur   = cdd90.current
+          const prev  = cdd90.prev
+          const delta = prev !== null ? ((cur - prev) / (prev || 1)) * 100 : null
+          const label = cur > 0.7 ? 'Vieux coins actifs ⚠️' : cur > 0.4 ? 'Modéré' : 'Faible activité'
+          cards.push({
+            label: 'CDD90 Ajusté', value: cur.toFixed(3), sub: label,
+            delta, deltaLabel: '%',
+            spark: cdd90.points,
+            color: cur > 0.7 ? '#FF3B30' : cur > 0.4 ? '#FF9500' : '#34C759',
+            icon: '⏳',
+          })
+        }
+      } catch {
+        // Fallback: Fear & Greed si Glassnode pas configuré
+        try {
+          const r  = await fetch('https://api.alternative.me/fng/?limit=30')
+          const d  = await r.json() as { data: { value: string }[] }
+          const vals = [...d.data].reverse().map(x => parseInt(x.value))
+          const cur = vals[vals.length - 1], prev = vals[vals.length - 2]
+          const mn = Math.min(...vals), mx = Math.max(...vals)
+          const label = cur >= 75 ? 'Avidité extrême' : cur >= 55 ? 'Avidité' : cur >= 45 ? 'Neutre' : cur >= 25 ? 'Peur' : 'Peur extrême'
+          cards.push({
+            label: 'Fear & Greed', value: String(cur), sub: label,
+            delta: prev ? cur - prev : null, deltaLabel: 'pts',
+            spark: vals.map(v => (v - mn) / (mx - mn || 1)),
+            color: cur >= 60 ? '#34C759' : cur >= 40 ? '#FF9500' : '#FF3B30',
+            icon: cur >= 60 ? '🟢' : cur >= 40 ? '🟡' : '🔴',
+          })
+        } catch { /* skip */ }
+      }
 
       // ── 2. BTC Dominance (7 days × 4h klines) ──────────────────────
       try {
@@ -244,52 +284,78 @@ function MacroMetricsBanner() {
   }, [])
 
   if (loading) return (
-    <div className="px-6 py-3 flex gap-3 overflow-x-auto flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', scrollbarWidth: 'none' }}>
+    <div className="px-5 py-4 flex gap-3 overflow-x-auto flex-shrink-0"
+      style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', scrollbarWidth: 'none' }}>
       {[...Array(6)].map((_, i) => (
         <div key={i} className="flex-shrink-0 rounded-2xl animate-pulse"
-          style={{ width: 148, height: 88, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}/>
+          style={{ width: 172, height: 100, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}/>
       ))}
     </div>
   )
 
   return (
-    <div className="px-4 py-3 flex gap-2.5 overflow-x-auto flex-shrink-0"
+    <div className="px-5 py-4 flex gap-3 overflow-x-auto flex-shrink-0"
       style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', scrollbarWidth: 'none' }}>
-      {metrics.map((m, i) => (
-        <div key={i} className="flex-shrink-0 rounded-2xl relative overflow-hidden"
-          style={{
-            width: 152, background: 'rgba(255,255,255,0.025)',
-            border: `1px solid rgba(255,255,255,0.07)`,
-            boxShadow: `0 0 0 0 ${m.color}`,
-          }}>
-          {/* Sparkline — fond absolu */}
-          {m.spark.length > 1 && (
-            <div className="absolute bottom-0 right-0 opacity-50 pointer-events-none">
-              <Sparkline data={m.spark} color={m.color} width={80} height={36}/>
-            </div>
-          )}
-          {/* Contenu */}
-          <div className="relative px-3.5 pt-3 pb-2.5 flex flex-col gap-0.5">
-            <div className="text-[9px] uppercase tracking-widest font-bold flex items-center gap-1"
-              style={{ color: 'rgba(255,255,255,0.35)' }}>
-              <span>{m.icon}</span> {m.label}
-            </div>
-            <div className="text-[17px] font-black leading-none mt-0.5"
-              style={{ color: m.color, fontFamily: 'Syne, sans-serif', letterSpacing: '-0.5px' }}>
-              {m.value}
-            </div>
-            <div className="text-[10px] leading-snug" style={{ color: 'rgba(255,255,255,0.38)' }}>
-              {m.sub}
-            </div>
-            {m.delta !== null && (
-              <div className="text-[10px] font-semibold mt-0.5"
-                style={{ color: m.delta > 0 ? '#34C759' : m.delta < 0 ? '#FF3B30' : '#8E8E93' }}>
-                {m.delta > 0 ? '▲' : '▼'} {Math.abs(m.delta).toFixed(m.deltaLabel === 'pts' ? 1 : 2)}{m.deltaLabel} <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: 400 }}>24h</span>
+      {metrics.map((m, i) => {
+        // Adaptive font size: long values (>7 chars) get smaller
+        const valSize = m.value.length > 7 ? 15 : m.value.length > 5 ? 18 : 22
+        return (
+          <div key={i} className="flex-shrink-0 rounded-2xl relative overflow-hidden"
+            style={{ width: 172, background: 'rgba(255,255,255,0.028)', border: `1px solid rgba(255,255,255,0.08)` }}>
+
+            {/* Sparkline — position absolue en bas à droite */}
+            {m.spark.length > 1 && (
+              <div className="absolute bottom-0 right-0 pointer-events-none" style={{ opacity: 0.45 }}>
+                <Sparkline data={m.spark} color={m.color} width={88} height={42}/>
               </div>
             )}
+
+            {/* Bande colorée en haut */}
+            <div style={{ height: 2, background: m.color, opacity: 0.6, borderRadius: '12px 12px 0 0' }}/>
+
+            {/* Contenu */}
+            <div className="relative px-4 pt-3 pb-3.5 flex flex-col" style={{ gap: 3 }}>
+              {/* Label */}
+              <div style={{
+                fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
+                textTransform: 'uppercase', color: 'rgba(255,255,255,0.38)',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 11 }}>{m.icon}</span>
+                {m.label}
+              </div>
+
+              {/* Valeur principale */}
+              <div style={{
+                fontSize: valSize, fontWeight: 900, lineHeight: 1.05,
+                color: m.color, fontFamily: 'Syne, sans-serif',
+                letterSpacing: valSize > 17 ? '-0.5px' : '-0.3px',
+                marginTop: 2,
+              }}>
+                {m.value}
+              </div>
+
+              {/* Sous-label */}
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', lineHeight: 1.3 }}>
+                {m.sub}
+              </div>
+
+              {/* Delta 24h */}
+              {m.delta !== null && (
+                <div style={{
+                  fontSize: 11, fontWeight: 600, marginTop: 1,
+                  color: m.delta > 0 ? '#34C759' : m.delta < 0 ? '#FF3B30' : '#8E8E93',
+                  display: 'flex', alignItems: 'center', gap: 3,
+                }}>
+                  {m.delta > 0 ? '▲' : '▼'}
+                  {' '}{Math.abs(m.delta).toFixed(m.deltaLabel === 'pts' ? 1 : 2)}{m.deltaLabel}
+                  <span style={{ color: 'rgba(255,255,255,0.22)', fontWeight: 400, fontSize: 10 }}>24h</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
