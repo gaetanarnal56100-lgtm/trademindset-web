@@ -1,8 +1,12 @@
-// src/pages/whales/WhaleAlertsPage.tsx — v3 redesign
+// src/pages/whales/WhaleAlertsPage.tsx — v4 with insider trades
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { db } from '@/services/firebase/config'
+import app from '@/services/firebase/config'
 import { useUser } from '@/hooks/useAuth'
+
+const fbFn = getFunctions(app, 'europe-west1')
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface WhaleAlert {
@@ -456,6 +460,106 @@ function AlertCard({ alert, isNew }: { alert: WhaleAlert; isNew: boolean }) {
   )
 }
 
+// ── Insider trades (Feature A) ─────────────────────────────────────────────────
+interface InsiderTrade {
+  symbol: string; name: string; transactionDate: string
+  transactionCode: string; shares: number; pricePerShare: number; totalValue: number
+}
+function InsiderTradesSection() {
+  const [data,    setData]    = useState<InsiderTrade[]>([])
+  const [loading, setLoading] = useState(true)
+  const [tab,     setTab]     = useState<'buy'|'sell'>('buy')
+  const [error,   setError]   = useState(false)
+
+  useEffect(() => {
+    const fn = httpsCallable<Record<string,never>, { data: InsiderTrade[] }>(fbFn, 'fetchInsiderTrades')
+    fn({}).then(r => { setData(r.data.data ?? []); setLoading(false) })
+          .catch(() => { setError(true); setLoading(false) })
+  }, [])
+
+  const fmtShares = (n: number) => n >= 1e6 ? `${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `${(n/1e3).toFixed(0)}K` : `${n}`
+  const fmtVal    = (n: number) => n >= 1e9 ? `$${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}K` : `$${n.toFixed(0)}`
+
+  const buys  = data.filter(t => t.transactionCode === 'P').slice(0, 10)
+  const sells = data.filter(t => t.transactionCode === 'S').slice(0, 10)
+  const shown = tab === 'buy' ? buys : sells
+  const color = tab === 'buy' ? '#34C759' : '#FF3B30'
+  const icon  = tab === 'buy' ? '📥' : '📤'
+
+  return (
+    <div className="px-6 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--tm-text-muted)' }}>
+          🏦 SMART MONEY STOCKS
+        </span>
+        <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--tm-text-muted)' }}>
+          Insiders SEC Form 4
+        </span>
+        <div className="ml-auto flex gap-1">
+          {(['buy','sell'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className="text-[10px] px-2.5 py-1 rounded-lg font-semibold transition-all"
+              style={{
+                background: tab===t ? (t==='buy'?'rgba(52,199,89,0.15)':'rgba(255,59,48,0.15)') : 'rgba(255,255,255,0.04)',
+                color: tab===t ? (t==='buy'?'#34C759':'#FF3B30') : 'var(--tm-text-muted)',
+                border: `1px solid ${tab===t ? (t==='buy'?'rgba(52,199,89,0.3)':'rgba(255,59,48,0.3)') : 'rgba(255,255,255,0.08)'}`,
+              }}>
+              {t==='buy'?'📥 Achats':'📤 Ventes'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center h-16 gap-2" style={{ color: 'var(--tm-text-muted)' }}>
+          <div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: 'rgba(0,229,255,0.2)', borderTopColor: 'var(--tm-accent)' }}/>
+          <span className="text-xs">Chargement données SEC…</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-xs text-center py-3" style={{ color: 'var(--tm-text-muted)' }}>
+          Données indisponibles — réessayez dans quelques instants
+        </div>
+      )}
+
+      {!loading && !error && shown.length === 0 && (
+        <div className="text-xs text-center py-3" style={{ color: 'var(--tm-text-muted)' }}>
+          Aucun mouvement récent de ce type
+        </div>
+      )}
+
+      {!loading && !error && shown.length > 0 && (
+        <div className="overflow-x-auto">
+          <div className="flex flex-col gap-1.5 min-w-[380px]">
+            {shown.map((t, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                {/* Rank */}
+                <div className="text-[10px] font-bold w-4 flex-shrink-0" style={{ color: 'var(--tm-text-muted)' }}>#{i+1}</div>
+                {/* Ticker */}
+                <div className="w-12 flex-shrink-0">
+                  <div className="text-xs font-black" style={{ color, fontFamily: 'Syne, sans-serif' }}>{t.symbol}</div>
+                </div>
+                {/* Insider name */}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--tm-text-primary)' }}>{t.name}</div>
+                  <div className="text-[10px]" style={{ color: 'var(--tm-text-muted)' }}>{t.transactionDate} · {fmtShares(t.shares)} actions @ ${t.pricePerShare.toFixed(2)}</div>
+                </div>
+                {/* Value */}
+                <div className="flex-shrink-0 text-right">
+                  <div className="text-sm font-black" style={{ color, fontFamily: 'Syne, sans-serif' }}>{fmtVal(t.totalValue)}</div>
+                  <div className="text-[9px]" style={{ color: 'var(--tm-text-muted)' }}>{icon} {t.transactionCode === 'P' ? 'Achat' : 'Vente'}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page principale ────────────────────────────────────────────────────────────
 export default function WhaleAlertsPage() {
   const user   = useUser()
@@ -529,6 +633,9 @@ export default function WhaleAlertsPage() {
 
         {/* Exchange flows */}
         {!loading && <ExchangeFlow alerts={alerts}/>}
+
+        {/* Smart Money — Insider trades */}
+        {!loading && <InsiderTradesSection/>}
 
         {/* Signal legend */}
         <SignalLegend/>

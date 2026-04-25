@@ -1440,6 +1440,114 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
   )
 }
 
+// ── Analyst Ratings Panel (Feature C) ─────────────────────────────────────────
+
+interface AnalystRating {
+  symbol: string; buy: number; hold: number; sell: number
+  strongBuy: number; strongSell: number
+  consensus: 'Strong Buy' | 'Buy' | 'Hold' | 'Sell' | 'Strong Sell' | 'N/A'
+  targetMean: number | null; targetHigh: number | null; targetLow: number | null
+}
+
+function AnalystRatingsPanel({ symbols, onClose }: { symbols: string[]; onClose: () => void }) {
+  const [data, setData]       = useState<AnalystRating[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fn = httpsCallable<{ symbols: string[] }, { data: AnalystRating[] }>(fbFunctions, 'fetchAnalystRatings')
+    fn({ symbols: symbols.slice(0, 15) })
+      .then(r => { setData(r.data.data ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [symbols.join(',')])
+
+  const consensusColor = (c: string) => {
+    if (c === 'Strong Buy') return '#34C759'
+    if (c === 'Buy')        return '#30D158'
+    if (c === 'Hold')       return '#FF9500'
+    if (c === 'Sell')       return '#FF453A'
+    if (c === 'Strong Sell')return '#FF3B30'
+    return '#8E8E93'
+  }
+
+  return createPortal(
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', backdropFilter:'blur(8px)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+      onClick={onClose}>
+      <motion.div initial={{ scale:0.95, y:20 }} animate={{ scale:1, y:0 }} exit={{ scale:0.95, y:20 }}
+        style={{ width:'100%', maxWidth:680, maxHeight:'80vh', overflowY:'auto', background:'rgba(8,12,22,0.98)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:20, boxShadow:'0 32px 64px rgba(0,0,0,0.8)' }}
+        onClick={e => e.stopPropagation()}>
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', alignItems:'center', gap:12 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif' }}>📊 Ratings Analystes</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginTop:2 }}>Consensus Wall Street · Objectifs de cours</div>
+          </div>
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.06)', border:'none', borderRadius:8, padding:'6px 10px', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:12 }}>✕</button>
+        </div>
+
+        <div style={{ padding:'16px 24px' }}>
+          {loading && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, gap:10, color:'var(--tm-text-muted)', fontSize:13 }}>
+              <div style={{ width:20, height:20, borderRadius:'50%', border:'2px solid rgba(0,229,255,0.2)', borderTopColor:'var(--tm-accent)', animation:'spin 0.8s linear infinite' }}/>
+              Chargement des ratings…
+            </div>
+          )}
+          {!loading && data.length === 0 && (
+            <div style={{ textAlign:'center', padding:40, color:'var(--tm-text-muted)', fontSize:13 }}>
+              Aucune donnée disponible pour ces symboles
+            </div>
+          )}
+          {!loading && data.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {data.filter(d => d.consensus !== 'N/A').map(r => {
+                const total = r.strongBuy + r.buy + r.hold + r.sell + r.strongSell
+                const bullPct = total > 0 ? ((r.strongBuy + r.buy) / total) * 100 : 0
+                const holdPct = total > 0 ? (r.hold / total) * 100 : 0
+                const bearPct = total > 0 ? ((r.sell + r.strongSell) / total) * 100 : 0
+                const cc = consensusColor(r.consensus)
+                return (
+                  <div key={r.symbol} style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:'14px 16px' }}>
+                    <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+                      {/* Ticker */}
+                      <div style={{ minWidth:60 }}>
+                        <div style={{ fontSize:14, fontWeight:900, color:cc, fontFamily:'Syne, sans-serif', lineHeight:1 }}>{r.symbol}</div>
+                        <div style={{ fontSize:10, fontWeight:700, color:cc, marginTop:3, opacity:0.9 }}>{r.consensus}</div>
+                      </div>
+                      {/* Bar chart */}
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:'flex', borderRadius:6, overflow:'hidden', height:10, marginBottom:6 }}>
+                          <div style={{ width:`${bullPct}%`, background:'linear-gradient(90deg,#34C759,#30D158)', transition:'width 0.7s ease' }}/>
+                          <div style={{ width:`${holdPct}%`, background:'rgba(255,149,0,0.7)', transition:'width 0.7s ease' }}/>
+                          <div style={{ width:`${bearPct}%`, background:'linear-gradient(90deg,#FF453A,#FF3B30)', transition:'width 0.7s ease' }}/>
+                        </div>
+                        <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--tm-text-muted)' }}>
+                          <span style={{ color:'#34C759' }}>✓ {r.strongBuy + r.buy} Achat</span>
+                          <span style={{ color:'#FF9500' }}>~ {r.hold} Neutre</span>
+                          <span style={{ color:'#FF3B30' }}>✗ {r.sell + r.strongSell} Vente</span>
+                          <span style={{ marginLeft:'auto' }}>{total} analystes</span>
+                        </div>
+                      </div>
+                      {/* Price target */}
+                      {r.targetMean && (
+                        <div style={{ textAlign:'right', flexShrink:0 }}>
+                          <div style={{ fontSize:15, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif', lineHeight:1 }}>${r.targetMean.toFixed(0)}</div>
+                          <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginTop:3 }}>
+                            {r.targetLow && r.targetHigh ? `${r.targetLow.toFixed(0)}–${r.targetHigh.toFixed(0)}` : 'objectif'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body
+  )
+}
+
 // ── Stocks Tab ────────────────────────────────────────────────────────────────
 
 function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
@@ -1455,6 +1563,7 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   const [screener,      setScreener]      = useState<ScreenerState>(DEFAULT_SCREENER)
   const [showRotation,  setShowRotation]  = useState(false)
   const [showCorr,      setShowCorr]      = useState(false)
+  const [showRatings,   setShowRatings]   = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1610,6 +1719,7 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         <StockToolBtn label="🔍 Screener" active={screenerOpen || screenerActive} onClick={() => setScreenerOpen(o => !o)} />
         <StockToolBtn label="🔄 Rotation" onClick={() => setShowRotation(true)} color="52,199,89" />
         <StockToolBtn label="🔗 Corrélation" onClick={() => setShowCorr(true)} color="255,149,0" />
+        <StockToolBtn label="📊 Ratings" onClick={() => setShowRatings(true)} color="191,90,242" />
       </div>
 
       <AnimatePresence>
@@ -1636,6 +1746,14 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
       </AnimatePresence>
       <AnimatePresence>
         {showCorr && <CorrelationMatrix tokens={screenerTokens} onClose={() => setShowCorr(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showRatings && (
+          <AnalystRatingsPanel
+            symbols={screenerTokens.slice(0, 15).map(t => t.symbol)}
+            onClose={() => setShowRatings(false)}
+          />
+        )}
       </AnimatePresence>
     </div>
   )
