@@ -2354,6 +2354,14 @@ const CATEGORY_META: Record<IndicatorCategory, { label: string; color: string; e
 
 const INDICATOR_REGISTRY: IndicatorDef[] = [
   {
+    id: 'btc-hero',
+    name: 'BTC Price + MA50/200',
+    description: 'Prix Bitcoin avec moyennes mobiles et zones bull/bear',
+    category: 'structure' as IndicatorCategory,
+    assets: 'btc' as const,
+    component: () => <BTCHeroChart/>,
+  },
+  {
     id: 'monthly-returns',
     name: 'Rendements Mensuels',
     description: 'Heatmap calendrier des performances mensuelles',
@@ -2449,6 +2457,30 @@ const INDICATOR_REGISTRY: IndicatorDef[] = [
     assets: 'btc',
     component: () => <CompositeRiskScore/>,
   },
+  {
+    id: 'market-intelligence',
+    name: 'Market Intelligence',
+    description: 'Score marché · Régime · Confluence des signaux',
+    category: 'macro' as IndicatorCategory,
+    assets: 'btc' as const,
+    component: () => <MarketIntelligencePanel/>,
+  },
+  {
+    id: 'nupl',
+    name: 'NUPL — Net Unrealized P&L',
+    description: 'Profit/perte non réalisé du réseau Bitcoin',
+    category: 'onchain' as IndicatorCategory,
+    assets: 'btc' as const,
+    component: () => <NUPLChart/>,
+  },
+  {
+    id: 'momentum-composite',
+    name: 'Momentum Composite',
+    description: 'RSI + Rate of Change + Pente MA — score 0–100',
+    category: 'structure' as IndicatorCategory,
+    assets: 'all' as const,
+    component: ({ symbol, isCrypto }) => <MomentumCompositeChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
 ]
 
 function ChartsTab({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
@@ -2457,6 +2489,7 @@ function ChartsTab({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) 
   const isBtc = symbol === 'BTCUSDT' || symbol === 'BTC-USD' || symbol.toUpperCase().startsWith('BTC')
 
   const visible = INDICATOR_REGISTRY.filter(ind => {
+    if (ind.id === 'btc-hero' || ind.id === 'market-intelligence') return false // shown in hero area
     if (ind.assets === 'crypto' && !isCrypto) return false
     if (ind.assets === 'btc'    && !isBtc)   return false
     if (activeCategory !== 'all' && ind.category !== activeCategory) return false
@@ -2466,7 +2499,15 @@ function ChartsTab({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) 
   const categories: Array<IndicatorCategory | 'all'> = ['all', 'performance', 'risk', 'structure', 'onchain', 'macro']
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:16, position:'relative', zIndex:1 }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:20, position:'relative', zIndex:1 }}>
+      {/* Hero + Market Intelligence always on top for BTC */}
+      {isBtc && (
+        <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:16 }}>
+          <BTCHeroChart/>
+          <MarketIntelligencePanel/>
+        </div>
+      )}
+
       {/* Category filter */}
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', padding:'4px 0' }}>
         {categories.map(cat => {
@@ -3683,6 +3724,633 @@ function CompositeRiskScore() {
             {factors.length === 0 && <div style={{fontSize:12,color:'var(--tm-text-muted)',padding:8}}>Données indisponibles</div>}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── BTC Hero Chart (price + MA50/MA200 + bull/bear zones + cross markers) ────
+function BTCHeroChart() {
+  type Candle = { ts: number; close: number; ma50: number | null; ma200: number | null }
+  const [data, setData]       = useState<Candle[]>([])
+  const [loading, setLoading] = useState(true)
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null)
+  const [priceChange, setPriceChange]   = useState<number | null>(null)
+
+  useEffect(() => {
+    fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=400')
+      .then(r => r.json())
+      .then((raw: [number,string,string,string,string][]) => {
+        const closes = raw.map(k => parseFloat(k[4]))
+        const candles: Candle[] = closes.map((close, i) => {
+          const ma50  = i >= 49  ? closes.slice(i-49,  i+1).reduce((a,b)=>a+b,0)/50  : null
+          const ma200 = i >= 199 ? closes.slice(i-199, i+1).reduce((a,b)=>a+b,0)/200 : null
+          return { ts: raw[i][0], close, ma50, ma200 }
+        })
+        setData(candles)
+        const last = closes[closes.length-1]
+        const prev = closes[closes.length-2]
+        setCurrentPrice(last)
+        setPriceChange(prev ? ((last-prev)/prev)*100 : null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  // Detect crosses
+  const crosses: { i: number; type: 'golden' | 'death' }[] = []
+  for (let i = 1; i < data.length; i++) {
+    const prev = data[i-1], cur = data[i]
+    if (!prev.ma50 || !prev.ma200 || !cur.ma50 || !cur.ma200) continue
+    if (prev.ma50 <= prev.ma200 && cur.ma50 > cur.ma200) crosses.push({ i, type: 'golden' })
+    if (prev.ma50 >= prev.ma200 && cur.ma50 < cur.ma200) crosses.push({ i, type: 'death' })
+  }
+
+  const W = 900, H = 200, PAD = { t:16, b:28, l:60, r:16 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const prices = data.map(d => d.close)
+  const minP = Math.min(...prices) * 0.97 || 1
+  const maxP = Math.max(...prices) * 1.03 || 2
+  function yPx(v: number) { return PAD.t + cH - ((v - minP) / (maxP - minP)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+
+  const pricePts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.close).toFixed(1)}`).join(' ')
+  const ma50Pts  = data.filter(d=>d.ma50!==null).map((d) => {
+    const i = data.indexOf(d)
+    return `${xPx(i).toFixed(1)},${yPx(d.ma50!).toFixed(1)}`
+  }).join(' ')
+  const ma200Pts = data.filter(d=>d.ma200!==null).map((d) => {
+    const i = data.indexOf(d)
+    return `${xPx(i).toFixed(1)},${yPx(d.ma200!).toFixed(1)}`
+  }).join(' ')
+
+  const lastMa200 = data[data.length-1]?.ma200 ?? null
+  const isBull = lastMa200 !== null && currentPrice !== null && currentPrice > lastMa200
+  const accentColor = isBull ? '#34C759' : '#FF3B30'
+  const regimeLabel = isBull ? '🐂 Bull Market' : '🐻 Bear Market'
+
+  // Y-axis labels (5 evenly spaced)
+  const ySteps = 5
+  const yLabels = Array.from({length:ySteps}, (_, i) => minP + (maxP-minP) * (i/(ySteps-1)))
+
+  function fmtPrice(p: number) {
+    if (p >= 1000) return `$${(p/1000).toFixed(0)}K`
+    return `$${p.toFixed(0)}`
+  }
+
+  const curCandle = data[data.length-1]
+  const ath = prices.length ? Math.max(...prices) : 0
+  const ddPct = ath > 0 && curCandle ? ((curCandle.close - ath) / ath) * 100 : 0
+
+  return (
+    <div style={{ background:'rgba(8,12,22,0.9)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:24, backdropFilter:'blur(12px)', boxShadow:'0 0 60px rgba(0,0,0,0.4)', position:'relative', overflow:'hidden' }}>
+      {/* Top border gradient */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg, transparent, ${accentColor}, transparent)` }}/>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16 }}>
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ fontSize:24 }}>₿</span>
+            <div>
+              <div style={{ fontSize:16, fontWeight:900, color:'#F0F2F5', fontFamily:'Syne,sans-serif' }}>Bitcoin Price Chart</div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:2 }}>MA50 · MA200 · Bull/Bear Zones · Signaux de croisement</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign:'right' }}>
+          {currentPrice && (
+            <>
+              <div style={{ fontSize:28, fontWeight:900, color:accentColor, fontFamily:'JetBrains Mono,monospace', lineHeight:1 }}>
+                ${currentPrice.toLocaleString('en', { maximumFractionDigits:0 })}
+              </div>
+              <div style={{ fontSize:12, color: priceChange && priceChange>=0 ? '#34C759':'#FF3B30', marginTop:4, fontFamily:'JetBrains Mono,monospace' }}>
+                {priceChange !== null ? `${priceChange>=0?'+':''}${priceChange.toFixed(2)}% 24h` : ''}
+              </div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:4 }}>{regimeLabel} · DD: {ddPct.toFixed(1)}%</div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display:'flex', gap:16, marginBottom:12, flexWrap:'wrap' }}>
+        {[
+          { color:'rgba(255,255,255,0.7)', label:'Prix BTC' },
+          { color:'#FF9500', label:'MA50' },
+          { color:'#BF5AF2', label:'MA200' },
+          { color:'rgba(52,199,89,0.25)', label:'Zone Bull (> MA200)' },
+          { color:'rgba(255,59,48,0.2)', label:'Zone Bear (< MA200)' },
+          { color:'#FFD60A', label:'⚡ Golden Cross' },
+          { color:'#FF3B30', label:'💀 Death Cross' },
+        ].map(({ color, label }) => (
+          <div key={label} style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:14, height:3, borderRadius:2, background:color }}/>
+            <span style={{ fontSize:9, color:'rgba(255,255,255,0.4)', fontFamily:'JetBrains Mono,monospace' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ display:'flex', justifyContent:'center', height:H }}>
+          <div style={{ width:24, height:24, margin:'auto', borderRadius:'50%', border:'2px solid rgba(0,229,255,0.15)', borderTopColor:'#00E5FF', animation:'spin 0.8s linear infinite' }}/>
+        </div>
+      ) : data.length < 2 ? (
+        <div style={{ textAlign:'center', padding:40, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données indisponibles</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
+          <defs>
+            <linearGradient id="btc-hero-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={accentColor} stopOpacity="0.2"/>
+              <stop offset="100%" stopColor={accentColor} stopOpacity="0.01"/>
+            </linearGradient>
+            <clipPath id="chart-clip">
+              <rect x={PAD.l} y={PAD.t} width={cW} height={cH}/>
+            </clipPath>
+          </defs>
+
+          {/* Bull/Bear background zones */}
+          {(() => {
+            const zones: { x1:number; x2:number; bull:boolean }[] = []
+            let zoneStart = -1, zoneBull = false
+            for (let i = 0; i < data.length; i++) {
+              const d = data[i]
+              if (!d.ma200) continue
+              const bull = d.close > d.ma200
+              if (zoneStart === -1) { zoneStart = i; zoneBull = bull }
+              else if (bull !== zoneBull) {
+                zones.push({ x1:xPx(zoneStart), x2:xPx(i), bull:zoneBull })
+                zoneStart = i; zoneBull = bull
+              }
+            }
+            if (zoneStart >= 0) zones.push({ x1:xPx(zoneStart), x2:xPx(data.length-1), bull:zoneBull })
+            return zones.map((z,idx) => (
+              <rect key={idx} x={z.x1} y={PAD.t} width={z.x2-z.x1} height={cH}
+                fill={z.bull ? 'rgba(52,199,89,0.06)' : 'rgba(255,59,48,0.06)'} clipPath="url(#chart-clip)"/>
+            ))
+          })()}
+
+          {/* Cross markers */}
+          {crosses.slice(-5).map(cx => (
+            <g key={cx.i}>
+              <line x1={xPx(cx.i)} y1={PAD.t} x2={xPx(cx.i)} y2={PAD.t+cH}
+                stroke={cx.type==='golden' ? 'rgba(255,214,10,0.4)' : 'rgba(255,59,48,0.4)'}
+                strokeWidth={1.5} strokeDasharray="4 3"/>
+              <text x={xPx(cx.i)} y={PAD.t+12} textAnchor="middle" fontSize={14}>
+                {cx.type === 'golden' ? '⚡' : '💀'}
+              </text>
+            </g>
+          ))}
+
+          {/* Y-axis labels */}
+          {yLabels.map(v => (
+            <text key={v} x={PAD.l-6} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)"
+              fontSize={8} fontFamily="JetBrains Mono,monospace">{fmtPrice(v)}</text>
+          ))}
+
+          {/* Area fill */}
+          <polygon points={`${PAD.l},${yPx(minP)} ${pricePts} ${PAD.l+cW},${yPx(minP)}`}
+            fill="url(#btc-hero-grad)" clipPath="url(#chart-clip)"/>
+
+          {/* MA200 */}
+          {ma200Pts && <polyline points={ma200Pts} fill="none" stroke="#BF5AF2" strokeWidth={2}
+            strokeLinecap="round" strokeLinejoin="round" clipPath="url(#chart-clip)"/>}
+          {/* MA50 */}
+          {ma50Pts && <polyline points={ma50Pts} fill="none" stroke="#FF9500" strokeWidth={1.5}
+            strokeDasharray="6 3" strokeLinecap="round" clipPath="url(#chart-clip)"/>}
+          {/* Price */}
+          <polyline points={pricePts} fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth={1.5}
+            strokeLinecap="round" strokeLinejoin="round" clipPath="url(#chart-clip)"/>
+          {/* Last dot */}
+          {curCandle && (
+            <circle cx={xPx(data.length-1)} cy={yPx(curCandle.close)} r={5}
+              fill={accentColor} stroke="rgba(8,12,22,0.9)" strokeWidth={2}
+              style={{ filter:`drop-shadow(0 0 6px ${accentColor})` }}/>
+          )}
+
+          {/* X-axis dates */}
+          {[0, 0.25, 0.5, 0.75, 1].map(f => {
+            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            return (
+              <text key={f} x={xPx(idx)} y={H-4} textAnchor="middle" fill="rgba(255,255,255,0.2)"
+                fontSize={8} fontFamily="JetBrains Mono,monospace">
+                {new Date(data[idx]?.ts ?? 0).toLocaleDateString('fr-FR', { month:'short', year:'2-digit' })}
+              </text>
+            )
+          })}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Market Intelligence Panel (Score + Régime + Signal Confluence) ─────────
+function MarketIntelligencePanel() {
+  type RegimeName = 'Capitulation' | 'Recovery' | 'Expansion' | 'Distribution' | 'Compression' | 'Chargement…'
+  const [score, setScore]   = useState<number | null>(null)
+  const [fg, setFg]         = useState<number | null>(null)
+  const [btcChange, setBtcChange] = useState<number | null>(null)
+  const [mvrv, setMvrv]     = useState<number | null>(null)
+  const [funding, setFunding] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [fgRes, btcRes, mvrvRes, frRes] = await Promise.allSettled([
+          fetch('https://api.alternative.me/fng/?limit=1').then(r=>r.json()),
+          fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT').then(r=>r.json()),
+          fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${new Date(Date.now()-5*86_400_000).toISOString().slice(0,10)}`).then(r=>r.json()),
+          fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT').then(r=>r.json()),
+        ])
+
+        let fgVal: number|null = null
+        let btcChg: number|null = null
+        let mvrvVal: number|null = null
+        let frVal: number|null = null
+
+        if (fgRes.status === 'fulfilled') fgVal = parseInt((fgRes.value as { data?: [{ value: string }] })?.data?.[0]?.value ?? '')
+        if (btcRes.status === 'fulfilled') btcChg = parseFloat((btcRes.value as { priceChangePercent: string })?.priceChangePercent)
+        if (mvrvRes.status === 'fulfilled') {
+          const d = (mvrvRes.value as { data?: { CapMVRVCur: string }[] })?.data
+          if (d?.length) mvrvVal = parseFloat(d[d.length-1].CapMVRVCur)
+        }
+        if (frRes.status === 'fulfilled') frVal = parseFloat((frRes.value as { fundingRate: string })?.fundingRate) * 100
+
+        setFg(fgVal)
+        setBtcChange(btcChg)
+        setMvrv(mvrvVal)
+        setFunding(frVal)
+
+        // Compute composite score (0-100)
+        let s = 50
+        if (fgVal !== null)  s += (fgVal - 50) * 0.35
+        if (btcChg !== null) s += Math.max(-15, Math.min(15, btcChg)) * 0.5
+        if (mvrvVal !== null) s += Math.max(-20, Math.min(20, (mvrvVal - 2) * 10))
+        if (frVal !== null)  s += Math.max(-10, Math.min(10, frVal * 50))
+        setScore(Math.max(0, Math.min(100, Math.round(s))))
+        setLoading(false)
+      } catch { setLoading(false) }
+    }
+    load()
+  }, [])
+
+  const regime: RegimeName = score === null ? 'Chargement…'
+    : score < 20 ? 'Capitulation'
+    : score < 35 ? 'Recovery'
+    : score < 55 ? 'Compression'
+    : score < 75 ? 'Expansion'
+    : 'Distribution'
+
+  const regimeColor: Record<RegimeName, string> = {
+    'Capitulation': '#FF3B30',
+    'Recovery':     '#FF9500',
+    'Compression':  '#8E8E93',
+    'Expansion':    '#34C759',
+    'Distribution': '#BF5AF2',
+    'Chargement…':  '#8E8E93',
+  }
+
+  const regimeDesc: Record<RegimeName, string> = {
+    'Capitulation': 'Panique généralisée · Zone d\'accumulation historique',
+    'Recovery':     'Reprise timide · Sentiment fragile en amélioration',
+    'Compression':  'Marché indécis · Attente d\'un catalyseur directionnel',
+    'Expansion':    'Momentum haussier · Sentiment favorable croissant',
+    'Distribution': 'Euphorie potentielle · Prudence recommandée',
+    'Chargement…':  '',
+  }
+
+  const scoreColor = score === null ? '#8E8E93'
+    : score < 20 ? '#FF3B30'
+    : score < 40 ? '#FF9500'
+    : score < 60 ? '#8E8E93'
+    : score < 80 ? '#34C759'
+    : '#BF5AF2'
+
+  const scoreLabel = score === null ? '—'
+    : score < 20 ? 'Extreme Fear'
+    : score < 40 ? 'Bearish'
+    : score < 60 ? 'Neutral'
+    : score < 80 ? 'Bullish'
+    : 'Euphoria'
+
+  // Signal Confluence
+  const signals: { label: string; signal: 'bullish'|'bearish'|'neutral' }[] = []
+  if (fg !== null) signals.push({ label:'Fear & Greed', signal: fg>60?'bullish':fg<40?'bearish':'neutral' })
+  if (btcChange !== null) signals.push({ label:'BTC 24h', signal: btcChange>2?'bullish':btcChange<-2?'bearish':'neutral' })
+  if (mvrv !== null) signals.push({ label:'MVRV', signal: mvrv<1.5?'bullish':mvrv>3?'bearish':'neutral' })
+  if (funding !== null) signals.push({ label:'Funding', signal: funding<-0.01?'bullish':funding>0.03?'bearish':'neutral' })
+  const bullCount = signals.filter(s=>s.signal==='bullish').length
+  const bearCount = signals.filter(s=>s.signal==='bearish').length
+  const neutCount = signals.filter(s=>s.signal==='neutral').length
+
+  // Gauge arc
+  const R=55, CX=80, CY=70
+  function gArc(pct: number) {
+    const angle = (pct/100)*180 - 180
+    const rad   = angle * Math.PI/180
+    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${pct>50?1:0} 1 ${(CX+R*Math.cos(rad)).toFixed(1)} ${(CY+R*Math.sin(rad)).toFixed(1)}`
+  }
+
+  const CARD: React.CSSProperties = {
+    background:'rgba(8,12,22,0.9)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+
+  if (loading) return (
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+      {[1,2,3].map(i=><div key={i} style={{...CARD,height:160,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{width:20,height:20,borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'#00E5FF',animation:'spin 0.8s linear infinite'}}/>
+      </div>)}
+    </div>
+  )
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+      {/* Card 1: Market Score */}
+      <div style={{ ...CARD, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,transparent,${scoreColor},transparent)` }}/>
+        <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>MARKET SCORE</div>
+        <div style={{ display:'flex', alignItems:'flex-end', gap:12 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:44, fontWeight:900, color:scoreColor, fontFamily:'Syne,sans-serif', lineHeight:1 }}>{score ?? '—'}</div>
+            <div style={{ fontSize:11, color:scoreColor, marginTop:4, fontWeight:700 }}>{scoreLabel}</div>
+            {/* Progress bar */}
+            <div style={{ height:4, borderRadius:2, background:'rgba(255,255,255,0.07)', marginTop:10, overflow:'hidden' }}>
+              <div style={{ height:'100%', borderRadius:2, width:`${score ?? 0}%`, background:`linear-gradient(90deg,#FF3B30,#FF9500,#8E8E93,#34C759,#BF5AF2)`, transition:'width 1s ease' }}/>
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+              <span style={{ fontSize:8, color:'#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>0 Panique</span>
+              <span style={{ fontSize:8, color:'#BF5AF2', fontFamily:'JetBrains Mono,monospace' }}>100 Euphorie</span>
+            </div>
+          </div>
+          {/* Gauge */}
+          <svg viewBox="0 0 160 90" style={{ width:130, flexShrink:0 }}>
+            <path d={`M ${CX-R} ${CY} A ${R} ${R} 0 0 1 ${CX+R} ${CY}`} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={10}/>
+            {score!==null&&<path d={gArc(score)} fill="none" stroke={scoreColor} strokeWidth={10} strokeLinecap="round"/>}
+          </svg>
+        </div>
+      </div>
+
+      {/* Card 2: Market Regime */}
+      <div style={{ ...CARD, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,transparent,${regimeColor[regime]},transparent)` }}/>
+        <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>MARKET REGIME</div>
+        <div style={{ fontSize:32, fontWeight:900, color:regimeColor[regime], fontFamily:'Syne,sans-serif', lineHeight:1, marginBottom:8 }}>
+          {regime === 'Capitulation' ? '💔' : regime === 'Recovery' ? '🌱' : regime === 'Compression' ? '⚡' : regime === 'Expansion' ? '🚀' : regime === 'Distribution' ? '🎯' : '⏳'} {regime}
+        </div>
+        <div style={{ fontSize:11, color:'rgba(255,255,255,0.45)', lineHeight:1.5, marginBottom:12 }}>{regimeDesc[regime]}</div>
+        {/* Regime indicators */}
+        {[
+          { label:'FG Index', value: fg !== null ? `${fg}/100` : '—', positive: fg !== null && fg > 50 },
+          { label:'BTC 24h', value: btcChange !== null ? `${btcChange>=0?'+':''}${btcChange.toFixed(2)}%` : '—', positive: btcChange !== null && btcChange >= 0 },
+          { label:'MVRV', value: mvrv !== null ? mvrv.toFixed(2) : '—', positive: mvrv !== null && mvrv < 2 },
+        ].map(item => (
+          <div key={item.label} style={{ display:'flex', justifyContent:'space-between', padding:'3px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+            <span style={{ fontSize:10, color:'rgba(255,255,255,0.35)' }}>{item.label}</span>
+            <span style={{ fontSize:10, fontWeight:700, color: item.positive ? '#34C759' : '#FF9500', fontFamily:'JetBrains Mono,monospace' }}>{item.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Card 3: Signal Confluence */}
+      <div style={{ ...CARD, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.6),transparent)' }}/>
+        <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>SIGNAL CONFLUENCE</div>
+        {/* Count badges */}
+        <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+          {[
+            { count: bullCount, label:'Haussier', color:'#34C759', bg:'rgba(52,199,89,0.12)' },
+            { count: bearCount, label:'Baissier', color:'#FF3B30', bg:'rgba(255,59,48,0.12)' },
+            { count: neutCount, label:'Neutre', color:'#8E8E93', bg:'rgba(142,142,147,0.1)' },
+          ].map(b => (
+            <div key={b.label} style={{ flex:1, textAlign:'center', background:b.bg, border:`1px solid ${b.color}33`, borderRadius:10, padding:'8px 4px' }}>
+              <div style={{ fontSize:24, fontWeight:900, color:b.color, fontFamily:'Syne,sans-serif', lineHeight:1 }}>{b.count}</div>
+              <div style={{ fontSize:9, color:'rgba(255,255,255,0.4)', marginTop:3, fontWeight:600 }}>{b.label}</div>
+            </div>
+          ))}
+        </div>
+        {/* Individual signals */}
+        <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+          {signals.map(s => (
+            <div key={s.label} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 8px', borderRadius:7, background:'rgba(255,255,255,0.02)' }}>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,0.4)' }}>{s.label}</span>
+              <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:5,
+                background: s.signal==='bullish' ? 'rgba(52,199,89,0.15)' : s.signal==='bearish' ? 'rgba(255,59,48,0.15)' : 'rgba(142,142,147,0.1)',
+                color: s.signal==='bullish' ? '#34C759' : s.signal==='bearish' ? '#FF3B30' : '#8E8E93',
+              }}>
+                {s.signal === 'bullish' ? '▲ BULL' : s.signal === 'bearish' ? '▼ BEAR' : '● NEUT'}
+              </span>
+            </div>
+          ))}
+        </div>
+        {/* Overall bias */}
+        {signals.length > 0 && (
+          <div style={{ marginTop:12, padding:'8px 12px', borderRadius:10,
+            background: bullCount > bearCount ? 'rgba(52,199,89,0.08)' : bearCount > bullCount ? 'rgba(255,59,48,0.08)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${bullCount>bearCount?'rgba(52,199,89,0.2)':bearCount>bullCount?'rgba(255,59,48,0.2)':'rgba(255,255,255,0.08)'}`,
+          }}>
+            <span style={{ fontSize:11, fontWeight:700, color: bullCount>bearCount?'#34C759':bearCount>bullCount?'#FF3B30':'#8E8E93' }}>
+              {bullCount > bearCount ? '✅ Biais Haussier' : bearCount > bullCount ? '⚠️ Biais Baissier' : '⚖️ Marché Neutre'}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── NUPL Chart (approx: 1 - 1/MVRV from CoinMetrics) ──────────────────────
+function NUPLChart() {
+  const [data, setData]     = useState<{ date:string; nupl:number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const start = new Date(Date.now() - 365*86_400_000).toISOString().slice(0,10)
+    fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${start}`)
+      .then(r => r.json())
+      .then((d: { data?: { time:string; CapMVRVCur:string }[] }) => {
+        const pts = (d.data ?? []).map(x => {
+          const mvrv = parseFloat(x.CapMVRVCur)
+          return { date: x.time.slice(0,10), nupl: !isNaN(mvrv) && mvrv > 0 ? 1 - 1/mvrv : 0 }
+        }).filter(x => !isNaN(x.nupl))
+        setData(pts); setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 720, H = 130, PAD = { t:12, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const minN = -0.5, maxN = 1.0
+  function yPx(v: number) { return PAD.t + cH - ((v-minN)/(maxN-minN))*cH }
+  function xPx(i: number) { return PAD.l + (i/(data.length-1||1))*cW }
+  const pts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.nupl).toFixed(1)}`).join(' ')
+  const curNupl = data[data.length-1]?.nupl ?? null
+  const nColor = curNupl===null ? '#8E8E93' : curNupl < 0 ? '#FF3B30' : curNupl < 0.25 ? '#FF9500' : curNupl < 0.5 ? '#34C759' : curNupl < 0.75 ? '#0A85FF' : '#BF5AF2'
+  const nLabel = curNupl===null ? '' : curNupl < 0 ? 'Capitulation' : curNupl < 0.25 ? 'Hope/Fear' : curNupl < 0.5 ? 'Optimism' : curNupl < 0.75 ? 'Belief/Denial' : 'Euphoria'
+
+  const zones: [number,number,string,string][] = [
+    [-0.5, 0,    'rgba(255,59,48,0.12)',   'Capitulation'],
+    [0,    0.25, 'rgba(255,149,0,0.08)',   'Hope'],
+    [0.25, 0.5,  'rgba(52,199,89,0.08)',   'Optimism'],
+    [0.5,  0.75, 'rgba(10,133,255,0.08)',  'Belief'],
+    [0.75, 1.0,  'rgba(191,90,242,0.12)',  'Euphoria'],
+  ]
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={nColor}
+        title="NUPL — Net Unrealized Profit/Loss"
+        sub="Profit/perte non réalisé du réseau Bitcoin · Calculé via MVRV (CoinMetrics)"
+        value={curNupl !== null ? curNupl.toFixed(3) : undefined}
+        valueSub={nLabel}
+      />
+      <div style={{ display:'flex', gap:12, marginBottom:10, flexWrap:'wrap' }}>
+        {zones.map(([,, bg, label]) => (
+          <div key={label} style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <div style={{ width:10, height:8, borderRadius:2, background:bg, border:'1px solid rgba(255,255,255,0.1)' }}/>
+            <span style={{ fontSize:9, color:'rgba(255,255,255,0.4)' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{ textAlign:'center', padding:32, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données indisponibles</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
+          <defs>
+            <linearGradient id="nupl-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={nColor} stopOpacity="0.3"/>
+              <stop offset="100%" stopColor={nColor} stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {zones.map(([lo, hi, bg]) => (
+            <rect key={lo} x={PAD.l} y={yPx(hi)} width={cW} height={yPx(lo)-yPx(hi)} fill={bg}/>
+          ))}
+          {[0, 0.25, 0.5, 0.75].map(v => (
+            <line key={v} x1={PAD.l} y1={yPx(v)} x2={PAD.l+cW} y2={yPx(v)} stroke="rgba(255,255,255,0.08)" strokeWidth={1} strokeDasharray="4 3"/>
+          ))}
+          {[-0.5, 0, 0.5, 1.0].map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}</text>
+          ))}
+          {[0, 0.25, 0.5, 0.75, 1].map(f => {
+            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            return <text key={f} x={xPx(idx)} y={H-4} textAnchor="middle" fill="rgba(255,255,255,0.2)" fontSize={8} fontFamily="JetBrains Mono,monospace">{data[idx]?.date.slice(5)}</text>
+          })}
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill="url(#nupl-grad)"/>
+          <polyline points={pts} fill="none" stroke={nColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+          {curNupl !== null && (
+            <circle cx={xPx(data.length-1)} cy={yPx(curNupl)} r={4} fill={nColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+          )}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Momentum Composite (RSI + Rate of Change + MA Slope) ──────────────────
+function MomentumCompositeChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Pt = { date: string; rsi: number; roc: number; maSlope: number; score: number }
+  const [data, setData]     = useState<Pt[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 200)
+      .then(closes => {
+        const pts: Pt[] = []
+        for (let i = 30; i < closes.length; i++) {
+          // RSI(14) normalized 0-1
+          const slice14 = closes.slice(i-14, i+1)
+          const gains: number[] = [], losses: number[] = []
+          for (let j = 1; j < slice14.length; j++) {
+            const d = slice14[j] - slice14[j-1]
+            if (d > 0) gains.push(d); else losses.push(Math.abs(d))
+          }
+          const avgGain = gains.length ? gains.reduce((a,b)=>a+b,0)/14 : 0
+          const avgLoss = losses.length ? losses.reduce((a,b)=>a+b,0)/14 : 0.001
+          const rs = avgGain/avgLoss
+          const rsiRaw = 100 - (100/(1+rs))
+          const rsiNorm = rsiRaw / 100
+
+          // Rate of Change (20) normalized 0-1
+          const roc20 = closes[i-20] ? ((closes[i] - closes[i-20]) / closes[i-20]) : 0
+          const rocNorm = Math.max(0, Math.min(1, (roc20 + 0.5) / 1))
+
+          // MA Slope: 20-day MA slope normalized
+          const ma20 = closes.slice(i-19, i+1).reduce((a,b)=>a+b,0)/20
+          const ma20Prev = closes.slice(i-20, i).reduce((a,b)=>a+b,0)/20
+          const slope = ma20Prev > 0 ? (ma20 - ma20Prev) / ma20Prev : 0
+          const slopeNorm = Math.max(0, Math.min(1, (slope + 0.02) / 0.04))
+
+          // Composite score (0-100)
+          const score = Math.round((rsiNorm * 0.4 + rocNorm * 0.35 + slopeNorm * 0.25) * 100)
+          pts.push({ date: `D${i}`, rsi:rsiRaw, roc:roc20*100, maSlope:slope*100, score })
+        }
+        setData(pts); setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  function yPx(v: number) { return PAD.t + cH - (v/100)*cH }
+  function xPx(i: number) { return PAD.l + (i/(data.length-1||1))*cW }
+  const pts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.score).toFixed(1)}`).join(' ')
+  const curPt = data[data.length-1]
+  const mColor = curPt ? (curPt.score > 70 ? '#34C759' : curPt.score > 50 ? '#0A85FF' : curPt.score > 30 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const mLabel = curPt ? (curPt.score > 70 ? 'Fort momentum' : curPt.score > 50 ? 'Momentum positif' : curPt.score > 30 ? 'Momentum faible' : 'Momentum négatif') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={mColor}
+        title="Momentum Composite"
+        sub={`RSI (40%) + Rate of Change (35%) + Pente MA (25%) — ${symbol}`}
+        value={curPt ? `${curPt.score}/100` : undefined}
+        valueSub={mLabel}
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{ textAlign:'center', padding:32, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données insuffisantes</div>
+      ) : (
+        <>
+          {/* Component breakdown */}
+          {curPt && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:12 }}>
+              {[
+                { label:'RSI', value:`${curPt.rsi.toFixed(0)}`, color:curPt.rsi>60?'#34C759':curPt.rsi<40?'#FF3B30':'#FF9500' },
+                { label:'ROC 20j', value:`${curPt.roc>=0?'+':''}${curPt.roc.toFixed(1)}%`, color:curPt.roc>=0?'#34C759':'#FF3B30' },
+                { label:'MA Slope', value:`${curPt.maSlope>=0?'+':''}${curPt.maSlope.toFixed(3)}%`, color:curPt.maSlope>=0?'#34C759':'#FF3B30' },
+              ].map(c => (
+                <div key={c.label} style={{ background:'rgba(255,255,255,0.03)', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
+                  <div style={{ fontSize:9, color:'rgba(255,255,255,0.3)', marginBottom:3, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.08em' }}>{c.label}</div>
+                  <div style={{ fontSize:14, fontWeight:800, color:c.color, fontFamily:'JetBrains Mono,monospace' }}>{c.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
+            <defs>
+              <linearGradient id={`mom-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={mColor} stopOpacity="0.3"/>
+                <stop offset="100%" stopColor={mColor} stopOpacity="0.02"/>
+              </linearGradient>
+            </defs>
+            {/* 50 midline */}
+            <line x1={PAD.l} y1={yPx(50)} x2={PAD.l+cW} y2={yPx(50)} stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="4 3"/>
+            {[0,25,50,75,100].map(v => (
+              <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.2)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}</text>
+            ))}
+            <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill={`url(#mom-grad-${symbol})`}/>
+            <polyline points={pts} fill="none" stroke={mColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+            {curPt && (
+              <circle cx={xPx(data.length-1)} cy={yPx(curPt.score)} r={4} fill={mColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+            )}
+          </svg>
+        </>
       )}
     </div>
   )
