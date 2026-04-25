@@ -50,6 +50,7 @@ function getSignal(a: WhaleAlert): Signal {
 }
 
 function fmt(n: number) {
+  if (n < 0) return `-${fmt(-n)}`
   if (n >= 1e9) return `$${(n/1e9).toFixed(1)}B`
   if (n >= 1e6) return `$${(n/1e6).toFixed(1)}M`
   if (n >= 1e3) return `$${(n/1e3).toFixed(0)}K`
@@ -130,7 +131,7 @@ function VerdictBanner({ alerts }: { alerts: WhaleAlert[] }) {
       <div className="w-36 rounded-2xl p-4 flex flex-col justify-center items-center gap-1"
         style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
         <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--tm-text-muted)' }}>Flux net 24h</div>
-        <div className="text-2xl font-black" style={{ color, fontFamily: 'Syne, sans-serif' }}>{net >= 0 ? '+' : ''}{fmt(net)}</div>
+        <div className="text-2xl font-black" style={{ color, fontFamily: 'Syne, sans-serif' }}>{net >= 0 ? `+${fmt(net)}` : fmt(net)}</div>
         <div className="text-[10px]" style={{ color: 'var(--tm-text-muted)' }}>{h24.length} alertes</div>
       </div>
 
@@ -283,7 +284,7 @@ function ExchangeFlow({ alerts }: { alerts: WhaleAlert[] }) {
                 {/* Net verdict */}
                 <div className="text-right flex-shrink-0">
                   <div className="text-sm font-black" style={{ color: netCol, fontFamily: 'Syne, sans-serif' }}>
-                    {f.net > 0 ? '+' : ''}{fmt(f.net)}
+                    {f.net >= 0 ? `+${fmt(f.net)}` : fmt(f.net)}
                   </div>
                   <div className="text-[10px] font-semibold" style={{ color: netCol }}>
                     {isBull ? '🟢 Accumulation' : '🔴 Distribution'}
