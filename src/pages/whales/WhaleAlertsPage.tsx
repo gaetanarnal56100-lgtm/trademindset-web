@@ -122,63 +122,55 @@ function MacroMetricsBanner() {
     async function load() {
       const cards: MetricData[] = []
 
-      // ── 1a. Glassnode: Accumulation Trend Score ─────────────────────
-      //       (remplace Fear & Greed — source on-chain fiable)
+      // ── 1a & 1b. CoinMetrics Community API (gratuit, sans clé) ─────────
+      //   • MVRV Ratio  : Market Value / Realized Value (Glassnode-style)
+      //   • Adresses actives BTC : proxy d'adoption / accumulation
       try {
-        const fn = httpsCallable<Record<string,never>, {
-          cdd90:  { points: number[]; current: number | null; prev: number | null };
-          accum:  { points: number[]; current: number | null; prev: number | null };
-        }>(fbFn, 'fetchGlassnodeMetrics')
-        const res = await fn({})
-        const { cdd90, accum } = res.data
+        const start = new Date(Date.now() - 32 * 86_400_000).toISOString().slice(0, 10)
+        const r = await fetch(
+          `https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=AdrActCnt,CapMVRVCur&frequency=1d&start_time=${start}`,
+          { signal: AbortSignal.timeout(8000) }
+        )
+        const d = await r.json() as { data: { AdrActCnt: string; CapMVRVCur: string }[]; error?: { message: string } }
+        if (!d.error && d.data?.length > 1) {
+          // ── MVRV Ratio ────────────────────────────────────────────────
+          const mvrvVals = d.data.map(x => parseFloat(x.CapMVRVCur)).filter(v => !isNaN(v))
+          if (mvrvVals.length > 1) {
+            const cur  = mvrvVals[mvrvVals.length - 1]
+            const prev = mvrvVals[mvrvVals.length - 2]
+            const mn = Math.min(...mvrvVals), mx = Math.max(...mvrvVals)
+            const delta = prev ? cur - prev : null
+            // MVRV zones : <1 sous-évalué, 1-2 juste, 2-3.5 bull, >3.5 surchauffe
+            const label = cur < 1 ? '🟢 Sous-évalué' : cur < 2 ? '🟡 Zone juste' : cur < 3.5 ? '🟠 Zone haussière' : '🔴 Surchauffe'
+            const color = cur < 1 ? '#34C759' : cur < 2 ? '#FF9500' : cur < 3.5 ? '#FF6B00' : '#FF3B30'
+            cards.push({
+              label: 'MVRV Ratio', value: cur.toFixed(2), sub: label,
+              delta, deltaLabel: 'pts',
+              spark: mvrvVals.map(v => (v - mn) / (mx - mn || 1)),
+              color, icon: '📐',
+            })
+          }
 
-        // Accumulation Trend Score (0–1, >0.5 = accumulation)
-        if (accum.current !== null) {
-          const cur   = accum.current
-          const prev  = accum.prev
-          const delta = prev !== null ? cur - prev : null
-          const label = cur > 0.65 ? 'Accumulation forte' : cur > 0.45 ? 'Accumulation modérée' : cur > 0.25 ? 'Distribution légère' : 'Distribution forte'
-          cards.push({
-            label: 'Accum. Score', value: cur.toFixed(2), sub: label,
-            delta, deltaLabel: 'pts',
-            spark: accum.points,
-            color: cur > 0.5 ? '#34C759' : cur > 0.3 ? '#FF9500' : '#FF3B30',
-            icon: cur > 0.5 ? '🐋' : '📤',
-          })
+          // ── Adresses actives BTC ──────────────────────────────────────
+          const adrVals = d.data.map(x => parseFloat(x.AdrActCnt)).filter(v => !isNaN(v))
+          if (adrVals.length > 1) {
+            const cur  = adrVals[adrVals.length - 1]
+            const prev = adrVals[adrVals.length - 2]
+            const mn = Math.min(...adrVals), mx = Math.max(...adrVals)
+            const normCur = (cur - mn) / (mx - mn || 1)
+            const delta = prev ? ((cur - prev) / prev) * 100 : null
+            const fmtAdr = (n: number) => n >= 1e6 ? `${(n/1e6).toFixed(2)}M` : `${(n/1e3).toFixed(0)}K`
+            const label = normCur > 0.65 ? 'Réseau très actif' : normCur > 0.35 ? 'Activité normale' : 'Réseau calme'
+            cards.push({
+              label: 'Adresses actives', value: fmtAdr(cur), sub: label,
+              delta, deltaLabel: '%',
+              spark: adrVals.map(v => (v - mn) / (mx - mn || 1)),
+              color: normCur > 0.65 ? '#34C759' : normCur > 0.35 ? '#FF9500' : '#8E8E93',
+              icon: '👥',
+            })
+          }
         }
-
-        // CDD90 Age Adjusted (coin days destroyed — vieux coins qui bougent)
-        if (cdd90.current !== null) {
-          const cur   = cdd90.current
-          const prev  = cdd90.prev
-          const delta = prev !== null ? ((cur - prev) / (prev || 1)) * 100 : null
-          const label = cur > 0.7 ? 'Vieux coins actifs ⚠️' : cur > 0.4 ? 'Modéré' : 'Faible activité'
-          cards.push({
-            label: 'CDD90 Ajusté', value: cur.toFixed(3), sub: label,
-            delta, deltaLabel: '%',
-            spark: cdd90.points,
-            color: cur > 0.7 ? '#FF3B30' : cur > 0.4 ? '#FF9500' : '#34C759',
-            icon: '⏳',
-          })
-        }
-      } catch {
-        // Fallback: Fear & Greed si Glassnode pas configuré
-        try {
-          const r  = await fetch('https://api.alternative.me/fng/?limit=30')
-          const d  = await r.json() as { data: { value: string }[] }
-          const vals = [...d.data].reverse().map(x => parseInt(x.value))
-          const cur = vals[vals.length - 1], prev = vals[vals.length - 2]
-          const mn = Math.min(...vals), mx = Math.max(...vals)
-          const label = cur >= 75 ? 'Avidité extrême' : cur >= 55 ? 'Avidité' : cur >= 45 ? 'Neutre' : cur >= 25 ? 'Peur' : 'Peur extrême'
-          cards.push({
-            label: 'Fear & Greed', value: String(cur), sub: label,
-            delta: prev ? cur - prev : null, deltaLabel: 'pts',
-            spark: vals.map(v => (v - mn) / (mx - mn || 1)),
-            color: cur >= 60 ? '#34C759' : cur >= 40 ? '#FF9500' : '#FF3B30',
-            icon: cur >= 60 ? '🟢' : cur >= 40 ? '🟡' : '🔴',
-          })
-        } catch { /* skip */ }
-      }
+      } catch { /* skip */ }
 
       // ── 2. BTC Dominance (7 days × 4h klines) ──────────────────────
       try {
