@@ -2358,8 +2358,8 @@ const INDICATOR_REGISTRY: IndicatorDef[] = [
     name: 'BTC Price + MA50/200',
     description: 'Prix Bitcoin avec moyennes mobiles et zones bull/bear',
     category: 'structure' as IndicatorCategory,
-    assets: 'btc' as const,
-    component: () => <BTCHeroChart/>,
+    assets: 'crypto' as const,
+    component: ({ symbol, isCrypto }) => <BTCHeroChart symbol={symbol} isCrypto={isCrypto}/>,
   },
   {
     id: 'monthly-returns',
@@ -2462,8 +2462,8 @@ const INDICATOR_REGISTRY: IndicatorDef[] = [
     name: 'Market Intelligence',
     description: 'Score marché · Régime · Confluence des signaux',
     category: 'macro' as IndicatorCategory,
-    assets: 'btc' as const,
-    component: () => <MarketIntelligencePanel/>,
+    assets: 'crypto' as const,
+    component: ({ symbol, isCrypto }) => <MarketIntelligencePanel symbol={symbol} isCrypto={isCrypto}/>,
   },
   {
     id: 'nupl',
@@ -2500,11 +2500,11 @@ function ChartsTab({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) 
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20, position:'relative', zIndex:1 }}>
-      {/* Hero + Market Intelligence always on top for BTC */}
-      {isBtc && (
+      {/* Hero + Market Intelligence always on top for crypto */}
+      {isCrypto && (
         <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:16 }}>
-          <BTCHeroChart/>
-          <MarketIntelligencePanel/>
+          <BTCHeroChart symbol={symbol} isCrypto={isCrypto}/>
+          <MarketIntelligencePanel symbol={symbol} isCrypto={isCrypto}/>
         </div>
       )}
 
@@ -2707,6 +2707,7 @@ function MonthlyReturnsHeatmap({ symbol, isCrypto }: { symbol: string; isCrypto:
 function MVRVZScoreChart() {
   const [data,    setData]    = useState<{ date: string; mvrv: number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
 
   useEffect(() => {
     const start = new Date(Date.now() - 180*86_400_000).toISOString().slice(0,10)
@@ -2785,7 +2786,14 @@ function MVRVZScoreChart() {
       ) : data.length < 2 ? (
         <div style={{textAlign:'center',height:H,lineHeight:`${H}px`,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes</div>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
           {/* Zone backgrounds */}
           {zones.map(([lo,hi,bg])=>{
             const y1=yPx(Math.min(hi,maxMVRV)), y2=yPx(lo)
@@ -2817,6 +2825,17 @@ function MVRVZScoreChart() {
           <polyline points={pts} fill="none" stroke={zColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
           {/* Last point dot */}
           {data.length>0&&<circle cx={xPx(data.length-1)} cy={yPx(cur!)} r={4} fill={zColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>}
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.mvrv)} r={4} fill={zColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
         </svg>
       )}
     </div>
@@ -3146,6 +3165,7 @@ function DrawdownChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean
   const [data, setData]       = useState<{ i:number; dd:number }[]>([])
   const [currentDd, setCurrentDd] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -3185,7 +3205,14 @@ function DrawdownChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean
       {loading ? <Spinner/> : data.length < 2 ? (
         <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes</div>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
           <defs>
             <linearGradient id={`dd-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={ddColor} stopOpacity="0.3"/>
@@ -3211,6 +3238,17 @@ function DrawdownChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean
           <polyline points={pts} fill="none" stroke={ddColor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
           {/* Dot */}
           <circle cx={xPx(data.length-1)} cy={yPx(data[data.length-1].dd)} r={4} fill={ddColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.dd)} r={4} fill={ddColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
         </svg>
       )}
     </div>
@@ -3222,6 +3260,7 @@ function SharpeRatioChart({ symbol, isCrypto }: { symbol: string; isCrypto: bool
   const [data, setData]     = useState<{ i:number; sharpe:number }[]>([])
   const [current, setCurrent] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -3268,7 +3307,14 @@ function SharpeRatioChart({ symbol, isCrypto }: { symbol: string; isCrypto: bool
       {loading ? <Spinner/> : data.length < 2 ? (
         <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes (minimum 1 an)</div>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
           <defs>
             <linearGradient id={`sh-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={sColor} stopOpacity="0.25"/>
@@ -3287,6 +3333,17 @@ function SharpeRatioChart({ symbol, isCrypto }: { symbol: string; isCrypto: bool
           <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill={`url(#sh-grad-${symbol})`}/>
           <polyline points={pts} fill="none" stroke={sColor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
           <circle cx={xPx(data.length-1)} cy={yPx(data[data.length-1].sharpe)} r={4} fill={sColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.sharpe)} r={4} fill={sColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
         </svg>
       )}
     </div>
@@ -3390,6 +3447,7 @@ function DeathGoldenCrossChart({ symbol, isCrypto }: { symbol: string; isCrypto:
 function TxCountChart() {
   const [data, setData]       = useState<{ date:string; count:number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
 
   useEffect(() => {
     const start = new Date(Date.now() - 180*86_400_000).toISOString().slice(0,10)
@@ -3427,7 +3485,14 @@ function TxCountChart() {
       {loading ? <Spinner/> : data.length < 2 ? (
         <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données indisponibles</div>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
           <defs>
             <linearGradient id="txc-grad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#0A85FF" stopOpacity="0.3"/>
@@ -3448,6 +3513,17 @@ function TxCountChart() {
           <polygon points={`${PAD.l},${yPx(minC)} ${pts} ${xPx(data.length-1)},${yPx(minC)}`} fill="url(#txc-grad)"/>
           <polyline points={pts} fill="none" stroke="#0A85FF" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
           <circle cx={xPx(data.length-1)} cy={yPx(cur!)} r={4} fill="#0A85FF" stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.count)} r={4} fill="#0A85FF" stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
         </svg>
       )}
     </div>
@@ -3730,22 +3806,48 @@ function CompositeRiskScore() {
 }
 
 // ── BTC Hero Chart (price + MA50/MA200 + bull/bear zones + cross markers) ────
-function BTCHeroChart() {
+function BTCHeroChart({ symbol = 'BTCUSDT', isCrypto = true }: { symbol?: string; isCrypto?: boolean }) {
   type Candle = { ts: number; close: number; ma50: number | null; ma200: number | null }
   const [data, setData]       = useState<Candle[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPrice, setCurrentPrice] = useState<number | null>(null)
   const [priceChange, setPriceChange]   = useState<number | null>(null)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const [timeframe, setTimeframe] = useState<90 | 180 | 365 | 730>(365)
 
   useEffect(() => {
-    fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=400')
+    setLoading(true)
+    setData([])
+    const sym = isCrypto ? symbol : null
+    const url = sym
+      ? `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=400`
+      : `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2y`
+
+    fetch(url)
       .then(r => r.json())
-      .then((raw: [number,string,string,string,string][]) => {
-        const closes = raw.map(k => parseFloat(k[4]))
+      .then((raw: any) => {
+        let closes: number[] = []
+        let timestamps: number[] = []
+
+        if (isCrypto) {
+          const arr = raw as [number,string,string,string,string][]
+          closes = arr.map(k => parseFloat(k[4]))
+          timestamps = arr.map(k => k[0])
+        } else {
+          const res = raw?.chart?.result?.[0]
+          if (!res) throw new Error('no data')
+          const rawCloses = (res.indicators.quote[0].close as (number|null)[])
+          const rawTs = res.timestamp as number[]
+          rawTs.forEach((t: number, i: number) => {
+            const c = rawCloses[i]
+            if (c != null && c > 0) { closes.push(c); timestamps.push(t * 1000) }
+          })
+        }
+
         const candles: Candle[] = closes.map((close, i) => {
           const ma50  = i >= 49  ? closes.slice(i-49,  i+1).reduce((a,b)=>a+b,0)/50  : null
           const ma200 = i >= 199 ? closes.slice(i-199, i+1).reduce((a,b)=>a+b,0)/200 : null
-          return { ts: raw[i][0], close, ma50, ma200 }
+          return { ts: timestamps[i] ?? Date.now(), close, ma50, ma200 }
         })
         setData(candles)
         const last = closes[closes.length-1]
@@ -3755,12 +3857,15 @@ function BTCHeroChart() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [])
+  }, [symbol, isCrypto])
 
-  // Detect crosses
+  // Slice data to selected timeframe
+  const displayData = data.slice(-timeframe)
+
+  // Detect crosses from displayData
   const crosses: { i: number; type: 'golden' | 'death' }[] = []
-  for (let i = 1; i < data.length; i++) {
-    const prev = data[i-1], cur = data[i]
+  for (let i = 1; i < displayData.length; i++) {
+    const prev = displayData[i-1], cur = displayData[i]
     if (!prev.ma50 || !prev.ma200 || !cur.ma50 || !cur.ma200) continue
     if (prev.ma50 <= prev.ma200 && cur.ma50 > cur.ma200) crosses.push({ i, type: 'golden' })
     if (prev.ma50 >= prev.ma200 && cur.ma50 < cur.ma200) crosses.push({ i, type: 'death' })
@@ -3769,23 +3874,23 @@ function BTCHeroChart() {
   const W = 900, H = 200, PAD = { t:16, b:28, l:60, r:16 }
   const cW = W - PAD.l - PAD.r
   const cH = H - PAD.t - PAD.b
-  const prices = data.map(d => d.close)
-  const minP = Math.min(...prices) * 0.97 || 1
-  const maxP = Math.max(...prices) * 1.03 || 2
+  const prices = displayData.map(d => d.close)
+  const minP = (prices.length ? Math.min(...prices) * 0.97 : 1) || 1
+  const maxP = (prices.length ? Math.max(...prices) * 1.03 : 2) || 2
   function yPx(v: number) { return PAD.t + cH - ((v - minP) / (maxP - minP)) * cH }
-  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  function xPx(i: number) { return PAD.l + (i / (displayData.length - 1 || 1)) * cW }
 
-  const pricePts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.close).toFixed(1)}`).join(' ')
-  const ma50Pts  = data.filter(d=>d.ma50!==null).map((d) => {
-    const i = data.indexOf(d)
+  const pricePts = displayData.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.close).toFixed(1)}`).join(' ')
+  const ma50Pts  = displayData.filter(d=>d.ma50!==null).map((d, _, arr) => {
+    const i = displayData.indexOf(d)
     return `${xPx(i).toFixed(1)},${yPx(d.ma50!).toFixed(1)}`
   }).join(' ')
-  const ma200Pts = data.filter(d=>d.ma200!==null).map((d) => {
-    const i = data.indexOf(d)
+  const ma200Pts = displayData.filter(d=>d.ma200!==null).map((d) => {
+    const i = displayData.indexOf(d)
     return `${xPx(i).toFixed(1)},${yPx(d.ma200!).toFixed(1)}`
   }).join(' ')
 
-  const lastMa200 = data[data.length-1]?.ma200 ?? null
+  const lastMa200 = displayData[displayData.length-1]?.ma200 ?? null
   const isBull = lastMa200 !== null && currentPrice !== null && currentPrice > lastMa200
   const accentColor = isBull ? '#34C759' : '#FF3B30'
   const regimeLabel = isBull ? '🐂 Bull Market' : '🐻 Bear Market'
@@ -3799,9 +3904,11 @@ function BTCHeroChart() {
     return `$${p.toFixed(0)}`
   }
 
-  const curCandle = data[data.length-1]
-  const ath = prices.length ? Math.max(...prices) : 0
+  const curCandle = displayData[displayData.length-1]
+  const allPrices = data.map(d => d.close)
+  const ath = allPrices.length ? Math.max(...allPrices) : 0
   const ddPct = ath > 0 && curCandle ? ((curCandle.close - ath) / ath) * 100 : 0
+  const symLabel = symbol.replace('USDT','').replace('-USD','')
 
   return (
     <div style={{ background:'rgba(8,12,22,0.9)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:24, backdropFilter:'blur(12px)', boxShadow:'0 0 60px rgba(0,0,0,0.4)', position:'relative', overflow:'hidden' }}>
@@ -3812,9 +3919,9 @@ function BTCHeroChart() {
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16 }}>
         <div>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <span style={{ fontSize:24 }}>₿</span>
+            <span style={{ fontSize:24 }}>{symLabel.slice(0,4)}</span>
             <div>
-              <div style={{ fontSize:16, fontWeight:900, color:'#F0F2F5', fontFamily:'Syne,sans-serif' }}>Bitcoin Price Chart</div>
+              <div style={{ fontSize:16, fontWeight:900, color:'#F0F2F5', fontFamily:'Syne,sans-serif' }}>{symbol} Price Chart</div>
               <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:2 }}>MA50 · MA200 · Bull/Bear Zones · Signaux de croisement</div>
             </div>
           </div>
@@ -3837,7 +3944,7 @@ function BTCHeroChart() {
       {/* Legend */}
       <div style={{ display:'flex', gap:16, marginBottom:12, flexWrap:'wrap' }}>
         {[
-          { color:'rgba(255,255,255,0.7)', label:'Prix BTC' },
+          { color:'rgba(255,255,255,0.7)', label:`Prix ${symLabel}` },
           { color:'#FF9500', label:'MA50' },
           { color:'#BF5AF2', label:'MA200' },
           { color:'rgba(52,199,89,0.25)', label:'Zone Bull (> MA200)' },
@@ -3852,14 +3959,39 @@ function BTCHeroChart() {
         ))}
       </div>
 
+      {/* Timeframe selector */}
+      <div style={{ display:'flex', gap:6, marginBottom:12 }}>
+        {([90, 180, 365, 730] as const).map(tf => (
+          <button key={tf} onClick={() => setTimeframe(tf)} style={{
+            padding:'4px 12px', borderRadius:20, fontSize:10, fontWeight:700, cursor:'pointer', border:'none',
+            background: timeframe === tf ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.06)',
+            color: timeframe === tf ? '#00E5FF' : 'rgba(255,255,255,0.4)',
+            transition:'all 0.2s',
+          }}>
+            {tf === 90 ? '3M' : tf === 180 ? '6M' : tf === 365 ? '1A' : '2A'}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div style={{ display:'flex', justifyContent:'center', height:H }}>
           <div style={{ width:24, height:24, margin:'auto', borderRadius:'50%', border:'2px solid rgba(0,229,255,0.15)', borderTopColor:'#00E5FF', animation:'spin 0.8s linear infinite' }}/>
         </div>
-      ) : data.length < 2 ? (
+      ) : displayData.length < 2 ? (
         <div style={{ textAlign:'center', padding:40, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données indisponibles</div>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ width:'100%', height:'auto', display:'block', cursor:'crosshair' }}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const svgX = ((e.clientX - rect.left) / rect.width) * W
+            const dataX = svgX - PAD.l
+            const idx = Math.round((dataX / cW) * (displayData.length - 1))
+            setHoverIdx(Math.max(0, Math.min(displayData.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
           <defs>
             <linearGradient id="btc-hero-grad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={accentColor} stopOpacity="0.2"/>
@@ -3874,8 +4006,8 @@ function BTCHeroChart() {
           {(() => {
             const zones: { x1:number; x2:number; bull:boolean }[] = []
             let zoneStart = -1, zoneBull = false
-            for (let i = 0; i < data.length; i++) {
-              const d = data[i]
+            for (let i = 0; i < displayData.length; i++) {
+              const d = displayData[i]
               if (!d.ma200) continue
               const bull = d.close > d.ma200
               if (zoneStart === -1) { zoneStart = i; zoneBull = bull }
@@ -3884,7 +4016,7 @@ function BTCHeroChart() {
                 zoneStart = i; zoneBull = bull
               }
             }
-            if (zoneStart >= 0) zones.push({ x1:xPx(zoneStart), x2:xPx(data.length-1), bull:zoneBull })
+            if (zoneStart >= 0) zones.push({ x1:xPx(zoneStart), x2:xPx(displayData.length-1), bull:zoneBull })
             return zones.map((z,idx) => (
               <rect key={idx} x={z.x1} y={PAD.t} width={z.x2-z.x1} height={cH}
                 fill={z.bull ? 'rgba(52,199,89,0.06)' : 'rgba(255,59,48,0.06)'} clipPath="url(#chart-clip)"/>
@@ -3924,21 +4056,47 @@ function BTCHeroChart() {
             strokeLinecap="round" strokeLinejoin="round" clipPath="url(#chart-clip)"/>
           {/* Last dot */}
           {curCandle && (
-            <circle cx={xPx(data.length-1)} cy={yPx(curCandle.close)} r={5}
+            <circle cx={xPx(displayData.length-1)} cy={yPx(curCandle.close)} r={5}
               fill={accentColor} stroke="rgba(8,12,22,0.9)" strokeWidth={2}
               style={{ filter:`drop-shadow(0 0 6px ${accentColor})` }}/>
           )}
 
           {/* X-axis dates */}
           {[0, 0.25, 0.5, 0.75, 1].map(f => {
-            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            const idx = Math.min(displayData.length-1, Math.round(f*(displayData.length-1)))
             return (
               <text key={f} x={xPx(idx)} y={H-4} textAnchor="middle" fill="rgba(255,255,255,0.2)"
                 fontSize={8} fontFamily="JetBrains Mono,monospace">
-                {new Date(data[idx]?.ts ?? 0).toLocaleDateString('fr-FR', { month:'short', year:'2-digit' })}
+                {new Date(displayData[idx]?.ts ?? 0).toLocaleDateString('fr-FR', { month:'short', year:'2-digit' })}
               </text>
             )
           })}
+
+          {/* Crosshair + tooltip */}
+          {hoverIdx !== null && (() => {
+            const d = displayData[hoverIdx]
+            if (!d) return null
+            const cx = xPx(hoverIdx)
+            const cy = yPx(d.close)
+            const date = new Date(d.ts).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'2-digit' })
+            const tooltipX = cx > W * 0.7 ? cx - 145 : cx + 10
+            const tooltipY = PAD.t + 10
+            const tooltipH = d.ma50 && d.ma200 ? 64 : d.ma50 || d.ma200 ? 52 : 40
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.25)" strokeWidth={1} strokeDasharray="3 3"/>
+                <line x1={PAD.l} y1={cy} x2={PAD.l+cW} y2={cy} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="3 3"/>
+                <rect x={0} y={cy - 8} width={PAD.l - 2} height={16} fill="rgba(0,0,0,0.7)" rx={3}/>
+                <text x={PAD.l - 4} y={cy + 4} textAnchor="end" fill="rgba(255,255,255,0.9)" fontSize={8} fontFamily="JetBrains Mono,monospace">{fmtPrice(d.close)}</text>
+                <rect x={tooltipX} y={tooltipY} width={140} height={tooltipH} fill="rgba(8,12,22,0.95)" stroke="rgba(0,229,255,0.3)" strokeWidth={1} rx={6}/>
+                <text x={tooltipX + 8} y={tooltipY + 14} fill="rgba(255,255,255,0.6)" fontSize={8} fontFamily="JetBrains Mono,monospace">{date}</text>
+                <text x={tooltipX + 8} y={tooltipY + 27} fill="rgba(255,255,255,0.9)" fontSize={9} fontWeight="bold" fontFamily="JetBrains Mono,monospace">Prix: {fmtPrice(d.close)}</text>
+                {d.ma50 && <text x={tooltipX + 8} y={tooltipY + 40} fill="#FF9500" fontSize={8} fontFamily="JetBrains Mono,monospace">MA50: {fmtPrice(d.ma50)}</text>}
+                {d.ma200 && <text x={tooltipX + 8} y={tooltipY + (d.ma50 ? 53 : 40)} fill="#BF5AF2" fontSize={8} fontFamily="JetBrains Mono,monospace">MA200: {fmtPrice(d.ma200)}</text>}
+                <circle cx={cx} cy={cy} r={5} fill="rgba(255,255,255,0.9)" stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
         </svg>
       )}
     </div>
@@ -3946,7 +4104,7 @@ function BTCHeroChart() {
 }
 
 // ── Market Intelligence Panel (Score + Régime + Signal Confluence) ─────────
-function MarketIntelligencePanel() {
+function MarketIntelligencePanel({ symbol = 'BTCUSDT', isCrypto = true }: { symbol?: string; isCrypto?: boolean }) {
   type RegimeName = 'Capitulation' | 'Recovery' | 'Expansion' | 'Distribution' | 'Compression' | 'Chargement…'
   const [score, setScore]   = useState<number | null>(null)
   const [fg, setFg]         = useState<number | null>(null)
@@ -3958,9 +4116,10 @@ function MarketIntelligencePanel() {
   useEffect(() => {
     async function load() {
       try {
+        const tickerSym = isCrypto ? symbol : 'BTCUSDT'
         const [fgRes, btcRes, mvrvRes, frRes] = await Promise.allSettled([
           fetch('https://api.alternative.me/fng/?limit=1').then(r=>r.json()),
-          fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT').then(r=>r.json()),
+          fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${tickerSym}`).then(r=>r.json()),
           fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${new Date(Date.now()-5*86_400_000).toISOString().slice(0,10)}`).then(r=>r.json()),
           fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT').then(r=>r.json()),
         ])
@@ -3970,13 +4129,25 @@ function MarketIntelligencePanel() {
         let mvrvVal: number|null = null
         let frVal: number|null = null
 
-        if (fgRes.status === 'fulfilled') fgVal = parseInt((fgRes.value as { data?: [{ value: string }] })?.data?.[0]?.value ?? '')
-        if (btcRes.status === 'fulfilled') btcChg = parseFloat((btcRes.value as { priceChangePercent: string })?.priceChangePercent)
-        if (mvrvRes.status === 'fulfilled') {
-          const d = (mvrvRes.value as { data?: { CapMVRVCur: string }[] })?.data
-          if (d?.length) mvrvVal = parseFloat(d[d.length-1].CapMVRVCur)
+        if (fgRes.status === 'fulfilled') {
+          const v = parseInt((fgRes.value as any)?.data?.[0]?.value ?? '')
+          fgVal = isNaN(v) ? null : v
         }
-        if (frRes.status === 'fulfilled') frVal = parseFloat((frRes.value as { fundingRate: string })?.fundingRate) * 100
+        if (btcRes.status === 'fulfilled') {
+          const v = parseFloat((btcRes.value as any)?.priceChangePercent)
+          btcChg = isNaN(v) ? null : v
+        }
+        if (mvrvRes.status === 'fulfilled') {
+          const d = (mvrvRes.value as any)?.data
+          if (d?.length) {
+            const v = parseFloat(d[d.length-1].CapMVRVCur)
+            mvrvVal = isNaN(v) ? null : v
+          }
+        }
+        if (frRes.status === 'fulfilled') {
+          const v = parseFloat((frRes.value as any)?.fundingRate)
+          frVal = isNaN(v) ? null : v * 100
+        }
 
         setFg(fgVal)
         setBtcChange(btcChg)
@@ -3985,16 +4156,17 @@ function MarketIntelligencePanel() {
 
         // Compute composite score (0-100)
         let s = 50
-        if (fgVal !== null)  s += (fgVal - 50) * 0.35
-        if (btcChg !== null) s += Math.max(-15, Math.min(15, btcChg)) * 0.5
-        if (mvrvVal !== null) s += Math.max(-20, Math.min(20, (mvrvVal - 2) * 10))
-        if (frVal !== null)  s += Math.max(-10, Math.min(10, frVal * 50))
-        setScore(Math.max(0, Math.min(100, Math.round(s))))
+        if (fgVal !== null && !isNaN(fgVal))     s += (fgVal - 50) * 0.35
+        if (btcChg !== null && !isNaN(btcChg))   s += Math.max(-15, Math.min(15, btcChg)) * 0.5
+        if (mvrvVal !== null && !isNaN(mvrvVal))  s += Math.max(-20, Math.min(20, (mvrvVal - 2) * 10))
+        if (frVal !== null && !isNaN(frVal))      s += Math.max(-10, Math.min(10, frVal * 50))
+        const finalScore = isNaN(s) ? null : Math.max(0, Math.min(100, Math.round(s)))
+        setScore(finalScore)
         setLoading(false)
       } catch { setLoading(false) }
     }
     load()
-  }, [])
+  }, [symbol, isCrypto])
 
   const regime: RegimeName = score === null ? 'Chargement…'
     : score < 20 ? 'Capitulation'
@@ -4035,10 +4207,12 @@ function MarketIntelligencePanel() {
     : score < 80 ? 'Bullish'
     : 'Euphoria'
 
+  const priceLabel = isCrypto ? symbol.replace('USDT','') : 'BTC'
+
   // Signal Confluence
   const signals: { label: string; signal: 'bullish'|'bearish'|'neutral' }[] = []
   if (fg !== null) signals.push({ label:'Fear & Greed', signal: fg>60?'bullish':fg<40?'bearish':'neutral' })
-  if (btcChange !== null) signals.push({ label:'BTC 24h', signal: btcChange>2?'bullish':btcChange<-2?'bearish':'neutral' })
+  if (btcChange !== null) signals.push({ label:`${priceLabel} 24h`, signal: btcChange>2?'bullish':btcChange<-2?'bearish':'neutral' })
   if (mvrv !== null) signals.push({ label:'MVRV', signal: mvrv<1.5?'bullish':mvrv>3?'bearish':'neutral' })
   if (funding !== null) signals.push({ label:'Funding', signal: funding<-0.01?'bullish':funding>0.03?'bearish':'neutral' })
   const bullCount = signals.filter(s=>s.signal==='bullish').length
@@ -4104,7 +4278,7 @@ function MarketIntelligencePanel() {
         {/* Regime indicators */}
         {[
           { label:'FG Index', value: fg !== null ? `${fg}/100` : '—', positive: fg !== null && fg > 50 },
-          { label:'BTC 24h', value: btcChange !== null ? `${btcChange>=0?'+':''}${btcChange.toFixed(2)}%` : '—', positive: btcChange !== null && btcChange >= 0 },
+          { label:`${priceLabel} 24h`, value: btcChange !== null ? `${btcChange>=0?'+':''}${btcChange.toFixed(2)}%` : '—', positive: btcChange !== null && btcChange >= 0 },
           { label:'MVRV', value: mvrv !== null ? mvrv.toFixed(2) : '—', positive: mvrv !== null && mvrv < 2 },
         ].map(item => (
           <div key={item.label} style={{ display:'flex', justifyContent:'space-between', padding:'3px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
@@ -4165,6 +4339,7 @@ function MarketIntelligencePanel() {
 function NUPLChart() {
   const [data, setData]     = useState<{ date:string; nupl:number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
 
   useEffect(() => {
     const start = new Date(Date.now() - 365*86_400_000).toISOString().slice(0,10)
@@ -4219,7 +4394,14 @@ function NUPLChart() {
       {loading ? <Spinner/> : data.length < 2 ? (
         <div style={{ textAlign:'center', padding:32, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données indisponibles</div>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block', cursor:'crosshair' }}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
           <defs>
             <linearGradient id="nupl-grad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={nColor} stopOpacity="0.3"/>
@@ -4244,6 +4426,17 @@ function NUPLChart() {
           {curNupl !== null && (
             <circle cx={xPx(data.length-1)} cy={yPx(curNupl)} r={4} fill={nColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
           )}
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.nupl)} r={4} fill={nColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
         </svg>
       )}
     </div>
@@ -4255,6 +4448,7 @@ function MomentumCompositeChart({ symbol, isCrypto }: { symbol: string; isCrypto
   type Pt = { date: string; rsi: number; roc: number; maSlope: number; score: number }
   const [data, setData]     = useState<Pt[]>([])
   const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -4332,7 +4526,14 @@ function MomentumCompositeChart({ symbol, isCrypto }: { symbol: string; isCrypto
               ))}
             </div>
           )}
-          <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block', cursor:'crosshair' }}
+            onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+              setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+            }}
+            onMouseLeave={() => setHoverIdx(null)}
+          >
             <defs>
               <linearGradient id={`mom-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={mColor} stopOpacity="0.3"/>
@@ -4349,6 +4550,17 @@ function MomentumCompositeChart({ symbol, isCrypto }: { symbol: string; isCrypto
             {curPt && (
               <circle cx={xPx(data.length-1)} cy={yPx(curPt.score)} r={4} fill={mColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
             )}
+            {/* Crosshair */}
+            {hoverIdx !== null && data[hoverIdx] && (() => {
+              const d = data[hoverIdx]
+              const cx = xPx(hoverIdx)
+              return (
+                <g>
+                  <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                  <circle cx={cx} cy={yPx(d.score)} r={4} fill={mColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+                </g>
+              )
+            })()}
           </svg>
         </>
       )}
