@@ -560,6 +560,96 @@ function InsiderTradesSection() {
   )
 }
 
+// ── Market News (Feature D) ────────────────────────────────────────────────────
+interface NewsItem {
+  title: string; url: string; date: string; source: string
+  image?: string; tickers?: string[]
+}
+function MarketNewsSection({ topTokens }: { topTokens: string[] }) {
+  const [news,    setNews]    = useState<NewsItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [tab,     setTab]     = useState<'general'|'tokens'>('general')
+
+  const loadNews = (mode: 'general'|'tokens') => {
+    setLoading(true)
+    const fn = httpsCallable<{ symbols?: string[]; mode?: string }, { data: NewsItem[] }>(fbFn, 'fetchTokenNews')
+    const params = mode === 'tokens' && topTokens.length > 0
+      ? { symbols: topTokens.slice(0, 5), mode: 'stocks' as const }
+      : { mode: 'general' as const }
+    fn(params).then(r => { setNews(r.data.data ?? []); setLoading(false) })
+              .catch(() => setLoading(false))
+  }
+
+  useEffect(() => { loadNews(tab) }, [tab, topTokens.join(',')])
+
+  return (
+    <div className="px-6 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--tm-text-muted)' }}>
+          📰 ACTUALITÉS MARCHÉ
+        </span>
+        <div className="ml-auto flex gap-1">
+          {([['general','🌐 Général'],['tokens','🔥 Tokens actifs']] as const).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t)}
+              className="text-[10px] px-2.5 py-1 rounded-lg font-semibold transition-all"
+              style={{
+                background: tab===t ? 'rgba(0,229,255,0.12)' : 'rgba(255,255,255,0.04)',
+                color: tab===t ? 'var(--tm-accent)' : 'var(--tm-text-muted)',
+                border: `1px solid ${tab===t ? 'rgba(0,229,255,0.3)' : 'rgba(255,255,255,0.08)'}`,
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center h-14 gap-2" style={{ color: 'var(--tm-text-muted)' }}>
+          <div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: 'rgba(0,229,255,0.2)', borderTopColor: 'var(--tm-accent)' }}/>
+          <span className="text-xs">Chargement des actualités…</span>
+        </div>
+      )}
+
+      {!loading && news.length === 0 && (
+        <div className="text-xs text-center py-3" style={{ color: 'var(--tm-text-muted)' }}>Aucune actualité disponible</div>
+      )}
+
+      {!loading && news.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {news.slice(0, 8).map((n, i) => (
+            <a key={i} href={n.url} target="_blank" rel="noopener noreferrer"
+              className="flex items-start gap-3 rounded-xl px-3 py-2.5 group transition-all"
+              style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', textDecoration: 'none' }}>
+              {n.image && (
+                <img src={n.image} alt="" className="w-12 h-10 rounded-lg object-cover flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" style={{ background: 'rgba(255,255,255,0.05)' }} onError={e => { (e.target as HTMLImageElement).style.display='none' }}/>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold leading-snug line-clamp-2 group-hover:text-white transition-colors" style={{ color: 'var(--tm-text-primary)' }}>
+                  {n.title}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px]" style={{ color: 'var(--tm-text-muted)' }}>{n.source}</span>
+                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>{n.date}</span>
+                  {n.tickers && n.tickers.length > 0 && (
+                    <div className="flex gap-1 ml-auto">
+                      {n.tickers.slice(0,3).map(tk => (
+                        <span key={tk} className="text-[9px] px-1.5 py-0.5 rounded-md font-bold"
+                          style={{ background: 'rgba(0,229,255,0.1)', color: 'var(--tm-accent)' }}>{tk}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <span className="text-[10px] flex-shrink-0 mt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>↗</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page principale ────────────────────────────────────────────────────────────
 export default function WhaleAlertsPage() {
   const user   = useUser()
@@ -636,6 +726,11 @@ export default function WhaleAlertsPage() {
 
         {/* Smart Money — Insider trades */}
         {!loading && <InsiderTradesSection/>}
+
+        {/* Market News */}
+        {!loading && (
+          <MarketNewsSection topTokens={[...new Set(alerts.slice(0,10).map(a => a.tokenSymbol))].filter(s => s !== 'ETH' && s !== 'BTC').slice(0,5)}/>
+        )}
 
         {/* Signal legend */}
         <SignalLegend/>

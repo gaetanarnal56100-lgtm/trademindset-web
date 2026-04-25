@@ -1548,6 +1548,158 @@ function AnalystRatingsPanel({ symbols, onClose }: { symbols: string[]; onClose:
   )
 }
 
+// ── Earnings Panel (Feature B) ────────────────────────────────────────────────
+
+interface EarningsData {
+  symbol: string
+  history: { period: string; actual: number | null; estimate: number | null; surprisePct: number | null; beat: boolean | null }[]
+  nextDate: string | null; nextHour: string | null
+  nextEpsEstimate: number | null; nextRevenueEstimate: number | null
+  beatRate: number | null
+}
+
+function EarningsPanel({ symbols, onClose }: { symbols: string[]; onClose: () => void }) {
+  const [data, setData]       = useState<EarningsData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [sortBy, setSortBy]   = useState<'beatRate' | 'nextDate'>('nextDate')
+
+  useEffect(() => {
+    const fn = httpsCallable<{ symbols: string[] }, { data: EarningsData[] }>(fbFunctions, 'fetchStockEarnings')
+    fn({ symbols: symbols.slice(0, 15) })
+      .then(r => { setData(r.data.data ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [symbols.join(',')])
+
+  const sorted = useMemo(() => {
+    const d = [...data].filter(e => e.history.length > 0 || e.nextDate)
+    if (sortBy === 'beatRate') return d.sort((a, b) => (b.beatRate ?? 0) - (a.beatRate ?? 0))
+    return d.sort((a, b) => {
+      if (!a.nextDate && !b.nextDate) return 0
+      if (!a.nextDate) return 1
+      if (!b.nextDate) return -1
+      return a.nextDate.localeCompare(b.nextDate)
+    })
+  }, [data, sortBy])
+
+  const fmtBig = (n: number) => n >= 1e9 ? `${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `${(n/1e6).toFixed(1)}M` : `${n.toFixed(2)}`
+
+  return createPortal(
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.72)', backdropFilter:'blur(10px)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+      onClick={onClose}>
+      <motion.div initial={{ scale:0.95, y:20 }} animate={{ scale:1, y:0 }} exit={{ scale:0.95, y:20 }}
+        style={{ width:'100%', maxWidth:740, maxHeight:'82vh', overflowY:'auto', background:'rgba(8,12,22,0.98)', border:'1px solid rgba(52,199,89,0.2)', borderRadius:20, boxShadow:'0 32px 64px rgba(0,0,0,0.8)' }}
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', alignItems:'center', gap:12, position:'sticky', top:0, background:'rgba(8,12,22,0.98)', zIndex:1 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif' }}>📅 Résultats & Earnings</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginTop:2 }}>Historique 4 trimestres · Prochaines publications</div>
+          </div>
+          <div style={{ display:'flex', gap:6 }}>
+            {(['nextDate','beatRate'] as const).map(s => (
+              <button key={s} onClick={() => setSortBy(s)}
+                style={{ fontSize:10, padding:'4px 10px', borderRadius:8, cursor:'pointer', fontWeight:600, border:`1px solid ${sortBy===s?'rgba(52,199,89,0.4)':'rgba(255,255,255,0.08)'}`, background:sortBy===s?'rgba(52,199,89,0.12)':'rgba(255,255,255,0.03)', color:sortBy===s?'#34C759':'rgba(148,163,184,0.5)' }}>
+                {s==='nextDate'?'📆 Date':'⭐ Beat rate'}
+              </button>
+            ))}
+          </div>
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.06)', border:'none', borderRadius:8, padding:'6px 10px', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:12 }}>✕</button>
+        </div>
+
+        <div style={{ padding:'16px 24px' }}>
+          {loading && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, gap:10, color:'var(--tm-text-muted)', fontSize:13 }}>
+              <div style={{ width:20, height:20, borderRadius:'50%', border:'2px solid rgba(52,199,89,0.2)', borderTopColor:'#34C759', animation:'spin 0.8s linear infinite' }}/>
+              Chargement des earnings…
+            </div>
+          )}
+
+          {!loading && sorted.length === 0 && (
+            <div style={{ textAlign:'center', padding:40, color:'var(--tm-text-muted)', fontSize:13 }}>Aucune donnée disponible</div>
+          )}
+
+          {!loading && sorted.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {sorted.map(e => {
+                const daysUntil = e.nextDate ? Math.ceil((new Date(e.nextDate).getTime() - Date.now()) / 86_400_000) : null
+                const hourLabel = e.nextHour === 'bmo' ? '🌅 Avant ouverture' : e.nextHour === 'amc' ? '🌆 Après clôture' : e.nextHour === 'dmh' ? '⏰ En séance' : ''
+                const beatColor = e.beatRate != null ? e.beatRate >= 75 ? '#34C759' : e.beatRate >= 50 ? '#FF9500' : '#FF3B30' : '#8E8E93'
+
+                return (
+                  <div key={e.symbol} style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:'14px 16px' }}>
+                    <div style={{ display:'flex', alignItems:'flex-start', gap:14, marginBottom:10 }}>
+                      {/* Ticker + beat rate */}
+                      <div style={{ minWidth:64 }}>
+                        <div style={{ fontSize:15, fontWeight:900, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif', lineHeight:1 }}>{e.symbol}</div>
+                        {e.beatRate != null && (
+                          <div style={{ fontSize:11, fontWeight:700, color:beatColor, marginTop:4 }}>
+                            {e.beatRate}% beat
+                          </div>
+                        )}
+                      </div>
+
+                      {/* History bars */}
+                      <div style={{ flex:1, display:'flex', gap:6, alignItems:'flex-end', height:44 }}>
+                        {e.history.slice(0,4).map((q, i) => {
+                          const color = q.beat === true ? '#34C759' : q.beat === false ? '#FF3B30' : '#8E8E93'
+                          const surpriseAbs = Math.abs(q.surprisePct ?? 0)
+                          const barH = Math.min(40, 10 + surpriseAbs * 1.5)
+                          return (
+                            <div key={i} title={`${q.period} · ${q.actual != null ? `$${q.actual.toFixed(2)}` : 'N/A'} vs est. ${q.estimate != null ? `$${q.estimate.toFixed(2)}` : 'N/A'}${q.surprisePct != null ? ` (${q.surprisePct > 0 ? '+' : ''}${q.surprisePct.toFixed(1)}%)` : ''}`}
+                              style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3, cursor:'help' }}>
+                              <div style={{ fontSize:9, color:'rgba(255,255,255,0.3)', fontFamily:'JetBrains Mono, monospace' }}>
+                                {q.surprisePct != null ? `${q.surprisePct > 0 ? '+' : ''}${q.surprisePct.toFixed(0)}%` : ''}
+                              </div>
+                              <div style={{ width:'100%', height:barH, background:color, borderRadius:4, opacity:0.8 }}/>
+                              <div style={{ fontSize:8, color:'rgba(255,255,255,0.3)', textAlign:'center', maxWidth:30, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+                                {q.period?.slice(0,7)}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {e.history.length === 0 && (
+                          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:'rgba(255,255,255,0.2)' }}>—</div>
+                        )}
+                      </div>
+
+                      {/* Next earnings */}
+                      <div style={{ textAlign:'right', flexShrink:0, minWidth:120 }}>
+                        {e.nextDate ? (
+                          <>
+                            <div style={{ fontSize:12, fontWeight:800, color: daysUntil != null && daysUntil <= 7 ? '#FF9500' : 'var(--tm-text-primary)', fontFamily:'Syne, sans-serif', lineHeight:1 }}>
+                              {daysUntil === 0 ? '🔴 Aujourd\'hui' : daysUntil === 1 ? '🟠 Demain' : `Dans ${daysUntil}j`}
+                            </div>
+                            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginTop:3 }}>{e.nextDate}</div>
+                            {hourLabel && <div style={{ fontSize:9, color:'rgba(255,255,255,0.3)', marginTop:1 }}>{hourLabel}</div>}
+                            {e.nextEpsEstimate != null && (
+                              <div style={{ fontSize:10, color:'rgba(0,229,255,0.7)', marginTop:3 }}>Est. EPS ${e.nextEpsEstimate.toFixed(2)}</div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ fontSize:11, color:'rgba(255,255,255,0.2)' }}>Non annoncé</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Revenue estimate */}
+                    {e.nextRevenueEstimate != null && (
+                      <div style={{ fontSize:10, color:'var(--tm-text-muted)', paddingTop:6, borderTop:'1px solid rgba(255,255,255,0.04)' }}>
+                        Revenus estimés : <span style={{ color:'rgba(0,229,255,0.6)', fontWeight:600 }}>${fmtBig(e.nextRevenueEstimate)}</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body
+  )
+}
+
 // ── Stocks Tab ────────────────────────────────────────────────────────────────
 
 function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
@@ -1564,6 +1716,7 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   const [showRotation,  setShowRotation]  = useState(false)
   const [showCorr,      setShowCorr]      = useState(false)
   const [showRatings,   setShowRatings]   = useState(false)
+  const [showEarnings,  setShowEarnings]  = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1720,6 +1873,7 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         <StockToolBtn label="🔄 Rotation" onClick={() => setShowRotation(true)} color="52,199,89" />
         <StockToolBtn label="🔗 Corrélation" onClick={() => setShowCorr(true)} color="255,149,0" />
         <StockToolBtn label="📊 Ratings" onClick={() => setShowRatings(true)} color="191,90,242" />
+        <StockToolBtn label="📅 Earnings" onClick={() => setShowEarnings(true)} color="255,149,0" />
       </div>
 
       <AnimatePresence>
@@ -1752,6 +1906,14 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
           <AnalystRatingsPanel
             symbols={screenerTokens.slice(0, 15).map(t => t.symbol)}
             onClose={() => setShowRatings(false)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showEarnings && (
+          <EarningsPanel
+            symbols={screenerTokens.slice(0, 15).map(t => t.symbol)}
+            onClose={() => setShowEarnings(false)}
           />
         )}
       </AnimatePresence>
