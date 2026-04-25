@@ -2329,12 +2329,183 @@ export default function AnalysePage() {
 // CHARTS TAB — ChartInspect-style analytics
 // ════════════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════════════
+// INDICATOR REGISTRY
+// ════════════════════════════════════════════════════════════════════════════
+
+type IndicatorCategory = 'performance' | 'risk' | 'onchain' | 'macro' | 'structure'
+
+interface IndicatorDef {
+  id: string
+  name: string
+  description: string
+  category: IndicatorCategory
+  assets: 'all' | 'crypto' | 'btc'
+  component: (props: { symbol: string; isCrypto: boolean }) => React.ReactElement | null
+}
+
+const CATEGORY_META: Record<IndicatorCategory, { label: string; color: string; emoji: string }> = {
+  performance: { label: 'Performance',  color: '#34C759', emoji: '📈' },
+  risk:        { label: 'Risque',       color: '#FF9500', emoji: '⚠️' },
+  onchain:     { label: 'On-Chain',     color: '#0A85FF', emoji: '⛓️' },
+  macro:       { label: 'Macro',        color: '#BF5AF2', emoji: '🌍' },
+  structure:   { label: 'Structure',    color: '#FF453A', emoji: '🏗️' },
+}
+
+const INDICATOR_REGISTRY: IndicatorDef[] = [
+  {
+    id: 'monthly-returns',
+    name: 'Rendements Mensuels',
+    description: 'Heatmap calendrier des performances mensuelles',
+    category: 'performance',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <MonthlyReturnsHeatmap symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'roi-periods',
+    name: 'ROI Multi-Périodes',
+    description: 'Retour sur investissement sur 7j / 30j / 90j / 1a / YTD',
+    category: 'performance',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <ROIPeriodsChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'price-horizons',
+    name: 'Prix vs Historique',
+    description: 'Prix actuel vs prix il y a 30 / 90 / 180 / 365 jours',
+    category: 'performance',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <PriceHorizonsChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'death-golden-cross',
+    name: 'Death / Golden Cross',
+    description: 'Croisements SMA50 / SMA200 avec signaux historiques',
+    category: 'structure',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <DeathGoldenCrossChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'drawdown',
+    name: 'Drawdown depuis ATH',
+    description: 'Distance au plus haut historique dans le temps',
+    category: 'risk',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <DrawdownChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'sharpe',
+    name: 'Sharpe Ratio Glissant',
+    description: 'Rendement ajusté au risque sur 365 jours glissants',
+    category: 'risk',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <SharpeRatioChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'mvrv',
+    name: 'MVRV Z-Score — BTC',
+    description: 'Market Value vs Realized Value · CoinMetrics Community',
+    category: 'onchain',
+    assets: 'btc',
+    component: () => <MVRVZScoreChart/>,
+  },
+  {
+    id: 'txcount',
+    name: 'Transactions On-Chain — BTC',
+    description: 'Nombre de transactions quotidiennes · CoinMetrics',
+    category: 'onchain',
+    assets: 'btc',
+    component: () => <TxCountChart/>,
+  },
+  {
+    id: 'altseason',
+    name: 'Altcoin Season Index',
+    description: '% des top altcoins surperformant BTC sur 90 jours',
+    category: 'macro',
+    assets: 'crypto',
+    component: ({ symbol }) => <AltcoinSeasonGauge symbol={symbol}/>,
+  },
+  {
+    id: 'market-breadth',
+    name: 'Market Breadth',
+    description: '% des top 20 cryptos au-dessus de leur MA200',
+    category: 'macro',
+    assets: 'crypto',
+    component: () => <MarketBreadthChart/>,
+  },
+  {
+    id: 'power-law',
+    name: 'Power Law Corridor — BTC',
+    description: 'Couloir de valorisation logarithmique depuis 2009',
+    category: 'structure',
+    assets: 'btc',
+    component: () => <PowerLawChart/>,
+  },
+  {
+    id: 'composite-risk',
+    name: 'Score de Risque Composite',
+    description: 'MVRV + Funding + L/S + Fear & Greed — jauge globale',
+    category: 'risk',
+    assets: 'btc',
+    component: () => <CompositeRiskScore/>,
+  },
+]
+
 function ChartsTab({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [activeCategory, setActiveCategory] = React.useState<IndicatorCategory | 'all'>('all')
+
+  const isBtc = symbol === 'BTCUSDT' || symbol === 'BTC-USD' || symbol.toUpperCase().startsWith('BTC')
+
+  const visible = INDICATOR_REGISTRY.filter(ind => {
+    if (ind.assets === 'crypto' && !isCrypto) return false
+    if (ind.assets === 'btc'    && !isBtc)   return false
+    if (activeCategory !== 'all' && ind.category !== activeCategory) return false
+    return true
+  })
+
+  const categories: Array<IndicatorCategory | 'all'> = ['all', 'performance', 'risk', 'structure', 'onchain', 'macro']
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16, position:'relative', zIndex:1 }}>
-      <MonthlyReturnsHeatmap symbol={symbol} isCrypto={isCrypto}/>
-      {isCrypto && <MVRVZScoreChart/>}
-      {isCrypto && <AltcoinSeasonGauge symbol={symbol}/>}
+      {/* Category filter */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', padding:'4px 0' }}>
+        {categories.map(cat => {
+          const meta = cat === 'all' ? { label:'Tous', color:'#8E8E93', emoji:'🔭' } : CATEGORY_META[cat]
+          const active = activeCategory === cat
+          return (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              style={{
+                padding:'6px 14px', borderRadius:20, fontSize:11, fontWeight:700,
+                fontFamily:'Syne,sans-serif', cursor:'pointer', border:'none',
+                background: active ? meta.color : 'rgba(255,255,255,0.06)',
+                color: active ? '#fff' : 'rgba(255,255,255,0.5)',
+                transition:'all 0.2s',
+                letterSpacing:'0.04em',
+              }}
+            >
+              {meta.emoji} {meta.label}
+            </button>
+          )
+        })}
+        <div style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,0.3)', alignSelf:'center' }}>
+          {visible.length} indicateur{visible.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {/* Grid */}
+      <div style={{
+        display:'grid',
+        gridTemplateColumns:'repeat(auto-fill, minmax(360px, 1fr))',
+        gap:16,
+      }}>
+        {visible.map(ind => (
+          <div key={ind.id}>
+            {ind.component({ symbol, isCrypto })}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -2738,6 +2909,778 @@ function AltcoinSeasonGauge({ symbol }: { symbol: string }) {
                 )
               })}
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NEW INDICATOR COMPONENTS
+// ════════════════════════════════════════════════════════════════════════════
+
+// Shared helpers
+const CARD_STYLE: React.CSSProperties = {
+  background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+  borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+}
+function CardHeader({ color, title, sub, value, valueSub }: { color:string; title:string; sub:string; value?:string; valueSub?:string }) {
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <div style={{width:3,height:20,borderRadius:2,background:color}}/>
+      <div>
+        <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>{title}</div>
+        <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>{sub}</div>
+      </div>
+      {value && (
+        <div style={{marginLeft:'auto',textAlign:'right'}}>
+          <div style={{fontSize:20,fontWeight:900,color,fontFamily:'Syne,sans-serif',lineHeight:1}}>{value}</div>
+          {valueSub && <div style={{fontSize:10,color:'rgba(255,255,255,0.4)',marginTop:2}}>{valueSub}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+function Spinner() {
+  return (
+    <div style={{display:'flex',justifyContent:'center',padding:40}}>
+      <div style={{width:22,height:22,borderRadius:'50%',border:'2px solid rgba(0,229,255,0.12)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+    </div>
+  )
+}
+async function fetchCloses(symbol: string, isCrypto: boolean, days: number): Promise<number[]> {
+  if (isCrypto) {
+    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=${days + 1}`)
+    const raw = await r.json() as [number,string,string,string,string][]
+    return raw.map(k => parseFloat(k[4]))
+  } else {
+    const range = days <= 100 ? '6mo' : days <= 400 ? '2y' : '5y'
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=${range}`)
+    const d = await r.json() as { chart: { result?: [{ indicators: { quote: [{ close: (number|null)[] }] } }] } }
+    const closes = d.chart.result?.[0]?.indicators.quote[0].close ?? []
+    return (closes.filter(v => v !== null) as number[]).slice(-days - 1)
+  }
+}
+
+// ── ROI Multi-Périodes ────────────────────────────────────────────────────────
+function ROIPeriodsChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Period = { label: string; days: number; roi: number | null }
+  const [periods, setPeriods] = useState<Period[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    const PERIODS = [
+      { label:'7j',  days:7   },
+      { label:'30j', days:30  },
+      { label:'90j', days:90  },
+      { label:'180j',days:180 },
+      { label:'1a',  days:365 },
+    ]
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        const cur = closes[closes.length - 1]
+        const filled = PERIODS.map(p => ({
+          ...p,
+          roi: closes.length > p.days
+            ? ((cur - closes[closes.length - 1 - p.days]) / closes[closes.length - 1 - p.days]) * 100
+            : null,
+        }))
+        setPeriods(filled)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const maxAbs = Math.max(1, ...periods.filter(p => p.roi !== null).map(p => Math.abs(p.roi!)))
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader color="#34C759" title="ROI Multi-Périodes" sub={`Retour sur investissement — ${symbol}`}/>
+      {loading ? <Spinner/> : (
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {periods.map(p => {
+            const roi = p.roi
+            if (roi === null) return null
+            const pct = (Math.abs(roi) / maxAbs) * 100
+            const positive = roi >= 0
+            const color = positive ? '#34C759' : '#FF3B30'
+            return (
+              <div key={p.label} style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:36,fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',fontFamily:'JetBrains Mono,monospace',flexShrink:0}}>{p.label}</div>
+                <div style={{flex:1,height:22,borderRadius:6,background:'rgba(255,255,255,0.04)',overflow:'hidden',position:'relative'}}>
+                  <div style={{
+                    position:'absolute',
+                    [positive?'left':'right']:0,
+                    width:`${pct/2}%`, height:'100%',
+                    background:`${color}33`, borderRadius:6,
+                    transition:'width 0.6s ease',
+                  }}/>
+                  <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',paddingLeft:8}}>
+                    <span style={{fontSize:12,fontWeight:800,color,fontFamily:'JetBrains Mono,monospace'}}>
+                      {positive?'+':''}{roi.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Prix vs Historique ────────────────────────────────────────────────────────
+function PriceHorizonsChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Horizon = { label: string; days: number; price: number | null; chg: number | null }
+  const [horizons, setHorizons] = useState<Horizon[]>([])
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        const cur = closes[closes.length - 1]
+        setCurrentPrice(cur)
+        const HORIZONS = [
+          { label:'Il y a 30j',  days:30  },
+          { label:'Il y a 90j',  days:90  },
+          { label:'Il y a 180j', days:180 },
+          { label:'Il y a 1 an', days:365 },
+        ]
+        setHorizons(HORIZONS.map(h => {
+          const past = closes.length > h.days ? closes[closes.length - 1 - h.days] : null
+          return { ...h, price: past, chg: past ? ((cur - past) / past) * 100 : null }
+        }))
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  function fmt(n: number): string {
+    if (n >= 1e9) return `$${(n/1e9).toFixed(2)}B`
+    if (n >= 1e6) return `$${(n/1e6).toFixed(2)}M`
+    if (n >= 1000) return `$${n.toLocaleString('en', {maximumFractionDigits:2})}`
+    return `$${n.toFixed(4)}`
+  }
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color="#0A85FF"
+        title="Prix vs Historique"
+        sub={`Prix actuel vs périodes passées — ${symbol}`}
+        value={currentPrice ? fmt(currentPrice) : undefined}
+        valueSub="Prix actuel"
+      />
+      {loading ? <Spinner/> : (
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {horizons.map(h => {
+            if (!h.price || !h.chg) return null
+            const positive = h.chg >= 0
+            const color = positive ? '#34C759' : '#FF3B30'
+            return (
+              <div key={h.label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderRadius:10,background:'rgba(255,255,255,0.03)'}}>
+                <div style={{fontSize:12,color:'rgba(255,255,255,0.5)',fontWeight:600}}>{h.label}</div>
+                <div style={{display:'flex',gap:12,alignItems:'center'}}>
+                  <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',fontFamily:'JetBrains Mono,monospace'}}>{fmt(h.price)}</div>
+                  <div style={{fontSize:13,fontWeight:800,color,fontFamily:'JetBrains Mono,monospace',minWidth:64,textAlign:'right'}}>
+                    {positive?'+':''}{h.chg.toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Drawdown depuis ATH ───────────────────────────────────────────────────────
+function DrawdownChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [data, setData]       = useState<{ i:number; dd:number }[]>([])
+  const [currentDd, setCurrentDd] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 730)
+      .then(closes => {
+        let ath = -Infinity
+        const dd: { i:number; dd:number }[] = []
+        for (let i = 0; i < closes.length; i++) {
+          if (closes[i] > ath) ath = closes[i]
+          dd.push({ i, dd: ath > 0 ? ((closes[i] - ath) / ath) * 100 : 0 })
+        }
+        setData(dd)
+        setCurrentDd(dd[dd.length - 1]?.dd ?? null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const minDd = Math.min(-5, ...data.map(d => d.dd)) * 1.05
+  function yPx(v: number) { return PAD.t + cH - ((v - minDd) / (0 - minDd)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pts = data.map(d => `${xPx(d.i).toFixed(1)},${yPx(d.dd).toFixed(1)}`).join(' ')
+  const ddColor = currentDd !== null ? (currentDd > -10 ? '#34C759' : currentDd > -25 ? '#FF9500' : currentDd > -50 ? '#FF453A' : '#FF3B30') : '#8E8E93'
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={ddColor}
+        title="Drawdown depuis ATH"
+        sub={`Distance au plus haut historique — ${symbol}`}
+        value={currentDd !== null ? `${currentDd.toFixed(1)}%` : undefined}
+        valueSub="Drawdown actuel"
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          <defs>
+            <linearGradient id={`dd-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={ddColor} stopOpacity="0.3"/>
+              <stop offset="100%" stopColor={ddColor} stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {/* Zero line */}
+          <line x1={PAD.l} y1={yPx(0)} x2={PAD.l+cW} y2={yPx(0)} stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="4 3"/>
+          {/* -25% and -50% guides */}
+          {[-25,-50].map(v => v >= minDd && (
+            <g key={v}>
+              <line x1={PAD.l} y1={yPx(v)} x2={PAD.l+cW} y2={yPx(v)} stroke="rgba(255,255,255,0.07)" strokeWidth={1} strokeDasharray="3 4"/>
+              <text x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.3)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}%</text>
+            </g>
+          ))}
+          {/* Y labels */}
+          {[0, Math.round(minDd/2), Math.round(minDd)].map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}%</text>
+          ))}
+          {/* Fill */}
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill={`url(#dd-grad-${symbol})`}/>
+          {/* Line */}
+          <polyline points={pts} fill="none" stroke={ddColor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          {/* Dot */}
+          <circle cx={xPx(data.length-1)} cy={yPx(data[data.length-1].dd)} r={4} fill={ddColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Sharpe Ratio Glissant ─────────────────────────────────────────────────────
+function SharpeRatioChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [data, setData]     = useState<{ i:number; sharpe:number }[]>([])
+  const [current, setCurrent] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        const WINDOW = 365
+        const pts: { i:number; sharpe:number }[] = []
+        for (let i = WINDOW; i < closes.length; i++) {
+          const slice = closes.slice(i - WINDOW, i)
+          const returns = slice.slice(1).map((v, j) => (v - slice[j]) / slice[j])
+          const mean = returns.reduce((a, b) => a + b, 0) / returns.length
+          const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / returns.length
+          const std = Math.sqrt(variance)
+          const sharpe = std > 0 ? (mean / std) * Math.sqrt(365) : 0
+          pts.push({ i: i - WINDOW, sharpe })
+        }
+        setData(pts)
+        setCurrent(pts[pts.length - 1]?.sharpe ?? null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const minV = Math.min(-1, ...data.map(d => d.sharpe)) * 1.1
+  const maxV = Math.max(3, ...data.map(d => d.sharpe)) * 1.05
+  function yPx(v: number) { return PAD.t + cH - ((v - minV) / (maxV - minV)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pts = data.map((d, i) => `${xPx(i).toFixed(1)},${yPx(d.sharpe).toFixed(1)}`).join(' ')
+  const sColor = current !== null ? (current > 2 ? '#34C759' : current > 0.5 ? '#0A85FF' : current > 0 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const sLabel = current !== null ? (current > 2 ? 'Excellent' : current > 0.5 ? 'Bon' : current > 0 ? 'Faible' : 'Négatif') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={sColor}
+        title="Sharpe Ratio Glissant (365j)"
+        sub={`Rendement ajusté au risque annualisé — ${symbol}`}
+        value={current !== null ? current.toFixed(2) : undefined}
+        valueSub={sLabel}
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes (minimum 1 an)</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          <defs>
+            <linearGradient id={`sh-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={sColor} stopOpacity="0.25"/>
+              <stop offset="100%" stopColor={sColor} stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {/* Zero line */}
+          <line x1={PAD.l} y1={yPx(0)} x2={PAD.l+cW} y2={yPx(0)} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="4 3"/>
+          {/* 1.0 guide */}
+          {maxV > 1 && <line x1={PAD.l} y1={yPx(1)} x2={PAD.l+cW} y2={yPx(1)} stroke="rgba(52,199,89,0.2)" strokeWidth={1} strokeDasharray="3 4"/>}
+          {/* Y labels */}
+          {[Math.round(minV), 0, 1, Math.round(maxV)].filter((v,i,a)=>a.indexOf(v)===i).map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}</text>
+          ))}
+          {/* Fill above zero */}
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill={`url(#sh-grad-${symbol})`}/>
+          <polyline points={pts} fill="none" stroke={sColor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx={xPx(data.length-1)} cy={yPx(data[data.length-1].sharpe)} r={4} fill={sColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Death / Golden Cross ──────────────────────────────────────────────────────
+function DeathGoldenCrossChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Pt = { i:number; price:number; sma50:number|null; sma200:number|null }
+  const [data, setData]       = useState<Pt[]>([])
+  const [crosses, setCrosses] = useState<{ i:number; type:'golden'|'death' }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        function sma(arr: number[], i: number, n: number): number | null {
+          if (i < n - 1) return null
+          return arr.slice(i - n + 1, i + 1).reduce((a,b) => a + b, 0) / n
+        }
+        const pts: Pt[] = closes.map((price, i) => ({
+          i, price,
+          sma50:  sma(closes, i, 50),
+          sma200: sma(closes, i, 200),
+        }))
+        // Detect crosses
+        const cx: { i:number; type:'golden'|'death' }[] = []
+        for (let i = 1; i < pts.length; i++) {
+          const prev = pts[i-1], cur = pts[i]
+          if (!prev.sma50 || !prev.sma200 || !cur.sma50 || !cur.sma200) continue
+          if (prev.sma50 <= prev.sma200 && cur.sma50 > cur.sma200) cx.push({ i, type:'golden' })
+          if (prev.sma50 >= prev.sma200 && cur.sma50 < cur.sma200) cx.push({ i, type:'death' })
+        }
+        setData(pts)
+        setCrosses(cx)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 140, PAD = { t:12, b:24, l:52, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const prices = data.map(d => d.price)
+  const minP = Math.min(...prices) * 0.97
+  const maxP = Math.max(...prices) * 1.03
+  function yPx(v: number) { return PAD.t + cH - ((v - minP) / (maxP - minP)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pricePts = data.map(d => `${xPx(d.i).toFixed(1)},${yPx(d.price).toFixed(1)}`).join(' ')
+  const sma50Pts = data.filter(d => d.sma50 !== null).map(d => `${xPx(d.i).toFixed(1)},${yPx(d.sma50!).toFixed(1)}`).join(' ')
+  const sma200Pts = data.filter(d => d.sma200 !== null).map(d => `${xPx(d.i).toFixed(1)},${yPx(d.sma200!).toFixed(1)}`).join(' ')
+  const lastCross = crosses[crosses.length - 1]
+  const crossColor = lastCross?.type === 'golden' ? '#FFD60A' : lastCross?.type === 'death' ? '#FF3B30' : '#8E8E93'
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={crossColor}
+        title="Death / Golden Cross"
+        sub={`SMA 50 / SMA 200 — ${symbol}`}
+        value={lastCross ? (lastCross.type === 'golden' ? '✨ Golden' : '💀 Death') : '—'}
+        valueSub="Dernier signal"
+      />
+      {/* Legend */}
+      <div style={{display:'flex',gap:14,marginBottom:10}}>
+        {[['rgba(255,255,255,0.4)','Prix'],['#FFD60A','SMA 50'],['#BF5AF2','SMA 200'],['#FFD60A','⚡ Golden Cross'],['#FF3B30','💀 Death Cross']].map(([c,l])=>(
+          <div key={l} style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:16,height:2,background:c,borderRadius:1}}/>
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.4)'}}>{l}</span>
+          </div>
+        ))}
+      </div>
+      {loading ? <Spinner/> : data.length < 200 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes (minimum 200 jours)</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          {/* Cross markers */}
+          {crosses.map(cx => (
+            <line key={cx.i} x1={xPx(cx.i)} y1={PAD.t} x2={xPx(cx.i)} y2={PAD.t+cH}
+              stroke={cx.type==='golden'?'rgba(255,214,10,0.3)':'rgba(255,59,48,0.3)'} strokeWidth={1.5} strokeDasharray="3 3"/>
+          ))}
+          {/* Price line */}
+          <polyline points={pricePts} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={1.5}/>
+          {/* SMA lines */}
+          {sma50Pts  && <polyline points={sma50Pts}  fill="none" stroke="#FFD60A" strokeWidth={1.5} opacity={0.85}/>}
+          {sma200Pts && <polyline points={sma200Pts} fill="none" stroke="#BF5AF2" strokeWidth={1.5} opacity={0.85}/>}
+          {/* Cross symbols */}
+          {crosses.slice(-3).map(cx => (
+            <text key={cx.i} x={xPx(cx.i)} y={PAD.t+10} textAnchor="middle" fontSize={12}>
+              {cx.type === 'golden' ? '⚡' : '💀'}
+            </text>
+          ))}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Transactions On-Chain BTC ─────────────────────────────────────────────────
+function TxCountChart() {
+  const [data, setData]       = useState<{ date:string; count:number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const start = new Date(Date.now() - 180*86_400_000).toISOString().slice(0,10)
+    fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=TxCnt&frequency=1d&start_time=${start}`)
+      .then(r => r.json())
+      .then((d: { data?: { time:string; TxCnt:string }[] }) => {
+        const pts = (d.data ?? []).map(x => ({ date: x.time.slice(0,10), count: parseInt(x.TxCnt) })).filter(x => !isNaN(x.count))
+        setData(pts)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:52, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const counts = data.map(d => d.count)
+  const minC = Math.min(...counts) * 0.95 || 0
+  const maxC = Math.max(...counts) * 1.05 || 1
+  function yPx(v: number) { return PAD.t + cH - ((v - minC) / (maxC - minC)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pts = data.map((d, i) => `${xPx(i).toFixed(1)},${yPx(d.count).toFixed(1)}`).join(' ')
+  const cur = data[data.length - 1]?.count
+  const avg = data.length ? Math.round(data.reduce((a,d) => a+d.count, 0)/data.length) : 0
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color="#0A85FF"
+        title="Transactions On-Chain — BTC"
+        sub="Nombre de transactions quotidiennes · CoinMetrics Community"
+        value={cur ? `${(cur/1000).toFixed(0)}K` : undefined}
+        valueSub={`Moy 180j: ${(avg/1000).toFixed(0)}K`}
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données indisponibles</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          <defs>
+            <linearGradient id="txc-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#0A85FF" stopOpacity="0.3"/>
+              <stop offset="100%" stopColor="#0A85FF" stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {/* Average line */}
+          {avg > 0 && <line x1={PAD.l} y1={yPx(avg)} x2={PAD.l+cW} y2={yPx(avg)} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="4 3"/>}
+          {/* Y labels */}
+          {[minC, avg, maxC].filter(v=>v>0).map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{`${(v/1000).toFixed(0)}K`}</text>
+          ))}
+          {/* X dates */}
+          {[0, 0.25, 0.5, 0.75, 1].map(f => {
+            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            return <text key={f} x={xPx(idx)} y={H-6} textAnchor="middle" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{data[idx]?.date.slice(5)}</text>
+          })}
+          <polygon points={`${PAD.l},${yPx(minC)} ${pts} ${xPx(data.length-1)},${yPx(minC)}`} fill="url(#txc-grad)"/>
+          <polyline points={pts} fill="none" stroke="#0A85FF" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx={xPx(data.length-1)} cy={yPx(cur!)} r={4} fill="#0A85FF" stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Market Breadth (crypto) ───────────────────────────────────────────────────
+function MarketBreadthChart() {
+  const [pct, setPct]         = useState<number | null>(null)
+  const [items, setItems]     = useState<{ sym:string; price:number; ma200:number; above:boolean }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const TOP20 = ['BTCUSDT','ETHUSDT','BNBUSDT','XRPUSDT','SOLUSDT','ADAUSDT','DOGEUSDT','TRXUSDT','AVAXUSDT','LINKUSDT',
+                   'TONUSDT','DOTUSDT','MATICUSDT','NEARUSDT','LTCUSDT','UNIUSDT','APTUSDT','ICPUSDT','XLMUSDT','ETCUSDT']
+    Promise.all(
+      TOP20.map(sym =>
+        fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=201`)
+          .then(r => r.json())
+          .then((raw: [number,string,string,string,string][]) => {
+            const closes = raw.map(k => parseFloat(k[4]))
+            const price  = closes[closes.length - 1]
+            const ma200  = closes.length >= 200 ? closes.slice(-200).reduce((a,b)=>a+b,0)/200 : null
+            return { sym: sym.replace('USDT',''), price, ma200, above: ma200 !== null && price > ma200 }
+          })
+          .catch(() => ({ sym: sym.replace('USDT',''), price: 0, ma200: null, above: false }))
+      )
+    ).then(results => {
+      const valid = results.filter(r => r.ma200 !== null) as { sym:string; price:number; ma200:number; above:boolean }[]
+      const aboveCount = valid.filter(r => r.above).length
+      setPct(valid.length > 0 ? (aboveCount / valid.length) * 100 : null)
+      setItems(valid.sort((a,b) => (b.above?1:0)-(a.above?1:0)))
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  const bColor = pct !== null ? (pct >= 70 ? '#34C759' : pct >= 50 ? '#0A85FF' : pct >= 30 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const bLabel = pct !== null ? (pct >= 70 ? 'Marché haussier' : pct >= 50 ? 'Neutre / haussier' : pct >= 30 ? 'Neutre / baissier' : 'Marché baissier') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={bColor}
+        title="Market Breadth"
+        sub="% des top 20 cryptos au-dessus de leur MA200"
+        value={pct !== null ? `${Math.round(pct)}%` : undefined}
+        valueSub={bLabel}
+      />
+      {loading ? <Spinner/> : (
+        <>
+          {/* Progress bar */}
+          <div style={{height:8,borderRadius:4,background:'rgba(255,255,255,0.07)',overflow:'hidden',marginBottom:14}}>
+            <div style={{height:'100%',borderRadius:4,width:`${pct??0}%`,background:bColor,transition:'width 0.8s ease'}}/>
+          </div>
+          {/* Grid */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(72px,1fr))',gap:6}}>
+            {items.map(item => (
+              <div key={item.sym} style={{
+                padding:'6px 8px',borderRadius:8,textAlign:'center',
+                background: item.above ? 'rgba(52,199,89,0.1)' : 'rgba(255,59,48,0.08)',
+                border: `1px solid ${item.above ? 'rgba(52,199,89,0.2)' : 'rgba(255,59,48,0.15)'}`,
+              }}>
+                <div style={{fontSize:11,fontWeight:700,color:item.above?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono,monospace'}}>{item.sym}</div>
+                <div style={{fontSize:9,color:'rgba(255,255,255,0.4)',marginTop:2}}>{item.above?'▲ MA200':'▼ MA200'}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Power Law Corridor BTC ────────────────────────────────────────────────────
+function PowerLawChart() {
+  const GENESIS = new Date('2009-01-03').getTime()
+  const [data, setData]       = useState<{ date:string; price:number; fair:number; upper:number; lower:number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1M&limit=72')
+      .then(r => r.json())
+      .then((raw: [number,string,string,string,string][]) => {
+        const pts = raw.map(k => {
+          const ts = k[0]
+          const days = (ts - GENESIS) / 86_400_000
+          const fair  = Math.pow(10, -17.351) * Math.pow(days, 5.82)
+          const upper = fair * 10
+          const lower = fair / 8
+          return { date: new Date(ts).toISOString().slice(0,7), price: parseFloat(k[4]), fair, upper, lower }
+        })
+        setData(pts)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 720, H = 160, PAD = { t:12, b:28, l:56, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+
+  // Log scale
+  const allVals = data.flatMap(d => [d.price, d.upper]).filter(v => v > 0)
+  const logMin = allVals.length ? Math.log10(Math.min(...allVals)) * 0.98 : 1
+  const logMax = allVals.length ? Math.log10(Math.max(...allVals)) * 1.02 : 6
+  function yPx(v: number) { return v > 0 ? PAD.t + cH - ((Math.log10(v) - logMin) / (logMax - logMin)) * cH : PAD.t + cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+
+  function makePts(arr: number[]) { return arr.map((v, i) => `${xPx(i).toFixed(1)},${yPx(v).toFixed(1)}`).join(' ') }
+
+  const cur = data[data.length - 1]
+  const ratio = cur ? cur.price / cur.fair : null
+  const rColor = ratio ? (ratio > 5 ? '#FF3B30' : ratio > 2 ? '#FF9500' : ratio > 0.7 ? '#34C759' : '#0A85FF') : '#8E8E93'
+  const rLabel = ratio ? (ratio > 5 ? 'Surévalué' : ratio > 2 ? 'Haussier' : ratio > 0.7 ? 'Juste valeur' : 'Sous-évalué') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={rColor}
+        title="Power Law Corridor — BTC"
+        sub="Couloir log P = 10^(−17.351) × jours^5.82 depuis 2009"
+        value={cur ? `×${(cur.price/cur.fair).toFixed(2)} fair` : undefined}
+        valueSub={rLabel}
+      />
+      <div style={{display:'flex',gap:14,marginBottom:10}}>
+        {[['#FFD60A','Prix'],['#34C759','Valeur juste'],['rgba(255,255,255,0.2)','Couloir ×10 / ÷8']].map(([c,l])=>(
+          <div key={l} style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:16,height:2,background:c,borderRadius:1}}/>
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.4)'}}>{l}</span>
+          </div>
+        ))}
+      </div>
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données indisponibles</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          {/* Corridor fill */}
+          <polygon
+            points={[...data.map((_,i) => `${xPx(i).toFixed(1)},${yPx(data[i].upper).toFixed(1)}`),
+                     ...[...data].reverse().map((_,ri) => `${xPx(data.length-1-ri).toFixed(1)},${yPx(data[data.length-1-ri].lower).toFixed(1)}`)]
+              .join(' ')}
+            fill="rgba(255,255,255,0.04)" stroke="none"
+          />
+          {/* Upper / Lower bounds */}
+          <polyline points={makePts(data.map(d=>d.upper))} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="4 3"/>
+          <polyline points={makePts(data.map(d=>d.lower))} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="4 3"/>
+          {/* Fair value */}
+          <polyline points={makePts(data.map(d=>d.fair))} fill="none" stroke="#34C759" strokeWidth={1.5} strokeDasharray="5 3"/>
+          {/* Price */}
+          <polyline points={makePts(data.map(d=>d.price))} fill="none" stroke="#FFD60A" strokeWidth={2} strokeLinecap="round"/>
+          {/* Y log labels */}
+          {[10,100,1000,10000,100000,1000000].filter(v => Math.log10(v) >= logMin && Math.log10(v) <= logMax).map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">
+              {v>=1e6?`${v/1e6}M`:v>=1e3?`${v/1e3}K`:v}
+            </text>
+          ))}
+          {/* Dot */}
+          <circle cx={xPx(data.length-1)} cy={yPx(cur!.price)} r={4} fill="#FFD60A" stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Score de Risque Composite ─────────────────────────────────────────────────
+function CompositeRiskScore() {
+  type Factor = { label:string; value:number|null; score:number; weight:number; color:string; detail:string }
+  const [factors, setFactors] = useState<Factor[]>([])
+  const [composite, setComposite] = useState<number | null>(null)
+  const [loading, setLoading]  = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      const results: Factor[] = []
+
+      // 1. MVRV
+      try {
+        const start = new Date(Date.now()-7*86_400_000).toISOString().slice(0,10)
+        const r = await fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${start}`)
+        const d = await r.json() as { data?: { CapMVRVCur:string }[] }
+        const mvrv = parseFloat(d.data?.[d.data.length-1]?.CapMVRVCur ?? '')
+        if (!isNaN(mvrv)) {
+          const score = mvrv < 1 ? 10 : mvrv < 2 ? 30 : mvrv < 3 ? 55 : mvrv < 4 ? 75 : 90
+          results.push({ label:'MVRV Ratio', value:mvrv, score, weight:0.3, color:'#0A85FF', detail:`${mvrv.toFixed(2)}` })
+        }
+      } catch { /* ignore */ }
+
+      // 2. Funding Rate
+      try {
+        const r = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT')
+        const d = await r.json() as { fundingRate:string }
+        const fr = parseFloat(d.fundingRate) * 100
+        if (!isNaN(fr)) {
+          const score = fr < -0.02 ? 15 : fr < -0.01 ? 25 : fr < 0.01 ? 50 : fr < 0.02 ? 65 : fr < 0.05 ? 80 : 95
+          results.push({ label:'Funding Rate', value:fr, score, weight:0.25, color:'#FF9500', detail:`${fr.toFixed(4)}%/8h` })
+        }
+      } catch { /* ignore */ }
+
+      // 3. L/S Ratio
+      try {
+        const r = await fetch('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=BTCUSDT&period=5m&limit=1')
+        const d = await r.json() as [{ longShortRatio:string }]
+        const ls = parseFloat(d[0]?.longShortRatio)
+        if (!isNaN(ls)) {
+          const score = ls < 0.8 ? 20 : ls < 0.95 ? 40 : ls < 1.05 ? 50 : ls < 1.2 ? 65 : ls < 1.5 ? 80 : 90
+          results.push({ label:'L/S Ratio', value:ls, score, weight:0.2, color:'#BF5AF2', detail:`${ls.toFixed(3)}` })
+        }
+      } catch { /* ignore */ }
+
+      // 4. Fear & Greed
+      try {
+        const r = await fetch('https://api.alternative.me/fng/?limit=1')
+        const d = await r.json() as { data:[{ value:string }] }
+        const fg = parseInt(d.data[0]?.value)
+        if (!isNaN(fg)) {
+          const score = fg < 20 ? 10 : fg < 40 ? 30 : fg < 60 ? 50 : fg < 80 ? 70 : 90
+          results.push({ label:'Fear & Greed', value:fg, score, weight:0.25, color:'#FF453A', detail:`${fg}/100` })
+        }
+      } catch { /* ignore */ }
+
+      setFactors(results)
+      if (results.length > 0) {
+        const totalW = results.reduce((a, f) => a + f.weight, 0)
+        const weighted = results.reduce((a, f) => a + f.score * f.weight, 0) / totalW
+        setComposite(Math.round(weighted))
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const cColor = composite !== null ? (composite < 30 ? '#34C759' : composite < 50 ? '#0A85FF' : composite < 70 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const cLabel = composite !== null ? (composite < 30 ? 'Zone d\'achat' : composite < 50 ? 'Faible risque' : composite < 70 ? 'Risque modéré' : 'Zone de vente') : ''
+
+  // Gauge arc
+  const R=70, CX=100, CY=90
+  function arc(pct: number) {
+    const angle = (pct/100)*180 - 180
+    const rad = angle * Math.PI/180
+    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${pct>50?1:0} 1 ${(CX+R*Math.cos(rad)).toFixed(1)} ${(CY+R*Math.sin(rad)).toFixed(1)}`
+  }
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader color={cColor} title="Score de Risque Composite" sub="MVRV + Funding + L/S + Fear & Greed — 0=Bas 100=Extrême"/>
+      {loading ? <Spinner/> : (
+        <div style={{display:'flex',gap:20,alignItems:'flex-start',flexWrap:'wrap'}}>
+          {/* Gauge */}
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:160}}>
+            <svg viewBox="0 0 200 110" style={{width:180,height:100}}>
+              <path d={`M ${CX-R} ${CY} A ${R} ${R} 0 0 1 ${CX+R} ${CY}`} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={12}/>
+              {composite!==null&&<path d={arc(composite)} fill="none" stroke={cColor} strokeWidth={12} strokeLinecap="round"/>}
+              <text x={CX} y={CY-8} textAnchor="middle" fill={cColor} fontSize={28} fontWeight="900" fontFamily="Syne,sans-serif">{composite??'–'}</text>
+              <text x={CX} y={CY+8} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={9}>/ 100</text>
+              <text x={CX-R-2} y={CY+12} textAnchor="middle" fill="#34C759" fontSize={7}>BAS</text>
+              <text x={CX+R+2} y={CY+12} textAnchor="middle" fill="#FF3B30" fontSize={7}>HAUT</text>
+            </svg>
+            <div style={{fontSize:12,fontWeight:700,color:cColor,marginTop:-8}}>{cLabel}</div>
+          </div>
+          {/* Factor breakdown */}
+          <div style={{flex:1,minWidth:180,display:'flex',flexDirection:'column',gap:8}}>
+            {factors.map(f => (
+              <div key={f.label} style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:90,fontSize:10,color:'rgba(255,255,255,0.5)',flexShrink:0}}>{f.label}</div>
+                <div style={{flex:1,height:16,borderRadius:4,background:'rgba(255,255,255,0.05)',overflow:'hidden',position:'relative'}}>
+                  <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${f.score}%`,background:`${f.color}44`,borderRadius:4,transition:'width 0.6s'}}/>
+                  <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',paddingLeft:6}}>
+                    <span style={{fontSize:9,fontWeight:700,color:f.color,fontFamily:'JetBrains Mono,monospace'}}>{f.detail}</span>
+                  </div>
+                </div>
+                <div style={{fontSize:10,fontWeight:700,color:f.color,width:28,textAlign:'right',fontFamily:'JetBrains Mono,monospace'}}>{f.score}</div>
+              </div>
+            ))}
+            {factors.length === 0 && <div style={{fontSize:12,color:'var(--tm-text-muted)',padding:8}}>Données indisponibles</div>}
           </div>
         </div>
       )}
