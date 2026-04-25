@@ -136,7 +136,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow'
+type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -2017,6 +2017,7 @@ export default function AnalysePage() {
             {id:'structure', icon:'🐋',label:'Structure',  sub:'Tendance baleine',  color:'rgba(191,90,242,0.9)'},
             {id:'derivees',  icon:'📈',label:'Dérivés',    sub:'OI · Funding · L/S',color:'rgba(255,149,0,0.9)'},
             {id:'orderflow', icon:'⊞', label:'Order Flow', sub:'Footprint · Cluster',color:'rgba(255,69,58,0.9)'},
+            {id:'charts',    icon:'📅', label:'Charts',     sub:'Rendements · On-Chain',color:'rgba(52,199,89,0.9)'},
           ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m=>{
             const active = mode === m.id
             return (
@@ -2317,6 +2318,429 @@ export default function AnalysePage() {
         </div>
       )}
 
+      {/* ── CHARTS TAB ── */}
+      {mode === 'charts' && <ChartsTab symbol={symbol} isCrypto={isCrypto}/>}
+
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHARTS TAB — ChartInspect-style analytics
+// ════════════════════════════════════════════════════════════════════════════
+
+function ChartsTab({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16, position:'relative', zIndex:1 }}>
+      <MonthlyReturnsHeatmap symbol={symbol} isCrypto={isCrypto}/>
+      {isCrypto && <MVRVZScoreChart/>}
+      {isCrypto && <AltcoinSeasonGauge symbol={symbol}/>}
+    </div>
+  )
+}
+
+// ── 1. Monthly Returns Heatmap ────────────────────────────────────────────────
+function MonthlyReturnsHeatmap({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [rows, setRows]       = useState<{ year: number; months: (number|null)[] }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState(false)
+
+  useEffect(() => {
+    setLoading(true); setError(false)
+    async function load() {
+      try {
+        let closes: { date: Date; close: number }[] = []
+
+        if (isCrypto) {
+          const r   = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1M&limit=60`)
+          const raw = await r.json() as [number,string,string,string,string][]
+          closes    = raw.map(k => ({ date: new Date(k[0]), close: parseFloat(k[4]) }))
+        } else {
+          // Yahoo Finance v8 chart — free, works from browser
+          const r = await fetch(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1mo&range=5y`,
+            { headers: { 'Accept': 'application/json' } }
+          )
+          const d = await r.json() as {
+            chart: { result?: [{ timestamp: number[]; indicators: { quote: [{ close: (number|null)[] }] } }] }
+          }
+          const res = d.chart.result?.[0]
+          if (!res) throw new Error('no result')
+          closes = res.timestamp.map((t, i) => ({
+            date:  new Date(t * 1000),
+            close: res.indicators.quote[0].close[i] ?? 0,
+          })).filter(x => x.close > 0)
+        }
+
+        // Monthly returns: (close[i] - close[i-1]) / close[i-1] * 100
+        const rets: Record<string, number> = {}
+        for (let i = 1; i < closes.length; i++) {
+          const prev = closes[i-1].close, cur = closes[i].close
+          if (!prev || !cur) continue
+          const d   = closes[i].date
+          rets[`${d.getFullYear()}-${d.getMonth()}`] = ((cur - prev) / prev) * 100
+        }
+
+        // Group by year (newest first)
+        const years = [...new Set(Object.keys(rets).map(k => +k.split('-')[0]))].sort((a,b) => b-a)
+        setRows(years.map(y => ({
+          year: y,
+          months: Array.from({length:12}, (_, m) => rets[`${y}-${m}`] ?? null),
+        })))
+        setLoading(false)
+      } catch { setError(true); setLoading(false) }
+    }
+    load()
+  }, [symbol, isCrypto])
+
+  const MO = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+
+  function cell(v: number|null): string {
+    if (v===null) return 'rgba(255,255,255,0.03)'
+    if (v >= 25) return '#006633'; if (v >= 15) return '#008844'
+    if (v >= 8)  return '#00AA55'; if (v >= 3)  return '#34C759'
+    if (v >= 0)  return '#5AD97F'; if (v >= -3) return '#FF6B6B'
+    if (v >= -8) return '#FF453A'; if (v >= -15) return '#CC2200'
+    return '#990000'
+  }
+  function ytd(months: (number|null)[]): number|null {
+    const vs = months.filter(v => v!==null) as number[]
+    if (!vs.length) return null
+    return vs.reduce((a,v) => a*(1+v/100), 1)*100 - 100
+  }
+
+  const cardStyle: React.CSSProperties = {
+    background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+
+  return (
+    <div style={cardStyle}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:3,height:20,borderRadius:2,background:'#34C759'}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>
+            Rendements Mensuels
+          </div>
+          <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>
+            Performance mensuelle — {symbol}
+          </div>
+        </div>
+        <div style={{marginLeft:'auto',display:'flex',gap:6,flexWrap:'wrap'}}>
+          {[['#006633','+25%'],['#34C759','+5%'],['rgba(255,255,255,0.1)','0%'],['#FF453A','-5%'],['#990000','-15%']].map(([bg,l])=>(
+            <div key={l} style={{display:'flex',alignItems:'center',gap:4}}>
+              <div style={{width:10,height:10,borderRadius:2,background:bg}}/>
+              <span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{l}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{display:'flex',justifyContent:'center',padding:40}}>
+          <div style={{width:24,height:24,borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+        </div>
+      )}
+      {error && <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données indisponibles pour ce symbole</div>}
+
+      {!loading && !error && (
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:'2px 3px',fontSize:11}}>
+            <thead>
+              <tr>
+                <th style={{textAlign:'left',padding:'2px 10px',color:'rgba(255,255,255,0.4)',fontWeight:600,fontSize:10}}>Année</th>
+                {MO.map(m=>(
+                  <th key={m} style={{textAlign:'center',padding:'2px 4px',color:'rgba(255,255,255,0.4)',fontWeight:600,fontSize:10,minWidth:46}}>{m}</th>
+                ))}
+                <th style={{textAlign:'center',padding:'2px 10px',color:'rgba(255,255,255,0.4)',fontWeight:600,fontSize:10}}>YTD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const total = ytd(row.months)
+                return (
+                  <tr key={row.year}>
+                    <td style={{padding:'3px 10px',fontWeight:700,color:'rgba(255,255,255,0.6)',fontFamily:'Syne,sans-serif',fontSize:12,whiteSpace:'nowrap'}}>{row.year}</td>
+                    {row.months.map((v,i)=>(
+                      <td key={i} style={{
+                        padding:'7px 2px',borderRadius:5,textAlign:'center',
+                        background:cell(v),
+                        color: v===null?'transparent': Math.abs(v)>3?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.7)',
+                        fontWeight:700, fontSize:10,
+                        transition:'opacity 0.2s',cursor:'default',
+                      }} title={v!==null?`${v>=0?'+':''}${v.toFixed(2)}%`:undefined}>
+                        {v!==null?`${v>=0?'+':''}${v.toFixed(1)}%`:''}
+                      </td>
+                    ))}
+                    <td style={{
+                      padding:'7px 10px',borderRadius:5,textAlign:'center',
+                      background:cell(total),fontWeight:800,
+                      color:'rgba(255,255,255,0.95)',fontSize:11,
+                    }}>
+                      {total!==null?`${total>=0?'+':''}${total.toFixed(1)}%`:'—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 2. MVRV Z-Score Line Chart (crypto only) ─────────────────────────────────
+function MVRVZScoreChart() {
+  const [data,    setData]    = useState<{ date: string; mvrv: number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const start = new Date(Date.now() - 180*86_400_000).toISOString().slice(0,10)
+    fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${start}`)
+      .then(r => r.json())
+      .then((d: { data?: { time: string; CapMVRVCur: string }[] }) => {
+        const pts = (d.data??[]).map(x => ({ date: x.time.slice(0,10), mvrv: parseFloat(x.CapMVRVCur) })).filter(x=>!isNaN(x.mvrv))
+        setData(pts); setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 800, H = 140, PAD = { t:12, b:28, l:50, r:16 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+
+  // Y axis: 0 to max(mvrv, 5)
+  const maxMVRV = Math.max(5, ...data.map(d=>d.mvrv)) * 1.05
+  const minMVRV = 0
+
+  // Zones: <1 green, 1-2 neutral, 2-3.5 orange, >3.5 red
+  const zones: [number,number,string,string][] = [
+    [0,   1,   'rgba(52,199,89,0.12)',  '🟢 Sous-évalué'],
+    [1,   2,   'rgba(255,255,255,0.04)','⚪ Zone juste'],
+    [2,   3.5, 'rgba(255,149,0,0.12)',  '🟠 Haussier'],
+    [3.5, maxMVRV,'rgba(255,59,48,0.15)','🔴 Surchauffe'],
+  ]
+
+  function yPx(v: number) { return PAD.t + cH - ((v - minMVRV)/(maxMVRV - minMVRV))*cH }
+  function xPx(i: number) { return PAD.l + (i/(data.length-1||1))*cW }
+
+  const pts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.mvrv).toFixed(1)}`).join(' ')
+  const cur  = data[data.length-1]?.mvrv
+  const prev = data[data.length-2]?.mvrv
+  const delta = cur&&prev ? cur-prev : null
+  const zone  = cur ? (cur<1?'Sous-évalué':cur<2?'Zone juste':cur<3.5?'Haussier':'Surchauffe') : ''
+  const zColor= cur ? (cur<1?'#34C759':cur<2?'#8E8E93':cur<3.5?'#FF9500':'#FF3B30') : '#8E8E93'
+
+  const cardStyle: React.CSSProperties = {
+    background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+  const yLabels = [0,1,2,3.5,Math.round(maxMVRV*10)/10]
+
+  return (
+    <div style={cardStyle}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:3,height:20,borderRadius:2,background:zColor}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>MVRV Ratio — BTC</div>
+          <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>Market Value / Realized Value · CoinMetrics Community</div>
+        </div>
+        {cur && (
+          <div style={{marginLeft:'auto',textAlign:'right'}}>
+            <div style={{fontSize:22,fontWeight:900,color:zColor,fontFamily:'Syne,sans-serif',lineHeight:1}}>{cur.toFixed(3)}</div>
+            <div style={{fontSize:11,color:zColor,marginTop:2}}>{zone}</div>
+            {delta!==null && <div style={{fontSize:10,color:delta>0?'#34C759':'#FF3B30'}}>{delta>0?'▲':'▼'} {Math.abs(delta).toFixed(3)} 24h</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Zone legend */}
+      <div style={{display:'flex',gap:12,marginBottom:10,flexWrap:'wrap'}}>
+        {zones.map(([lo,hi,bg,label])=>(
+          <div key={label} style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:12,height:8,borderRadius:2,background:bg,border:'1px solid rgba(255,255,255,0.15)'}}/>
+            <span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{label} ({lo}–{hi===maxMVRV?'∞':hi})</span>
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{display:'flex',justifyContent:'center',height:H}}>
+          <div style={{width:20,height:20,margin:'auto',borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+        </div>
+      ) : data.length < 2 ? (
+        <div style={{textAlign:'center',height:H,lineHeight:`${H}px`,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          {/* Zone backgrounds */}
+          {zones.map(([lo,hi,bg])=>{
+            const y1=yPx(Math.min(hi,maxMVRV)), y2=yPx(lo)
+            return <rect key={lo} x={PAD.l} y={y1} width={cW} height={y2-y1} fill={bg} rx={2}/>
+          })}
+          {/* Horizontal zone lines */}
+          {[1,2,3.5].map(v=>(
+            <line key={v} x1={PAD.l} y1={yPx(v)} x2={PAD.l+cW} y2={yPx(v)}
+              stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="4 4"/>
+          ))}
+          {/* Y axis labels */}
+          {yLabels.map(v=>(
+            <text key={v} x={PAD.l-6} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.4)" fontSize={9} fontFamily="JetBrains Mono,monospace">{v}</text>
+          ))}
+          {/* X axis dates (6 evenly spaced) */}
+          {[0,0.2,0.4,0.6,0.8,1].map(f=>{
+            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            return <text key={f} x={xPx(idx)} y={H-6} textAnchor="middle" fill="rgba(255,255,255,0.3)" fontSize={8} fontFamily="JetBrains Mono,monospace">{data[idx]?.date.slice(5)}</text>
+          })}
+          {/* Gradient fill */}
+          <defs>
+            <linearGradient id="mvrv-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={zColor} stopOpacity="0.25"/>
+              <stop offset="100%" stopColor={zColor} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${PAD.l+cW},${yPx(0)}`} fill="url(#mvrv-grad)"/>
+          {/* Main line */}
+          <polyline points={pts} fill="none" stroke={zColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+          {/* Last point dot */}
+          {data.length>0&&<circle cx={xPx(data.length-1)} cy={yPx(cur!)} r={4} fill={zColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── 3. Altcoin Season Index ───────────────────────────────────────────────────
+function AltcoinSeasonGauge({ symbol }: { symbol: string }) {
+  const [asi,     setAsi]     = useState<number|null>(null)
+  const [loading, setLoading] = useState(true)
+  const [beats,   setBeats]   = useState<{ sym:string; ret:number; beatsBtc:boolean }[]>([])
+
+  useEffect(() => {
+    const ALTS = ['ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','AVAXUSDT','LINKUSDT','DOTUSDT','MATICUSDT']
+    const ALL  = ['BTCUSDT', ...ALTS]
+
+    async function load() {
+      try {
+        // Fetch 90-day klines for all assets in parallel
+        const results = await Promise.all(
+          ALL.map(sym =>
+            fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=91`)
+              .then(r => r.json())
+              .then((raw: [number,string,string,string,string][]) => ({
+                sym,
+                ret: raw.length > 1
+                  ? ((parseFloat(raw[raw.length-1][4]) - parseFloat(raw[0][4])) / parseFloat(raw[0][4])) * 100
+                  : null,
+              }))
+              .catch(() => ({ sym, ret: null }))
+          )
+        )
+
+        const btcRet = results[0].ret ?? 0
+        const altRets = results.slice(1).filter(r => r.ret !== null) as { sym:string; ret:number }[]
+        const beatingBtc = altRets.map(a => ({ sym:a.sym.replace('USDT',''), ret:a.ret, beatsBtc: a.ret > btcRet }))
+        const score = altRets.length > 0 ? (beatingBtc.filter(a=>a.beatsBtc).length / altRets.length) * 100 : 50
+
+        setBeats(beatingBtc.sort((a,b) => b.ret-a.ret))
+        setAsi(score)
+        setLoading(false)
+      } catch { setLoading(false) }
+    }
+    load()
+  }, [symbol])
+
+  const label = asi===null?'':asi>=75?'🌙 Alt Season':(asi>=55?'🔵 Tendance Alt':asi>=45?'⚪ Neutre':asi>=25?'🟠 Tendance BTC':'₿ Bitcoin Season')
+  const color = asi===null?'#8E8E93':(asi>=55?'#BF5AF2':asi>=45?'#8E8E93':asi>=25?'#FF9500':'#F7931A')
+
+  // Semicircle gauge via SVG arc
+  const R=80, CX=120, CY=100
+  function arc(pct:number, color:string) {
+    const angle = (pct/100)*180 - 180
+    const rad   = angle * Math.PI/180
+    const x = CX + R*Math.cos(rad), y = CY + R*Math.sin(rad)
+    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${pct>50?1:0} 1 ${x.toFixed(1)} ${y.toFixed(1)}`
+  }
+
+  const cardStyle: React.CSSProperties = {
+    background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:3,height:20,borderRadius:2,background:color}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>Altcoin Season Index</div>
+          <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>% des top altcoins surperformant BTC sur 90 jours</div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{display:'flex',justifyContent:'center',height:120}}>
+          <div style={{width:20,height:20,margin:'auto',borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+        </div>
+      ) : (
+        <div style={{display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+          {/* Gauge */}
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:180}}>
+            <svg viewBox="0 0 240 120" style={{width:220,height:110}}>
+              {/* Background arc (track) */}
+              <path d={`M ${CX-R} ${CY} A ${R} ${R} 0 0 1 ${CX+R} ${CY}`}
+                fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={14} strokeLinecap="round"/>
+              {/* Zone colors */}
+              {([[0,25,'#F7931A'],[25,45,'#FF9500'],[45,55,'#8E8E93'],[55,75,'#0A85FF'],[75,100,'#BF5AF2']] as [number,number,string][]).map(([from,to,c])=>(
+                <path key={from} d={`M ${CX-R} ${CY} A ${R} ${R} 0 ${to>50?1:0} 1 ${(CX+R*Math.cos(((from/100)*180-180)*Math.PI/180)).toFixed(1)} ${(CY+R*Math.sin(((from/100)*180-180)*Math.PI/180)).toFixed(1)}`}
+                  fill="none" stroke={c} strokeWidth={5} opacity={0.25} strokeLinecap="butt"/>
+              ))}
+              {/* Progress arc */}
+              {asi!==null&&<path d={arc(asi,color)} fill="none" stroke={color} strokeWidth={14} strokeLinecap="round"/>}
+              {/* Needle dot */}
+              {asi!==null&&<circle cx={CX+R*Math.cos(((asi/100)*180-180)*Math.PI/180)} cy={CY+R*Math.sin(((asi/100)*180-180)*Math.PI/180)} r={6} fill={color} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>}
+              {/* Center text */}
+              <text x={CX} y={CY-6} textAnchor="middle" fill={color} fontSize={26} fontWeight="900" fontFamily="Syne,sans-serif">{asi!==null?Math.round(asi):'–'}</text>
+              <text x={CX} y={CY+10} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={9}>/ 100</text>
+              {/* Labels */}
+              <text x={CX-R-4} y={CY+14} textAnchor="middle" fill="#F7931A" fontSize={8}>BTC</text>
+              <text x={CX+R+4} y={CY+14} textAnchor="middle" fill="#BF5AF2" fontSize={8}>ALT</text>
+            </svg>
+            <div style={{fontSize:13,fontWeight:700,color,marginTop:-8}}>{label}</div>
+          </div>
+
+          {/* Altcoin performance table */}
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.4)',marginBottom:8,letterSpacing:'0.08em'}}>PERFORMANCE 90J vs BTC</div>
+            <div style={{display:'flex',flexDirection:'column',gap:3}}>
+              {['BTCUSDT',...beats.map(b=>b.sym+'USDT')].slice(0,10).map((sym,i)=>{
+                const isBtc = i===0
+                const b     = isBtc ? null : beats[i-1]
+                const ret   = isBtc ? (beats.length?null:null) : b?.ret
+                const btcRet_= beats.length>0?(beats.reduce((a,b)=>a,0)):null
+                return (
+                  <div key={sym} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 8px',borderRadius:8,background:isBtc?'rgba(247,147,26,0.08)':b?.beatsBtc?'rgba(52,199,89,0.06)':'rgba(255,59,48,0.06)'}}>
+                    <div style={{fontSize:10,fontWeight:700,color:isBtc?'#F7931A':b?.beatsBtc?'#34C759':'#FF3B30',width:40,fontFamily:'JetBrains Mono,monospace'}}>
+                      {isBtc?'₿ BTC':b?.sym}
+                    </div>
+                    {!isBtc&&b&&(
+                      <>
+                        <div style={{flex:1,height:4,borderRadius:2,background:'rgba(255,255,255,0.06)',overflow:'hidden'}}>
+                          <div style={{height:'100%',borderRadius:2,width:`${Math.min(100,Math.abs(b.ret)/50*100)}%`,background:b.beatsBtc?'#34C759':'#FF3B30'}}/>
+                        </div>
+                        <div style={{fontSize:10,fontWeight:700,color:b.beatsBtc?'#34C759':'#FF3B30',width:52,textAlign:'right',fontFamily:'JetBrains Mono,monospace'}}>
+                          {b.ret>=0?'+':''}{b.ret.toFixed(1)}%
+                        </div>
+                        <div style={{fontSize:11}}>{b.beatsBtc?'✓':'✗'}</div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
