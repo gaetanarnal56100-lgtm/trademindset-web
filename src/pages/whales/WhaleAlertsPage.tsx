@@ -80,6 +80,220 @@ function scoreCol(s: number) {
   return '#00E5FF'
 }
 
+// ── Macro Metrics Banner ───────────────────────────────────────────────────────
+interface MetricData {
+  label: string; value: string; sub: string
+  delta: number | null   // absolute or % change
+  deltaLabel: string     // unit shown after delta ("%" | "pts" | "")
+  spark: number[]        // normalised 0–1 values (oldest→newest)
+  color: string; icon: string
+}
+
+function Sparkline({ data, color, width = 72, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (data.length < 2) return <div style={{ width, height }}/>
+  const pts = data.map((v, i) =>
+    `${(i / (data.length - 1)) * width},${height - Math.max(0.02, Math.min(0.98, v)) * (height - 4) - 2}`
+  )
+  const fillPts = `0,${height} ${pts.join(' ')} ${width},${height}`
+  const gradId = `sg${color.replace(/[^a-z0-9]/gi, '')}`
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', overflow: 'visible' }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25"/>
+          <stop offset="100%" stopColor={color} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon points={fillPts} fill={`url(#${gradId})`}/>
+      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Last point dot */}
+      <circle cx={width} cy={parseFloat(pts[pts.length-1].split(',')[1])} r="2.5" fill={color}/>
+    </svg>
+  )
+}
+
+function MacroMetricsBanner() {
+  const [metrics, setMetrics] = useState<MetricData[]>([])
+  const [loading,  setLoading] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    async function load() {
+      const cards: MetricData[] = []
+
+      // ── 1. Fear & Greed (30-day history) ────────────────────────────
+      try {
+        const r  = await fetch('https://api.alternative.me/fng/?limit=30')
+        const d  = await r.json() as { data: { value: string; value_classification: string }[] }
+        const vals = [...d.data].reverse().map(x => parseInt(x.value))
+        const cur  = vals[vals.length - 1]
+        const prev = vals[vals.length - 2]
+        const mn = Math.min(...vals), mx = Math.max(...vals)
+        const label = cur >= 75 ? 'Avidité extrême' : cur >= 55 ? 'Avidité' : cur >= 45 ? 'Neutre' : cur >= 25 ? 'Peur' : 'Peur extrême'
+        cards.push({
+          label: 'Fear & Greed', value: String(cur), sub: label,
+          delta: prev ? cur - prev : null, deltaLabel: 'pts',
+          spark: vals.map(v => (v - mn) / (mx - mn || 1)),
+          color: cur >= 60 ? '#34C759' : cur >= 40 ? '#FF9500' : '#FF3B30',
+          icon: cur >= 60 ? '🟢' : cur >= 40 ? '🟡' : '🔴',
+        })
+      } catch { /* skip */ }
+
+      // ── 2. BTC Dominance (7 days × 4h klines) ──────────────────────
+      try {
+        const r   = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCDOMUSDT&interval=4h&limit=42')
+        const raw = await r.json() as [number, string, string, string, string, string][]
+        const closes = raw.map(k => parseFloat(k[4]))
+        const cur    = closes[closes.length - 1]
+        const prev6  = closes[closes.length - 7]   // ~24h ago
+        const mn = Math.min(...closes), mx = Math.max(...closes)
+        const delta = prev6 ? cur - prev6 : null
+        cards.push({
+          label: 'BTC Dominance', value: `${cur.toFixed(1)}%`, sub: 'part du marché',
+          delta, deltaLabel: 'pts',
+          spark: closes.map(v => (v - mn) / (mx - mn || 1)),
+          color: '#F7931A', icon: '₿',
+        })
+      } catch { /* skip */ }
+
+      // ── 3. Total Market Cap (CoinGecko global) ──────────────────────
+      try {
+        const r = await fetch('https://api.coingecko.com/api/v3/global')
+        const d = await r.json() as { data: { total_market_cap: { usd: number }; market_cap_change_percentage_24h_usd: number } }
+        const cap = d.data.total_market_cap.usd
+        const pct = d.data.market_cap_change_percentage_24h_usd
+        // Approximate sparkline: use BTC dominance closes already fetched as proxy shape
+        cards.push({
+          label: 'Market Cap Total',
+          value: cap >= 1e12 ? `$${(cap/1e12).toFixed(2)}T` : `$${(cap/1e9).toFixed(0)}B`,
+          sub: 'toutes cryptos',
+          delta: pct, deltaLabel: '%',
+          spark: [],   // no dedicated endpoint on free tier
+          color: pct > 0 ? '#34C759' : '#FF3B30', icon: '🌍',
+        })
+      } catch { /* skip */ }
+
+      // ── 4. Open Interest BTC futures (7 days × 4h) ──────────────────
+      try {
+        const [oiRes, priceRes] = await Promise.all([
+          fetch('https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=4h&limit=42'),
+          fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'),
+        ])
+        const oiRaw   = await oiRes.json()   as { sumOpenInterest: string }[]
+        const priceData = await priceRes.json() as { price: string }
+        const btcPrice  = parseFloat(priceData.price)
+        const oiVals  = oiRaw.map(x => parseFloat(x.sumOpenInterest))
+        const oiUsdVals = oiVals.map(v => v * btcPrice)
+        const cur     = oiUsdVals[oiUsdVals.length - 1]
+        const prev24h = oiUsdVals[oiUsdVals.length - 7]
+        const delta   = prev24h ? ((cur - prev24h) / prev24h) * 100 : null
+        const mn = Math.min(...oiVals), mx = Math.max(...oiVals)
+        cards.push({
+          label: 'Open Interest BTC',
+          value: cur >= 1e9 ? `$${(cur/1e9).toFixed(1)}B` : `$${(cur/1e6).toFixed(0)}M`,
+          sub: 'futures perpétuels',
+          delta, deltaLabel: '%',
+          spark: oiVals.map(v => (v - mn) / (mx - mn || 1)),
+          color: delta !== null && delta > 0 ? '#34C759' : '#FF3B30', icon: '📈',
+        })
+      } catch { /* skip */ }
+
+      // ── 5. Funding Rate BTC (21 derniers = ~7 jours à 8h/funding) ───
+      try {
+        const r   = await fetch('https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=21')
+        const raw = await r.json() as { fundingRate: string }[]
+        const rates = raw.map(x => parseFloat(x.fundingRate) * 100)
+        const cur   = rates[rates.length - 1]
+        const prev  = rates[rates.length - 4]   // ~24h ago
+        const delta = prev !== undefined ? cur - prev : null
+        const mn = Math.min(...rates), mx = Math.max(...rates)
+        cards.push({
+          label: 'Funding Rate BTC',
+          value: `${cur >= 0 ? '+' : ''}${cur.toFixed(4)}%`,
+          sub: cur > 0.015 ? '🔴 Longs surchargés' : cur < -0.005 ? '🟢 Shorts surchargés' : '🟡 Neutre',
+          delta, deltaLabel: 'pts',
+          spark: rates.map(v => (v - mn) / (mx - mn || 1)),
+          color: cur > 0.015 ? '#FF3B30' : cur < -0.005 ? '#34C759' : '#FF9500', icon: '💰',
+        })
+      } catch { /* skip */ }
+
+      // ── 6. Long / Short Ratio BTC (7 days × 4h) ─────────────────────
+      try {
+        const r   = await fetch('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=BTCUSDT&period=4h&limit=42')
+        const raw = await r.json() as { longShortRatio: string }[]
+        const vals  = raw.map(x => parseFloat(x.longShortRatio))
+        const cur   = vals[vals.length - 1]
+        const prev  = vals[vals.length - 7]
+        const delta = prev ? ((cur - prev) / prev) * 100 : null
+        const mn = Math.min(...vals), mx = Math.max(...vals)
+        cards.push({
+          label: 'Long/Short Ratio',
+          value: cur.toFixed(2),
+          sub: cur > 1.15 ? 'Longs dominants' : cur < 0.85 ? 'Shorts dominants' : 'Équilibré',
+          delta, deltaLabel: '%',
+          spark: vals.map(v => (v - mn) / (mx - mn || 1)),
+          color: cur > 1.15 ? '#34C759' : cur < 0.85 ? '#FF3B30' : '#FF9500', icon: '⚖️',
+        })
+      } catch { /* skip */ }
+
+      if (alive) { setMetrics(cards); setLoading(false) }
+    }
+    load()
+    return () => { alive = false }
+  }, [])
+
+  if (loading) return (
+    <div className="px-6 py-3 flex gap-3 overflow-x-auto flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', scrollbarWidth: 'none' }}>
+      {[...Array(6)].map((_, i) => (
+        <div key={i} className="flex-shrink-0 rounded-2xl animate-pulse"
+          style={{ width: 148, height: 88, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}/>
+      ))}
+    </div>
+  )
+
+  return (
+    <div className="px-4 py-3 flex gap-2.5 overflow-x-auto flex-shrink-0"
+      style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', scrollbarWidth: 'none' }}>
+      {metrics.map((m, i) => (
+        <div key={i} className="flex-shrink-0 rounded-2xl relative overflow-hidden"
+          style={{
+            width: 152, background: 'rgba(255,255,255,0.025)',
+            border: `1px solid rgba(255,255,255,0.07)`,
+            boxShadow: `0 0 0 0 ${m.color}`,
+          }}>
+          {/* Sparkline — fond absolu */}
+          {m.spark.length > 1 && (
+            <div className="absolute bottom-0 right-0 opacity-50 pointer-events-none">
+              <Sparkline data={m.spark} color={m.color} width={80} height={36}/>
+            </div>
+          )}
+          {/* Contenu */}
+          <div className="relative px-3.5 pt-3 pb-2.5 flex flex-col gap-0.5">
+            <div className="text-[9px] uppercase tracking-widest font-bold flex items-center gap-1"
+              style={{ color: 'rgba(255,255,255,0.35)' }}>
+              <span>{m.icon}</span> {m.label}
+            </div>
+            <div className="text-[17px] font-black leading-none mt-0.5"
+              style={{ color: m.color, fontFamily: 'Syne, sans-serif', letterSpacing: '-0.5px' }}>
+              {m.value}
+            </div>
+            <div className="text-[10px] leading-snug" style={{ color: 'rgba(255,255,255,0.38)' }}>
+              {m.sub}
+            </div>
+            {m.delta !== null && (
+              <div className="text-[10px] font-semibold mt-0.5"
+                style={{ color: m.delta > 0 ? '#34C759' : m.delta < 0 ? '#FF3B30' : '#8E8E93' }}>
+                {m.delta > 0 ? '▲' : '▼'} {Math.abs(m.delta).toFixed(m.deltaLabel === 'pts' ? 1 : 2)}{m.deltaLabel} <span style={{ color: 'rgba(255,255,255,0.25)', fontWeight: 400 }}>24h</span>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Verdict banner ─────────────────────────────────────────────────────────────
 function VerdictBanner({ alerts }: { alerts: WhaleAlert[] }) {
   const h24 = alerts.filter(a => Date.now() - a.timestamp < 86_400_000)
@@ -727,6 +941,9 @@ export default function WhaleAlertsPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Macro metrics banner (always visible) ── */}
+      <MacroMetricsBanner/>
 
       {/* ── Scrollable content ── */}
       <div className="flex-1 overflow-y-auto">
