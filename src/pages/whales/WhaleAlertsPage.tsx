@@ -470,9 +470,17 @@ function InsiderTradesSection() {
   const [loading, setLoading] = useState(true)
   const [tab,     setTab]     = useState<'buy'|'sell'>('buy')
   const [error,   setError]   = useState(false)
+  const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
-    const fn = httpsCallable<Record<string,never>, { data: InsiderTrade[] }>(fbFn, 'fetchInsiderTrades')
+    if (!loading) return
+    const t = setInterval(() => setElapsed(e => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [loading])
+
+  useEffect(() => {
+    // Sequential Finnhub calls take ~3-4s — use 120s timeout
+    const fn = httpsCallable<Record<string,never>, { data: InsiderTrade[] }>(fbFn, 'fetchInsiderTrades', { timeout: 120_000 })
     fn({}).then(r => { setData(r.data.data ?? []); setLoading(false) })
           .catch(() => { setError(true); setLoading(false) })
   }, [])
@@ -511,9 +519,17 @@ function InsiderTradesSection() {
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center h-16 gap-2" style={{ color: 'var(--tm-text-muted)' }}>
-          <div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: 'rgba(0,229,255,0.2)', borderTopColor: 'var(--tm-accent)' }}/>
-          <span className="text-xs">Chargement données SEC…</span>
+        <div className="flex items-center gap-3 px-1 py-3">
+          <div className="w-4 h-4 rounded-full border-2 flex-shrink-0 animate-spin" style={{ borderColor: 'rgba(0,229,255,0.15)', borderTopColor: 'var(--tm-accent)' }}/>
+          <div className="flex-1">
+            <div className="text-xs mb-1.5" style={{ color: 'var(--tm-text-muted)' }}>
+              Analyse SEC Form 4 — {elapsed < 5 ? 'démarrage…' : `${elapsed}s — vérification des ${['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','JPM'].slice(0, Math.min(8, Math.floor(elapsed/0.5))+ 1).join(', ')}…`}
+            </div>
+            <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+              <div className="h-full rounded-full transition-all duration-1000"
+                style={{ width: `${Math.min(95, elapsed * 3.5)}%`, background: 'linear-gradient(90deg, var(--tm-accent), rgba(0,229,255,0.4))' }}/>
+            </div>
+          </div>
         </div>
       )}
 

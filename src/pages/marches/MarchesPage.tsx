@@ -1454,8 +1454,8 @@ function AnalystRatingsPanel({ symbols, onClose }: { symbols: string[]; onClose:
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fn = httpsCallable<{ symbols: string[] }, { data: AnalystRating[] }>(fbFunctions, 'fetchAnalystRatings')
-    fn({ symbols: symbols.slice(0, 15) })
+    const fn = httpsCallable<{ symbols: string[] }, { data: AnalystRating[] }>(fbFunctions, 'fetchAnalystRatings', { timeout: 120_000 })
+    fn({ symbols: symbols.slice(0, 10) }) // max 10 → ~5s sequential
       .then(r => { setData(r.data.data ?? []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [symbols.join(',')])
@@ -1564,8 +1564,8 @@ function EarningsPanel({ symbols, onClose }: { symbols: string[]; onClose: () =>
   const [sortBy, setSortBy]   = useState<'beatRate' | 'nextDate'>('nextDate')
 
   useEffect(() => {
-    const fn = httpsCallable<{ symbols: string[] }, { data: EarningsData[] }>(fbFunctions, 'fetchStockEarnings')
-    fn({ symbols: symbols.slice(0, 15) })
+    const fn = httpsCallable<{ symbols: string[] }, { data: EarningsData[] }>(fbFunctions, 'fetchStockEarnings', { timeout: 120_000 })
+    fn({ symbols: symbols.slice(0, 10) }) // max 10 → ~3s sequential
       .then(r => { setData(r.data.data ?? []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [symbols.join(',')])
