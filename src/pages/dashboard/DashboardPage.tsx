@@ -9,6 +9,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db, auth } from '@/services/firebase/config'
 import PnLCurve from './PnLModal'
 import ShareStatsModal from '@/components/share/ShareStatsModal'
+import { cfSync } from '../journal/ExchangeSyncModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function safeTime(d: any): number {
@@ -928,6 +929,227 @@ function AdvancedAnalytics({trades}:{trades:Trade[]}) {
   )
 }
 
+// ── Market Regime Bar ─────────────────────────────────────────────────────
+interface MarketData { btcChange: number; fg: number; regime: 'Bullish' | 'Neutral' | 'Bearish' }
+
+function useMarketData(): MarketData {
+  const [data, setData] = useState<MarketData>({ btcChange: 0, fg: 50, regime: 'Neutral' })
+  useEffect(() => {
+    let cancelled = false
+    async function fetchData() {
+      try {
+        const [btcRes, fgRes] = await Promise.all([
+          fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT').then(r => r.json()),
+          fetch('https://api.alternative.me/fng/?limit=1').then(r => r.json()),
+        ])
+        if (cancelled) return
+        const btcChange = parseFloat(btcRes.priceChangePercent ?? '0')
+        const fg = parseInt(fgRes.data?.[0]?.value ?? '50', 10)
+        const regime: MarketData['regime'] =
+          fg > 60 && btcChange > 0 ? 'Bullish' :
+          fg < 40 && btcChange < 0 ? 'Bearish' : 'Neutral'
+        setData({ btcChange, fg, regime })
+      } catch { /* ignore */ }
+    }
+    fetchData()
+    const id = setInterval(fetchData, 300_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+  return data
+}
+
+function MarketRegimeBar() {
+  const { btcChange, fg, regime } = useMarketData()
+  const regimeColor = regime === 'Bullish' ? '34,199,100' : regime === 'Bearish' ? '255,59,48' : '255,149,0'
+  const regimeHex   = regime === 'Bullish' ? '#22C764'   : regime === 'Bearish' ? '#FF3B30'   : '#FF9500'
+  const fgColor     = fg > 60 ? '34,199,100' : fg < 40 ? '255,59,48' : '255,149,0'
+  const fgHex       = fg > 60 ? '#22C764'    : fg < 40 ? '#FF3B30'    : '#FF9500'
+  const fgLabel     = fg >= 75 ? 'Extreme Greed' : fg >= 55 ? 'Greed' : fg >= 45 ? 'Neutral' : fg >= 25 ? 'Fear' : 'Extreme Fear'
+  const btcColor    = btcChange >= 0 ? '34,199,100' : '255,59,48'
+  const btcHex      = btcChange >= 0 ? '#22C764'    : '#FF3B30'
+  const riskScore   = Math.round(fg)
+  const riskColor   = riskScore > 70 ? '255,59,48' : riskScore > 45 ? '255,149,0' : '34,199,100'
+
+  function Pill({ glow, hex, children }: { glow: string; hex: string; children: React.ReactNode }) {
+    return (
+      <div style={{
+        background: `rgba(${glow},0.12)`,
+        border: `1px solid rgba(${glow},0.3)`,
+        borderRadius: 20,
+        padding: '5px 14px',
+        fontSize: 11,
+        fontWeight: 700,
+        color: hex,
+        fontFamily: 'JetBrains Mono, monospace',
+        whiteSpace: 'nowrap' as const,
+      }}>
+        {children}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      background: 'rgba(8,12,22,0.6)',
+      border: '1px solid rgba(0,229,255,0.08)',
+      borderRadius: 12,
+      padding: '10px 16px',
+      marginBottom: 16,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap' as const,
+      backdropFilter: 'blur(8px)',
+    }}>
+      <Pill glow={regimeColor} hex={regimeHex}>🌐 Régime: {regime}</Pill>
+      <Pill glow={fgColor}     hex={fgHex}>🧠 F&amp;G: {fg} {fgLabel}</Pill>
+      <Pill glow={btcColor}    hex={btcHex}>₿ BTC 24h: {btcChange >= 0 ? '+' : ''}{btcChange.toFixed(2)}%</Pill>
+      <Pill glow={riskColor}   hex={`rgb(${riskColor})`}>🌡️ Risk Score: {riskScore}/100</Pill>
+      <div style={{
+        background: 'rgba(34,199,100,0.12)',
+        border: '1px solid rgba(34,199,100,0.3)',
+        borderRadius: 20,
+        padding: '5px 14px',
+        fontSize: 11,
+        fontWeight: 700,
+        color: '#22C764',
+        fontFamily: 'JetBrains Mono, monospace',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        whiteSpace: 'nowrap' as const,
+      }}>
+        <motion.div
+          style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C764', boxShadow: '0 0 6px #22C764' }}
+          animate={{ opacity: [1, 0.2, 1] }}
+          transition={{ duration: 1, repeat: Infinity }}
+        />
+        📡 Live
+      </div>
+    </div>
+  )
+}
+
+// ── Analysis Card (upgraded KPICard) ──────────────────────────────────────
+interface AnalysisContext { label: string; signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL' }
+
+function AnalysisCard({ label, rawVal, fmtFn, color, glow, sub, sparkData, isWinRate=false, loaded=true, context }: {
+  label: string, rawVal: number, fmtFn: (v: number) => string
+  color: string, glow: string, sub: string
+  sparkData?: number[], isWinRate?: boolean, loaded?: boolean
+  context?: AnalysisContext
+}) {
+  const counted = useCountUp(rawVal, 1400, loaded)
+  const signalColor = context?.signal === 'BULLISH' ? '34,199,100' : context?.signal === 'BEARISH' ? '255,59,48' : '255,149,0'
+  const signalHex   = context?.signal === 'BULLISH' ? '#22C764'    : context?.signal === 'BEARISH' ? '#FF3B30'    : '#FF9500'
+  return (
+    <motion.div variants={cardVariants}
+      whileHover={{ y:-5, boxShadow:`0 16px 50px rgba(${glow},0.22), 0 0 0 1px rgba(${glow},0.45)` }}
+      style={{
+        background: `linear-gradient(135deg, rgba(${glow},0.06) 0%, rgba(8,12,22,0.95) 60%)`,
+        border:`1px solid rgba(${glow},0.2)`,
+        borderRadius:16, padding:'18px 20px', position:'relative', overflow:'hidden',
+        backdropFilter:'blur(16px)',
+        boxShadow:`0 0 25px rgba(${glow},0.08), inset 0 1px 0 rgba(${glow},0.12)`,
+        cursor:'default',
+      }}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,rgba(${glow},0.7),transparent)`}}/>
+      <div style={{position:'absolute',top:0,left:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderLeft:`1px solid rgba(${glow},0.6)`,borderTopLeftRadius:16}}/>
+      <div style={{position:'absolute',top:0,right:0,width:12,height:12,borderTop:`1px solid rgba(${glow},0.6)`,borderRight:`1px solid rgba(${glow},0.6)`,borderTopRightRadius:16}}/>
+      <div style={{position:'absolute',bottom:0,left:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderLeft:`1px solid rgba(${glow},0.3)`,borderBottomLeftRadius:16}}/>
+      <div style={{position:'absolute',bottom:0,right:0,width:12,height:12,borderBottom:`1px solid rgba(${glow},0.3)`,borderRight:`1px solid rgba(${glow},0.3)`,borderBottomRightRadius:16}}/>
+      <motion.div style={{position:'absolute',width:60,height:60,borderRadius:'50%',background:`rgba(${glow},0.1)`,filter:'blur(20px)',pointerEvents:'none'}}
+        animate={{top:['5%','5%','65%','65%','5%'],left:['5%','72%','72%','5%','5%']}}
+        transition={{duration:10,repeat:Infinity,ease:'linear'}}/>
+      {/* Signal badge top-right */}
+      {context && (
+        <div style={{
+          position:'absolute', top:10, right:12,
+          background:`rgba(${signalColor},0.12)`,
+          border:`1px solid rgba(${signalColor},0.3)`,
+          borderRadius:10, padding:'2px 8px',
+          fontSize:9, fontWeight:800, color:signalHex,
+          letterSpacing:'0.08em',
+        }}>
+          {context.signal}
+        </div>
+      )}
+      {isWinRate ? (
+        <div style={{ display:'flex', alignItems:'center', gap:14, position:'relative' }}>
+          <div style={{ position:'relative', flexShrink:0, width:64, height:64 }}>
+            <RingProgress value={rawVal} glow={glow} size={64} strokeWidth={5}/>
+            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <span style={{ fontSize:13, fontWeight:900, color, fontFamily:'JetBrains Mono, monospace' }}>
+                {loaded ? `${Math.round(counted)}%` : '—'}
+              </span>
+            </div>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:10, color:`rgba(${glow},0.7)`, marginBottom:6, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{label}</div>
+            <div style={{ fontSize:10, color:'rgba(148,163,184,0.7)' }}>{sub}</div>
+            {context && <div style={{fontSize:10,color:signalHex,marginTop:4,fontWeight:600}}>{context.label}</div>}
+          </div>
+        </div>
+      ) : (
+        <div style={{ position:'relative' }}>
+          <div style={{ fontSize:10, color:`rgba(${glow},0.7)`, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{label}</div>
+          {sparkData && sparkData.length >= 2 && (
+            <div style={{ position:'absolute', top:0, right:0 }}>
+              <MiniSparkline data={sparkData} color={color} width={55} height={22}/>
+            </div>
+          )}
+          {!loaded ? <Skel h={28}/> : (
+            <motion.div
+              animate={{ textShadow:[`0 0 10px rgba(${glow},0.3)`,`0 0 22px rgba(${glow},0.6)`,`0 0 10px rgba(${glow},0.3)`] }}
+              transition={{ duration:2.5, repeat:Infinity }}
+              style={{ fontSize:label.includes('P&L') || label.includes('pnl') || label.includes('PnL') ? 30 : 26, fontWeight:800, color, fontFamily:'JetBrains Mono, monospace', letterSpacing:'-0.02em', marginBottom:4 }}>
+              {fmtFn(counted)}
+            </motion.div>
+          )}
+          <div style={{ fontSize:10, color:'rgba(148,163,184,0.7)' }}>{sub}</div>
+          {context && <div style={{fontSize:10,color:signalHex,marginTop:4,fontWeight:600}}>{context.label}</div>}
+        </div>
+      )}
+      <motion.div style={{position:'absolute',bottom:0,left:0,height:2,width:'40%',background:`linear-gradient(90deg,transparent,rgba(${glow},0.8),transparent)`,pointerEvents:'none'}}
+        animate={{left:['-40%','140%']}} transition={{duration:2.5,repeat:Infinity,ease:'linear',repeatDelay:1.5}}/>
+    </motion.div>
+  )
+}
+
+// ── Section Header (terminal style) ──────────────────────────────────────
+function SectionHeader({ title, glowRgb }: { title: string; glowRgb: string }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
+      <div style={{ width:2, height:16, borderRadius:1, background:`rgba(${glowRgb},0.8)`, boxShadow:`0 0 8px rgba(${glowRgb},0.5)` }}/>
+      <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,0.5)', textTransform:'uppercase' as const, letterSpacing:'0.12em' }}>{title}</div>
+    </div>
+  )
+}
+
+// ── Auto-sync hook ────────────────────────────────────────────────────────
+function useAutoSync() {
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null
+    const ACTIVE = ['binance','bybit','okx','kucoinfutures','bitget','gateio','mexc','htx','kraken','phemex','deribit','oanda','ig','capitalcom','alpaca','tastytrade','trading212'] as const
+    type Ex = typeof ACTIVE[number]
+    const cfGetStatus = httpsCallable<{ exchange: Ex }, { connected: boolean }>(functions, 'getExchangeKeyStatus')
+
+    async function doSync() {
+      try {
+        const results = await Promise.all(ACTIVE.map(ex => cfGetStatus({ exchange: ex }).catch(() => ({ data: { connected: false } }))))
+        const connected = ACTIVE.filter((_, i) => results[i].data.connected)
+        if (connected.length > 0) {
+          await Promise.allSettled(connected.map(ex => cfSync({ exchange: ex as any })))
+        }
+      } catch { /* ignore */ }
+    }
+
+    const initial = setTimeout(doSync, 10_000)
+    timer = setInterval(doSync, 300_000)
+    return () => { clearTimeout(initial); if (timer) clearInterval(timer) }
+  }, [])
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────
 import ModularDashboard from './modular/ModularDashboard'
 
@@ -952,6 +1174,8 @@ export default function DashboardPage() {
     return()=>{u1();u2();u3()}
   },[])
 
+  useAutoSync()
+
   const s   = useMemo(()=>calcStats(trades),[trades])
   const emo = useMemo(()=>calcEmotions(moods,trades),[moods,trades])
   const closed=trades.filter(t=>t.status==='closed')
@@ -973,7 +1197,7 @@ export default function DashboardPage() {
 
   return(
     <div style={{padding:'28px 28px 60px',maxWidth:1600,margin:'0 auto',
-      backgroundImage:'linear-gradient(rgba(0,229,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.025) 1px,transparent 1px)',
+      backgroundImage:'linear-gradient(rgba(0,229,255,0.035) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.035) 1px,transparent 1px)',
       backgroundSize:'40px 40px',
     }}>
       {/* Header */}
@@ -1033,10 +1257,13 @@ export default function DashboardPage() {
       {/* Scrolling Ticker */}
       <ScrollingTicker items={tickerItems}/>
 
+      {/* Market Regime Bar */}
+      <MarketRegimeBar/>
+
       {/* KPIs — staggered entrance + hover lift + countup + ring + sparkline */}
       <motion.div variants={containerVariants} initial="hidden" animate="show"
         style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
-        <KPICard
+        <AnalysisCard
           label={t('dashboard.pnlTotal')}
           rawVal={s.totalPnL}
           fmtFn={fmtK}
@@ -1045,8 +1272,9 @@ export default function DashboardPage() {
           sub={`${closed.length} ${t('dashboard.closedTrades').toLowerCase()}`}
           sparkData={sparkPnLs}
           loaded={!loading}
+          context={s.totalPnL >= 0 ? { label:'En profit', signal:'BULLISH' } : { label:'En perte', signal:'BEARISH' }}
         />
-        <KPICard
+        <AnalysisCard
           label="Win Rate"
           rawVal={s.winRate}
           fmtFn={v=>`${v.toFixed(1)}%`}
@@ -1055,8 +1283,9 @@ export default function DashboardPage() {
           sub={`${s.wins}W / ${s.losses}L`}
           isWinRate={true}
           loaded={!loading}
+          context={s.winRate > 60 ? { label:'> 60% excellent', signal:'BULLISH' } : s.winRate < 50 ? { label:'< 50% à améliorer', signal:'BEARISH' } : { label:'50-60% correct', signal:'NEUTRAL' }}
         />
-        <KPICard
+        <AnalysisCard
           label="Ratio R/R"
           rawVal={s.payoffRatio}
           fmtFn={v=>v.toFixed(2)}
@@ -1064,8 +1293,9 @@ export default function DashboardPage() {
           glow="0,229,255"
           sub="Rendement / Risque"
           loaded={!loading}
+          context={s.payoffRatio > 1.5 ? { label:'> 1.5 optimal', signal:'BULLISH' } : s.payoffRatio < 1.0 ? { label:'< 1.0 à revoir', signal:'BEARISH' } : { label:'1.0–1.5 correct', signal:'NEUTRAL' }}
         />
-        <KPICard
+        <AnalysisCard
           label={t('common.open')}
           rawVal={open.length}
           fmtFn={v=>String(Math.round(v))}
@@ -1073,6 +1303,7 @@ export default function DashboardPage() {
           glow={open.length>0?'255,149,0':'100,116,139'}
           sub="Positions actives"
           loaded={!loading}
+          context={{ label:`${open.length} position${open.length !== 1 ? 's' : ''} active${open.length !== 1 ? 's' : ''}`, signal:'NEUTRAL' }}
         />
       </motion.div>
 
@@ -1122,7 +1353,7 @@ export default function DashboardPage() {
         {/* Main Metrics */}
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:12,fontWeight:700,color:'rgba(226,232,240,0.9)',marginBottom:16,textTransform:'uppercase',letterSpacing:'0.1em'}}>Main Metrics</div>
+          <SectionHeader title="Main Metrics" glowRgb="0,229,255"/>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
               <MetricCell key="wr" value={`${s.winRate.toFixed(1)}%`} label="Win Rate" sub={`${s.wins}W / ${s.losses}L`} c="#22C764" glow="34,199,100" pct={s.winRate} tooltip="% de trades gagnants"/>,
@@ -1135,7 +1366,7 @@ export default function DashboardPage() {
         {/* Advanced Metrics */}
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:12,fontWeight:700,color:'rgba(226,232,240,0.9)',marginBottom:2,textTransform:'uppercase',letterSpacing:'0.1em'}}>Advanced Metrics</div>
+          <SectionHeader title="Advanced Metrics" glowRgb="191,90,242"/>
           <div style={{fontSize:10,color:'rgba(148,163,184,0.5)',marginBottom:16}}>Drawdown · Sharpe · Expectancy · Streaks</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {loading?[1,2,3,4].map(i=><Skel key={i} h={80}/>):[
@@ -1213,20 +1444,31 @@ export default function DashboardPage() {
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:14}}>{t('dashboard.recentTrades')}</div>
+          <SectionHeader title={t('dashboard.recentTrades')} glowRgb="10,133,255"/>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:8}}>{[1,2,3].map(i=><Skel key={i} h={44}/>)}</div>:recent.length===0?(
             <div style={{textAlign:'center',padding:'24px 0',color:'var(--tm-text-muted)',fontSize:13}}>{t('dashboard.noTrades')}</div>
           ):(
             <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              {recent.map(t=>{
-                const pnl=tradePnL(t)
-                return(<div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:10,background:'rgba(255,255,255,0.02)'}}>
-                  <div style={{width:28,height:28,borderRadius:8,background:t.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>{t.type==='Long'?'↑':'↓'}</div>
+              {recent.map(tr=>{
+                const pnl=tradePnL(tr)
+                const isLong=tr.type==='Long'
+                const typeGlow=isLong?'34,199,100':'255,59,48'
+                const typeHex=isLong?'#22C764':'#FF3B30'
+                return(<div key={tr.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:10,background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.03)'}}>
+                  {/* TYPE badge */}
+                  <div style={{
+                    minWidth:44,padding:'3px 7px',borderRadius:6,textAlign:'center',
+                    background:`rgba(${typeGlow},0.12)`,border:`1px solid rgba(${typeGlow},0.3)`,
+                    fontSize:9,fontWeight:800,color:typeHex,letterSpacing:'0.06em',flexShrink:0,
+                  }}>{isLong?'LONG':'SHORT'}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{t.symbol}</div>
-                    <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{fmtDate(t.date)} · <span style={{color:systemColor(t.systemId)}}>{systemName(t.systemId)}</span></div>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <div style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{tr.symbol}</div>
+                      {tr.entryPrice!=null&&<div style={{fontSize:9,color:'rgba(148,163,184,0.5)',fontFamily:'JetBrains Mono, monospace'}}>@ {tr.entryPrice}{tr.exitPrice!=null?` → ${tr.exitPrice}`:''}</div>}
+                    </div>
+                    <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{fmtDate(tr.date)} · <span style={{color:systemColor(tr.systemId)}}>{systemName(tr.systemId)}</span></div>
                   </div>
-                  {t.status==='open'?(<div style={{fontSize:10,fontWeight:600,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)',padding:'2px 7px',borderRadius:5}}>OUVERT</div>):(<div style={{fontSize:12,fontWeight:700,color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</div>)}
+                  {tr.status==='open'?(<div style={{fontSize:10,fontWeight:600,color:'var(--tm-warning)',background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)',padding:'2px 7px',borderRadius:5}}>OUVERT</div>):(<div style={{fontSize:12,fontWeight:700,color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono, monospace'}}>{fmtK(pnl)}</div>)}
                 </div>)
               })}
             </div>
@@ -1234,7 +1476,7 @@ export default function DashboardPage() {
         </div>
         <div style={card()}>
           <div style={hl()}/>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--tm-text-primary)',marginBottom:14}}>{t('dashboard.statistics')}</div>
+          <SectionHeader title={t('dashboard.statistics')} glowRgb="191,90,242"/>
           {loading?<div style={{display:'flex',flexDirection:'column',gap:10}}>{[1,2,3,4,5].map(i=><Skel key={i}/>)}</div>:(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               {[
