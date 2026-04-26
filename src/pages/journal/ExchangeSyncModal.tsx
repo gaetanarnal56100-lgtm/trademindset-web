@@ -86,7 +86,7 @@ const ACTIVE_EXCHANGES = EXCHANGES.filter(e => !e.comingSoon && !e.noApi).map(e 
 const cfSaveKey   = httpsCallable<{ exchange: Exchange; apiKey: string; apiSecret: string; passphrase?: string }, { success: boolean; message: string }>(functions, 'saveExchangeAPIKey')
 const cfGetStatus = httpsCallable<{ exchange: Exchange }, KeyStatus>(functions, 'getExchangeKeyStatus')
 const cfDeleteKey = httpsCallable<{ exchange: Exchange }, { success: boolean }>(functions, 'deleteExchangeAPIKey')
-export const cfSync = httpsCallable<{ exchange: Exchange; startTime?: number }, SyncResult>(functions, 'syncExchangeTrades')
+export const cfSync = httpsCallable<{ exchange: Exchange; startTime?: number; forceFull?: boolean }, SyncResult>(functions, 'syncExchangeTrades')
 
 function fmtTime(ms: number) {
   return new Date(ms).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
@@ -160,11 +160,11 @@ function ExchangeCard({ ex, status, onRefreshStatus }: {
     finally { setSaving(false) }
   }
 
-  const handleSync = async () => {
+  const handleSync = async (forceFull = false) => {
     setSyncing(true); setMsg(null)
     try {
-      const r = await cfSync({ exchange: ex.id })
-      setMsg({ type:'ok', text: r.data.message })
+      const r = await cfSync({ exchange: ex.id, ...(forceFull ? { forceFull: true } : {}) })
+      setMsg({ type:'ok', text: (forceFull ? '🔄 Sync 90j — ' : '') + r.data.message })
       onRefreshStatus()
     } catch (e: any) { setMsg({ type:'err', text: e?.message ?? 'Erreur sync' }) }
     finally { setSyncing(false) }
@@ -231,8 +231,11 @@ function ExchangeCard({ ex, status, onRefreshStatus }: {
           {connected ? (
             <>
               <span style={{ padding:'2px 7px', borderRadius:20, fontSize:9, fontWeight:700, background:'rgba(34,199,89,0.12)', color:'#22C759', border:'1px solid rgba(34,199,89,0.2)' }}>✓</span>
-              <button onClick={handleSync} disabled={syncing} style={{ padding:'4px 10px', borderRadius:7, border:'1px solid rgba(0,229,255,0.2)', background:'rgba(0,229,255,0.07)', color:'#00E5FF', fontSize:11, fontWeight:600, cursor:syncing?'wait':'pointer' }}>
+              <button onClick={() => handleSync(false)} disabled={syncing} title="Sync incrémental (depuis dernier sync)" style={{ padding:'4px 10px', borderRadius:7, border:'1px solid rgba(0,229,255,0.2)', background:'rgba(0,229,255,0.07)', color:'#00E5FF', fontSize:11, fontWeight:600, cursor:syncing?'wait':'pointer' }}>
                 {syncing ? '⏳' : '↻ Sync'}
+              </button>
+              <button onClick={() => handleSync(true)} disabled={syncing} title="Force sync sur les 90 derniers jours (rattrape les trades manqués)" style={{ padding:'4px 8px', borderRadius:7, border:'1px solid rgba(255,149,0,0.25)', background:'rgba(255,149,0,0.07)', color:'#FF9500', fontSize:10, fontWeight:600, cursor:syncing?'wait':'pointer', whiteSpace:'nowrap' }}>
+                {syncing ? '⏳' : '90j'}
               </button>
               <button onClick={handleDelete} disabled={deleting} style={{ padding:'4px 8px', borderRadius:7, border:'1px solid rgba(255,59,48,0.18)', background:'rgba(255,59,48,0.05)', color:'#FF3B30', fontSize:11, cursor:deleting?'wait':'pointer' }}>✕</button>
             </>
