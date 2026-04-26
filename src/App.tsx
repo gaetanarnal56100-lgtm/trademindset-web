@@ -25,6 +25,7 @@ import PredictPage   from '@/pages/predict/PredictPage'
 import WhaleAlertsPage from '@/pages/whales/WhaleAlertsPage'
 import ChartsPage     from '@/pages/charts/ChartsPage'
 import ChartDetailPage from '@/pages/charts/ChartDetailPage'
+import MultiAssetAnalytics from '@/pages/analytics/MultiAssetAnalytics'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
 import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
 import { LanguageProvider } from '@/contexts/LanguageContext'
@@ -77,6 +78,7 @@ export default function App() {
         <Route path="whales"           element={<WhaleAlertsPage />} />
         <Route path="charts"           element={<ChartsPage />} />
         <Route path="charts/:id"       element={<ChartDetailPage />} />
+        <Route path="multi-asset"      element={<MultiAssetAnalytics />} />
       </Route>
 
       {/* ── Fallback ── */}
