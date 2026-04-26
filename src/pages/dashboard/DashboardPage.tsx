@@ -1126,29 +1126,7 @@ function SectionHeader({ title, glowRgb }: { title: string; glowRgb: string }) {
   )
 }
 
-// ── Auto-sync hook ────────────────────────────────────────────────────────
-function useAutoSync() {
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null
-    const ACTIVE = ['binance','bybit','okx','kucoinfutures','bitget','gateio','mexc','htx','kraken','phemex','deribit','oanda','ig','capitalcom','alpaca','tastytrade','trading212'] as const
-    type Ex = typeof ACTIVE[number]
-    const cfGetStatus = httpsCallable<{ exchange: Ex }, { connected: boolean }>(functions, 'getExchangeKeyStatus')
-
-    async function doSync() {
-      try {
-        const results = await Promise.all(ACTIVE.map(ex => cfGetStatus({ exchange: ex }).catch(() => ({ data: { connected: false } }))))
-        const connected = ACTIVE.filter((_, i) => results[i].data.connected)
-        if (connected.length > 0) {
-          await Promise.allSettled(connected.map(ex => cfSync({ exchange: ex as any })))
-        }
-      } catch { /* ignore */ }
-    }
-
-    const initial = setTimeout(doSync, 10_000)
-    timer = setInterval(doSync, 300_000)
-    return () => { clearTimeout(initial); if (timer) clearInterval(timer) }
-  }, [])
-}
+// Auto-sync déplacé dans AppLayout (global, toutes pages)
 
 // ── Main Dashboard ────────────────────────────────────────────────────────
 import ModularDashboard from './modular/ModularDashboard'
@@ -1173,8 +1151,6 @@ export default function DashboardPage() {
     countUsers().then(res => setUserCount(res.data.count)).catch(()=>{})
     return()=>{u1();u2();u3()}
   },[])
-
-  useAutoSync()
 
   const s   = useMemo(()=>calcStats(trades),[trades])
   const emo = useMemo(()=>calcEmotions(moods,trades),[moods,trades])
