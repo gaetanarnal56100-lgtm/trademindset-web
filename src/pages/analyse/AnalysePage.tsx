@@ -26,114 +26,150 @@ function isCryptoSymbol(symbol: string) {
 }
 
 // ── Share / Screenshot wrapper ──────────────────────────────────────────
-function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [copied, setCopied] = useState(false)
-  const [hover, setHover] = useState(false)
-  const [loading, setLoading] = useState(false)
+// ── CollapsiblePanel — volet repliable avec partage intégré ───────────────
+function CollapsiblePanel({
+  children, label, icon, defaultOpen = true, accent = 'rgba(0,229,255,0.5)',
+}: {
+  children: React.ReactNode
+  label: string
+  icon?: string
+  defaultOpen?: boolean
+  accent?: string
+}) {
+  const ref        = useRef<HTMLDivElement>(null)
+  const [open,     setOpen]    = useState(defaultOpen)
+  const [copied,   setCopied]  = useState(false)
+  const [sharing,  setSharing] = useState(false)
 
   const handleShare = async () => {
     const el = ref.current
-    if (!el || loading) return
-    setLoading(true)
+    if (!el || sharing) return
+    setSharing(true)
     try {
       let blob: Blob | null = null
-
-      // 1. Try canvas capture first (for chart components with canvas)
       const canvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
       const cv = canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]
-
       if (cv && cv.width > 0 && cv.height > 0) {
-        // Canvas-based component (charts)
-        const dataUrl = cv.toDataURL('image/png')
-        blob = await (await fetch(dataUrl)).blob()
+        blob = await (await fetch(cv.toDataURL('image/png'))).blob()
       } else {
-        // HTML-based component (KeyLevelsCard, TradePlanCard, MTFDashboard…)
-        // Use html-to-image for full DOM capture
         const { toPng } = await import('html-to-image')
         const dataUrl = await toPng(el, {
-          quality: 1,
-          pixelRatio: 2,
-          backgroundColor: getComputedStyle(document.documentElement)
-            .getPropertyValue('--tm-bg').trim() || '#0D1117',
-          filter: (node) => {
-            // Exclude the share button itself from the screenshot
-            if (node instanceof HTMLButtonElement && node.title?.startsWith('Partager')) return false
-            return true
-          },
+          quality: 1, pixelRatio: 2,
+          backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--tm-bg').trim() || '#0D1117',
+          filter: (node) => !(node instanceof HTMLButtonElement && node.dataset.shareBtn),
         })
         blob = await (await fetch(dataUrl)).blob()
       }
-
-      if (!blob) { setLoading(false); return }
-
+      if (!blob) return
       const filename = `trademindset-${label.toLowerCase().replace(/\s+/g, '-')}.png`
-
-      // 2. Try Clipboard API (copy as image — paste anywhere)
       try {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ])
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2500)
-        setLoading(false)
-        return
-      } catch { /* clipboard write failed, fallback below */ }
-
-      // 3. Fallback: Web Share API (mobile)
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        setCopied(true); setTimeout(() => setCopied(false), 2500); return
+      } catch { /* fallback */ }
       if (navigator.share && navigator.canShare) {
         const file = new File([blob], filename, { type: 'image/png' })
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ title: `TradeMindset — ${label}`, files: [file] })
-          setCopied(true)
-          setTimeout(() => setCopied(false), 2500)
-          setLoading(false)
-          return
+          setCopied(true); setTimeout(() => setCopied(false), 2500); return
         }
       }
-
-      // 4. Last fallback: download file
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.click()
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
       URL.revokeObjectURL(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    } catch (err) {
-      console.warn('Share failed:', err)
-    } finally {
-      setLoading(false)
-    }
+      setCopied(true); setTimeout(() => setCopied(false), 2500)
+    } catch (err) { console.warn('Share failed:', err) }
+    finally { setSharing(false) }
   }
 
   return (
-    <div ref={ref} style={{ position:'relative', marginBottom:16 }}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      {children}
-      {(hover || copied || loading) && (
-        <button onClick={handleShare} title={`Partager ${label}`}
-          disabled={loading}
+    <div style={{ marginBottom: 10, position: 'relative', zIndex: 1 }}>
+      {/* Header bar — always visible */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '8px 14px',
+          background: open ? 'rgba(13,17,35,0.85)' : 'rgba(13,17,35,0.6)',
+          border: `1px solid ${open ? accent.replace('0.5','0.3') : 'rgba(255,255,255,0.07)'}`,
+          borderRadius: open ? '12px 12px 0 0' : 12,
+          backdropFilter: 'blur(12px)',
+          cursor: 'pointer',
+          transition: 'all 0.2s',
+          userSelect: 'none' as const,
+        }}
+        onClick={() => setOpen(o => !o)}
+      >
+        {/* Accent dot */}
+        <div style={{
+          width: 3, height: 16, borderRadius: 2,
+          background: open ? accent : 'rgba(255,255,255,0.15)',
+          flexShrink: 0, transition: 'background 0.2s',
+        }} />
+
+        {/* Icon */}
+        {icon && <span style={{ fontSize: 14, flexShrink: 0 }}>{icon}</span>}
+
+        {/* Label */}
+        <span style={{
+          flex: 1, fontSize: 12, fontWeight: 700,
+          color: open ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)',
+          fontFamily: 'Syne, sans-serif', letterSpacing: '0.01em',
+          transition: 'color 0.2s',
+        }}>
+          {label}
+        </span>
+
+        {/* Share button */}
+        <button
+          data-share-btn
+          onClick={e => { e.stopPropagation(); handleShare() }}
+          disabled={sharing || !open}
+          title={`Partager ${label}`}
           style={{
-            position:'absolute', bottom:12, right:12, zIndex:10,
-            padding:'4px 10px', borderRadius:8, display:'flex', alignItems:'center', gap:5,
-            background: copied
-              ? 'rgba(34,199,89,0.85)'
-              : loading
-              ? 'rgba(13,17,23,0.92)'
-              : 'rgba(13,17,23,0.85)',
-            border: copied ? '1px solid #22C759' : '1px solid #2A2F3E',
-            cursor: loading ? 'wait' : 'pointer', fontSize:10, fontWeight:600,
-            color: '#fff',
-            backdropFilter:'blur(8px)', transition:'all 0.15s',
-            opacity: loading ? 0.8 : 1,
-          }}>
-          {copied ? '✓ Copié' : loading ? '⏳ Capture…' : '↗ Partager'}
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '3px 10px', borderRadius: 7, fontSize: 10, fontWeight: 600,
+            background: copied ? 'rgba(34,199,89,0.2)' : 'rgba(255,255,255,0.06)',
+            border: `1px solid ${copied ? '#22C759' : 'rgba(255,255,255,0.12)'}`,
+            color: copied ? '#22C759' : sharing ? 'var(--tm-text-muted)' : 'var(--tm-text-muted)',
+            cursor: (!open || sharing) ? 'not-allowed' : 'pointer',
+            opacity: open ? 1 : 0.4,
+            transition: 'all 0.15s', flexShrink: 0,
+          }}
+        >
+          {copied ? '✓ Copié' : sharing ? '⏳' : '↗ Partager'}
         </button>
-      )}
+
+        {/* Chevron */}
+        <svg
+          width="12" height="12" viewBox="0 0 12 12" fill="none"
+          style={{ flexShrink: 0, transition: 'transform 0.25s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+        >
+          <path d="M2 4l4 4 4-4" stroke="var(--tm-text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* Content — ref for screenshot */}
+      <div
+        ref={ref}
+        style={{
+          overflow: 'hidden',
+          maxHeight: open ? '9999px' : 0,
+          transition: 'max-height 0.35s ease',
+          borderRadius: '0 0 12px 12px',
+          border: open ? `1px solid ${accent.replace('0.5','0.15')}` : 'none',
+          borderTop: 'none',
+        }}
+      >
+        <div style={{ padding: '0' }}>
+          {children}
+        </div>
+      </div>
     </div>
   )
+}
+
+// Compat alias — les anciens ShareWrapper restent valides
+function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
+  return <CollapsiblePanel label={label}>{children}</CollapsiblePanel>
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -1969,52 +2005,82 @@ export default function AnalysePage() {
       {/* Graphique — layout selector */}
       {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} /></div>}
 
-      {/* Canal OU + Excès Statistiques + VMC Kaufman — au-dessus du WaveTrend */}
-      {symbol && <div style={{ marginBottom: 10, position:'relative', zIndex:1 }}>
-        <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
-      </div>}
+      {/* Canal OU + Excès Statistiques + VMC Kaufman */}
+      {symbol && (
+        <CollapsiblePanel label="Canal OU · Excès Statistiques · Kaufman ER" icon="〜" accent="rgba(0,229,255,0.5)" defaultOpen={true}>
+          <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+        </CollapsiblePanel>
+      )}
 
-      {/* Oscillateurs synchronisés sous le chart */}
-      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16, position:'relative', zIndex:1 }}>
-        <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-          onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
-        <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-          onStatusReady={(status)=>setPdfVmcStatus(status)} />
-        <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
-        <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
-      </div>}
+      {/* Oscillateurs synchronisés */}
+      {symbol && (
+        <CollapsiblePanel label="WaveTrend Oscillator" icon="〰️" accent="rgba(191,90,242,0.5)" defaultOpen={true}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+              onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
+          </div>
+        </CollapsiblePanel>
+      )}
 
+      {symbol && (
+        <CollapsiblePanel label="VMC Oscillator" icon="📊" accent="rgba(255,149,0,0.5)" defaultOpen={true}>
+          <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+            onStatusReady={(status)=>setPdfVmcStatus(status)} />
+        </CollapsiblePanel>
+      )}
 
-      {/* Plan de Trade IA — tous les actifs, en premier */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ShareWrapper label="Trade Plan">
-        <TradePlanCard
-          symbol={symbol}
-          price={price || 0}
-          mtfScore={pdfMtfSnap?.globalScore ?? 0}
-          mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
-          wtStatus={pdfWtStatus || 'Neutral'}
-          vmcStatus={pdfVmcStatus || 'NEUTRAL'}
-          onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
-        />
-      </ShareWrapper></div>}
+      {symbol && (
+        <CollapsiblePanel label="RSI" icon="📈" accent="rgba(52,199,89,0.5)" defaultOpen={false}>
+          <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+        </CollapsiblePanel>
+      )}
 
-      {/* MTF Dashboard — tous les actifs */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ShareWrapper label="MTF Dashboard">
-        <MTFDashboard symbol={symbol} onSnapshotReady={snap => setPdfMtfSnap(snap)} />
-      </ShareWrapper></div>}
+      {symbol && (
+        <CollapsiblePanel label="RSI Bollinger" icon="📉" accent="rgba(255,69,58,0.5)" defaultOpen={false}>
+          <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+        </CollapsiblePanel>
+      )}
 
-      {/* WaveTrend + VMC + RSI sont maintenant affichés directement sous le chart (ci-dessus) */}
+      {/* Plan de Trade IA */}
+      {symbol && (
+        <CollapsiblePanel label="Trade Plan IA" icon="🎯" accent="rgba(0,229,255,0.5)" defaultOpen={true}>
+          <TradePlanCard
+            symbol={symbol}
+            price={price || 0}
+            mtfScore={pdfMtfSnap?.globalScore ?? 0}
+            mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
+            wtStatus={pdfWtStatus || 'Neutral'}
+            vmcStatus={pdfVmcStatus || 'NEUTRAL'}
+            onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
+          />
+        </CollapsiblePanel>
+      )}
 
-      {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
-      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16,position:'relative',zIndex:1}}>
-        <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} onLevelsReady={(lvls, p) => { setPdfLevels(lvls); setPdfLevelsPrice(p) }} /></ShareWrapper>
-        <ChartScreenshotAnalysis symbol={symbol} />
-      </div>}
+      {/* MTF Dashboard */}
+      {symbol && (
+        <CollapsiblePanel label="MTF Dashboard" icon="🔭" accent="rgba(191,90,242,0.5)" defaultOpen={true}>
+          <MTFDashboard symbol={symbol} onSnapshotReady={snap => setPdfMtfSnap(snap)} />
+        </CollapsiblePanel>
+      )}
+
+      {/* Niveaux Clés + Screenshot IA */}
+      {symbol && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, position: 'relative', zIndex: 1 }}>
+          <CollapsiblePanel label="Niveaux Clés" icon="🔑" accent="rgba(255,214,10,0.5)" defaultOpen={true}>
+            <KeyLevelsCard symbol={symbol} onLevelsReady={(lvls, p) => { setPdfLevels(lvls); setPdfLevelsPrice(p) }} />
+          </CollapsiblePanel>
+          <CollapsiblePanel label="Analyse Screenshot IA" icon="📸" accent="rgba(191,90,242,0.5)" defaultOpen={true}>
+            <ChartScreenshotAnalysis symbol={symbol} />
+          </CollapsiblePanel>
+        </div>
+      )}
 
       {/* ══ CRYPTO ONLY ══ Heatmap + CVD/Structure/Dérivés */}
       {isCrypto && <div style={{position:'relative',zIndex:1}}><>
         {/* Heatmap */}
-        <ShareWrapper label="Liquidation Heatmap"><LiquidationHeatmap symbol={symbol} /></ShareWrapper>
+        <CollapsiblePanel label="Liquidation Heatmap" icon="🌡️" accent="rgba(255,59,48,0.5)" defaultOpen={true}>
+          <LiquidationHeatmap symbol={symbol} />
+        </CollapsiblePanel>
 
         {/* Mode tabs — neon cyberpunk */}
         <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
