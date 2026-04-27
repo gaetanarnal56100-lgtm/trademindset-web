@@ -64,22 +64,13 @@ function rollingStd(arr: number[], len: number): number[] {
   return out
 }
 
-function rollingMean(arr: number[], len: number): number[] {
-  const out = new Array(arr.length).fill(0)
-  let sum = 0
-  for (let i = 0; i < arr.length; i++) {
-    sum += arr[i]
-    if (i >= len) sum -= arr[i - len]
-    out[i] = i >= len - 1 ? sum / len : (sum / (i + 1))
-  }
-  return out
-}
 
 // ─── Ornstein-Uhlenbeck Channel ───────────────────────────────────────────────
 // Process: dX = κ(μ - X)dt + σdW
-// We estimate κ (mean-reversion speed) and σ (vol) locally via rolling window
-// Then build adaptive bands: μ ± n*σ/sqrt(2κ) (theoretical OU std)
-export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 20): OUResult {
+// Approche correcte : on travaille directement en prix (résidus = close - EMA)
+// σ_OU = std(résidus) sur fenêtre glissante — bandes naturellement calibrées
+// κ = -ln(autocorr AR(1) des résidus) — vitesse de retour à la moyenne
+export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 30): OUResult {
   const n = candles.length
   const empty: OUResult = {
     mean: [], upper1: [], upper2: [], lower1: [], lower2: [],
@@ -88,35 +79,36 @@ export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 20
   if (n < lookback + 10) return empty
 
   const close = candles.map(c => c.c)
-  const logClose = close.map(c => Math.log(c))
 
-  // Rolling local mean (Ornstein-Uhlenbeck equilibrium μ)
+  // μ : EMA(lookback) = niveau d'équilibre OU
   const mean = emaArr(close, lookback)
 
-  // Local volatility: rolling std of log-returns
-  const logRet = logClose.map((v, i) => i === 0 ? 0 : v - logClose[i-1])
-  const sigmaArr = rollingStd(logRet, sigmaWindow).map(s => s * Math.sqrt(252)) // annualized
+  // Résidus = close - μ (processus centré autour de 0)
+  const residuals = close.map((c, i) => c - mean[i])
 
-  // Estimate mean-reversion speed κ via autocorrelation of residuals
-  // κ ≈ -ln(autocorr(1)) from the discrete AR(1) model
-  const kappaArr = new Array(n).fill(0.1)
-  const minWindow = Math.max(sigmaWindow, 15)
-  for (let i = minWindow; i < n; i++) {
-    const slice = close.slice(i - minWindow, i)
-    const mu = slice.reduce((a, b) => a + b, 0) / minWindow
-    const residuals = slice.map(v => v - mu)
-    // AR(1) autocorrelation
+  // σ_OU = std rolling des résidus sur sigmaWindow barres (en unités de prix)
+  const sigmaArr = rollingStd(residuals, sigmaWindow)
+
+  // κ = -ln(ρ₁) où ρ₁ = autocorrélation lag-1 des résidus (fenêtre glissante)
+  const kappaArr = new Array(n).fill(0.3)
+  const kappaWin = Math.max(sigmaWindow, 20)
+  for (let i = kappaWin; i < n; i++) {
+    const res = residuals.slice(i - kappaWin, i)
+    const mu_res = res.reduce((a, b) => a + b, 0) / kappaWin
+    const centered = res.map(v => v - mu_res)
     let num = 0, den = 0
-    for (let j = 1; j < residuals.length; j++) {
-      num += residuals[j-1] * residuals[j]
-      den += residuals[j-1] ** 2
+    for (let j = 1; j < centered.length; j++) {
+      num += centered[j-1] * centered[j]
+      den += centered[j-1] ** 2
     }
-    const rho = den > 0 ? Math.max(-0.999, Math.min(0.999, num / den)) : 0
-    kappaArr[i] = rho > 0 ? -Math.log(rho) : 0.5 // fallback
+    const rho = den > 0 ? Math.max(0.001, Math.min(0.999, num / den)) : 0.5
+    // κ > 1 → retour rapide (range), κ < 0.3 → retour lent (tendance)
+    kappaArr[i] = -Math.log(rho)
   }
 
-  // OU theoretical steady-state std: σ / sqrt(2κ)
-  // Bands: mean ± σ_OU * n_sigma
+  // Bandes adaptatives : μ ± n × σ_OU × facteur(κ)
+  // Le facteur(κ) module les bandes selon le régime :
+  //   κ élevé (range) → bandes normales, κ faible (trend) → bandes légèrement élargies
   const upper1: number[] = [], upper2: number[] = []
   const lower1: number[] = [], lower2: number[] = []
   const zscore: number[] = []
@@ -125,32 +117,42 @@ export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 20
 
   for (let i = 0; i < n; i++) {
     const mu = mean[i]
-    const sigma = sigmaArr[i] > 0 ? sigmaArr[i] : 0.01
-    const kappa = kappaArr[i] > 0.001 ? kappaArr[i] : 0.1
-    // OU steady-state std in price terms: σ * price / sqrt(2κ)
-    const ouStd = (sigma * mu) / Math.sqrt(2 * kappa)
-    const adaptedStd = Math.max(ouStd, mu * 0.005) // min 0.5% of price
+    const price = close[i]
+    const kappa = kappaArr[i]
 
-    upper1.push(mu + 1.0 * adaptedStd)
-    upper2.push(mu + 2.0 * adaptedStd)
-    lower1.push(mu - 1.0 * adaptedStd)
-    lower2.push(mu - 2.0 * adaptedStd)
+    // std des résidus — jamais inférieure à 0.3% du prix pour éviter les bandes nulles
+    const rawSigma = sigmaArr[i] > 0 ? sigmaArr[i] : mu * 0.003
+    const sigma = Math.max(rawSigma, mu * 0.003)
 
-    const z = adaptedStd > 0 ? (close[i] - mu) / adaptedStd : 0
+    // Facteur adaptatif : en range (κ élevé) les bandes restent normales,
+    // en tendance (κ faible) on les élargit légèrement pour éviter les faux signaux
+    const kappaFactor = kappa > 0 ? Math.min(1.5, Math.max(0.7, 1 / Math.sqrt(kappa))) : 1.0
+    const adaptedSigma = sigma * kappaFactor
+
+    upper1.push(mu + 1.0 * adaptedSigma)
+    upper2.push(mu + 2.0 * adaptedSigma)
+    lower1.push(mu - 1.0 * adaptedSigma)
+    lower2.push(mu - 2.0 * adaptedSigma)
+
+    // Z-score = (prix - μ) / σ_OU — normalisé dans l'espace OU
+    const z = adaptedSigma > 0 ? (price - mu) / adaptedSigma : 0
     zscore.push(z)
 
-    // Statistical excess detection
-    if (z > 2.5) excess.push('extreme_ob')
-    else if (z > 1.5) excess.push('overbought')
+    // Détection d'excès statistiques
+    if (z > 2.5)       excess.push('extreme_ob')
+    else if (z > 1.5)  excess.push('overbought')
     else if (z < -2.5) excess.push('extreme_os')
     else if (z < -1.5) excess.push('oversold')
-    else excess.push('none')
+    else               excess.push('none')
 
-    // Regime detection: kappa > threshold = ranging (OU), else trending
-    if (kappa > 1.5) regime.push('ranging')
-    else if (kappa < 0.2) regime.push('trending')
-    else if (Math.abs(z) > 2) regime.push('breakout')
-    else regime.push('ranging')
+    // Régime : κ → vitesse de retour
+    // κ > 1.0 = range fort (retour rapide)
+    // κ < 0.25 = tendance forte (retour lent)
+    // entre les deux + z extrême = breakout potentiel
+    if (kappa > 1.0)             regime.push('ranging')
+    else if (kappa < 0.25)       regime.push('trending')
+    else if (Math.abs(z) > 1.8)  regime.push('breakout')
+    else                          regime.push('ranging')
   }
 
   return {
