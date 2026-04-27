@@ -19,6 +19,7 @@ import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import FootprintChart from './FootprintChart'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
+import OUChannelIndicator from './OUChannelIndicator'
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
@@ -1967,6 +1968,11 @@ export default function AnalysePage() {
 
       {/* Graphique — layout selector */}
       {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} /></div>}
+
+      {/* Canal OU + Excès Statistiques + VMC Kaufman — au-dessus du WaveTrend */}
+      {symbol && <div style={{ marginBottom: 10, position:'relative', zIndex:1 }}>
+        <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+      </div>}
 
       {/* Oscillateurs synchronisés sous le chart */}
       {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16, position:'relative', zIndex:1 }}>
