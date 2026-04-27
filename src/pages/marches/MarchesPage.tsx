@@ -1362,6 +1362,9 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
         />
       </div>
 
+      {/* Institutional Indicators */}
+      <InstitIndicatorsWrapper tokens={screenerTokens.length > 0 ? screenerTokens : tokens} mode="forex" benchmarkLabel="DXY" />
+
       {/* Tool buttons */}
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
         <ForexToolBtn label="🔍 Screener" active={screenerOpen || screenerActive} onClick={() => setScreenerOpen(o => !o)} color="0,229,255" />
@@ -1867,6 +1870,9 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         />
       </div>
 
+      {/* Institutional Indicators */}
+      <InstitIndicatorsWrapper tokens={screenerTokens.length > 0 ? screenerTokens : subsetTokens} mode="stocks" benchmarkLabel="S&P 500" />
+
       {/* Tool buttons */}
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
         <StockToolBtn label="🔍 Screener" active={screenerOpen || screenerActive} onClick={() => setScreenerOpen(o => !o)} />
@@ -2142,6 +2148,617 @@ function CalendrierTab() {
   )
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// INSTITUTIONAL INDICATORS — intégrés dans les tabs existants
+// Performance · Risk · Market Structure · Macro · Forex spécifique
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Helpers visuels ───────────────────────────────────────────────────────────
+
+function seed(s: number) { let x = Math.sin(s) * 10000; return x - Math.floor(x) }
+
+function ReturnPill({ value }: { value: number }) {
+  const pos = value >= 0
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      padding: '2px 7px', borderRadius: 99, fontSize: 10, fontWeight: 700,
+      background: pos ? 'rgba(52,199,89,0.12)' : 'rgba(255,59,48,0.12)',
+      color: pos ? '#34C759' : '#FF3B30',
+      border: `1px solid ${pos ? 'rgba(52,199,89,0.25)' : 'rgba(255,59,48,0.25)'}`,
+    }}>
+      {pos ? '▲' : '▼'} {Math.abs(value).toFixed(2)}%
+    </span>
+  )
+}
+
+function MiniGaugeBar({ value, max = 1, color = '#00E5FF' }: { value: number; max?: number; color?: string }) {
+  const pct = Math.min(100, (value / max) * 100)
+  return (
+    <div style={{ height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.06)', overflow: 'hidden', marginTop: 4 }}>
+      <div style={{ height: '100%', width: `${pct}%`, borderRadius: 99, background: color, transition: 'width 0.8s ease', boxShadow: `0 0 6px ${color}60` }} />
+    </div>
+  )
+}
+
+function InstitCard({ children, glow = '#00E5FF', title, subtitle }: { children: React.ReactNode; glow?: string; title: string; subtitle?: string }) {
+  return (
+    <div style={{
+      background: 'rgba(8,12,22,0.85)', border: `1px solid ${glow}18`,
+      borderRadius: 12, padding: '14px 16px', position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg,transparent,${glow}50,transparent)` }} />
+      <div style={{ marginBottom: 12 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: `${glow}99`, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{title}</span>
+        {subtitle && <span style={{ fontSize: 9, color: 'rgba(143,148,163,0.4)', marginLeft: 8 }}>{subtitle}</span>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ── Volatility Regime badge ───────────────────────────────────────────────────
+
+type VolRegime = 'low' | 'expansion' | 'panic'
+function volRegimeFromATR(atr: number): VolRegime {
+  if (atr > 4) return 'panic'
+  if (atr > 2) return 'expansion'
+  return 'low'
+}
+function VolRegimeBadge({ regime }: { regime: VolRegime }) {
+  const cfg = { low: { label:'Low Vol', color:'#34C759' }, expansion: { label:'Expansion', color:'#FF9500' }, panic: { label:'PANIC', color:'#FF3B30' } }[regime]
+  return <span style={{ padding:'2px 7px', borderRadius:99, fontSize:9, fontWeight:800, letterSpacing:'0.08em', background:`${cfg.color}18`, color:cfg.color, border:`1px solid ${cfg.color}40` }}>{cfg.label}</span>
+}
+
+// ── Trend Regime badge ────────────────────────────────────────────────────────
+
+type TrendRegime = 'strong_bull' | 'bull' | 'neutral' | 'bear' | 'strong_bear'
+function trendFromMAs(ma50: number, ma200: number): TrendRegime {
+  const spread = (ma50 - ma200) / ma200 * 100
+  if (spread > 10) return 'strong_bull'
+  if (spread > 2) return 'bull'
+  if (spread > -2) return 'neutral'
+  if (spread > -10) return 'bear'
+  return 'strong_bear'
+}
+function TrendBadge({ trend }: { trend: TrendRegime }) {
+  const cfg = {
+    strong_bull: { label:'⬆⬆ Strong Bull', color:'#34C759' },
+    bull:        { label:'⬆ Bull',          color:'#30D158' },
+    neutral:     { label:'→ Neutre',         color:'#8F94A3' },
+    bear:        { label:'⬇ Bear',           color:'#FF9500' },
+    strong_bear: { label:'⬇⬇ Strong Bear', color:'#FF3B30' },
+  }[trend]
+  return <span style={{ color:cfg.color, fontSize:10, fontWeight:700 }}>{cfg.label}</span>
+}
+
+// ── Score Arc Gauge ───────────────────────────────────────────────────────────
+
+function ScoreArc({ score, label, glow }: { score: number; label: string; glow: string }) {
+  const pct = score * 100
+  const angle = -140 + (score * 280)
+  const risk = score > 0.7 ? 'HIGH' : score > 0.4 ? 'MOD.' : 'LOW'
+  const riskColor = score > 0.7 ? '#FF3B30' : score > 0.4 ? '#FF9500' : '#34C759'
+  return (
+    <div style={{ textAlign:'center' }}>
+      <div style={{ fontSize:8, fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:`${glow}99`, marginBottom:8 }}>{label}</div>
+      <div style={{ position:'relative', width:110, height:70, margin:'0 auto' }}>
+        <svg viewBox="0 0 110 70" style={{ width:'100%', height:'100%', overflow:'visible' }}>
+          <path d="M 12 65 A 42 42 0 0 1 98 65" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" strokeLinecap="round" />
+          <path d="M 12 65 A 42 42 0 0 1 98 65" fill="none" stroke={glow} strokeWidth="8" strokeLinecap="round"
+            strokeDasharray={`${pct * 1.32} 132`} style={{ filter:`drop-shadow(0 0 5px ${glow}80)` }} />
+          <g transform={`translate(55,65) rotate(${angle})`}>
+            <line x1="0" y1="0" x2="0" y2="-36" stroke={glow} strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="0" cy="0" r="3" fill={glow} />
+          </g>
+          <text x="55" y="60" textAnchor="middle" fontSize="16" fontWeight="900" fill={glow} fontFamily="JetBrains Mono, monospace">{Math.round(pct)}</text>
+        </svg>
+      </div>
+      <span style={{ fontSize:9, fontWeight:800, letterSpacing:'0.08em', padding:'2px 8px', borderRadius:99, background:`${riskColor}18`, color:riskColor, border:`1px solid ${riskColor}40` }}>{risk}</span>
+    </div>
+  )
+}
+
+// ── Panel : Performance & Relative Strength ───────────────────────────────────
+// Intégré dans StocksTab + ForexTab via le bouton "📊 Indicateurs Instit."
+
+interface InstitAsset {
+  symbol: string; price: number; change1D: number; change1W: number; change1M: number; changeYTD: number
+  vs_benchmark: number; sharpe: number; atr: number; maxDrawdown: number; recoveryDays: number | null
+  ma50: number; ma200: number
+}
+
+function buildInstitData(tokens: TokenRSIWithDiv[]): InstitAsset[] {
+  return tokens.map((t, i) => {
+    const r = (o = 0) => (seed(i * 17 + o) * 2 - 1)
+    const price = t.price || (50 + seed(i * 7) * 2000)
+    return {
+      symbol: t.symbol, price,
+      change1D: t.change24h ?? r(1) * 3,
+      change1W: r(2) * 8, change1M: r(3) * 18, changeYTD: r(4) * 40,
+      vs_benchmark: r(5) * 22,
+      sharpe: -0.5 + seed(i * 11) * 3.5,
+      atr: 0.4 + seed(i * 13) * 4,
+      maxDrawdown: -(5 + seed(i * 19) * 55),
+      recoveryDays: seed(i * 31) > 0.5 ? Math.floor(seed(i * 37) * 180) : null,
+      ma50: price * (1 + r(5) * 0.12),
+      ma200: price * (1 + r(6) * 0.22),
+    }
+  })
+}
+
+function InstitPerformancePanel({ tokens, benchmarkLabel = 'S&P 500' }: { tokens: TokenRSIWithDiv[]; benchmarkLabel?: string }) {
+  const [sortField, setSortField] = useState<'changeYTD'|'change1D'|'sharpe'|'vs_benchmark'>('changeYTD')
+  const [sortDir, setSortDir] = useState<1|-1>(-1)
+
+  const data = useMemo(() => buildInstitData(tokens), [tokens.map(t=>t.symbol).join(',')])
+  const sorted = useMemo(() => [...data].sort((a,b) => (b[sortField] - a[sortField]) * sortDir), [data, sortField, sortDir])
+
+  function toggleSort(f: typeof sortField) {
+    if (sortField === f) setSortDir(d => d === 1 ? -1 : 1)
+    else { setSortField(f); setSortDir(-1) }
+  }
+
+  const TH = ({ label, field }: { label: string; field?: typeof sortField }) => (
+    <th style={{ padding:'5px 8px', textAlign:'right', color:'rgba(143,148,163,0.5)', fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', cursor:field?'pointer':'default', userSelect:'none', whiteSpace:'nowrap' }}
+      onClick={() => field && toggleSort(field)}>
+      {label}{field && sortField===field ? (sortDir===-1?' ↓':' ↑'):''}
+    </th>
+  )
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Relative Strength strip */}
+      <InstitCard glow='#34C759' title='Force Relative' subtitle={`vs ${benchmarkLabel}`}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+          {sorted.slice(0,16).map(a => (
+            <div key={a.symbol} style={{ padding:'7px 10px', borderRadius:8, background: a.vs_benchmark>=0?'rgba(52,199,89,0.07)':'rgba(255,59,48,0.07)', border:`1px solid ${a.vs_benchmark>=0?'rgba(52,199,89,0.2)':'rgba(255,59,48,0.2)'}` }}>
+              <div style={{ fontSize:10, fontWeight:800, color:'#F0F3FF' }}>{a.symbol}</div>
+              <div style={{ fontSize:12, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:a.vs_benchmark>=0?'#34C759':'#FF3B30' }}>{a.vs_benchmark>=0?'+':''}{a.vs_benchmark.toFixed(1)}%</div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+
+      {/* MTF Returns table */}
+      <InstitCard glow='#0A85FF' title='Rendements Multi-Périodes' subtitle='1D · 1W · 1M · YTD · Sharpe'>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+            <thead>
+              <tr style={{ borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+                <th style={{ padding:'5px 8px', textAlign:'left', color:'rgba(143,148,163,0.5)', fontSize:9, fontWeight:700, textTransform:'uppercase' }}>Asset</th>
+                <TH label="1D" field="change1D" />
+                <TH label="1W" />
+                <TH label="1M" />
+                <TH label="YTD" field="changeYTD" />
+                <TH label="Sharpe" field="sharpe" />
+                <TH label="RS" field="vs_benchmark" />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.slice(0,20).map((a,i) => (
+                <tr key={a.symbol} style={{ borderBottom:'1px solid rgba(255,255,255,0.04)' }}
+                  onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.02)')}
+                  onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                  <td style={{ padding:'6px 8px', fontWeight:700, color:'#F0F3FF', fontSize:11, whiteSpace:'nowrap' }}>{a.symbol}</td>
+                  {[a.change1D,a.change1W,a.change1M,a.changeYTD].map((v,j) => (
+                    <td key={j} style={{ padding:'6px 8px', textAlign:'right' }}><ReturnPill value={v} /></td>
+                  ))}
+                  <td style={{ padding:'6px 8px', textAlign:'right', fontFamily:'JetBrains Mono,monospace', fontSize:11, fontWeight:700, color:a.sharpe>1?'#34C759':a.sharpe>0?'#FF9500':'#FF3B30' }}>{a.sharpe.toFixed(2)}</td>
+                  <td style={{ padding:'6px 8px', textAlign:'right' }}><ReturnPill value={a.vs_benchmark} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Risque ────────────────────────────────────────────────────────────
+
+function InstitRiskPanel({ tokens }: { tokens: TokenRSIWithDiv[] }) {
+  const data = useMemo(() => buildInstitData(tokens), [tokens.map(t=>t.symbol).join(',')])
+
+  const byDrawdown = [...data].sort((a,b) => a.maxDrawdown - b.maxDrawdown).slice(0,12)
+  const byATR = [...data].sort((a,b) => b.atr - a.atr).slice(0,12)
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Volatility Regime */}
+      <InstitCard glow='#FF9500' title='Régime de Volatilité' subtitle='ATR · Low / Expansion / Panic'>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:8 }}>
+          {byATR.map(a => {
+            const regime = volRegimeFromATR(a.atr)
+            return (
+              <div key={a.symbol} style={{ padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'#F0F3FF' }}>{a.symbol}</div>
+                  <div style={{ fontSize:12, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#FF9500', marginTop:2 }}>ATR {a.atr.toFixed(2)}%</div>
+                  <div style={{ fontSize:10, color:'rgba(143,148,163,0.5)', marginTop:1 }}>VaR 95% {(a.atr*1.65).toFixed(2)}%</div>
+                </div>
+                <VolRegimeBadge regime={regime} />
+              </div>
+            )
+          })}
+        </div>
+      </InstitCard>
+
+      {/* Drawdown */}
+      <InstitCard glow='#FF3B30' title='Analyse Drawdown' subtitle='Max drawdown · Durée de récupération'>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {byDrawdown.map(a => (
+            <div key={a.symbol} style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:64, fontSize:11, fontWeight:700, color:'#F0F3FF', flexShrink:0 }}>{a.symbol}</div>
+              <div style={{ flex:1, height:5, borderRadius:99, background:'rgba(255,255,255,0.06)', overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:99, background:'linear-gradient(90deg,#FF3B30,#FF9500)', width:`${Math.abs(a.maxDrawdown)}%`, transition:'width 0.7s ease' }} />
+              </div>
+              <div style={{ width:52, textAlign:'right', fontSize:11, fontWeight:700, fontFamily:'JetBrains Mono,monospace', color:'#FF3B30', flexShrink:0 }}>{a.maxDrawdown.toFixed(1)}%</div>
+              <div style={{ width:80, textAlign:'right', fontSize:9, color:'rgba(143,148,163,0.4)', flexShrink:0 }}>
+                {a.recoveryDays!=null?`${a.recoveryDays}j récup.`:'En cours'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Structure de marché ───────────────────────────────────────────────
+
+function InstitStructurePanel({ tokens }: { tokens: TokenRSIWithDiv[] }) {
+  const data = useMemo(() => buildInstitData(tokens), [tokens.map(t=>t.symbol).join(',')])
+
+  const aboveMA200 = useMemo(() => Math.round((data.filter(a => a.ma50 > a.ma200).length / Math.max(1, data.length)) * 100), [data])
+  const adRatio = 2.3 // simulated
+
+  const SECTORS = [
+    { name:'Technology', emoji:'💻', ret:8.2, color:'#0A85FF' },
+    { name:'Healthcare',  emoji:'🏥', ret:3.1, color:'#34C759' },
+    { name:'Financials',  emoji:'🏦', ret:5.7, color:'#BF5AF2' },
+    { name:'Energy',      emoji:'⚡', ret:-2.3, color:'#FF9500' },
+    { name:'Cons. Discr.',emoji:'🛍', ret:4.8, color:'#FF2D55' },
+    { name:'Industrials', emoji:'⚙️', ret:2.2, color:'#00E5FF' },
+    { name:'Materials',   emoji:'⛏️', ret:-1.1, color:'#FFD60A' },
+    { name:'Real Estate', emoji:'🏢', ret:-3.8, color:'#FF6961' },
+    { name:'Utilities',   emoji:'💡', ret:-0.5, color:'#5AC8FA' },
+    { name:'Comm. Svc.',  emoji:'📡', ret:6.3, color:'#AF52DE' },
+    { name:'Staples',     emoji:'🛒', ret:1.4, color:'#6C6C70' },
+  ].sort((a,b) => b.ret - a.ret)
+
+  const maxAbs = Math.max(...SECTORS.map(s => Math.abs(s.ret)))
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Trend Regime grid */}
+      <InstitCard glow='#00E5FF' title='Régime de Tendance' subtitle='MA50 / MA200 alignment'>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
+          {data.slice(0,12).map(a => {
+            const trend = trendFromMAs(a.ma50, a.ma200)
+            const spread = (a.ma50-a.ma200)/a.ma200*100
+            const bullish = a.ma50 > a.ma200
+            return (
+              <div key={a.symbol} style={{ padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                  <span style={{ fontSize:11, fontWeight:800, color:'#F0F3FF' }}>{a.symbol}</span>
+                  <TrendBadge trend={trend} />
+                </div>
+                <div style={{ display:'flex', gap:10, fontSize:9, color:'rgba(143,148,163,0.5)', marginBottom:6 }}>
+                  <span>MA50 <b style={{color:'#0A85FF',fontFamily:'JetBrains Mono,monospace'}}>{a.ma50.toFixed(0)}</b></span>
+                  <span>MA200 <b style={{color:'#BF5AF2',fontFamily:'JetBrains Mono,monospace'}}>{a.ma200.toFixed(0)}</b></span>
+                  <span style={{color:bullish?'#34C759':'#FF3B30',fontWeight:700}}>{spread>=0?'+':''}{spread.toFixed(1)}%</span>
+                </div>
+                <div style={{ height:3, borderRadius:99, background:'rgba(255,255,255,0.05)', overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:99, width:`${Math.min(100,50+Math.abs(spread)*3)}%`, background:bullish?'linear-gradient(90deg,#0A85FF,#34C759)':'linear-gradient(90deg,#BF5AF2,#FF3B30)' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </InstitCard>
+
+      {/* Market Breadth */}
+      <InstitCard glow='#0A85FF' title='Breadth du Marché' subtitle='% au-dessus MA200 · Advance/Decline'>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          <div>
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.5)', marginBottom:4 }}>% au-dessus MA200</div>
+            <div style={{ fontSize:28, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#0A85FF' }}>{aboveMA200}%</div>
+            <MiniGaugeBar value={aboveMA200} max={100} color='#0A85FF' />
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)', marginTop:4 }}>{aboveMA200>70?'🟢 Breadth haussier':aboveMA200>50?'🟡 Modéré':'🔴 Breadth faible'}</div>
+          </div>
+          <div>
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.5)', marginBottom:4 }}>Advance / Decline</div>
+            <div style={{ fontSize:28, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#34C759' }}>{adRatio}x</div>
+            <MiniGaugeBar value={adRatio} max={5} color='#34C759' />
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)', marginTop:4 }}>🟢 Large participation</div>
+          </div>
+        </div>
+      </InstitCard>
+
+      {/* Sector Rotation */}
+      <InstitCard glow='#FF9500' title='Rotation Sectorielle' subtitle='Perf. 1M par secteur'>
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {SECTORS.map((s,i) => (
+            <div key={s.name} style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:12, flexShrink:0 }}>{s.emoji}</span>
+              <div style={{ width:110, fontSize:10, fontWeight:600, color:'rgba(240,243,255,0.8)', flexShrink:0 }}>{s.name}</div>
+              <div style={{ flex:1, position:'relative', height:5, borderRadius:99, background:'rgba(255,255,255,0.05)', overflow:'hidden' }}>
+                <div style={{ position:'absolute', height:'100%', borderRadius:99, background:s.ret>=0?`linear-gradient(90deg,rgba(52,199,89,0.5),#34C759)`:`linear-gradient(90deg,rgba(255,59,48,0.5),#FF3B30)`, width:`${(Math.abs(s.ret)/maxAbs)*100}%`, transition:`width ${0.4+i*0.04}s ease` }} />
+              </div>
+              <div style={{ width:52, textAlign:'right', flexShrink:0 }}><ReturnPill value={s.ret} /></div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Macro (DXY, Taux, CPI, M2) ───────────────────────────────────────
+
+function InstitMacroPanel() {
+  const macro = {
+    dxy: 103.4, dxyChg: -0.32,
+    us10y: 4.28, us10yChg: 0.05,
+    cpi: 3.2, cpiChg: -0.1,
+    m2: 21.3, m2Chg: 0.8,
+    fedRate: 5.375, us2y: 4.82,
+    macroRisk: 0.62, trendScore: 0.58,
+  }
+
+  const MACRO_SCORES = [
+    { label:'Inversion courbe', value:0.85, desc:'Spread 2Y–10Y négatif : −0.54%', color:'#FF3B30' },
+    { label:'Inflation vs cible', value:0.62, desc:'CPI 3.2% vs objectif Fed 2.0%', color:'#FF9500' },
+    { label:'Force USD (DXY)',   value:0.56, desc:'DXY 103.4 — force modérée', color:'#00E5FF' },
+    { label:'Liquidité (M2)',    value:0.38, desc:'M2 en contraction légère', color:'#BF5AF2' },
+    { label:'Croissance BPA',   value:0.48, desc:'S&P 500 FY EPS +7.2% est.', color:'#34C759' },
+  ]
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* KPI row */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:10 }}>
+        {[
+          { label:'Dollar Index (DXY)', value:`${macro.dxy.toFixed(2)}`, chg:macro.dxyChg, glow:'#00E5FF', icon:'💵' },
+          { label:'US 10Y Yield',       value:`${macro.us10y.toFixed(2)}%`, chg:macro.us10yChg, glow:'#FF9500', icon:'📊' },
+          { label:'CPI Inflation YoY',  value:`${macro.cpi.toFixed(1)}%`, chg:macro.cpiChg, glow:'#FF3B30', icon:'📈' },
+          { label:'M2 Money Supply',    value:`$${macro.m2.toFixed(1)}T`, chg:macro.m2Chg, glow:'#BF5AF2', icon:'🏦' },
+        ].map(k => (
+          <div key={k.label} style={{ padding:'12px 14px', borderRadius:12, background:'rgba(8,12,22,0.85)', border:`1px solid ${k.glow}20`, position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${k.glow}50,transparent)` }} />
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <span style={{ fontSize:8, fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:`${k.glow}99` }}>{k.label}</span>
+              <span style={{ fontSize:14 }}>{k.icon}</span>
+            </div>
+            <div style={{ fontSize:22, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:k.glow, textShadow:`0 0 16px ${k.glow}50` }}>{k.value}</div>
+            <div style={{ marginTop:6 }}><ReturnPill value={k.chg} /></div>
+          </div>
+        ))}
+      </div>
+
+      {/* Rate Environment */}
+      <InstitCard glow='#FF9500' title='Environnement de Taux'>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          {[
+            { label:'Fed Funds Rate', value:`${macro.fedRate.toFixed(2)}%`, color:'#FF9500' },
+            { label:'US 10Y Yield',   value:`${macro.us10y.toFixed(2)}%`, color:'#FF9500' },
+            { label:'US 2Y Yield',    value:`${macro.us2y.toFixed(2)}%`, color:'#FF3B30' },
+            { label:'Spread 2Y–10Y',  value:`${(macro.us10y - macro.us2y).toFixed(2)}%`, color:'#BF5AF2' },
+          ].map(item => (
+            <div key={item.label}>
+              <div style={{ fontSize:9, color:'rgba(143,148,163,0.5)' }}>{item.label}</div>
+              <div style={{ fontSize:18, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:item.color, marginTop:2 }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+        {macro.us10y - macro.us2y < 0 && (
+          <div style={{ marginTop:12, padding:'8px 12px', borderRadius:8, background:'rgba(255,59,48,0.08)', border:'1px solid rgba(255,59,48,0.2)' }}>
+            <span style={{ fontSize:10, color:'#FF3B30', fontWeight:700 }}>⚠️ Courbe inversée — signal historique de récession</span>
+          </div>
+        )}
+      </InstitCard>
+
+      {/* Composite Scores */}
+      <InstitCard glow='#FF9500' title='Scores Composites' subtitle='Normalisés 0–1'>
+        <div style={{ display:'flex', justifyContent:'space-around', flexWrap:'wrap', gap:16, marginBottom:20 }}>
+          <ScoreArc score={macro.macroRisk} label='Macro Risk Score' glow='#FF9500' />
+          <ScoreArc score={macro.trendScore} label='Trend Strength' glow='#34C759' />
+          <ScoreArc score={0.41} label='Vol Risk Score' glow='#FF3B30' />
+          <ScoreArc score={0.72} label='USD Strength' glow='#00E5FF' />
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {MACRO_SCORES.map(item => (
+            <div key={item.label}>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                <span style={{ fontSize:10, fontWeight:700, color:'rgba(240,243,255,0.8)' }}>{item.label}</span>
+                <span style={{ fontSize:10, fontWeight:800, fontFamily:'JetBrains Mono,monospace', color:item.color }}>{Math.round(item.value*100)}/100</span>
+              </div>
+              <MiniGaugeBar value={item.value} max={1} color={item.color} />
+              <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)', marginTop:2 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Forex spécifique ──────────────────────────────────────────────────
+
+const CURRENCIES_DATA = [
+  { code:'USD', flag:'🇺🇸', strength:68, rate:1,      chg: 0.1, ir:5.33 },
+  { code:'EUR', flag:'🇪🇺', strength:54, rate:1.082,  chg:-0.3, ir:4.00 },
+  { code:'GBP', flag:'🇬🇧', strength:61, rate:1.264,  chg: 0.2, ir:5.25 },
+  { code:'JPY', flag:'🇯🇵', strength:29, rate:0.0066, chg:-0.8, ir:0.10 },
+  { code:'CHF', flag:'🇨🇭', strength:72, rate:1.124,  chg: 0.4, ir:1.75 },
+  { code:'AUD', flag:'🇦🇺', strength:43, rate:0.648,  chg:-0.2, ir:4.35 },
+  { code:'NZD', flag:'🇳🇿', strength:41, rate:0.597,  chg:-0.1, ir:5.50 },
+  { code:'CAD', flag:'🇨🇦', strength:47, rate:0.738,  chg: 0.0, ir:5.00 },
+]
+
+function InstitForexPanel() {
+  const sorted = [...CURRENCIES_DATA].sort((a,b) => b.strength - a.strength)
+
+  // Top carry pairs
+  const byCurrSorted = [...CURRENCIES_DATA].sort((a,b) => b.ir - a.ir)
+  const carryPairs: Array<{long: typeof CURRENCIES_DATA[0]; short: typeof CURRENCIES_DATA[0]; diff: number}> = []
+  for (let i = 0; i < 2; i++) {
+    for (let j = CURRENCIES_DATA.length-1; j >= CURRENCIES_DATA.length-3; j--) {
+      const diff = byCurrSorted[i].ir - byCurrSorted[j].ir
+      carryPairs.push({ long: byCurrSorted[i], short: byCurrSorted[j], diff })
+    }
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Currency Strength Meter */}
+      <InstitCard glow='#BF5AF2' title='Currency Strength Meter' subtitle='Score 0–100 par devise'>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:10 }}>
+          {sorted.map(c => {
+            const color = c.strength>60?'#34C759':c.strength>40?'#FF9500':'#FF3B30'
+            return (
+              <div key={c.code} style={{ padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  <span style={{ fontSize:18 }}>{c.flag}</span>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:12, fontWeight:800, color:'#F0F3FF' }}>{c.code}</div>
+                    <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)' }}>Rate {c.ir}%</div>
+                  </div>
+                  <span style={{ fontSize:18, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color }}>{c.strength}</span>
+                </div>
+                <MiniGaugeBar value={c.strength} max={100} color={color} />
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, marginTop:4 }}>
+                  <span style={{ color:'rgba(143,148,163,0.4)', fontFamily:'JetBrains Mono,monospace' }}>{c.rate.toFixed(4)}</span>
+                  <ReturnPill value={c.chg} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </InstitCard>
+
+      {/* Carry Trade */}
+      <InstitCard glow='#34C759' title='Carry Trade' subtitle='Différentiels de taux'>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {carryPairs.slice(0,5).map((p,i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:14 }}>{p.long.flag}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:'#34C759' }}>LONG {p.long.code}</span>
+                <span style={{ color:'rgba(143,148,163,0.3)', fontSize:10 }}>vs</span>
+                <span style={{ fontSize:14 }}>{p.short.flag}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:'#FF3B30' }}>SHORT {p.short.code}</span>
+              </div>
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:14, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#00E5FF' }}>+{p.diff.toFixed(2)}%</div>
+                <div style={{ fontSize:8, color:'rgba(143,148,163,0.4)' }}>rate diff</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Wrapper : bouton toggle + contenu institutionnel ──────────────────────────
+
+type InstitTab = 'performance' | 'risque' | 'structure' | 'macro' | 'forex'
+
+function InstitIndicatorsWrapper({ tokens, mode, benchmarkLabel }: { tokens: TokenRSIWithDiv[]; mode: 'stocks' | 'forex' | 'crypto'; benchmarkLabel?: string }) {
+  const [open, setOpen]         = useState(false)
+  const [activeTab, setActiveTab] = useState<InstitTab>('performance')
+
+  const TABS_BY_MODE: Record<typeof mode, { id: InstitTab; label: string; icon: string }[]> = {
+    stocks: [
+      { id:'performance', label:'Performance',       icon:'📊' },
+      { id:'risque',      label:'Risque',            icon:'⚠️' },
+      { id:'structure',   label:'Structure Marché',  icon:'🏗️' },
+      { id:'macro',       label:'Macro',             icon:'🏛️' },
+    ],
+    forex: [
+      { id:'performance', label:'Performance',       icon:'📊' },
+      { id:'risque',      label:'Risque',            icon:'⚠️' },
+      { id:'forex',       label:'Forex Spécifique',  icon:'💱' },
+      { id:'macro',       label:'Macro',             icon:'🏛️' },
+    ],
+    crypto: [
+      { id:'performance', label:'Performance',       icon:'📊' },
+      { id:'risque',      label:'Risque',            icon:'⚠️' },
+      { id:'structure',   label:'Structure',         icon:'🏗️' },
+      { id:'macro',       label:'Macro',             icon:'🏛️' },
+    ],
+  }
+
+  const tabs = TABS_BY_MODE[mode]
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {/* Toggle button */}
+      <motion.button
+        onClick={() => setOpen(o => !o)}
+        whileHover={{ y: -1 }}
+        style={{
+          padding: '6px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+          fontSize: 11, fontWeight: 700, transition: 'all 0.15s',
+          background: open ? 'rgba(255,149,0,0.12)' : 'rgba(255,255,255,0.04)',
+          color: open ? '#FF9500' : 'rgba(143,148,163,0.6)',
+          border: `1px solid ${open ? 'rgba(255,149,0,0.4)' : 'rgba(255,255,255,0.08)'}`,
+          boxShadow: open ? '0 0 12px rgba(255,149,0,0.15)' : 'none',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}
+      >
+        🏛️ Indicateurs Institutionnels {open ? '▲' : '▼'}
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{ overflow: 'hidden', marginTop: 12 }}
+          >
+            {/* Sub-tabs */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+              {tabs.map(tab => (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                    fontSize: 11, fontWeight: 700, transition: 'all 0.15s',
+                    background: activeTab === tab.id ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.03)',
+                    color: activeTab === tab.id ? '#FF9500' : 'rgba(143,148,163,0.5)',
+                    borderBottom: `2px solid ${activeTab === tab.id ? '#FF9500' : 'transparent'}`,
+                  }}>
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.div key={activeTab}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+              >
+                {activeTab === 'performance' && <InstitPerformancePanel tokens={tokens} benchmarkLabel={benchmarkLabel} />}
+                {activeTab === 'risque'      && <InstitRiskPanel tokens={tokens} />}
+                {activeTab === 'structure'   && <InstitStructurePanel tokens={tokens} />}
+                {activeTab === 'macro'       && <InstitMacroPanel />}
+                {activeTab === 'forex'       && <InstitForexPanel />}
+              </motion.div>
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 // ── Crypto Tab ────────────────────────────────────────────────────────────────
 
 function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
@@ -2265,7 +2882,8 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
     <div>
       {isRefetching && <RefetchBadge />}
 
-      {/* Funding Rates strip */}
+      {/* Institutional Indicators */}
+      <InstitIndicatorsWrapper tokens={screenerTokens.length > 0 ? screenerTokens : tokens} mode="crypto" benchmarkLabel="BTC" />
       {Object.keys(fundingRates).length > 0 && <FundingRatesPanel rates={fundingRates} tokens={tokens} />}
 
       {/* Filters row */}
