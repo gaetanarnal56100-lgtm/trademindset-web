@@ -1,11 +1,9 @@
 // ─── Widget Components v2 ─────────────────────────────────────────────────────
 // Tous les widgets : journal (KPI, P&L, heatmap...) + analyse (RSI, MACD...)
-// Futuristic Cyberpunk Flat Design — neon glow, glassmorphism, animated accents
+// Chaque widget reçoit les props dont il a besoin via WidgetDataContext.
 
-import { useContext, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { useContext } from 'react'
 import { WidgetDataContext, type WidgetDataContextType } from '../WidgetDataContext'
-import { DashboardCard, StatsRow } from '@/components/ui'
 
 // ─── Shared helpers (copiés depuis DashboardPage pour cohérence) ──────────────
 function fmtK(n: number) {
@@ -20,139 +18,26 @@ function Skel({ h = 20 }: { h?: number }) {
   return <div style={{ height: h, background: 'rgba(255,255,255,0.04)', borderRadius: 6 }} />
 }
 
-// ─── Futuristic KPI Card ─────────────────────────────────────────────────────
-function FuturisticKPICard({
-  label, value, sub, color, glowColor, icon,
-}: {
-  label: string; value: string; sub: string
-  color: string; glowColor: string; icon: string
-}) {
-  return (
-    <div className="relative overflow-hidden rounded-2xl flex flex-col justify-between p-4 group"
-      style={{
-        background: 'rgba(10, 14, 23, 0.85)',
-        border: `1px solid ${glowColor}30`,
-        backdropFilter: 'blur(12px)',
-        boxShadow: `0 0 20px ${glowColor}12, inset 0 1px 0 ${glowColor}15`,
-        transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
-      }}
-      onMouseEnter={e => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 30px ${glowColor}30, inset 0 1px 0 ${glowColor}25`
-        ;(e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'
-        ;(e.currentTarget as HTMLDivElement).style.borderColor = `${glowColor}60`
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 20px ${glowColor}12, inset 0 1px 0 ${glowColor}15`
-        ;(e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'
-        ;(e.currentTarget as HTMLDivElement).style.borderColor = `${glowColor}30`
-      }}
-    >
-      {/* Animated moving halo */}
-      <motion.div
-        className="absolute w-16 h-16 rounded-full blur-2xl pointer-events-none"
-        style={{ background: `${glowColor}18` }}
-        animate={{
-          top: ['10%', '10%', '70%', '70%', '10%'],
-          left: ['10%', '75%', '75%', '10%', '10%'],
-        }}
-        transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
-      />
-
-      {/* Top scan line */}
-      <div className="absolute top-0 left-0 right-0 h-px"
-        style={{ background: `linear-gradient(90deg, transparent, ${glowColor}60, transparent)` }} />
-
-      {/* Corner accents */}
-      <div className="absolute top-0 left-0 w-3 h-3 border-t border-l rounded-tl-2xl"
-        style={{ borderColor: `${glowColor}80` }} />
-      <div className="absolute top-0 right-0 w-3 h-3 border-t border-r rounded-tr-2xl"
-        style={{ borderColor: `${glowColor}80` }} />
-      <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l rounded-bl-2xl"
-        style={{ borderColor: `${glowColor}50` }} />
-      <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r rounded-br-2xl"
-        style={{ borderColor: `${glowColor}50` }} />
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3 relative z-10">
-        <span className="text-[9px] font-bold tracking-[0.15em] uppercase"
-          style={{ color: `${glowColor}99` }}>{label}</span>
-        <span className="text-sm opacity-60">{icon}</span>
-      </div>
-
-      {/* Value */}
-      <motion.div
-        className="relative z-10 font-black font-mono leading-none"
-        style={{
-          fontSize: 'clamp(16px, 2vw, 24px)',
-          color,
-          textShadow: `0 0 20px ${glowColor}60`,
-        }}
-        animate={{ textShadow: [`0 0 12px ${glowColor}40`, `0 0 24px ${glowColor}70`, `0 0 12px ${glowColor}40`] }}
-        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        {value}
-      </motion.div>
-
-      {/* Sub */}
-      <div className="text-[10px] mt-2 relative z-10"
-        style={{ color: 'rgba(143,148,163,0.7)' }}>{sub}</div>
-
-      {/* Bottom micro progress line */}
-      <motion.div
-        className="absolute bottom-0 left-0 h-[2px]"
-        style={{ background: `linear-gradient(90deg, transparent, ${glowColor}, transparent)` }}
-        animate={{ left: ['-100%', '100%'] }}
-        transition={{ duration: 3, repeat: Infinity, ease: 'linear', repeatDelay: 1 }}
-      />
-    </div>
-  )
-}
-
 // ─── KPI Bar ─────────────────────────────────────────────────────────────────
 export function KPIBarWidget() {
   const { s, loading, closed, open } = useContext(WidgetDataContext)
-  const pnlPositive = s.totalPnL >= 0
-  const winGood = s.winRate >= 50
-
   const items = [
-    {
-      label: 'Total P&L',
-      value: loading ? '···' : fmtK(s.totalPnL),
-      sub: `${closed.length} trades fermés`,
-      color: pnlPositive ? '#22C759' : '#FF3B30',
-      glowColor: pnlPositive ? '#22C759' : '#FF3B30',
-      icon: pnlPositive ? '📈' : '📉',
-    },
-    {
-      label: 'Win Rate',
-      value: loading ? '···' : `${s.winRate.toFixed(1)}%`,
-      sub: `${s.wins}W · ${s.losses}L`,
-      color: winGood ? '#22C759' : '#FF3B30',
-      glowColor: '#00E5FF',
-      icon: '🎯',
-    },
-    {
-      label: 'Ratio R/R',
-      value: loading ? '···' : s.payoffRatio.toFixed(2),
-      sub: 'Rendement / Risque',
-      color: '#00E5FF',
-      glowColor: '#0A85FF',
-      icon: '⚖️',
-    },
-    {
-      label: 'Positions',
-      value: loading ? '···' : String(open.length),
-      sub: open.length > 0 ? 'En cours' : 'Aucune ouverte',
-      color: open.length > 0 ? '#FF9500' : 'rgba(143,148,163,0.6)',
-      glowColor: open.length > 0 ? '#FF9500' : '#2A2F3E',
-      icon: open.length > 0 ? '⚡' : '○',
-    },
+    { label:'P&L Total', value: loading ? null : fmtK(s.totalPnL), color: s.totalPnL>=0?'var(--tm-profit)':'var(--tm-loss)', sub:`${closed.length} trades fermés` },
+    { label:'Win Rate',  value: loading ? null : `${s.winRate.toFixed(1)}%`, color:'var(--tm-text-primary)', sub:`${s.wins}W / ${s.losses}L` },
+    { label:'Ratio R/R', value: loading ? null : s.payoffRatio.toFixed(2),   color:'var(--tm-accent)', sub:'Rendement/Risque' },
+    { label:'Ouverts',   value: loading ? null : String(open.length),         color: open.length>0?'var(--tm-warning)':'var(--tm-text-secondary)', sub:'Positions actives' },
   ]
-
   return (
-    <div className="grid grid-cols-4 gap-2.5 p-3 h-full">
-      {items.map(item => (
-        <FuturisticKPICard key={item.label} {...item} />
+    <div className="grid grid-cols-4 gap-3 p-3 h-full">
+      {items.map(({ label, value, color, sub }) => (
+        <div key={label} className="bg-bg-secondary rounded-xl p-3 flex flex-col justify-between">
+          <div className="text-[10px] text-text-muted uppercase tracking-widest font-medium">{label}</div>
+          {value === null
+            ? <Skel h={28} />
+            : <div className="text-lg font-bold font-mono" style={{ color }}>{value}</div>
+          }
+          <div className="text-[10px] text-text-muted mt-1">{sub}</div>
+        </div>
       ))}
     </div>
   )
@@ -163,39 +48,24 @@ export function LongShortWidget() {
   const { s, loading } = useContext(WidgetDataContext)
   return (
     <div className="p-4 h-full flex flex-col gap-3">
-      <div className="text-[9px] font-bold tracking-[0.15em] uppercase" style={{ color: 'rgba(0,229,255,0.6)' }}>Direction</div>
+      <div className="text-[11px] text-text-secondary font-medium">Win rate & P&L par direction</div>
       <div className="grid grid-cols-2 gap-3 flex-1">
         {[
-          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'#22C759', glow:'#22C759' },
-          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'#FF3B30', glow:'#FF3B30' },
-        ].map(({ label, icon, wr, pnl, count, c, glow }) => (
-          <div key={label} className="relative rounded-2xl p-3 flex flex-col gap-2 overflow-hidden"
-            style={{
-              background: 'rgba(10,14,23,0.85)',
-              border: `1px solid ${glow}25`,
-              boxShadow: `0 0 16px ${glow}10, inset 0 1px 0 ${glow}12`,
-              backdropFilter: 'blur(8px)',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 28px ${glow}28, inset 0 1px 0 ${glow}20`; (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 16px ${glow}10, inset 0 1px 0 ${glow}12`; (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)' }}
-          >
-            {/* Top scan line */}
-            <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${glow}50, transparent)` }} />
-            <div className="flex items-center gap-2 relative z-10">
-              <div className="w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                style={{ background: `${glow}15`, color: c, border: `1px solid ${glow}30`, textShadow: `0 0 8px ${glow}` }}>{icon}</div>
-              <span className="text-xs font-black tracking-widest" style={{ color: c, textShadow: `0 0 8px ${glow}50` }}>{label}</span>
+          { label:'LONG',  icon:'↑', wr:s.longWR,  pnl:s.longPnL,  count:s.longs,  c:'var(--tm-profit)', bdr:'rgba(var(--tm-profit-rgb,34,199,89),0.2)' },
+          { label:'SHORT', icon:'↓', wr:s.shortWR, pnl:s.shortPnL, count:s.shorts, c:'var(--tm-loss)', bdr:'rgba(var(--tm-loss-rgb,255,59,48),0.2)' },
+        ].map(({ label, icon, wr, pnl, count, c, bdr }) => (
+          <div key={label} className="rounded-xl p-3 flex flex-col gap-2"
+            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${bdr}` }}>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+                style={{ background:`${c}20`, color:c }}>{icon}</div>
+              <span className="text-xs font-semibold text-text-primary">{label}</span>
             </div>
             {loading ? <Skel h={36} /> : (
               <>
-                <motion.div className="text-2xl font-black font-mono relative z-10" style={{ color: c, textShadow: `0 0 16px ${glow}60` }}
-                  animate={{ textShadow: [`0 0 8px ${glow}40`, `0 0 20px ${glow}70`, `0 0 8px ${glow}40`] }}
-                  transition={{ duration: 3, repeat: Infinity }}>
-                  {wr.toFixed(1)}<span className="text-sm font-normal" style={{ color: 'rgba(143,148,163,0.5)' }}>%</span>
-                </motion.div>
-                <div className="text-[10px] relative z-10" style={{ color: 'rgba(143,148,163,0.6)' }}>{count} trades</div>
-                <div className="text-xs font-black font-mono relative z-10" style={{ color: pnl>=0?'#22C759':'#FF3B30', textShadow: `0 0 8px ${pnl>=0?'#22C75940':'#FF3B3040'}` }}>{fmtK(pnl)}</div>
+                <div className="text-2xl font-black font-mono" style={{ color:c }}>{wr.toFixed(1)}<span className="text-sm">%</span></div>
+                <div className="text-[10px] text-text-muted">{count} trades</div>
+                <div className="text-xs font-semibold font-mono" style={{ color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(pnl)}</div>
               </>
             )}
           </div>
@@ -209,36 +79,21 @@ export function LongShortWidget() {
 export function MainMetricsWidget() {
   const { s, loading, closed } = useContext(WidgetDataContext)
   const items = loading ? [] : [
-    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'#22C759', glow:'#22C759' },
-    { icon:'💰', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'#00E5FF', glow:'#00E5FF' },
-    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain / Perte',              c:'#0A85FF', glow:'#0A85FF' },
-    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total estimé',              c:'#BF5AF2', glow:'#BF5AF2' },
+    { icon:'📈', value:`${s.winRate.toFixed(1)}%`, label:'Win Rate',    sub:`${s.wins}W / ${s.losses}L`, c:'var(--tm-profit)', bg:'rgba(var(--tm-profit-rgb,34,199,89),0.08)' },
+    { icon:'💲', value:fmtK(s.totalPnL),           label:'Total P&L',   sub:`${closed.length} trades`,   c:'var(--tm-accent)', bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)' },
+    { icon:'⇄',  value:s.payoffRatio.toFixed(2),   label:'Payoff Ratio',sub:'Gain/Perte',                c:'var(--tm-blue)', bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)' },
+    { icon:'💳', value:fmtK(-s.fees),              label:'Fees',        sub:'Total',                     c:'var(--tm-purple)', bg:'rgba(var(--tm-purple-rgb,191,90,242),0.08)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3">
-      <div className="text-[9px] font-bold tracking-[0.15em] uppercase" style={{ color: 'rgba(0,229,255,0.6)' }}>Metrics</div>
+      <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-widest">Main Metrics</div>
       <div className="grid grid-cols-2 gap-2 flex-1">
-        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, glow }) => (
-          <div key={label} className="relative rounded-2xl p-3 flex flex-col gap-1 overflow-hidden"
-            style={{
-              background: 'rgba(10,14,23,0.85)',
-              border: `1px solid ${glow}25`,
-              boxShadow: `0 0 12px ${glow}10`,
-              backdropFilter: 'blur(8px)',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 20px ${glow}25`; (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.borderColor = `${glow}40` }}
-            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 12px ${glow}10`; (e.currentTarget as HTMLDivElement).style.transform = ''; (e.currentTarget as HTMLDivElement).style.borderColor = `${glow}25` }}
-          >
-            <div className="absolute top-0 left-0 right-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${glow}50, transparent)` }} />
-            <span className="text-xs relative z-10">{icon}</span>
-            <motion.div className="text-base font-black font-mono relative z-10" style={{ color: c }}
-              animate={{ textShadow: [`0 0 6px ${glow}30`, `0 0 16px ${glow}60`, `0 0 6px ${glow}30`] }}
-              transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}>
-              {value}
-            </motion.div>
-            <div className="text-[9px] font-bold tracking-wide relative z-10" style={{ color: `${glow}80` }}>{label}</div>
-            <div className="text-[9px] relative z-10" style={{ color: 'rgba(143,148,163,0.5)' }}>{sub}</div>
+        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, bg }) => (
+          <div key={label} className="rounded-xl p-3 flex flex-col gap-1" style={{ background:bg }}>
+            <span className="text-base">{icon}</span>
+            <div className="text-base font-black font-mono text-text-primary">{value}</div>
+            <div className="text-[10px] text-text-secondary">{label}</div>
+            <div className="text-[10px]" style={{ color:c }}>{sub}</div>
           </div>
         ))}
       </div>
@@ -250,22 +105,21 @@ export function MainMetricsWidget() {
 export function AdvancedMetricsWidget() {
   const { s, loading } = useContext(WidgetDataContext)
   const items = loading ? [] : [
-    { icon:'📉', value:fmtK(-s.maxDD),       label:'Max Drawdown', sub:'Max loss',       c:'var(--tm-loss)',    bg:'rgba(255,59,48,0.07)',  border:'rgba(255,59,48,0.2)' },
-    { icon:'📊', value:s.sharpe.toFixed(2),   label:'Sharpe Ratio', sub:'Return/Risk',    c:'var(--tm-blue)',   bg:'rgba(10,133,255,0.07)', border:'rgba(10,133,255,0.2)' },
-    { icon:'🎯', value:fmtK(s.expectancy),    label:'Expectancy',   sub:'Avg gain/trade', c:'var(--tm-accent)', bg:'rgba(0,229,255,0.07)',  border:'rgba(0,229,255,0.2)' },
-    { icon:'🔥', value:String(s.bestStreak),  label:'Best Streak',  sub:`${s.worstStreak} max losses`, c:'var(--tm-warning)', bg:'rgba(255,149,0,0.07)', border:'rgba(255,149,0,0.2)' },
+    { icon:'📉', value:fmtK(-s.maxDD),       label:'Max Drawdown', sub:'Max loss',     c:'var(--tm-loss)', bg:'rgba(var(--tm-loss-rgb,255,59,48),0.08)' },
+    { icon:'📊', value:s.sharpe.toFixed(2),   label:'Sharpe Ratio', sub:'Return/Risk',  c:'var(--tm-blue)', bg:'rgba(var(--tm-blue-rgb,10,133,255),0.08)' },
+    { icon:'🎯', value:fmtK(s.expectancy),    label:'Expectancy',   sub:'Avg gain/trade',c:'var(--tm-accent)', bg:'rgba(var(--tm-accent-rgb,0,229,255),0.08)' },
+    { icon:'🔥', value:String(s.bestStreak),  label:'Best Streak',  sub:`${s.worstStreak} max losses`,c:'var(--tm-warning)', bg:'rgba(var(--tm-warning-rgb,255,149,0),0.08)' },
   ]
   return (
     <div className="p-4 h-full flex flex-col gap-3">
-      <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Advanced Metrics</div>
+      <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-widest">Advanced Metrics</div>
       <div className="grid grid-cols-2 gap-2 flex-1">
-        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, bg, border }) => (
-          <div key={label} className="rounded-2xl p-3 flex flex-col gap-1 transition-all duration-150 hover:-translate-y-px"
-            style={{ background: bg, border: `1px solid ${border}` }}>
-            <span className="text-sm">{icon}</span>
-            <div className="text-base font-black font-mono" style={{ color: c }}>{value}</div>
-            <div className="text-[10px] font-semibold text-text-secondary">{label}</div>
-            <div className="text-[10px] text-text-muted">{sub}</div>
+        {loading ? [1,2,3,4].map(i => <Skel key={i} h={80} />) : items.map(({ icon, value, label, sub, c, bg }) => (
+          <div key={label} className="rounded-xl p-3 flex flex-col gap-1" style={{ background:bg }}>
+            <span className="text-base">{icon}</span>
+            <div className="text-base font-black font-mono text-text-primary">{value}</div>
+            <div className="text-[10px] text-text-secondary">{label}</div>
+            <div className="text-[10px]" style={{ color:c }}>{sub}</div>
           </div>
         ))}
       </div>
@@ -321,24 +175,20 @@ export function RecentTradesWidget() {
         <div className="flex flex-col gap-1.5">
           {recent.map(t => {
             const pnl = tradePnLFn(t)
-            const isLong = t.type === 'Long'
             return (
-              <div key={t.id} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px"
-                style={{ background:'rgba(255,255,255,0.025)', border: '1px solid rgba(42,47,62,0.5)' }}>
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-                  style={{
-                    background: isLong ? 'rgba(34,199,89,0.12)' : 'rgba(255,59,48,0.12)',
-                    color: isLong ? 'var(--tm-profit)' : 'var(--tm-loss)',
-                    border: `1px solid ${isLong ? 'rgba(34,199,89,0.2)' : 'rgba(255,59,48,0.2)'}`,
-                  }}>
-                  {isLong ? '↑' : '↓'}
+              <div key={t.id} className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                style={{ background:'rgba(255,255,255,0.02)' }}>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs flex-shrink-0"
+                  style={{ background: t.type==='Long'?'rgba(var(--tm-profit-rgb,34,199,89),0.1)':'rgba(var(--tm-loss-rgb,255,59,48),0.1)',
+                           color:       t.type==='Long'?'var(--tm-profit)':'var(--tm-loss)' }}>
+                  {t.type==='Long'?'↑':'↓'}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold font-mono text-text-primary truncate">{t.symbol}</div>
+                  <div className="text-xs font-semibold font-mono text-text-primary truncate">{t.symbol}</div>
                   <div className="text-[10px] text-text-muted">{fmtDate(t.date)} · <span style={{ color:systemColor(t.systemId) }}>{systemName(t.systemId)}</span></div>
                 </div>
                 {t.status==='open'
-                  ? <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg uppercase tracking-wide" style={{ background:'rgba(255,149,0,0.12)', color:'var(--tm-warning)', border:'1px solid rgba(255,149,0,0.2)' }}>Live</span>
+                  ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background:'rgba(var(--tm-warning-rgb,255,149,0),0.1)', color:'var(--tm-warning)' }}>OUVERT</span>
                   : <span className="text-xs font-bold font-mono" style={{ color:pnl>=0?'var(--tm-profit)':'var(--tm-loss)' }}>{fmtK(pnl)}</span>
                 }
               </div>

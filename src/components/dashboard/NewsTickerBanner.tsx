@@ -150,13 +150,13 @@ export default function NewsTickerBanner(){
     try{
       const allRaw:{title:string;source:string;url?:string}[]=[]
       const seen=new Set<string>()
-      // Flux RSS publics — Reuters/MarketWatch ont bloqué les proxies, on utilise des sources alternatives fiables
+      // Flux publics sans auth — Bloomberg bloque souvent, on utilise Reuters / FT / CoinDesk / Yahoo Finance
       await Promise.allSettled([
-        {url:'https://www.coindesk.com/arc/outboundfeeds/rss/',              label:'CoinDesk'},
-        {url:'https://cointelegraph.com/rss',                                label:'CoinTelegraph'},
-        {url:'https://feeds.bbci.co.uk/news/business/rss.xml',              label:'BBC Business'},
-        {url:'https://feeds.bbci.co.uk/news/technology/rss.xml',            label:'BBC Tech'},
-        {url:'https://www.investing.com/rss/news.rss',                      label:'Investing'},
+        {url:'https://feeds.reuters.com/reuters/businessNews',         label:'Reuters'},
+        {url:'https://feeds.reuters.com/reuters/technologyNews',       label:'Tech'},
+        {url:'https://www.coindesk.com/arc/outboundfeeds/rss/',        label:'Crypto'},
+        {url:'https://feeds.marketwatch.com/marketwatch/topstories/',  label:'Markets'},
+        {url:'https://finance.yahoo.com/news/rssindex',                label:'Finance'},
       ].map(async f=>{
         const its=await fetchFeed(f.url,f.label)
         its.forEach(it=>{const k=it.title.slice(0,40).toLowerCase();if(!seen.has(k)){seen.add(k);allRaw.push(it)}})

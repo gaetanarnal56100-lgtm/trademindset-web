@@ -4,59 +4,48 @@ import { useEffect, useRef } from 'react'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-export type CardTheme = 'cyan' | 'purple' | 'gold' | 'red' | 'minimal'
+export type CardTheme = 'cyan' | 'purple' | 'gold' | 'minimal'
 
 export interface ShareCardConfig {
   metrics: {
-    winRate:       boolean
-    payoffRatio:   boolean
-    totalPnL:      boolean
-    totalTrades:   boolean
-    maxDD:         boolean
-    expectancy:    boolean
-    sharpe:        boolean
-    bestStreak:    boolean
-    profitFactor:  boolean
-    avgWin:        boolean
-    avgLoss:       boolean
-    longsWR:       boolean
+    winRate:      boolean
+    payoffRatio:  boolean
+    totalPnL:     boolean
+    totalTrades:  boolean
+    maxDD:        boolean
+    expectancy:   boolean
+    sharpe:       boolean
+    bestStreak:   boolean
   }
-  showSparkline:   boolean
-  showEmotion:     boolean
-  showAvatar:      boolean
-  showDate:        boolean
-  showPeriodBadge: boolean
-  theme:           CardTheme
+  showSparkline: boolean
+  showEmotion:   boolean
+  showAvatar:    boolean
+  showBranding:  boolean
+  theme:         CardTheme
 }
 
 export const DEFAULT_CONFIG: ShareCardConfig = {
   metrics: {
-    winRate:      true,
-    payoffRatio:  true,
-    totalPnL:     true,
-    totalTrades:  true,
-    maxDD:        false,
-    expectancy:   false,
-    sharpe:       false,
-    bestStreak:   false,
-    profitFactor: false,
-    avgWin:       false,
-    avgLoss:      false,
-    longsWR:      false,
+    winRate:     true,
+    payoffRatio: true,
+    totalPnL:    true,
+    totalTrades: true,
+    maxDD:       false,
+    expectancy:  false,
+    sharpe:      false,
+    bestStreak:  false,
   },
-  showSparkline:   true,
-  showEmotion:     true,
-  showAvatar:      true,
-  showDate:        true,
-  showPeriodBadge: true,
-  theme:           'cyan',
+  showSparkline: true,
+  showEmotion:   true,
+  showAvatar:    true,
+  showBranding:  true,
+  theme:         'cyan',
 }
 
 export const THEME_COLORS: Record<CardTheme, string> = {
   cyan:    '#00E5FF',
   purple:  '#BF5AF2',
   gold:    '#F59714',
-  red:     '#FF3B30',
   minimal: '#8B949E',
 }
 
@@ -73,10 +62,6 @@ export interface ShareStatsCardProps {
   expectancy:      number
   sharpe:          number
   bestStreak:      number
-  profitFactor:    number
-  avgWin:          number
-  avgLoss:         number
-  longsWR:         number
   dominantEmotion: string | null
   pnlCurve:        number[]
   period:          string
@@ -95,8 +80,8 @@ const EMOTIONS: Record<string, { emoji: string; label: string; color: string }> 
   impatient:  { emoji: '😤', label: 'Impatient',  color: '#FF9800' },
   fearful:    { emoji: '😨', label: 'Peur',       color: '#9C27B0' },
   greedy:     { emoji: '💰', label: 'Avarice',    color: '#FFC107' },
-  frustrated: { emoji: '😡', label: 'Frustré',    color: '#795548' },
-  distracted: { emoji: '🤔', label: 'Distrait',   color: '#607D8B' },
+  frustrated: { emoji: '😡', label: 'Frustré',   color: '#795548' },
+  distracted: { emoji: '🤔', label: 'Distrait',  color: '#607D8B' },
 }
 function emotionInfo(v: string | null) {
   if (!v) return { emoji: '😐', label: 'Neutre', color: '#888' }
@@ -109,27 +94,11 @@ function fmtPnL(n: number, currency = '$') {
   if (abs >= 1_000)     return `${s}${currency}${(abs / 1_000).toFixed(1)}K`
   return `${s}${currency}${abs.toFixed(2)}`
 }
-function fmtAmt(n: number, currency = '$') {
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return `${currency}${(abs / 1_000_000).toFixed(2)}M`
-  if (abs >= 1_000)     return `${currency}${(abs / 1_000).toFixed(1)}K`
-  return `${currency}${abs.toFixed(2)}`
-}
 function hex2rgba(hex: string, alpha: number) {
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
   const b = parseInt(hex.slice(5, 7), 16)
   return `rgba(${r},${g},${b},${alpha})`
-}
-function periodLabel(period: string) {
-  const map: Record<string, string> = {
-    '1W': '1 semaine', '1M': '1 mois', '3M': '3 mois',
-    '6M': '6 mois', 'YTD': 'Année en cours', 'ALL': 'Tout le temps',
-  }
-  return map[period] ?? period
-}
-function fmtDate() {
-  return new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 // ── Sparkline ─────────────────────────────────────────────────────────────────
@@ -183,7 +152,7 @@ function Sparkline({ curve, accent }: { curve: number[]; accent: string }) {
     ctx.arc(toX(curve.length - 1), toY(lastVal), 4, 0, Math.PI * 2)
     ctx.fillStyle = color
     ctx.fill()
-    // Accent vertical line
+    // Accent end line (theme color)
     ctx.beginPath()
     ctx.moveTo(toX(curve.length - 1), pad.t)
     ctx.lineTo(toX(curve.length - 1), cssH)
@@ -200,26 +169,24 @@ function Sparkline({ curve, accent }: { curve: number[]; accent: string }) {
 
 export default function ShareStatsCard({
   displayName, photoURL, winRate, payoffRatio, totalPnL, totalTrades,
-  maxDD, expectancy, sharpe, bestStreak, profitFactor, avgWin, avgLoss, longsWR,
-  dominantEmotion, pnlCurve, period, currency = '$', config,
+  maxDD, expectancy, sharpe, bestStreak, dominantEmotion,
+  pnlCurve, period, currency = '$', config,
 }: ShareStatsCardProps) {
   const accent = THEME_COLORS[config.theme]
   const emo = emotionInfo(dominantEmotion)
   const pnlColor = totalPnL >= 0 ? '#22C759' : '#FF3B30'
+  const periodLabel = period === '1M' ? '1 mois' : period === '3M' ? '3 mois' : 'Tout'
 
+  // Build all possible KPIs, filter by config, take first 4 active
   const ALL_KPIS = [
-    { key: 'winRate',      label: 'Win Rate',       value: `${winRate.toFixed(1)}%`,         color: winRate >= 50 ? '#22C759' : '#FF3B30' },
-    { key: 'payoffRatio',  label: 'R/R Ratio',      value: `×${payoffRatio.toFixed(2)}`,      color: payoffRatio >= 1 ? '#22C759' : '#FF9800' },
-    { key: 'totalPnL',     label: 'P&L Net',        value: fmtPnL(totalPnL, currency),        color: pnlColor },
-    { key: 'totalTrades',  label: 'Trades',         value: String(totalTrades),               color: '#C5C8D6' },
-    { key: 'maxDD',        label: 'Max DD',         value: fmtPnL(-maxDD, currency),          color: '#FF3B30' },
-    { key: 'expectancy',   label: 'Espérance',      value: fmtPnL(expectancy, currency),      color: expectancy >= 0 ? '#22C759' : '#FF3B30' },
-    { key: 'sharpe',       label: 'Sharpe',         value: sharpe.toFixed(2),                 color: sharpe >= 1 ? '#22C759' : sharpe >= 0 ? '#FF9800' : '#FF3B30' },
-    { key: 'bestStreak',   label: 'Streak Max',     value: `${bestStreak} wins`,              color: '#F59714' },
-    { key: 'profitFactor', label: 'Profit Factor',  value: profitFactor.toFixed(2),           color: profitFactor >= 1.5 ? '#22C759' : profitFactor >= 1 ? '#FF9800' : '#FF3B30' },
-    { key: 'avgWin',       label: 'Gain Moyen',     value: fmtAmt(avgWin, currency),          color: '#22C759' },
-    { key: 'avgLoss',      label: 'Perte Moyenne',  value: `-${fmtAmt(avgLoss, currency)}`,   color: '#FF3B30' },
-    { key: 'longsWR',      label: 'WR Longs',       value: `${longsWR.toFixed(1)}%`,          color: longsWR >= 50 ? '#22C759' : '#FF3B30' },
+    { key: 'winRate',     label: 'Win Rate',   value: `${winRate.toFixed(1)}%`,       color: winRate >= 50 ? '#22C759' : '#FF3B30' },
+    { key: 'payoffRatio', label: 'R/R Ratio',  value: `×${payoffRatio.toFixed(2)}`,    color: payoffRatio >= 1 ? '#22C759' : '#FF9800' },
+    { key: 'totalPnL',    label: 'P&L Net',    value: fmtPnL(totalPnL, currency),      color: pnlColor },
+    { key: 'totalTrades', label: 'Trades',     value: String(totalTrades),             color: '#C5C8D6' },
+    { key: 'maxDD',       label: 'Max DD',     value: fmtPnL(-maxDD, currency),        color: '#FF3B30' },
+    { key: 'expectancy',  label: 'Espérance',  value: fmtPnL(expectancy, currency),    color: expectancy >= 0 ? '#22C759' : '#FF3B30' },
+    { key: 'sharpe',      label: 'Sharpe',     value: sharpe.toFixed(2),               color: sharpe >= 1 ? '#22C759' : sharpe >= 0 ? '#FF9800' : '#FF3B30' },
+    { key: 'bestStreak',  label: 'Streak Max', value: `${bestStreak} wins`,            color: '#F59714' },
   ] as const
 
   const activeKpis = ALL_KPIS
@@ -278,35 +245,22 @@ export default function ShareStatsCard({
           </div>
         </div>
 
-        {/* Right: period badge + logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {config.showPeriodBadge && (
-            <div style={{
-              padding: '3px 8px', borderRadius: 6,
-              background: hex2rgba(accent, 0.1),
-              border: `1px solid ${hex2rgba(accent, 0.2)}`,
-              fontSize: 10, fontWeight: 700, color: accent,
-              letterSpacing: '0.05em', textTransform: 'uppercase',
-            }}>
-              {periodLabel(period)}
-            </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: 8,
-              background: hex2rgba(accent, 0.1),
-              border: `1px solid ${hex2rgba(accent, 0.25)}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round">
-                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
-                <polyline points="16 7 22 7 22 13" />
-              </svg>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#F0F2F5', letterSpacing: '-0.01em' }}>TradeMindset</div>
-              <div style={{ fontSize: 8, color: accent, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Pro</div>
-            </div>
+        {/* Right: logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: hex2rgba(accent, 0.1),
+            border: `1px solid ${hex2rgba(accent, 0.25)}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round">
+              <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+              <polyline points="16 7 22 7 22 13" />
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#F0F2F5', letterSpacing: '-0.01em' }}>TradeMindset</div>
+            <div style={{ fontSize: 8, color: accent, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Pro</div>
           </div>
         </div>
       </div>
@@ -316,7 +270,7 @@ export default function ShareStatsCard({
         <div style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          padding: '16px 20px',
+          padding: '14px 20px',
           borderBottom: `1px solid rgba(255,255,255,0.06)`,
           gap: 8,
         }}>
@@ -357,27 +311,29 @@ export default function ShareStatsCard({
           </div>
           <div style={{ width: 1, height: 13, background: 'rgba(255,255,255,0.08)' }} />
           <div style={{ fontSize: 11, color: '#6B7280' }}>
-            État émotionnel dominant · {periodLabel(period)}
+            État émotionnel dominant · Période : {periodLabel}
           </div>
         </div>
       )}
 
-      {/* ── Footer branding — TOUJOURS VISIBLE ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 20px 12px',
-        borderTop: `1px solid rgba(255,255,255,0.06)`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: accent, fontWeight: 700 }}>
-          <span>🌐</span>
-          <span>trademindset.app</span>
-        </div>
-        {config.showDate && (
-          <div style={{ fontSize: 9, color: '#3A3F4B', fontFamily: 'JetBrains Mono, monospace' }}>
-            {fmtDate()}
+      {/* ── Footer branding ── */}
+      {config.showBranding && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 20px 12px',
+          borderTop: `1px solid rgba(255,255,255,0.06)`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: accent, fontWeight: 600 }}>
+            <span>🌐</span>
+            <span>trademindset.app</span>
           </div>
-        )}
-      </div>
+          {!config.showEmotion && (
+            <div style={{ fontSize: 10, color: '#6B7280' }}>
+              Période : {periodLabel}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

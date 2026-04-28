@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { subscribeMoods, subscribeTrades, createMood, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
+import { subscribeMoods, subscribeTrades, deleteMood, tradePnL, type MoodEntry, type Trade, type EmotionalState, type MoodContext } from '@/services/firestore'
+import BehavioralAnalysis from './BehavioralAnalysis'
 import ShareStatsModal from '@/components/share/ShareStatsModal'
+import AddMoodModal from './AddMoodModal'
 import PropFirmTracker from './PropFirmTracker'
-import BehaviorPatternEngine from './BehaviorPatternEngine'
-import DecisionDelayModal from './DecisionDelayModal'
-import ExchangeSyncModal from './ExchangeSyncModal'
 
 const EMOTIONS: { v: EmotionalState; emoji: string; labelKey: string; fallback: string; color: string }[] = [
   { v:'confident',  emoji:'😎', labelKey:'journal.emotions.confident',  fallback:'Confident',   color:'#4CAF50' },
@@ -349,10 +348,9 @@ export default function JournalPage() {
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
-  const [showShare, setShowShare] = useState(false)
-  const [showDelay, setShowDelay] = useState(false)  // Decision Delay System
-  const [showImport, setShowImport] = useState(false) // Exchange Import
   const [filter,  setFilter]  = useState<EmotionalState | 'all'>('all')
+  const [view,      setView]      = useState<'journal' | 'behavioral'>('journal')
+  const [showShare, setShowShare] = useState(false)
 
   useEffect(() => {
     const unsubM = subscribeMoods(m => { setMoods(m); setLoading(false) })
@@ -373,43 +371,6 @@ export default function JournalPage() {
     ? (moods.reduce((s, m) => s + m.intensity, 0) / moods.length).toFixed(1)
     : '—'
 
-  // FOMO / Revenge trading detector
-  const fomoAlerts = useMemo(() => {
-    const alerts: { type: 'revenge' | 'fomo' | 'oversize'; message: string; tradeId?: string }[] = []
-    const closedTrades = trades
-      .filter(t => t.status === 'closed')
-      .sort((a, b) => {
-        const ta = typeof a.date?.seconds === 'number' ? a.date.seconds * 1000 : typeof a.date?.getTime === 'function' ? a.date.getTime() : 0
-        const tb = typeof b.date?.seconds === 'number' ? b.date.seconds * 1000 : typeof b.date?.getTime === 'function' ? b.date.getTime() : 0
-        return ta - tb
-      })
-    for (let i = 1; i < closedTrades.length; i++) {
-      const prev = closedTrades[i - 1]
-      const curr = closedTrades[i]
-      const prevPnL = tradePnL(prev)
-      const currPnL = tradePnL(curr)
-      // Revenge trade: negative then immediately another trade, possibly larger
-      if (prevPnL < 0) {
-        const ta = typeof curr.date?.seconds === 'number' ? curr.date.seconds * 1000 : 0
-        const tb = typeof prev.date?.seconds === 'number' ? prev.date.seconds * 1000 : 0
-        const gapMinutes = (ta - tb) / 60000
-        if (gapMinutes < 30 && gapMinutes >= 0) {
-          alerts.push({ type: 'revenge', message: `Trade potentiellement revanche : ${curr.symbol} ouvert ${Math.round(gapMinutes)}min après une perte sur ${prev.symbol}`, tradeId: curr.id })
-        }
-      }
-      // Streak of losses -> possible FOMO
-      if (i >= 3) {
-        const last3 = closedTrades.slice(i - 3, i).map(t => tradePnL(t))
-        if (last3.every(p => p < 0) && currPnL < 0) {
-          alerts.push({ type: 'fomo', message: `4 pertes consécutives détectées — risque de revenge trading élevé`, tradeId: curr.id })
-        }
-      }
-    }
-    // Deduplicate
-    const seen = new Set<string>()
-    return alerts.filter(a => { const k = a.type + a.message; if (seen.has(k)) return false; seen.add(k); return true }).slice(0, 5)
-  }, [trades])
-
   const tradeName = (id?: string) => {
     if (!id) return null
     const trade = trades.find(tr => tr.id === id)
@@ -419,42 +380,50 @@ export default function JournalPage() {
   return (
     <div style={{ padding:'24px 28px 60px', maxWidth:1400, margin:'0 auto' }}>
       {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:12 }}>
         <div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'var(--tm-text-primary)', margin:0, fontFamily:'Syne, sans-serif' }}>{t('journal.title')}</h1>
           <p style={{ fontSize:13, color:'var(--tm-text-secondary)', margin:'3px 0 0' }}>
             {loading ? t('journal.loading') : `${t('journal.entries', { count: moods.length })} · ${t('journal.avgIntensity')} ${avgIntensity}/10`}
           </p>
         </div>
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          <button
-            onClick={() => setShowImport(true)}
-            style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)', color:'#FF9500', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
-          >
-            📥 Importer via API
-          </button>
-          <button
-            onClick={() => setShowDelay(true)}
-            style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(34,199,89,0.3)', background:'rgba(34,199,89,0.06)', color:'#22C759', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
-          >
-            ⚡ Avant un trade
-          </button>
-          <button
-            onClick={() => setShowShare(true)}
-            style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(0,229,255,0.3)', background:'rgba(0,229,255,0.06)', color:'var(--tm-accent)', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}
-          >
-            📤 Partager
-          </button>
-          <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-            {t('journal.addEntry')}
-          </button>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          {/* View toggle */}
+          <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', borderRadius:10, padding:3, gap:2 }}>
+            {(['journal', 'behavioral'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)} style={{
+                padding:'6px 14px', borderRadius:8, border:'none', cursor:'pointer',
+                fontSize:12, fontWeight:600, transition:'all 0.2s',
+                background: view === v ? 'rgba(0,217,255,0.15)' : 'transparent',
+                color: view === v ? '#00D9FF' : '#8E8E93',
+              }}>
+                {v === 'journal' ? '📝 Journal' : '🧠 Psychology'}
+              </button>
+            ))}
+          </div>
+          {view === 'journal' && (
+            <>
+              <button onClick={() => setShowShare(true)} style={{ padding:'8px 14px', borderRadius:10, border:'1px solid rgba(0,217,255,0.25)', background:'rgba(0,217,255,0.06)', color:'#00D9FF', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+                📤 Partager
+              </button>
+              <button onClick={() => setShowAdd(true)} style={{ padding:'8px 16px', borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                {t('journal.addEntry')}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Behavioral Analysis View */}
+      {view === 'behavioral' && (
+        <BehavioralAnalysis moods={moods} trades={trades} />
+      )}
+
       {/* Two-column layout */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:20, alignItems:'start' }}>
+      {view === 'journal' && <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:20, alignItems:'start' }}>
         {/* Left — journal content */}
         <div>
+          <PropFirmTracker trades={trades} />
           {/* Emotion breakdown */}
           {!loading && moods.length > 0 && (
             <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:12, padding:'14px 16px', marginBottom:16 }}>
@@ -474,24 +443,6 @@ export default function JournalPage() {
               </div>
             </div>
           )}
-
-          {/* FOMO / Revenge Detector */}
-          {!loading && fomoAlerts.length > 0 && (
-            <div style={{ background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', borderRadius:12, padding:'12px 16px', marginBottom:16 }}>
-              <div style={{ fontSize:12, fontWeight:700, color:'#FF3B30', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
-                ⚠️ Détecteur FOMO / Revenge Trading
-              </div>
-              {fomoAlerts.map((a, i) => (
-                <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, padding:'6px 0', borderTop: i > 0 ? '1px solid rgba(255,59,48,0.1)' : 'none' }}>
-                  <span style={{ fontSize:14, flexShrink:0 }}>{a.type === 'revenge' ? '🔄' : a.type === 'fomo' ? '😱' : '📊'}</span>
-                  <span style={{ fontSize:11, color:'rgba(255,255,255,0.7)', lineHeight:1.5 }}>{a.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Behavior Pattern Engine */}
-          {!loading && <BehaviorPatternEngine trades={trades} />}
 
           {/* Emotion curve chart */}
           {!loading && moods.length >= 2 && <EmotionCurve moods={moods} />}
@@ -562,7 +513,6 @@ export default function JournalPage() {
 
         {/* Right — AI Analysis sticky panel */}
         <div style={{ position:'sticky', top:20, display:'flex', flexDirection:'column', gap:12 }}>
-          <PropFirmTracker trades={trades} />
           <AIAnalysisPanel moods={moods} trades={trades} />
 
           {/* Quick Stats mini-card */}
@@ -590,23 +540,10 @@ export default function JournalPage() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {showAdd && <AddMoodModal trades={trades} onClose={() => setShowAdd(false)} />}
-      {showShare && (
-        <ShareStatsModal
-          trades={trades}
-          moods={moods}
-          onClose={() => setShowShare(false)}
-        />
-      )}
-      {showDelay && (
-        <DecisionDelayModal
-          onConfirm={() => { setShowDelay(false); setShowAdd(true) }}
-          onCancel={() => setShowDelay(false)}
-        />
-      )}
-      {showImport && <ExchangeSyncModal onClose={() => setShowImport(false)} />}
+      {showShare && <ShareStatsModal trades={trades} moods={moods} onClose={() => setShowShare(false)} />}
     </div>
   )
 }
@@ -840,95 +777,4 @@ function EmotionCurve({ moods }: { moods: MoodEntry[] }) {
   )
 }
 
-// ── Add Mood Modal ─────────────────────────────────────────────────────────
 
-function AddMoodModal({ trades, onClose }: { trades: Trade[]; onClose: () => void }) {
-  const { t } = useTranslation()
-  const [state,   setState]   = useState<EmotionalState>('calm')
-  const [intensity, setIntensity] = useState(5)
-  const [context, setContext] = useState<MoodContext>('general')
-  const [notes,   setNotes]   = useState('')
-  const [tradeId, setTradeId] = useState('')
-  const [saving,  setSaving]  = useState(false)
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      await createMood({
-        id: crypto.randomUUID(),
-        emotionalState: state,
-        intensity,
-        timestamp: new Date(),
-        context,
-        tags: [],
-        isExceptional: intensity >= 9,
-        tradeId: tradeId || undefined,
-        notes: notes || undefined,
-      })
-      onClose()
-    } catch(e) { alert((e as Error).message) }
-    finally { setSaving(false) }
-  }
-
-  const em = emotionInfo(state)
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-      <div style={{ background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:16, padding:24, width:460, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('journal.newEntry')}</span>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
-        </div>
-
-        {/* Emotion grid */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:8 }}>{t('journal.emotionalState')}</div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:6, marginBottom:14 }}>
-          {EMOTIONS.map(e => (
-            <button key={e.v} onClick={() => setState(e.v)} style={{ padding:'8px 4px', borderRadius:8, border:`1px solid ${state===e.v?e.color:'var(--tm-border)'}`, background: state===e.v?`${e.color}`:'var(--tm-bg-tertiary)', cursor:'pointer', textAlign:'center' }}>
-              <div style={{ fontSize:18 }}>{e.emoji}</div>
-              <div style={{ fontSize:9, color: state===e.v?e.color:'var(--tm-text-muted)', marginTop:2 }}>{t(e.labelKey)}</div>
-            </button>
-          ))}
-        </div>
-
-        {/* Intensity */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.intensityLabel', { value: intensity })}</div>
-        <input type="range" min={1} max={10} value={intensity} onChange={e => setIntensity(Number(e.target.value))}
-          style={{ width:'100%', marginBottom:14, accentColor:em.color }} />
-
-        {/* Context */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.context')}</div>
-        <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
-          {CONTEXTS.map(c => (
-            <button key={c.v} onClick={() => setContext(c.v)} style={{ padding:'5px 10px', borderRadius:6, border:`1px solid ${context===c.v?'var(--tm-accent)':'var(--tm-border)'}`, background: context===c.v?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.1)`:'var(--tm-bg-tertiary)', cursor:'pointer', fontSize:11, color: context===c.v?'var(--tm-accent)':'var(--tm-text-secondary)' }}>
-              {t(c.labelKey)}
-            </button>
-          ))}
-        </div>
-
-        {/* Linked trade */}
-        {trades.length > 0 && (
-          <>
-            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.linkedTrade')}</div>
-            <select value={tradeId} onChange={e => setTradeId(e.target.value)}
-              style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none', marginBottom:14, cursor:'pointer' }}>
-              <option value="">{t('journal.noTrade')}</option>
-              {trades.slice(0,20).map(tr => (
-                <option key={tr.id} value={tr.id}>{tr.symbol} {tr.type} {tr.date.toLocaleDateString('fr-FR')}</option>
-              ))}
-            </select>
-          </>
-        )}
-
-        {/* Notes */}
-        <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginBottom:6 }}>{t('journal.notes')}</div>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('journal.notesPlaceholder')} rows={3}
-          style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1px solid #2A2F3E', background:'var(--tm-bg-tertiary)', color:'var(--tm-text-primary)', fontSize:13, outline:'none', resize:'vertical', marginBottom:16, boxSizing:'border-box' }} />
-
-        <button onClick={save} disabled={saving} style={{ width:'100%', padding:10, borderRadius:10, border:'none', background:'var(--tm-accent)', color:'var(--tm-bg)', fontSize:14, fontWeight:600, cursor:'pointer' }}>
-          {saving ? t('common.saving') : `${t('common.save')} — ${em.emoji} ${t(em.labelKey)} ${intensity}/10`}
-        </button>
-      </div>
-    </div>
-  )
-}
