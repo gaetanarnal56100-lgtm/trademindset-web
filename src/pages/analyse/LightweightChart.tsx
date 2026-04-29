@@ -16,7 +16,7 @@ interface Props {
   symbol: string
   isCrypto: boolean
   onTimeframeChange?: (interval: string) => void
-  onVisibleRangeChange?: (from: number, to: number) => void
+  onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void
   syncRangeIn?: {from: number; to: number} | null
   onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
   chartHeight?: number  // override default 430px (used in fullscreen)
@@ -25,6 +25,7 @@ interface Props {
 
 export interface LightweightChartHandle {
   takeScreenshot: () => string | null
+  setVisibleRange: (range: { from: number; to: number }) => void
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -37,8 +38,11 @@ interface Drawing {
 interface SavedDrawing extends Drawing { id: string }
 
 const TIMEFRAMES = [
-  {label:'1m',min:1},{label:'5m',min:5},{label:'15m',min:15},{label:'30m',min:30},
-  {label:'1h',min:60},{label:'4h',min:240},{label:'1j',min:1440},{label:'1S',min:10080},
+  {label:'1m', min:1},    {label:'5m',  min:5},    {label:'15m', min:15},
+  {label:'30m',min:30},   {label:'1h',  min:60},   {label:'2h',  min:120},
+  {label:'4h', min:240},  {label:'6h',  min:360},  {label:'12h', min:720},
+  {label:'1j', min:1440}, {label:'3j',  min:4320}, {label:'1S',  min:10080},
+  {label:'1M', min:43200},
 ]
 const COLORS = ['var(--tm-loss)','var(--tm-warning)','#FFD60A','var(--tm-profit)','var(--tm-accent)','var(--tm-blue)','var(--tm-purple)','var(--tm-text-primary)']
 const FIBO_LEVELS = [
@@ -47,7 +51,17 @@ const FIBO_LEVELS = [
   {r:1.272,l:'127.2%'},{r:1.618,l:'161.8%'},
 ]
 
-function tfStr(m:number){if(m<60)return`${m}m`;if(m<1440)return`${m/60}h`;if(m<10080)return'1d';return'1w'}
+function tfStr(m:number){
+  if(m<60)    return`${m}m`
+  if(m===120) return'2h'
+  if(m===360) return'6h'
+  if(m===720) return'12h'
+  if(m<1440)  return`${m/60}h`
+  if(m===4320)return'3d'
+  if(m===43200)return'1M'
+  if(m<10080) return'1d'
+  return'1w'
+}
 function fmtP(p:number){return p>1000?`$${p.toLocaleString('fr-FR',{maximumFractionDigits:1})}`:p>1?`$${p.toFixed(2)}`:`$${p.toFixed(5)}`}
 
 // Firestore
@@ -87,10 +101,10 @@ async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Cand
 
   // ── 2. Non-crypto → fetchYahooCandles (Cloud Function, gratuit, sans limite) ─
   const TF_TO_YH_INTERVAL: Record<number,string> = {
-    1:'1m',5:'5m',15:'15m',30:'30m',60:'1h',120:'1h',240:'1h',1440:'1d',10080:'1wk'
+    1:'1m',5:'5m',15:'15m',30:'30m',60:'1h',120:'1h',240:'1h',360:'1h',720:'1d',1440:'1d',4320:'1wk',10080:'1wk',43200:'1mo'
   }
   const TF_TO_YH_RANGE: Record<number,string> = {
-    1:'1d',5:'5d',15:'5d',30:'1mo',60:'1mo',120:'3mo',240:'3mo',1440:'2y',10080:'5y'
+    1:'1d',5:'5d',15:'5d',30:'1mo',60:'1mo',120:'3mo',240:'3mo',360:'6mo',720:'1y',1440:'2y',4320:'5y',10080:'5y',43200:'5y'
   }
   const yhInterval = TF_TO_YH_INTERVAL[min] || '1d'
   const yhRange    = TF_TO_YH_RANGE[min]    || '1y'
@@ -532,7 +546,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
 
 // Map LW minutes → oscillator interval strings
 const LW_MIN_TO_OSC: Record<number, string> = {
-  1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 240:'4h', 1440:'1d', 10080:'1w',
+  1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 120:'2h', 240:'4h', 360:'4h', 720:'12h', 1440:'1d', 4320:'1d', 10080:'1w', 43200:'1w',
 }
 
 const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,chartHeight=430,autoHeight=false},forwardedRef) {
@@ -549,7 +563,15 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
         const canvas = chartApi.current.takeScreenshot()
         return canvas.toDataURL('image/png')
       } catch { return null }
-    }
+    },
+    // Oscillateurs → LW : pousse une plage fractionnaire [0-1] dans le chart
+    setVisibleRange: (range: { from: number; to: number }) => {
+      if (!chartApi.current || !candlesRef.current.length) return
+      const total = candlesRef.current.length
+      const target = { from: range.from * total, to: range.to * total }
+      lastSetLogical.current = target
+      chartApi.current.timeScale().setVisibleLogicalRange(target)
+    },
   }))
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef      = useRef<Candle[]>([])
@@ -740,8 +762,9 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
         if (eq) return
       }
       const total = candlesRef.current.length
-      // Pas de clamp sur `to` : on passe la marge droite LW aux oscillateurs pour un alignement parfait
-      onRangeRef.current?.(Math.max(0, range.from / total), range.to / total)
+      // rawTo non-clampé : > 1 si LW a de l'espace vide à droite de la dernière bougie
+      const { areaRatio } = getAreaRatio()
+      onRangeRef.current?.(Math.max(0, range.from / total), range.to / total, areaRatio)
     })
 
     // Helper : calcule tsW, psW et émet areaRatio + frac crosshair

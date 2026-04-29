@@ -3,6 +3,7 @@
 // 3 modes : Micro / Structure / Dérivés + Derivatives Confluence Card + vraie recherche
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import ReactDOM from 'react-dom'
 import LiquidationHeatmap from './LiquidationHeatmap'
 import MTFDashboard from './MTFDashboard'
 import type { MTFSnapshot } from './MTFDashboard'
@@ -18,124 +19,232 @@ import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import FootprintChart from './FootprintChart'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
+import OUChannelIndicator from './OUChannelIndicator'
+import { getAuth } from 'firebase/auth'
+import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
+import app from '@/services/firebase/config'
+
+const db = getFirestore(app)
+
+// ── Firestore panel order persistence ────────────────────────────────────────
+const DEFAULT_PANEL_ORDER = ['canal-ou', 'wavetrend', 'vmc', 'rsi', 'rsi-bollinger', 'trade-plan', 'mtf', 'levels', 'heatmap']
+const DEFAULT_PANEL_OPEN: Record<string, boolean> = {
+  'canal-ou': true, 'wavetrend': true, 'vmc': true, 'rsi': false,
+  'rsi-bollinger': false, 'trade-plan': true, 'mtf': true, 'levels': true, 'heatmap': true,
+}
+
+async function savePanelLayout(order: string[], openState: Record<string, boolean>) {
+  const uid = getAuth().currentUser?.uid
+  if (!uid) return
+  try {
+    await setDoc(doc(db, 'users', uid, 'settings', 'analysePanels'), { order, openState, updatedAt: Date.now() }, { merge: true })
+  } catch { /* ignore */ }
+}
+
+async function loadPanelLayout(): Promise<{ order: string[]; openState: Record<string, boolean> } | null> {
+  const uid = getAuth().currentUser?.uid
+  if (!uid) return null
+  try {
+    const snap = await getDoc(doc(db, 'users', uid, 'settings', 'analysePanels'))
+    if (snap.exists()) return snap.data() as { order: string[]; openState: Record<string, boolean> }
+  } catch { /* ignore */ }
+  return null
+}
 // Détecte si le symbole est une crypto Binance
 function isCryptoSymbol(symbol: string) {
   return /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
 }
 
 // ── Share / Screenshot wrapper ──────────────────────────────────────────
-function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [copied, setCopied] = useState(false)
-  const [hover, setHover] = useState(false)
-  const [loading, setLoading] = useState(false)
+// ── CollapsiblePanel — volet repliable draggable avec partage intégré ─────────
+function CollapsiblePanel({
+  children, label, icon, defaultOpen = true, accent = 'rgba(0,229,255,0.5)',
+  panelId, onDragStart, onDragOver, onDrop, isDragging,
+}: {
+  children: React.ReactNode
+  label: string
+  icon?: string
+  defaultOpen?: boolean
+  accent?: string
+  panelId?: string
+  onDragStart?: (id: string) => void
+  onDragOver?: (e: React.DragEvent, id: string) => void
+  onDrop?: (e: React.DragEvent, id: string) => void
+  isDragging?: boolean
+}) {
+  const ref        = useRef<HTMLDivElement>(null)
+  const [open,     setOpen]    = useState(defaultOpen)
+  const [copied,   setCopied]  = useState(false)
+  const [sharing,  setSharing] = useState(false)
 
   const handleShare = async () => {
     const el = ref.current
-    if (!el || loading) return
-    setLoading(true)
+    if (!el || sharing) return
+    setSharing(true)
     try {
       let blob: Blob | null = null
-
-      // 1. Try canvas capture first (for chart components with canvas)
       const canvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
       const cv = canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]
-
       if (cv && cv.width > 0 && cv.height > 0) {
-        // Canvas-based component (charts)
-        const dataUrl = cv.toDataURL('image/png')
-        blob = await (await fetch(dataUrl)).blob()
+        blob = await (await fetch(cv.toDataURL('image/png'))).blob()
       } else {
-        // HTML-based component (KeyLevelsCard, TradePlanCard, MTFDashboard…)
-        // Use html-to-image for full DOM capture
         const { toPng } = await import('html-to-image')
         const dataUrl = await toPng(el, {
-          quality: 1,
-          pixelRatio: 2,
-          backgroundColor: getComputedStyle(document.documentElement)
-            .getPropertyValue('--tm-bg').trim() || '#0D1117',
-          filter: (node) => {
-            // Exclude the share button itself from the screenshot
-            if (node instanceof HTMLButtonElement && node.title?.startsWith('Partager')) return false
-            return true
-          },
+          quality: 1, pixelRatio: 2,
+          backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--tm-bg').trim() || '#0D1117',
+          filter: (node) => !(node instanceof HTMLButtonElement && node.dataset.shareBtn),
         })
         blob = await (await fetch(dataUrl)).blob()
       }
-
-      if (!blob) { setLoading(false); return }
-
+      if (!blob) return
       const filename = `trademindset-${label.toLowerCase().replace(/\s+/g, '-')}.png`
-
-      // 2. Try Clipboard API (copy as image — paste anywhere)
       try {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ])
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2500)
-        setLoading(false)
-        return
-      } catch { /* clipboard write failed, fallback below */ }
-
-      // 3. Fallback: Web Share API (mobile)
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        setCopied(true); setTimeout(() => setCopied(false), 2500); return
+      } catch { /* fallback */ }
       if (navigator.share && navigator.canShare) {
         const file = new File([blob], filename, { type: 'image/png' })
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ title: `TradeMindset — ${label}`, files: [file] })
-          setCopied(true)
-          setTimeout(() => setCopied(false), 2500)
-          setLoading(false)
-          return
+          setCopied(true); setTimeout(() => setCopied(false), 2500); return
         }
       }
-
-      // 4. Last fallback: download file
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.click()
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
       URL.revokeObjectURL(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
-    } catch (err) {
-      console.warn('Share failed:', err)
-    } finally {
-      setLoading(false)
-    }
+      setCopied(true); setTimeout(() => setCopied(false), 2500)
+    } catch (err) { console.warn('Share failed:', err) }
+    finally { setSharing(false) }
   }
 
   return (
-    <div ref={ref} style={{ position:'relative', marginBottom:16 }}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      {children}
-      {(hover || copied || loading) && (
-        <button onClick={handleShare} title={`Partager ${label}`}
-          disabled={loading}
+    <div
+      draggable={!!panelId}
+      onDragStart={panelId ? () => onDragStart?.(panelId) : undefined}
+      onDragOver={panelId ? (e) => { e.preventDefault(); onDragOver?.(e, panelId) } : undefined}
+      onDrop={panelId ? (e) => onDrop?.(e, panelId) : undefined}
+      style={{
+        marginBottom: 10, position: 'relative', zIndex: 1,
+        opacity: isDragging ? 0.4 : 1,
+        transition: 'opacity 0.15s',
+      }}
+    >
+      {/* Header bar — always visible */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '8px 14px',
+          background: open ? 'rgba(13,17,35,0.85)' : 'rgba(13,17,35,0.6)',
+          border: `1px solid ${open ? accent.replace('0.5','0.3') : 'rgba(255,255,255,0.07)'}`,
+          borderRadius: open ? '12px 12px 0 0' : 12,
+          backdropFilter: 'blur(12px)',
+          transition: 'all 0.2s',
+          userSelect: 'none' as const,
+        }}
+      >
+        {/* Drag handle */}
+        {panelId && (
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              cursor: 'grab', flexShrink: 0, color: 'rgba(255,255,255,0.2)',
+              fontSize: 12, lineHeight: 1, padding: '0 2px',
+              display: 'flex', flexDirection: 'column', gap: 2,
+            }}
+            title="Glisser pour réorganiser"
+          >
+            <div style={{ display: 'flex', gap: 2 }}>
+              <div style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} />
+              <div style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 2 }}>
+              <div style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} />
+              <div style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} />
+            </div>
+          </div>
+        )}
+
+        {/* Accent dot */}
+        <div
+          onClick={() => setOpen(o => !o)}
           style={{
-            position:'absolute', bottom:12, right:12, zIndex:10,
-            padding:'4px 10px', borderRadius:8, display:'flex', alignItems:'center', gap:5,
-            background: copied
-              ? 'rgba(34,199,89,0.85)'
-              : loading
-              ? 'rgba(13,17,23,0.92)'
-              : 'rgba(13,17,23,0.85)',
-            border: copied ? '1px solid #22C759' : '1px solid #2A2F3E',
-            cursor: loading ? 'wait' : 'pointer', fontSize:10, fontWeight:600,
-            color: '#fff',
-            backdropFilter:'blur(8px)', transition:'all 0.15s',
-            opacity: loading ? 0.8 : 1,
+            width: 3, height: 16, borderRadius: 2,
+            background: open ? accent : 'rgba(255,255,255,0.15)',
+            flexShrink: 0, transition: 'background 0.2s', cursor: 'pointer',
+          }} />
+
+        {/* Icon */}
+        {icon && <span style={{ fontSize: 14, flexShrink: 0, cursor: 'pointer' }} onClick={() => setOpen(o => !o)}>{icon}</span>}
+
+        {/* Label */}
+        <span
+          onClick={() => setOpen(o => !o)}
+          style={{
+            flex: 1, fontSize: 12, fontWeight: 700,
+            color: open ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)',
+            fontFamily: 'Syne, sans-serif', letterSpacing: '0.01em',
+            transition: 'color 0.2s', cursor: 'pointer',
           }}>
-          {copied ? '✓ Copié' : loading ? '⏳ Capture…' : '↗ Partager'}
+          {label}
+        </span>
+
+        {/* Share button */}
+        <button
+          data-share-btn
+          onClick={e => { e.stopPropagation(); handleShare() }}
+          disabled={sharing || !open}
+          title={`Partager ${label}`}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '3px 10px', borderRadius: 7, fontSize: 10, fontWeight: 600,
+            background: copied ? 'rgba(34,199,89,0.2)' : 'rgba(255,255,255,0.06)',
+            border: `1px solid ${copied ? '#22C759' : 'rgba(255,255,255,0.12)'}`,
+            color: copied ? '#22C759' : sharing ? 'var(--tm-text-muted)' : 'var(--tm-text-muted)',
+            cursor: (!open || sharing) ? 'not-allowed' : 'pointer',
+            opacity: open ? 1 : 0.4,
+            transition: 'all 0.15s', flexShrink: 0,
+          }}
+        >
+          {copied ? '✓ Copié' : sharing ? '⏳' : '↗ Partager'}
         </button>
-      )}
+
+        {/* Chevron */}
+        <svg
+          width="12" height="12" viewBox="0 0 12 12" fill="none"
+          style={{ flexShrink: 0, transition: 'transform 0.25s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', cursor: 'pointer' }}
+          onClick={() => setOpen(o => !o)}
+        >
+          <path d="M2 4l4 4 4-4" stroke="var(--tm-text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* Content — ref for screenshot */}
+      <div
+        ref={ref}
+        style={{
+          overflow: 'hidden',
+          maxHeight: open ? '9999px' : 0,
+          transition: 'max-height 0.35s ease',
+          borderRadius: '0 0 12px 12px',
+          border: open ? `1px solid ${accent.replace('0.5','0.15')}` : 'none',
+          borderTop: 'none',
+        }}
+      >
+        <div style={{ padding: '0' }}>
+          {children}
+        </div>
+      </div>
     </div>
   )
 }
 
+// Compat alias — les anciens ShareWrapper restent valides
+function ShareWrapper({ children, label }: { children: React.ReactNode; label: string }) {
+  return <CollapsiblePanel label={label}>{children}</CollapsiblePanel>
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow'
+type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -355,26 +464,12 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
   const [q, setQ] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
-  const dialogRef = useRef<HTMLDialogElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
 
-  // Ouvrir/fermer la <dialog> native (top layer — aucun z-index fight possible)
   useEffect(() => {
-    const d = dialogRef.current
-    if (!d) return
-    if (open) {
-      if (!d.open) d.showModal()
-    } else {
-      if (d.open) d.close()
-    }
-  }, [open])
-
-  // Escape natif de <dialog> ferme aussi notre état
-  useEffect(() => {
-    const d = dialogRef.current
-    if (!d) return
-    const h = () => setOpen(false)
-    d.addEventListener('cancel', h)
-    return () => d.removeEventListener('cancel', h)
+    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
   }, [])
 
   // Mise à jour des prix de l'historique en temps réel
@@ -420,168 +515,130 @@ function SymbolSearch({ symbol, onSelect }: { symbol: string; onSelect: (s: stri
     addToHistory(r as SearchResult, summary?.price, summary?.change24h)
   }
 
-  const typeColor = (t: string) => t==='crypto'?'#F59714':t==='stock'?'#34C759':'#42A5F5'
+  const typeColor = (t: string) => t==='crypto'?'#F59714':t==='stock'?'var(--tm-profit)':'#42A5F5'
   const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR', {maximumFractionDigits:0})}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
+
   const showHistory = !q && history.length > 0
 
-  // <dialog> native — top layer du navigateur, pas de z-index fight possible
-  // Le dialog EST le panneau (pas full-screen) — centré par margin:auto
-  // ::backdrop gère l'overlay, onPointerDown sur les items bypasse les délais de focus
-  const modal = (
-    <>
-      <style>{`
-        dialog.tm-search-dialog {
-          padding: 0;
-          background: #0D1117;
-          border: 1px solid rgba(0,217,255,0.25);
-          border-radius: 16px;
-          box-shadow: 0 0 0 1px rgba(0,217,255,0.08), 0 24px 64px rgba(0,0,0,0.9);
-          max-width: 540px;
-          width: calc(100vw - 32px);
-          max-height: 80vh;
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-          position: fixed;
-          top: 12vh;
-          left: 50%;
-          transform: translateX(-50%);
-        }
-        dialog.tm-search-dialog::backdrop {
-          background: rgba(0,0,0,0.82);
-          backdrop-filter: blur(4px);
-        }
-      `}</style>
-      <dialog
-        ref={dialogRef}
-        className="tm-search-dialog"
-        onClick={(e) => {
-          // Clic en-dehors du rectangle du dialog = backdrop → fermer
-          const rect = (e.currentTarget as HTMLDialogElement).getBoundingClientRect()
-          if (e.clientX < rect.left || e.clientX > rect.right ||
-              e.clientY < rect.top  || e.clientY > rect.bottom) {
-            setOpen(false)
-          }
-        }}
-      >
-      <div style={{ display:'flex', flexDirection:'column', maxHeight:'80vh', overflow:'hidden' }}>
-        {/* Search input */}
-        <div style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:10,borderBottom:'1px solid #1E2330'}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D9FF" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            autoFocus
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Chercher BTC, ETH, AAPL, ASML…"
-            style={{flex:1,background:'transparent',border:'none',color:'#fff',fontSize:15,outline:'none',fontFamily:'JetBrains Mono,monospace'}}
-          />
-          {loading && <div style={{width:14,height:14,border:'2px solid #1E2330',borderTopColor:'#00D9FF',borderRadius:'50%',animation:'spin 0.7s linear infinite',flexShrink:0}}/>}
-          {q
-            ? <button onClick={()=>setQ('')} style={{background:'none',border:'none',color:'#8E8E93',cursor:'pointer',fontSize:16,padding:'0 2px',flexShrink:0}}>✕</button>
-            : <span style={{fontSize:10,color:'#3A3F4B',border:'1px solid #2A2F3E',borderRadius:4,padding:'1px 6px',flexShrink:0}}>ESC</span>
-          }
-        </div>
+  return (
+    <div ref={ref} style={{position:'relative', flex: 1}}>
+      {/* Trigger button */}
+      <button onClick={() => setOpen(x => !x)} style={{
+        display:'flex', alignItems:'center', gap:8, background:'var(--tm-bg-secondary)',
+        border:`1px solid ${open?'var(--tm-accent)':'var(--tm-border)'}`, borderRadius:12,
+        padding:'8px 14px', cursor:'pointer', width:'100%', transition:'border-color 0.15s',
+      }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span style={{fontSize:13,fontWeight:700,color:symbol?'var(--tm-text-primary)':'var(--tm-text-muted)',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
+          {symbol || 'Rechercher un actif…'}
+        </span>
+        {symbol && history.find(h=>h.symbol===symbol)?.change24h != null && (
+          <span style={{fontSize:10,fontWeight:700,color:(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
+            {(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'+':''}{history.find(h=>h.symbol===symbol)?.change24h?.toFixed(2)}%
+          </span>
+        )}
+        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="var(--tm-text-muted)" strokeWidth="1.5" strokeLinecap="round"/></svg>
+      </button>
 
-        {/* Contenu scroll */}
-        <div style={{flex:1,overflowY:'auto'}}>
+      {/* Dropdown */}
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 6px)', left:0, right:0,
+          background:'var(--tm-bg-secondary)', border:'1px solid #2A2F3E', borderRadius:14,
+          zIndex:200, boxShadow:'0 16px 48px rgba(0,0,0,0.8)', overflow:'hidden',
+          minWidth:300,
+        }}>
+          {/* Search input */}
+          <div style={{padding:'10px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tm-text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input autoFocus value={q} onChange={e=>setQ(e.target.value)}
+              placeholder="BTC, ETH, AAPL…"
+              style={{flex:1,background:'transparent',border:'none',color:'var(--tm-text-primary)',fontSize:13,outline:'none'}} />
+            {loading && <div style={{width:12,height:12,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/>}
+            {q && <button onClick={()=>setQ('')} style={{background:'none',border:'none',color:'var(--tm-text-muted)',cursor:'pointer',fontSize:14,padding:'0 2px'}}>✕</button>}
+          </div>
+
           {/* Historique */}
           {showHistory && (
             <>
-              <div style={{padding:'8px 16px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <span style={{fontSize:9,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.1em'}}>🕐 Récents</span>
-                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'#3A3F4B',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer</button>
+              <div style={{padding:'8px 14px 4px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🕐 Historique</span>
+                <button onClick={()=>{setHistory([]);saveHistory([])}} style={{fontSize:9,color:'var(--tm-text-muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>Effacer tout</button>
               </div>
-              {history.map(entry => (
-                <button key={entry.symbol}
-                  onPointerDown={(e)=>{e.preventDefault();handleSelect(entry as any)}}
-                  style={{width:'100%',textAlign:'left',padding:'10px 16px',background:entry.symbol===symbol?'rgba(0,217,255,0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>{entry.icon}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</div>
-                    <div style={{fontSize:11,color:'#8E8E93',marginTop:1}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
-                  </div>
-                  {entry.price != null && (
-                    <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:12,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono'}}>{fmtPrice(entry.price)}</div>
-                      <div style={{fontSize:10,color:(entry.change24h??0)>=0?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
-                        {(entry.change24h??0)>=0?'+':''}{entry.change24h?.toFixed(2)}%
-                      </div>
+              <div style={{maxHeight:320, overflowY:'auto'}}>
+                {history.map(entry => (
+                  <button key={entry.symbol} onClick={()=>handleSelect(entry as any)}
+                    style={{width:'100%',textAlign:'left',padding:'8px 14px',background:entry.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                    {/* Icon */}
+                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(entry.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(entry.type),flexShrink:0}}>
+                      {entry.icon}
                     </div>
-                  )}
-                  <button onPointerDown={e=>{e.stopPropagation();e.preventDefault();removeFromHistory(entry.symbol,e as any)}} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.06)',color:'#8E8E93',fontSize:12,flexShrink:0,cursor:'pointer',border:'none'}}>×</button>
-                </button>
-              ))}
+                    {/* Info */}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+                        <span style={{fontSize:12,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{entry.symbol}</span>
+                        {entry.symbol===symbol && <span style={{fontSize:8,color:'var(--tm-accent)'}}>● actif</span>}
+                      </div>
+                      <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{entry.name}{entry.exchange?` · ${entry.exchange}`:''}</div>
+                    </div>
+                    {/* Bilan prix */}
+                    {entry.price != null && (
+                      <div style={{textAlign:'right',flexShrink:0}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{fmtPrice(entry.price)}</div>
+                        <div style={{fontSize:10,fontWeight:600,color:(entry.change24h??0)>=0?'var(--tm-profit)':'var(--tm-loss)',fontFamily:'JetBrains Mono'}}>
+                          {(entry.change24h??0)>=0?'+':''}{entry.change24h?.toFixed(2)}%
+                        </div>
+                      </div>
+                    )}
+                    {/* Remove */}
+                    <div onClick={e=>removeFromHistory(entry.symbol,e)} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.04)',color:'var(--tm-text-muted)',fontSize:11,flexShrink:0,cursor:'pointer'}}>×</div>
+                  </button>
+                ))}
+              </div>
             </>
           )}
 
           {/* Résultats de recherche */}
           {q && (
             <>
-              <div style={{padding:'8px 16px 4px',fontSize:9,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.1em'}}>Résultats</div>
-              {results.length === 0 && !loading
-                ? <div style={{padding:'24px',textAlign:'center',color:'#8E8E93',fontSize:13}}>Aucun résultat pour "{q}"</div>
-                : results.map(r => (
-                  <button key={r.symbol}
-                    onPointerDown={(e)=>{e.preventDefault();handleSelect(r)}}
-                    style={{width:'100%',textAlign:'left',padding:'10px 16px',background:r.symbol===symbol?'rgba(0,217,255,0.06)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
-                    <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
-                      <div style={{fontSize:11,color:'#8E8E93',marginTop:1}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
+              {!showHistory && <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Résultats</div>}
+              <div style={{maxHeight:300,overflowY:'auto'}}>
+                {results.length === 0 ? (
+                  <div style={{padding:'20px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>Aucun résultat pour "{q}"</div>
+                ) : results.map(r => (
+                  <button key={r.symbol} onClick={()=>handleSelect(r)}
+                    style={{width:'100%',textAlign:'left',padding:'9px 14px',background:r.symbol===symbol?'rgba(var(--tm-accent-rgb,0,229,255),0.07)':'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>
+                      {r.icon}
                     </div>
-                    {r.symbol===symbol && <span style={{fontSize:9,color:'#00D9FF',border:'1px solid rgba(0,217,255,0.3)',borderRadius:4,padding:'1px 6px'}}>actif</span>}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{r.symbol}</div>
+                      <div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}{r.exchange?` · ${r.exchange}`:''}</div>
+                    </div>
+                    {r.symbol===symbol && <span style={{fontSize:9,color:'var(--tm-accent)'}}>●</span>}
                   </button>
                 ))}
+              </div>
             </>
           )}
 
-          {/* Populaires si vide */}
+          {/* Populaires si pas de query et pas d'historique */}
           {!q && !history.length && (
             <>
-              <div style={{padding:'8px 16px 4px',fontSize:9,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.1em'}}>⭐ Populaires</div>
-              {results.map(r => (
-                <button key={r.symbol}
-                  onPointerDown={(e)=>{e.preventDefault();handleSelect(r)}}
-                  style={{width:'100%',textAlign:'left',padding:'10px 16px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{width:36,height:36,borderRadius:10,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
-                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:11,color:'#8E8E93',marginTop:1}}>{r.name}</div></div>
-                </button>
-              ))}
+              <div style={{padding:'6px 14px 4px',fontSize:9,fontWeight:700,color:'var(--tm-text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>⭐ Populaires</div>
+              <div style={{maxHeight:280,overflowY:'auto'}}>
+                {results.map(r => (
+                  <button key={r.symbol} onClick={()=>handleSelect(r)}
+                    style={{width:'100%',textAlign:'left',padding:'9px 14px',background:'transparent',border:'none',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:9,background:`${typeColor(r.type)}18`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:typeColor(r.type),flexShrink:0}}>{r.icon}</div>
+                    <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono'}}>{r.symbol}</div><div style={{fontSize:10,color:'var(--tm-text-muted)'}}>{r.name}</div></div>
+                  </button>
+                ))}
+              </div>
             </>
           )}
-
-          {/* Aide bas */}
-          <div style={{padding:'10px 16px',display:'flex',gap:16,borderTop:'1px solid #1E2330',flexShrink:0}}>
-            <span style={{fontSize:10,color:'#3A3F4B'}}>↵ Sélectionner</span>
-            <span style={{fontSize:10,color:'#3A3F4B'}}>ESC Fermer</span>
-          </div>
         </div>
-      </div>
-      </dialog>
-    </>
-  )
-
-
-  return (
-    <div style={{flex:1}}>
-      {/* Trigger */}
-      <button onClick={() => setOpen(true)} style={{
-        display:'flex', alignItems:'center', gap:8, background:'var(--tm-bg-secondary)',
-        border:`1px solid ${open?'#00D9FF':'var(--tm-border)'}`, borderRadius:12,
-        padding:'8px 14px', cursor:'pointer', width:'100%', transition:'border-color 0.15s',
-      }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span style={{fontSize:13,fontWeight:700,color:symbol?'#fff':'#8E8E93',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
-          {symbol || 'Rechercher un actif…'}
-        </span>
-        {symbol && history.find(h=>h.symbol===symbol)?.change24h != null && (
-          <span style={{fontSize:10,fontWeight:700,color:(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
-            {(history.find(h=>h.symbol===symbol)?.change24h??0)>=0?'+':''}{history.find(h=>h.symbol===symbol)?.change24h?.toFixed(2)}%
-          </span>
-        )}
-        <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="#8E8E93" strokeWidth="1.5" strokeLinecap="round"/></svg>
-      </button>
-      {modal}
+      )}
     </div>
   )
 }
@@ -881,49 +938,14 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
-  type PanelType = 'tv' | 'lw'
-  type LayoutMode = 'tv' | 'lw' | 'tv-lw' | 'lw-tv' | 'tv-tv' | 'lw-lw'
-
-  const [mode, setMode] = useState<LayoutMode>('tv')
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
+  type LayoutMode = 'lw' | 'tv'
+  const [mode, setMode] = useState<LayoutMode>('lw')
 
   const LAYOUTS: { id: LayoutMode; icon: string; label: string; desc: string }[] = [
-    { id: 'tv',    icon: '📺',   label: 'TV seul',    desc: 'TradingView uniquement' },
-    { id: 'lw',    icon: '⚡',   label: 'LW seul',    desc: 'Lightweight uniquement' },
-    { id: 'tv-lw', icon: '📺⚡', label: 'TV | LW',    desc: 'TradingView + Lightweight côte à côte' },
-    { id: 'lw-tv', icon: '⚡📺', label: 'LW | TV',    desc: 'Lightweight + TradingView côte à côte' },
-    { id: 'tv-tv', icon: '📺📺', label: 'TV | TV',    desc: 'Deux TradingView (ex: 15m + 1h)' },
-    { id: 'lw-lw', icon: '⚡⚡', label: 'LW | LW',    desc: 'Deux Lightweight (ex: BTC + ETH)' },
+    { id: 'lw', icon: '⚡', label: 'Lightweight', desc: 'Lightweight Charts — synchronisé avec les indicateurs' },
+    { id: 'tv', icon: '📺', label: 'TradingView',  desc: 'TradingView Widget' },
   ]
-
-  const isSplit = ['tv-lw','lw-tv','tv-tv','lw-lw'].includes(mode)
-
-  const firstLwPanel = useRef(false)
-  const renderPanel = (type: PanelType, key: string) => {
-    if (type === 'lw' && !firstLwPanel.current) {
-      firstLwPanel.current = true
-      return (
-        <div key={key} style={{ minWidth: 0, flex: 1 }}>
-          <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />
-        </div>
-      )
-    }
-    return (
-      <div key={key} style={{ minWidth: 0, flex: 1 }}>
-        {type === 'tv'
-          ? <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
-          : <LightweightChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />}
-      </div>
-    )
-  }
-
-  const panels: [PanelType, PanelType] | [PanelType] =
-    mode === 'tv'    ? ['tv'] :
-    mode === 'lw'    ? ['lw'] :
-    mode === 'tv-lw' ? ['tv','lw'] :
-    mode === 'lw-tv' ? ['lw','tv'] :
-    mode === 'tv-tv' ? ['tv','tv'] :
-                       ['lw','lw']
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -933,7 +955,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
         background: 'var(--tm-bg-secondary)', border: '1px solid #1E2330', borderRadius: 12,
         marginBottom: 8, flexWrap: 'wrap',
       }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', marginRight: 2, flexShrink: 0 }}>DISPOSITION :</span>
+        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', marginRight: 2, flexShrink: 0 }}>CHART :</span>
         {LAYOUTS.map(l => (
           <button key={l.id} onClick={() => setMode(l.id)} title={l.desc} style={{
             display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
@@ -946,19 +968,18 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
             <span>{l.label}</span>
           </button>
         ))}
-        <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--tm-text-muted)', flexShrink: 0 }}>
-          {LAYOUTS.find(l => l.id === mode)?.desc}
-        </span>
+        {mode === 'lw' && (
+          <span style={{ marginLeft: 'auto', fontSize: 9, color: 'rgba(0,229,255,0.5)', flexShrink: 0 }}>
+            ⚡ Synchronisé avec tous les indicateurs
+          </span>
+        )}
       </div>
 
-      {/* Graphiques */}
-      <div style={{
-        display: isSplit ? 'grid' : 'block',
-        gridTemplateColumns: isSplit ? '1fr 1fr' : undefined,
-        gap: isSplit ? 8 : undefined,
-      }}>
-        {panels.map((type, i) => renderPanel(type, `${type}-${i}`))}
-      </div>
+      {/* Graphique */}
+      {mode === 'lw'
+        ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />
+        : <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
+      }
     </div>
   )
 }
@@ -1186,159 +1207,161 @@ function MarketHeatmapModal({ cells, loading, onClose }: { cells: HeatmapCell[];
   )
 }
 
-// ── Full-page search view ─────────────────────────────────────────────────────
-// Remplace TOUTE la page pendant la recherche — aucune superposition possible
+// ── SearchView — écran de recherche pleine page (aucun overlay, aucun z-index) ──
 function SearchView({
-  currentSymbol, onSelect, onClose,
-}: { currentSymbol: string; onSelect: (s: string) => void; onClose: () => void }) {
+  currentSymbol,
+  onSelect,
+  onClose,
+}: {
+  currentSymbol: string
+  onSelect: (s: string) => void
+  onClose: () => void
+}) {
   const [q, setQ] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const { results, loading } = useSymbolSearch(q)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
+
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const typeColor = (t: string) => t==='crypto'?'#F59714':t==='stock'?'#34C759':'#42A5F5'
-  const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR',{maximumFractionDigits:0})}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
+  const typeColor = (t: string) => t === 'crypto' ? '#F59714' : t === 'stock' ? '#22C759' : '#42A5F5'
+  const fmtPrice = (p: number) => p > 1000 ? `$${p.toLocaleString('fr-FR', { maximumFractionDigits: 0 })}` : p > 1 ? `$${p.toFixed(2)}` : `$${p.toFixed(5)}`
+
+  const removeFromHistory = (sym: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const updated = history.filter(h => h.symbol !== sym)
+    setHistory(updated)
+    saveHistory(updated)
+  }
 
   const handleSelect = async (r: SearchResult | HistoryEntry) => {
-    onSelect(r.symbol)
     const summary = r.type === 'crypto' ? await fetchPriceSummary(r.symbol) : null
-    const entry: HistoryEntry = { symbol:r.symbol, name:r.name, icon:r.icon, type:r.type, exchange:(r as SearchResult).exchange, price:summary?.price, change24h:summary?.change24h, visitedAt:Date.now() }
+    const entry: HistoryEntry = {
+      symbol: r.symbol, name: r.name, icon: r.icon, type: r.type,
+      exchange: (r as SearchResult).exchange, price: summary?.price,
+      change24h: summary?.change24h, visitedAt: Date.now(),
+    }
     const updated = [entry, ...history.filter(h => h.symbol !== r.symbol)]
-    setHistory(updated); saveHistory(updated)
+    setHistory(updated)
+    saveHistory(updated)
+    onSelect(r.symbol)
     onClose()
   }
 
-  const removeFromHistory = (sym: string) => {
-    const updated = history.filter(h => h.symbol !== sym)
-    setHistory(updated); saveHistory(updated)
-  }
-
   const showHistory = !q && history.length > 0
-  const items: (SearchResult | HistoryEntry)[] = q
-    ? results
-    : showHistory ? history : results
+  const items: (SearchResult | HistoryEntry)[] = showHistory ? history : results
 
   return (
     <div style={{
-      minHeight:'100vh', background:'var(--tm-bg)',
-      padding:'0', display:'flex', flexDirection:'column',
+      minHeight: '100vh', background: 'var(--tm-bg)',
+      display: 'flex', flexDirection: 'column',
     }}>
-      {/* Search bar */}
+      {/* Barre de recherche collée en haut */}
       <div style={{
-        padding:'20px 28px', borderBottom:'1px solid rgba(0,217,255,0.12)',
-        background:'rgba(0,217,255,0.02)',
-        display:'flex', alignItems:'center', gap:12,
-        position:'sticky', top:0, zIndex:1,
+        padding: '16px 20px', borderBottom: '1px solid rgba(0,217,255,0.12)',
+        display: 'flex', alignItems: 'center', gap: 12,
+        background: 'rgba(13,17,35,0.95)', backdropFilter: 'blur(12px)',
+        position: 'sticky', top: 0, zIndex: 1,
       }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00D9FF" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input
           ref={inputRef}
           value={q}
           onChange={e => setQ(e.target.value)}
-          placeholder="Chercher BTC, ETH, AAPL, ASML, SPY…"
+          placeholder="BTC, ETH, AAPL, EUR/USD…"
           style={{
-            flex:1, background:'transparent', border:'none', outline:'none',
-            color:'#fff', fontSize:18, fontWeight:600,
-            fontFamily:'JetBrains Mono, monospace',
+            flex: 1, background: 'transparent', border: 'none',
+            color: 'var(--tm-text-primary)', fontSize: 16, fontWeight: 600,
+            fontFamily: 'JetBrains Mono, monospace', outline: 'none',
           }}
         />
-        {loading && <div style={{width:16,height:16,border:'2px solid #1E2330',borderTopColor:'#00D9FF',borderRadius:'50%',animation:'spin 0.7s linear infinite',flexShrink:0}}/>}
-        {q && <button onClick={() => setQ('')} style={{background:'none',border:'none',color:'#8E8E93',cursor:'pointer',fontSize:18,padding:'0 4px',flexShrink:0}}>✕</button>}
-        <button
-          onClick={onClose}
-          style={{padding:'6px 14px',borderRadius:8,border:'1px solid rgba(255,255,255,0.1)',background:'transparent',color:'#8E8E93',cursor:'pointer',fontSize:12,fontWeight:500,flexShrink:0}}
-        >
-          ✕ Fermer
-        </button>
+        {loading && <div style={{ width: 14, height: 14, border: '2px solid #2A2F3E', borderTopColor: 'var(--tm-accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />}
+        {q && (
+          <button onClick={() => setQ('')} style={{ background: 'none', border: 'none', color: '#8E8E93', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>
+        )}
+        <button onClick={onClose} style={{
+          background: 'rgba(0,217,255,0.06)', border: '1px solid rgba(0,217,255,0.2)',
+          borderRadius: 8, color: 'var(--tm-accent)', cursor: 'pointer',
+          fontSize: 12, fontWeight: 600, padding: '6px 12px', flexShrink: 0,
+        }}>Fermer</button>
       </div>
 
-      {/* Results — inline, NO absolute positioning, NO overlay */}
-      <div style={{flex:1, overflowY:'auto', padding:'8px 0'}}>
-        {/* Section header */}
-        {!q && showHistory && (
-          <div style={{padding:'10px 28px 6px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <span style={{fontSize:10,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.12em'}}>🕐 Récents</span>
-            <button onClick={() => { setHistory([]); saveHistory([]) }} style={{fontSize:10,color:'#3A3F4B',background:'none',border:'none',cursor:'pointer'}}>Effacer tout</button>
-          </div>
-        )}
-        {q && items.length === 0 && !loading && (
-          <div style={{padding:'60px 28px',textAlign:'center',color:'#8E8E93',fontSize:14}}>
-            Aucun résultat pour "<strong style={{color:'#fff'}}>{q}</strong>"
-          </div>
-        )}
-        {!q && !showHistory && (
-          <div style={{padding:'10px 28px 6px'}}>
-            <span style={{fontSize:10,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.12em'}}>⭐ Populaires</span>
-          </div>
-        )}
-        {q && items.length > 0 && (
-          <div style={{padding:'10px 28px 6px'}}>
-            <span style={{fontSize:10,fontWeight:700,color:'#3A3F4B',textTransform:'uppercase',letterSpacing:'0.12em'}}>{items.length} résultat{items.length>1?'s':''}</span>
-          </div>
-        )}
+      {/* Section titre */}
+      <div style={{ padding: '16px 20px 8px' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', justifyContent: 'space-between' }}>
+          <span>{showHistory ? '🕐 Récents' : q ? 'Résultats' : '⭐ Populaires'}</span>
+          {showHistory && (
+            <button onClick={() => { setHistory([]); saveHistory([]) }} style={{ background: 'none', border: 'none', color: 'var(--tm-text-muted)', cursor: 'pointer', fontSize: 10, padding: 0 }}>
+              Effacer tout
+            </button>
+          )}
+        </div>
+      </div>
 
+      {/* Liste des résultats — plain divs, pas de dropdown, pas d'overlay */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {items.length === 0 && q && (
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--tm-text-muted)', fontSize: 14 }}>
+            Aucun résultat pour "{q}"
+          </div>
+        )}
         {items.map((item) => (
           <div
             key={item.symbol}
             onClick={() => handleSelect(item)}
             style={{
-              display:'flex', alignItems:'center', gap:14,
-              padding:'12px 28px', cursor:'pointer',
-              background: item.symbol===currentSymbol ? 'rgba(0,217,255,0.06)' : 'transparent',
-              borderBottom:'1px solid rgba(255,255,255,0.03)',
-              transition:'background 0.1s',
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '14px 20px', cursor: 'pointer',
+              borderBottom: '1px solid rgba(255,255,255,0.04)',
+              background: item.symbol === currentSymbol ? 'rgba(0,229,255,0.06)' : 'transparent',
+              transition: 'background 0.1s',
             }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = item.symbol===currentSymbol ? 'rgba(0,217,255,0.06)' : 'transparent'}
+            onMouseEnter={e => { if (item.symbol !== currentSymbol) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = item.symbol === currentSymbol ? 'rgba(0,229,255,0.06)' : 'transparent' }}
           >
+            {/* Icône */}
             <div style={{
-              width:42, height:42, borderRadius:12, flexShrink:0,
-              background:`${typeColor(item.type)}15`,
-              border:`1px solid ${typeColor(item.type)}30`,
-              display:'flex', alignItems:'center', justifyContent:'center',
-              fontSize:16, fontWeight:800, color:typeColor(item.type),
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: `${typeColor(item.type)}18`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, fontWeight: 700, color: typeColor(item.type),
             }}>
               {item.icon}
             </div>
-            <div style={{flex:1, minWidth:0}}>
-              <div style={{fontSize:15,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono,monospace'}}>{item.symbol}</div>
-              <div style={{fontSize:12,color:'#8E8E93',marginTop:2}}>
-                {item.name}{(item as SearchResult).exchange ? ` · ${(item as SearchResult).exchange}` : ''}
+            {/* Texte */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{item.symbol}</span>
+                {item.symbol === currentSymbol && <span style={{ fontSize: 9, color: 'var(--tm-accent)', fontWeight: 700 }}>● ACTIF</span>}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginTop: 2 }}>
+                {item.name}{(item as HistoryEntry).exchange ? ` · ${(item as HistoryEntry).exchange}` : ''}
               </div>
             </div>
-            {'price' in item && item.price != null && (
-              <div style={{textAlign:'right',flexShrink:0}}>
-                <div style={{fontSize:13,fontWeight:700,color:'#fff',fontFamily:'JetBrains Mono'}}>{fmtPrice(item.price)}</div>
-                <div style={{fontSize:11,color:(item.change24h??0)>=0?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono'}}>
-                  {(item.change24h??0)>=0?'+':''}{item.change24h?.toFixed(2)}%
+            {/* Prix historique */}
+            {(item as HistoryEntry).price != null && (
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono' }}>{fmtPrice((item as HistoryEntry).price!)}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: ((item as HistoryEntry).change24h ?? 0) >= 0 ? '#22C759' : '#FF3B30', fontFamily: 'JetBrains Mono' }}>
+                  {((item as HistoryEntry).change24h ?? 0) >= 0 ? '+' : ''}{(item as HistoryEntry).change24h?.toFixed(2)}%
                 </div>
               </div>
             )}
-            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
-              {item.symbol===currentSymbol && <span style={{fontSize:9,color:'#00D9FF',border:'1px solid rgba(0,217,255,0.3)',borderRadius:4,padding:'2px 6px'}}>actif</span>}
-              {!q && 'visitedAt' in item && (
-                <button
-                  onClick={e => { e.stopPropagation(); removeFromHistory(item.symbol) }}
-                  style={{width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:'50%',background:'rgba(255,255,255,0.06)',color:'#8E8E93',fontSize:13,cursor:'pointer',border:'none',flexShrink:0}}
-                >×</button>
-              )}
-            </div>
+            {/* Supprimer de l'historique */}
+            {showHistory && (
+              <div
+                onClick={e => removeFromHistory(item.symbol, e)}
+                style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', color: '#6B7280', fontSize: 14, cursor: 'pointer', flexShrink: 0 }}
+              >×</div>
+            )}
           </div>
         ))}
-      </div>
-
-      {/* Bottom hint */}
-      <div style={{padding:'12px 28px',borderTop:'1px solid rgba(255,255,255,0.04)',display:'flex',gap:20,alignItems:'center'}}>
-        <span style={{fontSize:11,color:'#3A3F4B'}}>↵ Sélectionner</span>
-        <span style={{fontSize:11,color:'#3A3F4B'}}>ESC Fermer</span>
-        <span style={{fontSize:11,color:'#3A3F4B'}}>⌘K Ouvrir</span>
       </div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -1352,18 +1375,59 @@ export default function AnalysePage() {
     if (stored) { localStorage.removeItem('tm_analyse_symbol'); return stored }
     return ''
   })
-  const [searching, setSearching] = useState(!symbol)
   const [mode,   setMode]   = useState<Mode>('micro')
   const [syncInterval, setSyncInterval] = useState<string>('1h')
-  const [syncRange,    setSyncRange]    = useState<{from:number;to:number}|null>(null)
+  const [syncRange,    setSyncRange]    = useState<{from:number;to:number;areaRatio?:number}|null>(null)
 
-  // Cmd+K ouvre la recherche
+  // ── Panel drag & drop state ───────────────────────────────────────────────
+  const [panelOrder, setPanelOrder] = useState<string[]>(DEFAULT_PANEL_ORDER)
+  const [panelLayoutLoaded, setPanelLayoutLoaded] = useState(false)
+  const dragItemRef = useRef<string | null>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Load panel layout from Firestore on mount
   useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearching(true) }
-    }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
+    loadPanelLayout().then(data => {
+      if (data) {
+        // Merge with defaults to handle new panels added after save
+        const merged = [
+          ...data.order.filter(id => DEFAULT_PANEL_ORDER.includes(id)),
+          ...DEFAULT_PANEL_ORDER.filter(id => !data.order.includes(id)),
+        ]
+        setPanelOrder(merged)
+      }
+      setPanelLayoutLoaded(true)
+    })
+  }, [])
+
+  const handleDragStart = useCallback((id: string) => {
+    dragItemRef.current = id
+  }, [])
+
+  const handleDragOver = useCallback((_e: React.DragEvent, targetId: string) => {
+    const dragId = dragItemRef.current
+    if (!dragId || dragId === targetId) return
+    setPanelOrder(prev => {
+      const arr = [...prev]
+      const fromIdx = arr.indexOf(dragId)
+      const toIdx = arr.indexOf(targetId)
+      if (fromIdx === -1 || toIdx === -1) return prev
+      arr.splice(fromIdx, 1)
+      arr.splice(toIdx, 0, dragId)
+      return arr
+    })
+  }, [])
+
+  const handleDrop = useCallback((_e: React.DragEvent, _targetId: string) => {
+    dragItemRef.current = null
+    // Debounced save to Firestore
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      setPanelOrder(current => {
+        savePanelLayout(current, DEFAULT_PANEL_OPEN)
+        return current
+      })
+    }, 800)
   }, [])
 
   // ── PDF export state ──────────────────────────────────────────────────────
@@ -1503,6 +1567,7 @@ export default function AnalysePage() {
   const [heatmapOpen, setHeatmapOpen] = useState(false)
   const [heatmapCells,setHeatmapCells]= useState<HeatmapCell[]>([])
   const [heatmapLoad, setHeatmapLoad] = useState(false)
+  const [searching,   setSearching]   = useState(!symbol)  // pleine page recherche
   const liqRef = useRef<LiqEvent[]>([])
   const liqWs  = useRef<WebSocket|null>(null)
 
@@ -1635,21 +1700,22 @@ export default function AnalysePage() {
       .catch(() => {})
   }, [symbol])
 
-  // ── BTC/ETH Dominance ────────────────────────────────────────────────────
+  // ── BTC/ETH Dominance (CoinGecko global, pas de CORS) ───────────────────
   useEffect(() => {
     if (!isCryptoSymbol(symbol) && symbol !== '') return
-    Promise.all([
-      fetch('https://api.binance.com/api/v3/klines?symbol=BTCDOMUSDT&interval=1h&limit=48').then(r => r.json()),
-      fetch('https://api.binance.com/api/v3/klines?symbol=ETHBTC&interval=1h&limit=48').then(r => r.json()),
-    ]).then(([btcRaw, ethRaw]) => {
-      if (!Array.isArray(btcRaw) || !Array.isArray(ethRaw)) return
-      const btcPts = (btcRaw as unknown[][]).map(c => parseFloat(c[4] as string))
-      // ETH dominance approximation: ETH/BTC * BTC.D * ETH_circulating_factor (~20%)
-      const ethPts = (ethRaw as unknown[][]).map((c, i) => parseFloat(c[4] as string) * btcPts[i] * 0.5)
-      const pts: DominancePt[] = btcPts.map((b, i) => ({ btcD: b, ethD: ethPts[i] }))
-      setDomPts(pts)
-      setDomCurrent(pts[pts.length - 1] ?? { btcD: 0, ethD: 0 })
-    }).catch(() => {})
+    fetch('https://api.coingecko.com/api/v3/global', { signal: AbortSignal.timeout(8000) })
+      .then(r => r.json())
+      .then((d: { data?: { market_cap_percentage?: { btc?: number; eth?: number } } }) => {
+        const btcD = d.data?.market_cap_percentage?.btc ?? 0
+        const ethD = d.data?.market_cap_percentage?.eth ?? 0
+        // Fake sparkline with slight noise around the current value
+        const pts: DominancePt[] = Array.from({ length: 48 }, (_, i) => ({
+          btcD: btcD + (Math.sin(i * 0.4) * 0.3),
+          ethD: ethD + (Math.sin(i * 0.5 + 1) * 0.15),
+        }))
+        setDomPts(pts)
+        setDomCurrent({ btcD, ethD })
+      }).catch(() => {})
   }, [symbol])
 
   // ── Live Liquidations WebSocket ───────────────────────────────────────────
@@ -1779,6 +1845,30 @@ export default function AnalysePage() {
 
   const isCrypto = isCryptoSymbol(symbol)
 
+  // ── Cmd+K pour ouvrir la recherche ────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearching(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // ── Mode recherche : remplace TOUTE la page (aucun overlay) ───────────────
+  if (searching) {
+    return (
+      <SearchView
+        currentSymbol={symbol}
+        onSelect={s => {
+          setSymbol(s)
+          setCvdPts([])
+          Object.keys(cvdAcc.current).forEach(k => (cvdAcc.current as Record<string, number>)[k] = 0)
+        }}
+        onClose={() => setSearching(false)}
+      />
+    )
+  }
+
   const C = {
     card: {
       background:'rgba(13,17,35,0.7)',
@@ -1792,21 +1882,6 @@ export default function AnalysePage() {
     },
     top: {position:'absolute' as const,top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.15),transparent)'},
     p: '12px 16px',
-  }
-
-  // ── Mode recherche : remplace TOUTE la page ─────────────────────────────
-  if (searching) {
-    return (
-      <SearchView
-        currentSymbol={symbol}
-        onSelect={s => {
-          setSymbol(s)
-          setCvdPts([])
-          Object.keys(cvdAcc.current).forEach(k => (cvdAcc.current as Record<string, number>)[k] = 0)
-        }}
-        onClose={() => setSearching(false)}
-      />
-    )
   }
 
   return (
@@ -1877,7 +1952,7 @@ export default function AnalysePage() {
               🌡️ Contexte
             </button>
           )}
-          {/* Bouton recherche — ouvre une page dédiée (pas d'overlay) */}
+          {/* Bouton recherche — ouvre pleine page (0 problème de superposition) */}
           <button
             onClick={() => setSearching(true)}
             style={{
@@ -1887,6 +1962,8 @@ export default function AnalysePage() {
               borderRadius:12, padding:'8px 14px', cursor:'pointer',
               minWidth:200, transition:'all 0.15s',
             }}
+            onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor='rgba(0,217,255,0.5)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.1)'}}
+            onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor=symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.06)'}}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <span style={{fontSize:13,fontWeight:700,color:symbol?'#fff':'#8E8E93',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
@@ -2012,50 +2089,98 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to)=>setSyncRange({from,to})} lwChartRef={lwChartRef} /></div>}
+      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} lwChartRef={lwChartRef} /></div>}
 
-      {/* Oscillateurs synchronisés sous le chart */}
-      {symbol && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16, position:'relative', zIndex:1 }}>
-        <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-          onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
-        <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-          onStatusReady={(status)=>setPdfVmcStatus(status)} />
-        <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
-        <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
-      </div>}
+      {/* Canal OU + Excès Statistiques + VMC Kaufman */}
+      {symbol && (() => {
+        const panelDefs: Record<string, React.ReactNode> = {
+          'canal-ou': (
+            <CollapsiblePanel key="canal-ou" panelId="canal-ou" label="Canal OU · Excès Statistiques · Kaufman ER" icon="〜" accent="rgba(0,229,255,0.5)" defaultOpen={true}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'canal-ou'}>
+              <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+            </CollapsiblePanel>
+          ),
+          'wavetrend': (
+            <CollapsiblePanel key="wavetrend" panelId="wavetrend" label="WaveTrend Oscillator" icon="〰️" accent="rgba(191,90,242,0.5)" defaultOpen={true}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'wavetrend'}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+                  onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
+              </div>
+            </CollapsiblePanel>
+          ),
+          'vmc': (
+            <CollapsiblePanel key="vmc" panelId="vmc" label="VMC Oscillator" icon="📊" accent="rgba(255,149,0,0.5)" defaultOpen={true}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'vmc'}>
+              <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
+                onStatusReady={(status)=>setPdfVmcStatus(status)} />
+            </CollapsiblePanel>
+          ),
+          'rsi': (
+            <CollapsiblePanel key="rsi" panelId="rsi" label="RSI" icon="📈" accent="rgba(52,199,89,0.5)" defaultOpen={false}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'rsi'}>
+              <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+            </CollapsiblePanel>
+          ),
+          'rsi-bollinger': (
+            <CollapsiblePanel key="rsi-bollinger" panelId="rsi-bollinger" label="RSI Bollinger" icon="📉" accent="rgba(255,69,58,0.5)" defaultOpen={false}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'rsi-bollinger'}>
+              <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+            </CollapsiblePanel>
+          ),
+          'trade-plan': (
+            <CollapsiblePanel key="trade-plan" panelId="trade-plan" label="Trade Plan IA" icon="🎯" accent="rgba(0,229,255,0.5)" defaultOpen={true}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'trade-plan'}>
+              <TradePlanCard
+                symbol={symbol}
+                price={price || 0}
+                mtfScore={pdfMtfSnap?.globalScore ?? 0}
+                mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
+                wtStatus={pdfWtStatus || 'Neutral'}
+                vmcStatus={pdfVmcStatus || 'NEUTRAL'}
+                onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
+              />
+            </CollapsiblePanel>
+          ),
+          'mtf': (
+            <CollapsiblePanel key="mtf" panelId="mtf" label="MTF Dashboard" icon="🔭" accent="rgba(191,90,242,0.5)" defaultOpen={true}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'mtf'}>
+              <MTFDashboard symbol={symbol} onSnapshotReady={snap => setPdfMtfSnap(snap)} />
+            </CollapsiblePanel>
+          ),
+          'levels': (
+            <div key="levels" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, position: 'relative', zIndex: 1 }}>
+              <CollapsiblePanel panelId="levels" label="Niveaux Clés" icon="🔑" accent="rgba(255,214,10,0.5)" defaultOpen={true}
+                onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+                isDragging={dragItemRef.current === 'levels'}>
+                <KeyLevelsCard symbol={symbol} onLevelsReady={(lvls, p) => { setPdfLevels(lvls); setPdfLevelsPrice(p) }} />
+              </CollapsiblePanel>
+              <CollapsiblePanel label="Analyse Screenshot IA" icon="📸" accent="rgba(191,90,242,0.5)" defaultOpen={true}>
+                <ChartScreenshotAnalysis symbol={symbol} />
+              </CollapsiblePanel>
+            </div>
+          ),
+          'heatmap': (
+            <CollapsiblePanel key="heatmap" panelId="heatmap" label="Liquidation Heatmap" icon="🌡️" accent="rgba(255,59,48,0.5)" defaultOpen={true}
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={dragItemRef.current === 'heatmap'}>
+              <LiquidationHeatmap symbol={symbol} />
+            </CollapsiblePanel>
+          ),
+        }
 
+        return panelOrder.map(id => panelDefs[id] ?? null)
+      })()}
 
-      {/* Plan de Trade IA — tous les actifs, en premier */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ShareWrapper label="Trade Plan">
-        <TradePlanCard
-          symbol={symbol}
-          price={price || 0}
-          mtfScore={pdfMtfSnap?.globalScore ?? 0}
-          mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
-          wtStatus={pdfWtStatus || 'Neutral'}
-          vmcStatus={pdfVmcStatus || 'NEUTRAL'}
-          onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
-        />
-      </ShareWrapper></div>}
-
-      {/* MTF Dashboard — tous les actifs */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ShareWrapper label="MTF Dashboard">
-        <MTFDashboard symbol={symbol} onSnapshotReady={snap => setPdfMtfSnap(snap)} />
-      </ShareWrapper></div>}
-
-      {/* WaveTrend + VMC + RSI sont maintenant affichés directement sous le chart (ci-dessus) */}
-
-      {/* ══ NIVEAUX CLÉS AUTO + SCREENSHOT IA — tous les actifs ══ */}
-      {symbol && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16,position:'relative',zIndex:1}}>
-        <ShareWrapper label="Niveaux Clés"><KeyLevelsCard symbol={symbol} onLevelsReady={(lvls, p) => { setPdfLevels(lvls); setPdfLevelsPrice(p) }} /></ShareWrapper>
-        <ChartScreenshotAnalysis symbol={symbol} />
-      </div>}
-
-      {/* ══ CRYPTO ONLY ══ Heatmap + CVD/Structure/Dérivés */}
-      {isCrypto && <div style={{position:'relative',zIndex:1}}><>
-        {/* Heatmap */}
-        <ShareWrapper label="Liquidation Heatmap"><LiquidationHeatmap symbol={symbol} /></ShareWrapper>
-
+      {/* ══ CRYPTO ONLY ══ Mode tabs + CVD/Structure/Dérivés */}
+      {isCrypto && <div style={{position:'relative',zIndex:1}}>
         {/* Mode tabs — neon cyberpunk */}
         <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
           {([
@@ -2063,6 +2188,7 @@ export default function AnalysePage() {
             {id:'structure', icon:'🐋',label:'Structure',  sub:'Tendance baleine',  color:'rgba(191,90,242,0.9)'},
             {id:'derivees',  icon:'📈',label:'Dérivés',    sub:'OI · Funding · L/S',color:'rgba(255,149,0,0.9)'},
             {id:'orderflow', icon:'⊞', label:'Order Flow', sub:'Footprint · Cluster',color:'rgba(255,69,58,0.9)'},
+            {id:'charts',    icon:'📅', label:'Charts',     sub:'Rendements · On-Chain',color:'rgba(52,199,89,0.9)'},
           ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m=>{
             const active = mode === m.id
             return (
@@ -2089,7 +2215,7 @@ export default function AnalysePage() {
             )
           })}
         </div>
-      </></div>}
+      </div>}
 
       {/* ── MICRO — crypto only ── */}
       {isCrypto&&mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
@@ -2363,6 +2489,2252 @@ export default function AnalysePage() {
         </div>
       )}
 
+      {/* ── CHARTS TAB ── */}
+      {mode === 'charts' && <ChartsTab symbol={symbol} isCrypto={isCrypto}/>}
+
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHARTS TAB — ChartInspect-style analytics
+// ════════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════════
+// INDICATOR REGISTRY
+// ════════════════════════════════════════════════════════════════════════════
+
+type IndicatorCategory = 'performance' | 'risk' | 'onchain' | 'macro' | 'structure'
+
+interface IndicatorDef {
+  id: string
+  name: string
+  description: string
+  category: IndicatorCategory
+  assets: 'all' | 'crypto' | 'btc'
+  component: (props: { symbol: string; isCrypto: boolean }) => React.ReactElement | null
+}
+
+const CATEGORY_META: Record<IndicatorCategory, { label: string; color: string; emoji: string }> = {
+  performance: { label: 'Performance',  color: '#34C759', emoji: '📈' },
+  risk:        { label: 'Risque',       color: '#FF9500', emoji: '⚠️' },
+  onchain:     { label: 'On-Chain',     color: '#0A85FF', emoji: '⛓️' },
+  macro:       { label: 'Macro',        color: '#BF5AF2', emoji: '🌍' },
+  structure:   { label: 'Structure',    color: '#FF453A', emoji: '🏗️' },
+}
+
+const INDICATOR_REGISTRY: IndicatorDef[] = [
+  {
+    id: 'btc-hero',
+    name: 'BTC Price + MA50/200',
+    description: 'Prix Bitcoin avec moyennes mobiles et zones bull/bear',
+    category: 'structure' as IndicatorCategory,
+    assets: 'crypto' as const,
+    component: ({ symbol, isCrypto }) => <BTCHeroChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'monthly-returns',
+    name: 'Rendements Mensuels',
+    description: 'Heatmap calendrier des performances mensuelles',
+    category: 'performance',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <MonthlyReturnsHeatmap symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'roi-periods',
+    name: 'ROI Multi-Périodes',
+    description: 'Retour sur investissement sur 7j / 30j / 90j / 1a / YTD',
+    category: 'performance',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <ROIPeriodsChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'price-horizons',
+    name: 'Prix vs Historique',
+    description: 'Prix actuel vs prix il y a 30 / 90 / 180 / 365 jours',
+    category: 'performance',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <PriceHorizonsChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'death-golden-cross',
+    name: 'Death / Golden Cross',
+    description: 'Croisements SMA50 / SMA200 avec signaux historiques',
+    category: 'structure',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <DeathGoldenCrossChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'drawdown',
+    name: 'Drawdown depuis ATH',
+    description: 'Distance au plus haut historique dans le temps',
+    category: 'risk',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <DrawdownChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'sharpe',
+    name: 'Sharpe Ratio Glissant',
+    description: 'Rendement ajusté au risque sur 365 jours glissants',
+    category: 'risk',
+    assets: 'all',
+    component: ({ symbol, isCrypto }) => <SharpeRatioChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'mvrv',
+    name: 'MVRV Z-Score — BTC',
+    description: 'Market Value vs Realized Value · CoinMetrics Community',
+    category: 'onchain',
+    assets: 'btc',
+    component: () => <MVRVZScoreChart/>,
+  },
+  {
+    id: 'txcount',
+    name: 'Transactions On-Chain — BTC',
+    description: 'Nombre de transactions quotidiennes · CoinMetrics',
+    category: 'onchain',
+    assets: 'btc',
+    component: () => <TxCountChart/>,
+  },
+  {
+    id: 'altseason',
+    name: 'Altcoin Season Index',
+    description: '% des top altcoins surperformant BTC sur 90 jours',
+    category: 'macro',
+    assets: 'crypto',
+    component: ({ symbol }) => <AltcoinSeasonGauge symbol={symbol}/>,
+  },
+  {
+    id: 'market-breadth',
+    name: 'Market Breadth',
+    description: '% des top 20 cryptos au-dessus de leur MA200',
+    category: 'macro',
+    assets: 'crypto',
+    component: () => <MarketBreadthChart/>,
+  },
+  {
+    id: 'power-law',
+    name: 'Power Law Corridor — BTC',
+    description: 'Couloir de valorisation logarithmique depuis 2009',
+    category: 'structure',
+    assets: 'btc',
+    component: () => <PowerLawChart/>,
+  },
+  {
+    id: 'composite-risk',
+    name: 'Score de Risque Composite',
+    description: 'MVRV + Funding + L/S + Fear & Greed — jauge globale',
+    category: 'risk',
+    assets: 'btc',
+    component: () => <CompositeRiskScore/>,
+  },
+  {
+    id: 'market-intelligence',
+    name: 'Market Intelligence',
+    description: 'Score marché · Régime · Confluence des signaux',
+    category: 'macro' as IndicatorCategory,
+    assets: 'crypto' as const,
+    component: ({ symbol, isCrypto }) => <MarketIntelligencePanel symbol={symbol} isCrypto={isCrypto}/>,
+  },
+  {
+    id: 'nupl',
+    name: 'NUPL — Net Unrealized P&L',
+    description: 'Profit/perte non réalisé du réseau Bitcoin',
+    category: 'onchain' as IndicatorCategory,
+    assets: 'btc' as const,
+    component: () => <NUPLChart/>,
+  },
+  {
+    id: 'momentum-composite',
+    name: 'Momentum Composite',
+    description: 'RSI + Rate of Change + Pente MA — score 0–100',
+    category: 'structure' as IndicatorCategory,
+    assets: 'all' as const,
+    component: ({ symbol, isCrypto }) => <MomentumCompositeChart symbol={symbol} isCrypto={isCrypto}/>,
+  },
+]
+
+function ChartsTab({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [activeCategory, setActiveCategory] = React.useState<IndicatorCategory | 'all'>('all')
+
+  const isBtc = symbol === 'BTCUSDT' || symbol === 'BTC-USD' || symbol.toUpperCase().startsWith('BTC')
+
+  const visible = INDICATOR_REGISTRY.filter(ind => {
+    if (ind.id === 'btc-hero' || ind.id === 'market-intelligence') return false // shown in hero area
+    if (ind.assets === 'crypto' && !isCrypto) return false
+    if (ind.assets === 'btc'    && !isBtc)   return false
+    if (activeCategory !== 'all' && ind.category !== activeCategory) return false
+    return true
+  })
+
+  const categories: Array<IndicatorCategory | 'all'> = ['all', 'performance', 'risk', 'structure', 'onchain', 'macro']
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:20, position:'relative', zIndex:1 }}>
+      {/* Hero + Market Intelligence always on top for crypto */}
+      {isCrypto && (
+        <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:16 }}>
+          <BTCHeroChart symbol={symbol} isCrypto={isCrypto}/>
+          <MarketIntelligencePanel symbol={symbol} isCrypto={isCrypto}/>
+        </div>
+      )}
+
+      {/* Category filter */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', padding:'4px 0' }}>
+        {categories.map(cat => {
+          const meta = cat === 'all' ? { label:'Tous', color:'#8E8E93', emoji:'🔭' } : CATEGORY_META[cat]
+          const active = activeCategory === cat
+          return (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              style={{
+                padding:'6px 14px', borderRadius:20, fontSize:11, fontWeight:700,
+                fontFamily:'Syne,sans-serif', cursor:'pointer', border:'none',
+                background: active ? meta.color : 'rgba(255,255,255,0.06)',
+                color: active ? '#fff' : 'rgba(255,255,255,0.5)',
+                transition:'all 0.2s',
+                letterSpacing:'0.04em',
+              }}
+            >
+              {meta.emoji} {meta.label}
+            </button>
+          )
+        })}
+        <div style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,0.3)', alignSelf:'center' }}>
+          {visible.length} indicateur{visible.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {/* Grid */}
+      <div style={{
+        display:'grid',
+        gridTemplateColumns:'repeat(auto-fill, minmax(360px, 1fr))',
+        gap:16,
+      }}>
+        {visible.map(ind => (
+          <div key={ind.id}>
+            {ind.component({ symbol, isCrypto })}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── 1. Monthly Returns Heatmap ────────────────────────────────────────────────
+function MonthlyReturnsHeatmap({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [rows, setRows]       = useState<{ year: number; months: (number|null)[] }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState(false)
+
+  useEffect(() => {
+    setLoading(true); setError(false)
+    async function load() {
+      try {
+        let closes: { date: Date; close: number }[] = []
+
+        if (isCrypto) {
+          const r   = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1M&limit=60`)
+          const raw = await r.json() as [number,string,string,string,string][]
+          closes    = raw.map(k => ({ date: new Date(k[0]), close: parseFloat(k[4]) }))
+        } else {
+          // Yahoo Finance v8 chart — free, works from browser
+          const r = await fetch(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1mo&range=5y`,
+            { headers: { 'Accept': 'application/json' } }
+          )
+          const d = await r.json() as {
+            chart: { result?: [{ timestamp: number[]; indicators: { quote: [{ close: (number|null)[] }] } }] }
+          }
+          const res = d.chart.result?.[0]
+          if (!res) throw new Error('no result')
+          closes = res.timestamp.map((t, i) => ({
+            date:  new Date(t * 1000),
+            close: res.indicators.quote[0].close[i] ?? 0,
+          })).filter(x => x.close > 0)
+        }
+
+        // Monthly returns: (close[i] - close[i-1]) / close[i-1] * 100
+        const rets: Record<string, number> = {}
+        for (let i = 1; i < closes.length; i++) {
+          const prev = closes[i-1].close, cur = closes[i].close
+          if (!prev || !cur) continue
+          const d   = closes[i].date
+          rets[`${d.getFullYear()}-${d.getMonth()}`] = ((cur - prev) / prev) * 100
+        }
+
+        // Group by year (newest first)
+        const years = [...new Set(Object.keys(rets).map(k => +k.split('-')[0]))].sort((a,b) => b-a)
+        setRows(years.map(y => ({
+          year: y,
+          months: Array.from({length:12}, (_, m) => rets[`${y}-${m}`] ?? null),
+        })))
+        setLoading(false)
+      } catch { setError(true); setLoading(false) }
+    }
+    load()
+  }, [symbol, isCrypto])
+
+  const MO = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+
+  function cell(v: number|null): string {
+    if (v===null) return 'rgba(255,255,255,0.03)'
+    if (v >= 25) return '#006633'; if (v >= 15) return '#008844'
+    if (v >= 8)  return '#00AA55'; if (v >= 3)  return '#34C759'
+    if (v >= 0)  return '#5AD97F'; if (v >= -3) return '#FF6B6B'
+    if (v >= -8) return '#FF453A'; if (v >= -15) return '#CC2200'
+    return '#990000'
+  }
+  function ytd(months: (number|null)[]): number|null {
+    const vs = months.filter(v => v!==null) as number[]
+    if (!vs.length) return null
+    return vs.reduce((a,v) => a*(1+v/100), 1)*100 - 100
+  }
+
+  const cardStyle: React.CSSProperties = {
+    background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+
+  return (
+    <div style={cardStyle}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:3,height:20,borderRadius:2,background:'#34C759'}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>
+            Rendements Mensuels
+          </div>
+          <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>
+            Performance mensuelle — {symbol}
+          </div>
+        </div>
+        <div style={{marginLeft:'auto',display:'flex',gap:6,flexWrap:'wrap'}}>
+          {[['#006633','+25%'],['#34C759','+5%'],['rgba(255,255,255,0.1)','0%'],['#FF453A','-5%'],['#990000','-15%']].map(([bg,l])=>(
+            <div key={l} style={{display:'flex',alignItems:'center',gap:4}}>
+              <div style={{width:10,height:10,borderRadius:2,background:bg}}/>
+              <span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{l}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{display:'flex',justifyContent:'center',padding:40}}>
+          <div style={{width:24,height:24,borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+        </div>
+      )}
+      {error && <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données indisponibles pour ce symbole</div>}
+
+      {!loading && !error && (
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'separate',borderSpacing:'2px 3px',fontSize:11}}>
+            <thead>
+              <tr>
+                <th style={{textAlign:'left',padding:'2px 10px',color:'rgba(255,255,255,0.4)',fontWeight:600,fontSize:10}}>Année</th>
+                {MO.map(m=>(
+                  <th key={m} style={{textAlign:'center',padding:'2px 4px',color:'rgba(255,255,255,0.4)',fontWeight:600,fontSize:10,minWidth:46}}>{m}</th>
+                ))}
+                <th style={{textAlign:'center',padding:'2px 10px',color:'rgba(255,255,255,0.4)',fontWeight:600,fontSize:10}}>YTD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const total = ytd(row.months)
+                return (
+                  <tr key={row.year}>
+                    <td style={{padding:'3px 10px',fontWeight:700,color:'rgba(255,255,255,0.6)',fontFamily:'Syne,sans-serif',fontSize:12,whiteSpace:'nowrap'}}>{row.year}</td>
+                    {row.months.map((v,i)=>(
+                      <td key={i} style={{
+                        padding:'7px 2px',borderRadius:5,textAlign:'center',
+                        background:cell(v),
+                        color: v===null?'transparent': Math.abs(v)>3?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.7)',
+                        fontWeight:700, fontSize:10,
+                        transition:'opacity 0.2s',cursor:'default',
+                      }} title={v!==null?`${v>=0?'+':''}${v.toFixed(2)}%`:undefined}>
+                        {v!==null?`${v>=0?'+':''}${v.toFixed(1)}%`:''}
+                      </td>
+                    ))}
+                    <td style={{
+                      padding:'7px 10px',borderRadius:5,textAlign:'center',
+                      background:cell(total),fontWeight:800,
+                      color:'rgba(255,255,255,0.95)',fontSize:11,
+                    }}>
+                      {total!==null?`${total>=0?'+':''}${total.toFixed(1)}%`:'—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 2. MVRV Z-Score Line Chart (crypto only) ─────────────────────────────────
+function MVRVZScoreChart() {
+  const [data,    setData]    = useState<{ date: string; mvrv: number }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    const start = new Date(Date.now() - 180*86_400_000).toISOString().slice(0,10)
+    fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${start}`)
+      .then(r => r.json())
+      .then((d: { data?: { time: string; CapMVRVCur: string }[] }) => {
+        const pts = (d.data??[]).map(x => ({ date: x.time.slice(0,10), mvrv: parseFloat(x.CapMVRVCur) })).filter(x=>!isNaN(x.mvrv))
+        setData(pts); setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 800, H = 140, PAD = { t:12, b:28, l:50, r:16 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+
+  // Y axis: 0 to max(mvrv, 5)
+  const maxMVRV = Math.max(5, ...data.map(d=>d.mvrv)) * 1.05
+  const minMVRV = 0
+
+  // Zones: <1 green, 1-2 neutral, 2-3.5 orange, >3.5 red
+  const zones: [number,number,string,string][] = [
+    [0,   1,   'rgba(52,199,89,0.12)',  '🟢 Sous-évalué'],
+    [1,   2,   'rgba(255,255,255,0.04)','⚪ Zone juste'],
+    [2,   3.5, 'rgba(255,149,0,0.12)',  '🟠 Haussier'],
+    [3.5, maxMVRV,'rgba(255,59,48,0.15)','🔴 Surchauffe'],
+  ]
+
+  function yPx(v: number) { return PAD.t + cH - ((v - minMVRV)/(maxMVRV - minMVRV))*cH }
+  function xPx(i: number) { return PAD.l + (i/(data.length-1||1))*cW }
+
+  const pts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.mvrv).toFixed(1)}`).join(' ')
+  const cur  = data[data.length-1]?.mvrv
+  const prev = data[data.length-2]?.mvrv
+  const delta = cur&&prev ? cur-prev : null
+  const zone  = cur ? (cur<1?'Sous-évalué':cur<2?'Zone juste':cur<3.5?'Haussier':'Surchauffe') : ''
+  const zColor= cur ? (cur<1?'#34C759':cur<2?'#8E8E93':cur<3.5?'#FF9500':'#FF3B30') : '#8E8E93'
+
+  const cardStyle: React.CSSProperties = {
+    background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+  const yLabels = [0,1,2,3.5,Math.round(maxMVRV*10)/10]
+
+  return (
+    <div style={cardStyle}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:3,height:20,borderRadius:2,background:zColor}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>MVRV Ratio — BTC</div>
+          <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>Market Value / Realized Value · CoinMetrics Community</div>
+        </div>
+        {cur && (
+          <div style={{marginLeft:'auto',textAlign:'right'}}>
+            <div style={{fontSize:22,fontWeight:900,color:zColor,fontFamily:'Syne,sans-serif',lineHeight:1}}>{cur.toFixed(3)}</div>
+            <div style={{fontSize:11,color:zColor,marginTop:2}}>{zone}</div>
+            {delta!==null && <div style={{fontSize:10,color:delta>0?'#34C759':'#FF3B30'}}>{delta>0?'▲':'▼'} {Math.abs(delta).toFixed(3)} 24h</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Zone legend */}
+      <div style={{display:'flex',gap:12,marginBottom:10,flexWrap:'wrap'}}>
+        {zones.map(([lo,hi,bg,label])=>(
+          <div key={label} style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:12,height:8,borderRadius:2,background:bg,border:'1px solid rgba(255,255,255,0.15)'}}/>
+            <span style={{fontSize:9,color:'var(--tm-text-muted)'}}>{label} ({lo}–{hi===maxMVRV?'∞':hi})</span>
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{display:'flex',justifyContent:'center',height:H}}>
+          <div style={{width:20,height:20,margin:'auto',borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+        </div>
+      ) : data.length < 2 ? (
+        <div style={{textAlign:'center',height:H,lineHeight:`${H}px`,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          {/* Zone backgrounds */}
+          {zones.map(([lo,hi,bg])=>{
+            const y1=yPx(Math.min(hi,maxMVRV)), y2=yPx(lo)
+            return <rect key={lo} x={PAD.l} y={y1} width={cW} height={y2-y1} fill={bg} rx={2}/>
+          })}
+          {/* Horizontal zone lines */}
+          {[1,2,3.5].map(v=>(
+            <line key={v} x1={PAD.l} y1={yPx(v)} x2={PAD.l+cW} y2={yPx(v)}
+              stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="4 4"/>
+          ))}
+          {/* Y axis labels */}
+          {yLabels.map(v=>(
+            <text key={v} x={PAD.l-6} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.4)" fontSize={9} fontFamily="JetBrains Mono,monospace">{v}</text>
+          ))}
+          {/* X axis dates (6 evenly spaced) */}
+          {[0,0.2,0.4,0.6,0.8,1].map(f=>{
+            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            return <text key={f} x={xPx(idx)} y={H-6} textAnchor="middle" fill="rgba(255,255,255,0.3)" fontSize={8} fontFamily="JetBrains Mono,monospace">{data[idx]?.date.slice(5)}</text>
+          })}
+          {/* Gradient fill */}
+          <defs>
+            <linearGradient id="mvrv-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={zColor} stopOpacity="0.25"/>
+              <stop offset="100%" stopColor={zColor} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${PAD.l+cW},${yPx(0)}`} fill="url(#mvrv-grad)"/>
+          {/* Main line */}
+          <polyline points={pts} fill="none" stroke={zColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+          {/* Last point dot */}
+          {data.length>0&&<circle cx={xPx(data.length-1)} cy={yPx(cur!)} r={4} fill={zColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>}
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.mvrv)} r={4} fill={zColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── 3. Altcoin Season Index ───────────────────────────────────────────────────
+function AltcoinSeasonGauge({ symbol }: { symbol: string }) {
+  const [asi,     setAsi]     = useState<number|null>(null)
+  const [loading, setLoading] = useState(true)
+  const [beats,   setBeats]   = useState<{ sym:string; ret:number; beatsBtc:boolean }[]>([])
+
+  useEffect(() => {
+    const ALTS = ['ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','AVAXUSDT','LINKUSDT','DOTUSDT','MATICUSDT']
+    const ALL  = ['BTCUSDT', ...ALTS]
+
+    async function load() {
+      try {
+        // Fetch 90-day klines for all assets in parallel
+        const results = await Promise.all(
+          ALL.map(sym =>
+            fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=91`)
+              .then(r => r.json())
+              .then((raw: [number,string,string,string,string][]) => ({
+                sym,
+                ret: raw.length > 1
+                  ? ((parseFloat(raw[raw.length-1][4]) - parseFloat(raw[0][4])) / parseFloat(raw[0][4])) * 100
+                  : null,
+              }))
+              .catch(() => ({ sym, ret: null }))
+          )
+        )
+
+        const btcRet = results[0].ret ?? 0
+        const altRets = results.slice(1).filter(r => r.ret !== null) as { sym:string; ret:number }[]
+        const beatingBtc = altRets.map(a => ({ sym:a.sym.replace('USDT',''), ret:a.ret, beatsBtc: a.ret > btcRet }))
+        const score = altRets.length > 0 ? (beatingBtc.filter(a=>a.beatsBtc).length / altRets.length) * 100 : 50
+
+        setBeats(beatingBtc.sort((a,b) => b.ret-a.ret))
+        setAsi(score)
+        setLoading(false)
+      } catch { setLoading(false) }
+    }
+    load()
+  }, [symbol])
+
+  const label = asi===null?'':asi>=75?'🌙 Alt Season':(asi>=55?'🔵 Tendance Alt':asi>=45?'⚪ Neutre':asi>=25?'🟠 Tendance BTC':'₿ Bitcoin Season')
+  const color = asi===null?'#8E8E93':(asi>=55?'#BF5AF2':asi>=45?'#8E8E93':asi>=25?'#FF9500':'#F7931A')
+
+  // Semicircle gauge via SVG arc
+  const R=80, CX=120, CY=100
+  function arc(pct:number, color:string) {
+    const angle = (pct/100)*180 - 180
+    const rad   = angle * Math.PI/180
+    const x = CX + R*Math.cos(rad), y = CY + R*Math.sin(rad)
+    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${pct>50?1:0} 1 ${x.toFixed(1)} ${y.toFixed(1)}`
+  }
+
+  const cardStyle: React.CSSProperties = {
+    background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+        <div style={{width:3,height:20,borderRadius:2,background:color}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>Altcoin Season Index</div>
+          <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>% des top altcoins surperformant BTC sur 90 jours</div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{display:'flex',justifyContent:'center',height:120}}>
+          <div style={{width:20,height:20,margin:'auto',borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+        </div>
+      ) : (
+        <div style={{display:'flex',gap:24,alignItems:'flex-start',flexWrap:'wrap'}}>
+          {/* Gauge */}
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:180}}>
+            <svg viewBox="0 0 240 120" style={{width:220,height:110}}>
+              {/* Background arc (track) */}
+              <path d={`M ${CX-R} ${CY} A ${R} ${R} 0 0 1 ${CX+R} ${CY}`}
+                fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={14} strokeLinecap="round"/>
+              {/* Zone colors */}
+              {([[0,25,'#F7931A'],[25,45,'#FF9500'],[45,55,'#8E8E93'],[55,75,'#0A85FF'],[75,100,'#BF5AF2']] as [number,number,string][]).map(([from,to,c])=>(
+                <path key={from} d={`M ${CX-R} ${CY} A ${R} ${R} 0 ${to>50?1:0} 1 ${(CX+R*Math.cos(((from/100)*180-180)*Math.PI/180)).toFixed(1)} ${(CY+R*Math.sin(((from/100)*180-180)*Math.PI/180)).toFixed(1)}`}
+                  fill="none" stroke={c} strokeWidth={5} opacity={0.25} strokeLinecap="butt"/>
+              ))}
+              {/* Progress arc */}
+              {asi!==null&&<path d={arc(asi,color)} fill="none" stroke={color} strokeWidth={14} strokeLinecap="round"/>}
+              {/* Needle dot */}
+              {asi!==null&&<circle cx={CX+R*Math.cos(((asi/100)*180-180)*Math.PI/180)} cy={CY+R*Math.sin(((asi/100)*180-180)*Math.PI/180)} r={6} fill={color} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>}
+              {/* Center text */}
+              <text x={CX} y={CY-6} textAnchor="middle" fill={color} fontSize={26} fontWeight="900" fontFamily="Syne,sans-serif">{asi!==null?Math.round(asi):'–'}</text>
+              <text x={CX} y={CY+10} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={9}>/ 100</text>
+              {/* Labels */}
+              <text x={CX-R-4} y={CY+14} textAnchor="middle" fill="#F7931A" fontSize={8}>BTC</text>
+              <text x={CX+R+4} y={CY+14} textAnchor="middle" fill="#BF5AF2" fontSize={8}>ALT</text>
+            </svg>
+            <div style={{fontSize:13,fontWeight:700,color,marginTop:-8}}>{label}</div>
+          </div>
+
+          {/* Altcoin performance table */}
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.4)',marginBottom:8,letterSpacing:'0.08em'}}>PERFORMANCE 90J vs BTC</div>
+            <div style={{display:'flex',flexDirection:'column',gap:3}}>
+              {['BTCUSDT',...beats.map(b=>b.sym+'USDT')].slice(0,10).map((sym,i)=>{
+                const isBtc = i===0
+                const b     = isBtc ? null : beats[i-1]
+                const ret   = isBtc ? (beats.length?null:null) : b?.ret
+                const btcRet_= beats.length>0?(beats.reduce((a,b)=>a,0)):null
+                return (
+                  <div key={sym} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 8px',borderRadius:8,background:isBtc?'rgba(247,147,26,0.08)':b?.beatsBtc?'rgba(52,199,89,0.06)':'rgba(255,59,48,0.06)'}}>
+                    <div style={{fontSize:10,fontWeight:700,color:isBtc?'#F7931A':b?.beatsBtc?'#34C759':'#FF3B30',width:40,fontFamily:'JetBrains Mono,monospace'}}>
+                      {isBtc?'₿ BTC':b?.sym}
+                    </div>
+                    {!isBtc&&b&&(
+                      <>
+                        <div style={{flex:1,height:4,borderRadius:2,background:'rgba(255,255,255,0.06)',overflow:'hidden'}}>
+                          <div style={{height:'100%',borderRadius:2,width:`${Math.min(100,Math.abs(b.ret)/50*100)}%`,background:b.beatsBtc?'#34C759':'#FF3B30'}}/>
+                        </div>
+                        <div style={{fontSize:10,fontWeight:700,color:b.beatsBtc?'#34C759':'#FF3B30',width:52,textAlign:'right',fontFamily:'JetBrains Mono,monospace'}}>
+                          {b.ret>=0?'+':''}{b.ret.toFixed(1)}%
+                        </div>
+                        <div style={{fontSize:11}}>{b.beatsBtc?'✓':'✗'}</div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NEW INDICATOR COMPONENTS
+// ════════════════════════════════════════════════════════════════════════════
+
+// Shared helpers
+const CARD_STYLE: React.CSSProperties = {
+  background:'rgba(13,17,35,0.7)', border:'1px solid rgba(255,255,255,0.08)',
+  borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+}
+function CardHeader({ color, title, sub, value, valueSub }: { color:string; title:string; sub:string; value?:string; valueSub?:string }) {
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+      <div style={{width:3,height:20,borderRadius:2,background:color}}/>
+      <div>
+        <div style={{fontSize:14,fontWeight:800,color:'var(--tm-text-primary)',fontFamily:'Syne,sans-serif'}}>{title}</div>
+        <div style={{fontSize:10,color:'var(--tm-text-muted)',marginTop:1}}>{sub}</div>
+      </div>
+      {value && (
+        <div style={{marginLeft:'auto',textAlign:'right'}}>
+          <div style={{fontSize:20,fontWeight:900,color,fontFamily:'Syne,sans-serif',lineHeight:1}}>{value}</div>
+          {valueSub && <div style={{fontSize:10,color:'rgba(255,255,255,0.4)',marginTop:2}}>{valueSub}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+function Spinner() {
+  return (
+    <div style={{display:'flex',justifyContent:'center',padding:40}}>
+      <div style={{width:22,height:22,borderRadius:'50%',border:'2px solid rgba(0,229,255,0.12)',borderTopColor:'var(--tm-accent)',animation:'spin 0.8s linear infinite'}}/>
+    </div>
+  )
+}
+async function fetchCloses(symbol: string, isCrypto: boolean, days: number): Promise<number[]> {
+  if (isCrypto) {
+    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=${days + 1}`)
+    const raw = await r.json() as [number,string,string,string,string][]
+    return raw.map(k => parseFloat(k[4]))
+  } else {
+    const range = days <= 100 ? '6mo' : days <= 400 ? '2y' : '5y'
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=${range}`)
+    const d = await r.json() as { chart: { result?: [{ indicators: { quote: [{ close: (number|null)[] }] } }] } }
+    const closes = d.chart.result?.[0]?.indicators.quote[0].close ?? []
+    return (closes.filter(v => v !== null) as number[]).slice(-days - 1)
+  }
+}
+
+// ── ROI Multi-Périodes ────────────────────────────────────────────────────────
+function ROIPeriodsChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Period = { label: string; days: number; roi: number | null }
+  const [periods, setPeriods] = useState<Period[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    const PERIODS = [
+      { label:'7j',  days:7   },
+      { label:'30j', days:30  },
+      { label:'90j', days:90  },
+      { label:'180j',days:180 },
+      { label:'1a',  days:365 },
+    ]
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        const cur = closes[closes.length - 1]
+        const filled = PERIODS.map(p => ({
+          ...p,
+          roi: closes.length > p.days
+            ? ((cur - closes[closes.length - 1 - p.days]) / closes[closes.length - 1 - p.days]) * 100
+            : null,
+        }))
+        setPeriods(filled)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const maxAbs = Math.max(1, ...periods.filter(p => p.roi !== null).map(p => Math.abs(p.roi!)))
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader color="#34C759" title="ROI Multi-Périodes" sub={`Retour sur investissement — ${symbol}`}/>
+      {loading ? <Spinner/> : (
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {periods.map(p => {
+            const roi = p.roi
+            if (roi === null) return null
+            const pct = (Math.abs(roi) / maxAbs) * 100
+            const positive = roi >= 0
+            const color = positive ? '#34C759' : '#FF3B30'
+            return (
+              <div key={p.label} style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:36,fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',fontFamily:'JetBrains Mono,monospace',flexShrink:0}}>{p.label}</div>
+                <div style={{flex:1,height:22,borderRadius:6,background:'rgba(255,255,255,0.04)',overflow:'hidden',position:'relative'}}>
+                  <div style={{
+                    position:'absolute',
+                    [positive?'left':'right']:0,
+                    width:`${pct/2}%`, height:'100%',
+                    background:`${color}33`, borderRadius:6,
+                    transition:'width 0.6s ease',
+                  }}/>
+                  <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',paddingLeft:8}}>
+                    <span style={{fontSize:12,fontWeight:800,color,fontFamily:'JetBrains Mono,monospace'}}>
+                      {positive?'+':''}{roi.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Prix vs Historique ────────────────────────────────────────────────────────
+function PriceHorizonsChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Horizon = { label: string; days: number; price: number | null; chg: number | null }
+  const [horizons, setHorizons] = useState<Horizon[]>([])
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        const cur = closes[closes.length - 1]
+        setCurrentPrice(cur)
+        const HORIZONS = [
+          { label:'Il y a 30j',  days:30  },
+          { label:'Il y a 90j',  days:90  },
+          { label:'Il y a 180j', days:180 },
+          { label:'Il y a 1 an', days:365 },
+        ]
+        setHorizons(HORIZONS.map(h => {
+          const past = closes.length > h.days ? closes[closes.length - 1 - h.days] : null
+          return { ...h, price: past, chg: past ? ((cur - past) / past) * 100 : null }
+        }))
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  function fmt(n: number): string {
+    if (n >= 1e9) return `$${(n/1e9).toFixed(2)}B`
+    if (n >= 1e6) return `$${(n/1e6).toFixed(2)}M`
+    if (n >= 1000) return `$${n.toLocaleString('en', {maximumFractionDigits:2})}`
+    return `$${n.toFixed(4)}`
+  }
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color="#0A85FF"
+        title="Prix vs Historique"
+        sub={`Prix actuel vs périodes passées — ${symbol}`}
+        value={currentPrice ? fmt(currentPrice) : undefined}
+        valueSub="Prix actuel"
+      />
+      {loading ? <Spinner/> : (
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {horizons.map(h => {
+            if (!h.price || !h.chg) return null
+            const positive = h.chg >= 0
+            const color = positive ? '#34C759' : '#FF3B30'
+            return (
+              <div key={h.label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderRadius:10,background:'rgba(255,255,255,0.03)'}}>
+                <div style={{fontSize:12,color:'rgba(255,255,255,0.5)',fontWeight:600}}>{h.label}</div>
+                <div style={{display:'flex',gap:12,alignItems:'center'}}>
+                  <div style={{fontSize:12,color:'rgba(255,255,255,0.4)',fontFamily:'JetBrains Mono,monospace'}}>{fmt(h.price)}</div>
+                  <div style={{fontSize:13,fontWeight:800,color,fontFamily:'JetBrains Mono,monospace',minWidth:64,textAlign:'right'}}>
+                    {positive?'+':''}{h.chg.toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Drawdown depuis ATH ───────────────────────────────────────────────────────
+function DrawdownChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [data, setData]       = useState<{ i:number; dd:number }[]>([])
+  const [currentDd, setCurrentDd] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 730)
+      .then(closes => {
+        let ath = -Infinity
+        const dd: { i:number; dd:number }[] = []
+        for (let i = 0; i < closes.length; i++) {
+          if (closes[i] > ath) ath = closes[i]
+          dd.push({ i, dd: ath > 0 ? ((closes[i] - ath) / ath) * 100 : 0 })
+        }
+        setData(dd)
+        setCurrentDd(dd[dd.length - 1]?.dd ?? null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const minDd = Math.min(-5, ...data.map(d => d.dd)) * 1.05
+  function yPx(v: number) { return PAD.t + cH - ((v - minDd) / (0 - minDd)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pts = data.map(d => `${xPx(d.i).toFixed(1)},${yPx(d.dd).toFixed(1)}`).join(' ')
+  const ddColor = currentDd !== null ? (currentDd > -10 ? '#34C759' : currentDd > -25 ? '#FF9500' : currentDd > -50 ? '#FF453A' : '#FF3B30') : '#8E8E93'
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={ddColor}
+        title="Drawdown depuis ATH"
+        sub={`Distance au plus haut historique — ${symbol}`}
+        value={currentDd !== null ? `${currentDd.toFixed(1)}%` : undefined}
+        valueSub="Drawdown actuel"
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id={`dd-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={ddColor} stopOpacity="0.3"/>
+              <stop offset="100%" stopColor={ddColor} stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {/* Zero line */}
+          <line x1={PAD.l} y1={yPx(0)} x2={PAD.l+cW} y2={yPx(0)} stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="4 3"/>
+          {/* -25% and -50% guides */}
+          {[-25,-50].map(v => v >= minDd && (
+            <g key={v}>
+              <line x1={PAD.l} y1={yPx(v)} x2={PAD.l+cW} y2={yPx(v)} stroke="rgba(255,255,255,0.07)" strokeWidth={1} strokeDasharray="3 4"/>
+              <text x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.3)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}%</text>
+            </g>
+          ))}
+          {/* Y labels */}
+          {[0, Math.round(minDd/2), Math.round(minDd)].map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}%</text>
+          ))}
+          {/* Fill */}
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill={`url(#dd-grad-${symbol})`}/>
+          {/* Line */}
+          <polyline points={pts} fill="none" stroke={ddColor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          {/* Dot */}
+          <circle cx={xPx(data.length-1)} cy={yPx(data[data.length-1].dd)} r={4} fill={ddColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.dd)} r={4} fill={ddColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Sharpe Ratio Glissant ─────────────────────────────────────────────────────
+function SharpeRatioChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  const [data, setData]     = useState<{ i:number; sharpe:number }[]>([])
+  const [current, setCurrent] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        const WINDOW = 365
+        const pts: { i:number; sharpe:number }[] = []
+        for (let i = WINDOW; i < closes.length; i++) {
+          const slice = closes.slice(i - WINDOW, i)
+          const returns = slice.slice(1).map((v, j) => (v - slice[j]) / slice[j])
+          const mean = returns.reduce((a, b) => a + b, 0) / returns.length
+          const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / returns.length
+          const std = Math.sqrt(variance)
+          const sharpe = std > 0 ? (mean / std) * Math.sqrt(365) : 0
+          pts.push({ i: i - WINDOW, sharpe })
+        }
+        setData(pts)
+        setCurrent(pts[pts.length - 1]?.sharpe ?? null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const minV = Math.min(-1, ...data.map(d => d.sharpe)) * 1.1
+  const maxV = Math.max(3, ...data.map(d => d.sharpe)) * 1.05
+  function yPx(v: number) { return PAD.t + cH - ((v - minV) / (maxV - minV)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pts = data.map((d, i) => `${xPx(i).toFixed(1)},${yPx(d.sharpe).toFixed(1)}`).join(' ')
+  const sColor = current !== null ? (current > 2 ? '#34C759' : current > 0.5 ? '#0A85FF' : current > 0 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const sLabel = current !== null ? (current > 2 ? 'Excellent' : current > 0.5 ? 'Bon' : current > 0 ? 'Faible' : 'Négatif') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={sColor}
+        title="Sharpe Ratio Glissant (365j)"
+        sub={`Rendement ajusté au risque annualisé — ${symbol}`}
+        value={current !== null ? current.toFixed(2) : undefined}
+        valueSub={sLabel}
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes (minimum 1 an)</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id={`sh-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={sColor} stopOpacity="0.25"/>
+              <stop offset="100%" stopColor={sColor} stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {/* Zero line */}
+          <line x1={PAD.l} y1={yPx(0)} x2={PAD.l+cW} y2={yPx(0)} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="4 3"/>
+          {/* 1.0 guide */}
+          {maxV > 1 && <line x1={PAD.l} y1={yPx(1)} x2={PAD.l+cW} y2={yPx(1)} stroke="rgba(52,199,89,0.2)" strokeWidth={1} strokeDasharray="3 4"/>}
+          {/* Y labels */}
+          {[Math.round(minV), 0, 1, Math.round(maxV)].filter((v,i,a)=>a.indexOf(v)===i).map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}</text>
+          ))}
+          {/* Fill above zero */}
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill={`url(#sh-grad-${symbol})`}/>
+          <polyline points={pts} fill="none" stroke={sColor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx={xPx(data.length-1)} cy={yPx(data[data.length-1].sharpe)} r={4} fill={sColor} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.sharpe)} r={4} fill={sColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Death / Golden Cross ──────────────────────────────────────────────────────
+function DeathGoldenCrossChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Pt = { i:number; price:number; sma50:number|null; sma200:number|null }
+  const [data, setData]       = useState<Pt[]>([])
+  const [crosses, setCrosses] = useState<{ i:number; type:'golden'|'death' }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 400)
+      .then(closes => {
+        function sma(arr: number[], i: number, n: number): number | null {
+          if (i < n - 1) return null
+          return arr.slice(i - n + 1, i + 1).reduce((a,b) => a + b, 0) / n
+        }
+        const pts: Pt[] = closes.map((price, i) => ({
+          i, price,
+          sma50:  sma(closes, i, 50),
+          sma200: sma(closes, i, 200),
+        }))
+        // Detect crosses
+        const cx: { i:number; type:'golden'|'death' }[] = []
+        for (let i = 1; i < pts.length; i++) {
+          const prev = pts[i-1], cur = pts[i]
+          if (!prev.sma50 || !prev.sma200 || !cur.sma50 || !cur.sma200) continue
+          if (prev.sma50 <= prev.sma200 && cur.sma50 > cur.sma200) cx.push({ i, type:'golden' })
+          if (prev.sma50 >= prev.sma200 && cur.sma50 < cur.sma200) cx.push({ i, type:'death' })
+        }
+        setData(pts)
+        setCrosses(cx)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 140, PAD = { t:12, b:24, l:52, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const prices = data.map(d => d.price)
+  const minP = Math.min(...prices) * 0.97
+  const maxP = Math.max(...prices) * 1.03
+  function yPx(v: number) { return PAD.t + cH - ((v - minP) / (maxP - minP)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pricePts = data.map(d => `${xPx(d.i).toFixed(1)},${yPx(d.price).toFixed(1)}`).join(' ')
+  const sma50Pts = data.filter(d => d.sma50 !== null).map(d => `${xPx(d.i).toFixed(1)},${yPx(d.sma50!).toFixed(1)}`).join(' ')
+  const sma200Pts = data.filter(d => d.sma200 !== null).map(d => `${xPx(d.i).toFixed(1)},${yPx(d.sma200!).toFixed(1)}`).join(' ')
+  const lastCross = crosses[crosses.length - 1]
+  const crossColor = lastCross?.type === 'golden' ? '#FFD60A' : lastCross?.type === 'death' ? '#FF3B30' : '#8E8E93'
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={crossColor}
+        title="Death / Golden Cross"
+        sub={`SMA 50 / SMA 200 — ${symbol}`}
+        value={lastCross ? (lastCross.type === 'golden' ? '✨ Golden' : '💀 Death') : '—'}
+        valueSub="Dernier signal"
+      />
+      {/* Legend */}
+      <div style={{display:'flex',gap:14,marginBottom:10}}>
+        {[['rgba(255,255,255,0.4)','Prix'],['#FFD60A','SMA 50'],['#BF5AF2','SMA 200'],['#FFD60A','⚡ Golden Cross'],['#FF3B30','💀 Death Cross']].map(([c,l])=>(
+          <div key={l} style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:16,height:2,background:c,borderRadius:1}}/>
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.4)'}}>{l}</span>
+          </div>
+        ))}
+      </div>
+      {loading ? <Spinner/> : data.length < 200 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données insuffisantes (minimum 200 jours)</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          {/* Cross markers */}
+          {crosses.map(cx => (
+            <line key={cx.i} x1={xPx(cx.i)} y1={PAD.t} x2={xPx(cx.i)} y2={PAD.t+cH}
+              stroke={cx.type==='golden'?'rgba(255,214,10,0.3)':'rgba(255,59,48,0.3)'} strokeWidth={1.5} strokeDasharray="3 3"/>
+          ))}
+          {/* Price line */}
+          <polyline points={pricePts} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={1.5}/>
+          {/* SMA lines */}
+          {sma50Pts  && <polyline points={sma50Pts}  fill="none" stroke="#FFD60A" strokeWidth={1.5} opacity={0.85}/>}
+          {sma200Pts && <polyline points={sma200Pts} fill="none" stroke="#BF5AF2" strokeWidth={1.5} opacity={0.85}/>}
+          {/* Cross symbols */}
+          {crosses.slice(-3).map(cx => (
+            <text key={cx.i} x={xPx(cx.i)} y={PAD.t+10} textAnchor="middle" fontSize={12}>
+              {cx.type === 'golden' ? '⚡' : '💀'}
+            </text>
+          ))}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Transactions On-Chain BTC ─────────────────────────────────────────────────
+function TxCountChart() {
+  const [data, setData]       = useState<{ date:string; count:number }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    const start = new Date(Date.now() - 180*86_400_000).toISOString().slice(0,10)
+    fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=TxCnt&frequency=1d&start_time=${start}`)
+      .then(r => r.json())
+      .then((d: { data?: { time:string; TxCnt:string }[] }) => {
+        const pts = (d.data ?? []).map(x => ({ date: x.time.slice(0,10), count: parseInt(x.TxCnt) })).filter(x => !isNaN(x.count))
+        setData(pts)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:52, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const counts = data.map(d => d.count)
+  const minC = Math.min(...counts) * 0.95 || 0
+  const maxC = Math.max(...counts) * 1.05 || 1
+  function yPx(v: number) { return PAD.t + cH - ((v - minC) / (maxC - minC)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+  const pts = data.map((d, i) => `${xPx(i).toFixed(1)},${yPx(d.count).toFixed(1)}`).join(' ')
+  const cur = data[data.length - 1]?.count
+  const avg = data.length ? Math.round(data.reduce((a,d) => a+d.count, 0)/data.length) : 0
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color="#0A85FF"
+        title="Transactions On-Chain — BTC"
+        sub="Nombre de transactions quotidiennes · CoinMetrics Community"
+        value={cur ? `${(cur/1000).toFixed(0)}K` : undefined}
+        valueSub={`Moy 180j: ${(avg/1000).toFixed(0)}K`}
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données indisponibles</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',cursor:'crosshair'}}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id="txc-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#0A85FF" stopOpacity="0.3"/>
+              <stop offset="100%" stopColor="#0A85FF" stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {/* Average line */}
+          {avg > 0 && <line x1={PAD.l} y1={yPx(avg)} x2={PAD.l+cW} y2={yPx(avg)} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="4 3"/>}
+          {/* Y labels */}
+          {[minC, avg, maxC].filter(v=>v>0).map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{`${(v/1000).toFixed(0)}K`}</text>
+          ))}
+          {/* X dates */}
+          {[0, 0.25, 0.5, 0.75, 1].map(f => {
+            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            return <text key={f} x={xPx(idx)} y={H-6} textAnchor="middle" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{data[idx]?.date.slice(5)}</text>
+          })}
+          <polygon points={`${PAD.l},${yPx(minC)} ${pts} ${xPx(data.length-1)},${yPx(minC)}`} fill="url(#txc-grad)"/>
+          <polyline points={pts} fill="none" stroke="#0A85FF" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx={xPx(data.length-1)} cy={yPx(cur!)} r={4} fill="#0A85FF" stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.count)} r={4} fill="#0A85FF" stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Market Breadth (crypto) ───────────────────────────────────────────────────
+function MarketBreadthChart() {
+  const [pct, setPct]         = useState<number | null>(null)
+  const [items, setItems]     = useState<{ sym:string; price:number; ma200:number; above:boolean }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const TOP20 = ['BTCUSDT','ETHUSDT','BNBUSDT','XRPUSDT','SOLUSDT','ADAUSDT','DOGEUSDT','TRXUSDT','AVAXUSDT','LINKUSDT',
+                   'TONUSDT','DOTUSDT','MATICUSDT','NEARUSDT','LTCUSDT','UNIUSDT','APTUSDT','ICPUSDT','XLMUSDT','ETCUSDT']
+    Promise.all(
+      TOP20.map(sym =>
+        fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=201`)
+          .then(r => r.json())
+          .then((raw: [number,string,string,string,string][]) => {
+            const closes = raw.map(k => parseFloat(k[4]))
+            const price  = closes[closes.length - 1]
+            const ma200  = closes.length >= 200 ? closes.slice(-200).reduce((a,b)=>a+b,0)/200 : null
+            return { sym: sym.replace('USDT',''), price, ma200, above: ma200 !== null && price > ma200 }
+          })
+          .catch(() => ({ sym: sym.replace('USDT',''), price: 0, ma200: null, above: false }))
+      )
+    ).then(results => {
+      const valid = results.filter(r => r.ma200 !== null) as { sym:string; price:number; ma200:number; above:boolean }[]
+      const aboveCount = valid.filter(r => r.above).length
+      setPct(valid.length > 0 ? (aboveCount / valid.length) * 100 : null)
+      setItems(valid.sort((a,b) => (b.above?1:0)-(a.above?1:0)))
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  const bColor = pct !== null ? (pct >= 70 ? '#34C759' : pct >= 50 ? '#0A85FF' : pct >= 30 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const bLabel = pct !== null ? (pct >= 70 ? 'Marché haussier' : pct >= 50 ? 'Neutre / haussier' : pct >= 30 ? 'Neutre / baissier' : 'Marché baissier') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={bColor}
+        title="Market Breadth"
+        sub="% des top 20 cryptos au-dessus de leur MA200"
+        value={pct !== null ? `${Math.round(pct)}%` : undefined}
+        valueSub={bLabel}
+      />
+      {loading ? <Spinner/> : (
+        <>
+          {/* Progress bar */}
+          <div style={{height:8,borderRadius:4,background:'rgba(255,255,255,0.07)',overflow:'hidden',marginBottom:14}}>
+            <div style={{height:'100%',borderRadius:4,width:`${pct??0}%`,background:bColor,transition:'width 0.8s ease'}}/>
+          </div>
+          {/* Grid */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(72px,1fr))',gap:6}}>
+            {items.map(item => (
+              <div key={item.sym} style={{
+                padding:'6px 8px',borderRadius:8,textAlign:'center',
+                background: item.above ? 'rgba(52,199,89,0.1)' : 'rgba(255,59,48,0.08)',
+                border: `1px solid ${item.above ? 'rgba(52,199,89,0.2)' : 'rgba(255,59,48,0.15)'}`,
+              }}>
+                <div style={{fontSize:11,fontWeight:700,color:item.above?'#34C759':'#FF3B30',fontFamily:'JetBrains Mono,monospace'}}>{item.sym}</div>
+                <div style={{fontSize:9,color:'rgba(255,255,255,0.4)',marginTop:2}}>{item.above?'▲ MA200':'▼ MA200'}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Power Law Corridor BTC ────────────────────────────────────────────────────
+function PowerLawChart() {
+  const GENESIS = new Date('2009-01-03').getTime()
+  const [data, setData]       = useState<{ date:string; price:number; fair:number; upper:number; lower:number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1M&limit=72')
+      .then(r => r.json())
+      .then((raw: [number,string,string,string,string][]) => {
+        const pts = raw.map(k => {
+          const ts = k[0]
+          const days = (ts - GENESIS) / 86_400_000
+          const fair  = Math.pow(10, -17.351) * Math.pow(days, 5.82)
+          const upper = fair * 10
+          const lower = fair / 8
+          return { date: new Date(ts).toISOString().slice(0,7), price: parseFloat(k[4]), fair, upper, lower }
+        })
+        setData(pts)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 720, H = 160, PAD = { t:12, b:28, l:56, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+
+  // Log scale
+  const allVals = data.flatMap(d => [d.price, d.upper]).filter(v => v > 0)
+  const logMin = allVals.length ? Math.log10(Math.min(...allVals)) * 0.98 : 1
+  const logMax = allVals.length ? Math.log10(Math.max(...allVals)) * 1.02 : 6
+  function yPx(v: number) { return v > 0 ? PAD.t + cH - ((Math.log10(v) - logMin) / (logMax - logMin)) * cH : PAD.t + cH }
+  function xPx(i: number) { return PAD.l + (i / (data.length - 1 || 1)) * cW }
+
+  function makePts(arr: number[]) { return arr.map((v, i) => `${xPx(i).toFixed(1)},${yPx(v).toFixed(1)}`).join(' ') }
+
+  const cur = data[data.length - 1]
+  const ratio = cur ? cur.price / cur.fair : null
+  const rColor = ratio ? (ratio > 5 ? '#FF3B30' : ratio > 2 ? '#FF9500' : ratio > 0.7 ? '#34C759' : '#0A85FF') : '#8E8E93'
+  const rLabel = ratio ? (ratio > 5 ? 'Surévalué' : ratio > 2 ? 'Haussier' : ratio > 0.7 ? 'Juste valeur' : 'Sous-évalué') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={rColor}
+        title="Power Law Corridor — BTC"
+        sub="Couloir log P = 10^(−17.351) × jours^5.82 depuis 2009"
+        value={cur ? `×${(cur.price/cur.fair).toFixed(2)} fair` : undefined}
+        valueSub={rLabel}
+      />
+      <div style={{display:'flex',gap:14,marginBottom:10}}>
+        {[['#FFD60A','Prix'],['#34C759','Valeur juste'],['rgba(255,255,255,0.2)','Couloir ×10 / ÷8']].map(([c,l])=>(
+          <div key={l} style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:16,height:2,background:c,borderRadius:1}}/>
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.4)'}}>{l}</span>
+          </div>
+        ))}
+      </div>
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{textAlign:'center',padding:32,color:'var(--tm-text-muted)',fontSize:13}}>Données indisponibles</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+          {/* Corridor fill */}
+          <polygon
+            points={[...data.map((_,i) => `${xPx(i).toFixed(1)},${yPx(data[i].upper).toFixed(1)}`),
+                     ...[...data].reverse().map((_,ri) => `${xPx(data.length-1-ri).toFixed(1)},${yPx(data[data.length-1-ri].lower).toFixed(1)}`)]
+              .join(' ')}
+            fill="rgba(255,255,255,0.04)" stroke="none"
+          />
+          {/* Upper / Lower bounds */}
+          <polyline points={makePts(data.map(d=>d.upper))} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="4 3"/>
+          <polyline points={makePts(data.map(d=>d.lower))} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="4 3"/>
+          {/* Fair value */}
+          <polyline points={makePts(data.map(d=>d.fair))} fill="none" stroke="#34C759" strokeWidth={1.5} strokeDasharray="5 3"/>
+          {/* Price */}
+          <polyline points={makePts(data.map(d=>d.price))} fill="none" stroke="#FFD60A" strokeWidth={2} strokeLinecap="round"/>
+          {/* Y log labels */}
+          {[10,100,1000,10000,100000,1000000].filter(v => Math.log10(v) >= logMin && Math.log10(v) <= logMax).map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">
+              {v>=1e6?`${v/1e6}M`:v>=1e3?`${v/1e3}K`:v}
+            </text>
+          ))}
+          {/* Dot */}
+          <circle cx={xPx(data.length-1)} cy={yPx(cur!.price)} r={4} fill="#FFD60A" stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Score de Risque Composite ─────────────────────────────────────────────────
+function CompositeRiskScore() {
+  type Factor = { label:string; value:number|null; score:number; weight:number; color:string; detail:string }
+  const [factors, setFactors] = useState<Factor[]>([])
+  const [composite, setComposite] = useState<number | null>(null)
+  const [loading, setLoading]  = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      const results: Factor[] = []
+
+      // 1. MVRV
+      try {
+        const start = new Date(Date.now()-7*86_400_000).toISOString().slice(0,10)
+        const r = await fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${start}`)
+        const d = await r.json() as { data?: { CapMVRVCur:string }[] }
+        const mvrv = parseFloat(d.data?.[d.data.length-1]?.CapMVRVCur ?? '')
+        if (!isNaN(mvrv)) {
+          const score = mvrv < 1 ? 10 : mvrv < 2 ? 30 : mvrv < 3 ? 55 : mvrv < 4 ? 75 : 90
+          results.push({ label:'MVRV Ratio', value:mvrv, score, weight:0.3, color:'#0A85FF', detail:`${mvrv.toFixed(2)}` })
+        }
+      } catch { /* ignore */ }
+
+      // 2. Funding Rate
+      try {
+        const r = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT')
+        const d = await r.json() as { fundingRate:string }
+        const fr = parseFloat(d.fundingRate) * 100
+        if (!isNaN(fr)) {
+          const score = fr < -0.02 ? 15 : fr < -0.01 ? 25 : fr < 0.01 ? 50 : fr < 0.02 ? 65 : fr < 0.05 ? 80 : 95
+          results.push({ label:'Funding Rate', value:fr, score, weight:0.25, color:'#FF9500', detail:`${fr.toFixed(4)}%/8h` })
+        }
+      } catch { /* ignore */ }
+
+      // 3. L/S Ratio
+      try {
+        const r = await fetch('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=BTCUSDT&period=5m&limit=1')
+        const d = await r.json() as [{ longShortRatio:string }]
+        const ls = parseFloat(d[0]?.longShortRatio)
+        if (!isNaN(ls)) {
+          const score = ls < 0.8 ? 20 : ls < 0.95 ? 40 : ls < 1.05 ? 50 : ls < 1.2 ? 65 : ls < 1.5 ? 80 : 90
+          results.push({ label:'L/S Ratio', value:ls, score, weight:0.2, color:'#BF5AF2', detail:`${ls.toFixed(3)}` })
+        }
+      } catch { /* ignore */ }
+
+      // 4. Fear & Greed
+      try {
+        const r = await fetch('https://api.alternative.me/fng/?limit=1')
+        const d = await r.json() as { data:[{ value:string }] }
+        const fg = parseInt(d.data[0]?.value)
+        if (!isNaN(fg)) {
+          const score = fg < 20 ? 10 : fg < 40 ? 30 : fg < 60 ? 50 : fg < 80 ? 70 : 90
+          results.push({ label:'Fear & Greed', value:fg, score, weight:0.25, color:'#FF453A', detail:`${fg}/100` })
+        }
+      } catch { /* ignore */ }
+
+      setFactors(results)
+      if (results.length > 0) {
+        const totalW = results.reduce((a, f) => a + f.weight, 0)
+        const weighted = results.reduce((a, f) => a + f.score * f.weight, 0) / totalW
+        setComposite(Math.round(weighted))
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const cColor = composite !== null ? (composite < 30 ? '#34C759' : composite < 50 ? '#0A85FF' : composite < 70 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const cLabel = composite !== null ? (composite < 30 ? 'Zone d\'achat' : composite < 50 ? 'Faible risque' : composite < 70 ? 'Risque modéré' : 'Zone de vente') : ''
+
+  // Gauge arc
+  const R=70, CX=100, CY=90
+  function arc(pct: number) {
+    const angle = (pct/100)*180 - 180
+    const rad = angle * Math.PI/180
+    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${pct>50?1:0} 1 ${(CX+R*Math.cos(rad)).toFixed(1)} ${(CY+R*Math.sin(rad)).toFixed(1)}`
+  }
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader color={cColor} title="Score de Risque Composite" sub="MVRV + Funding + L/S + Fear & Greed — 0=Bas 100=Extrême"/>
+      {loading ? <Spinner/> : (
+        <div style={{display:'flex',gap:20,alignItems:'flex-start',flexWrap:'wrap'}}>
+          {/* Gauge */}
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',minWidth:160}}>
+            <svg viewBox="0 0 200 110" style={{width:180,height:100}}>
+              <path d={`M ${CX-R} ${CY} A ${R} ${R} 0 0 1 ${CX+R} ${CY}`} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={12}/>
+              {composite!==null&&<path d={arc(composite)} fill="none" stroke={cColor} strokeWidth={12} strokeLinecap="round"/>}
+              <text x={CX} y={CY-8} textAnchor="middle" fill={cColor} fontSize={28} fontWeight="900" fontFamily="Syne,sans-serif">{composite??'–'}</text>
+              <text x={CX} y={CY+8} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={9}>/ 100</text>
+              <text x={CX-R-2} y={CY+12} textAnchor="middle" fill="#34C759" fontSize={7}>BAS</text>
+              <text x={CX+R+2} y={CY+12} textAnchor="middle" fill="#FF3B30" fontSize={7}>HAUT</text>
+            </svg>
+            <div style={{fontSize:12,fontWeight:700,color:cColor,marginTop:-8}}>{cLabel}</div>
+          </div>
+          {/* Factor breakdown */}
+          <div style={{flex:1,minWidth:180,display:'flex',flexDirection:'column',gap:8}}>
+            {factors.map(f => (
+              <div key={f.label} style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:90,fontSize:10,color:'rgba(255,255,255,0.5)',flexShrink:0}}>{f.label}</div>
+                <div style={{flex:1,height:16,borderRadius:4,background:'rgba(255,255,255,0.05)',overflow:'hidden',position:'relative'}}>
+                  <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${f.score}%`,background:`${f.color}44`,borderRadius:4,transition:'width 0.6s'}}/>
+                  <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',paddingLeft:6}}>
+                    <span style={{fontSize:9,fontWeight:700,color:f.color,fontFamily:'JetBrains Mono,monospace'}}>{f.detail}</span>
+                  </div>
+                </div>
+                <div style={{fontSize:10,fontWeight:700,color:f.color,width:28,textAlign:'right',fontFamily:'JetBrains Mono,monospace'}}>{f.score}</div>
+              </div>
+            ))}
+            {factors.length === 0 && <div style={{fontSize:12,color:'var(--tm-text-muted)',padding:8}}>Données indisponibles</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── BTC Hero Chart (price + MA50/MA200 + bull/bear zones + cross markers) ────
+function BTCHeroChart({ symbol = 'BTCUSDT', isCrypto = true }: { symbol?: string; isCrypto?: boolean }) {
+  type Candle = { ts: number; close: number; ma50: number | null; ma200: number | null }
+  const [data, setData]       = useState<Candle[]>([])
+  const [loading, setLoading] = useState(true)
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null)
+  const [priceChange, setPriceChange]   = useState<number | null>(null)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const [timeframe, setTimeframe] = useState<90 | 180 | 365 | 730>(365)
+
+  useEffect(() => {
+    setLoading(true)
+    setData([])
+    const sym = isCrypto ? symbol : null
+    const url = sym
+      ? `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=400`
+      : `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2y`
+
+    fetch(url)
+      .then(r => r.json())
+      .then((raw: any) => {
+        let closes: number[] = []
+        let timestamps: number[] = []
+
+        if (isCrypto) {
+          const arr = raw as [number,string,string,string,string][]
+          closes = arr.map(k => parseFloat(k[4]))
+          timestamps = arr.map(k => k[0])
+        } else {
+          const res = raw?.chart?.result?.[0]
+          if (!res) throw new Error('no data')
+          const rawCloses = (res.indicators.quote[0].close as (number|null)[])
+          const rawTs = res.timestamp as number[]
+          rawTs.forEach((t: number, i: number) => {
+            const c = rawCloses[i]
+            if (c != null && c > 0) { closes.push(c); timestamps.push(t * 1000) }
+          })
+        }
+
+        const candles: Candle[] = closes.map((close, i) => {
+          const ma50  = i >= 49  ? closes.slice(i-49,  i+1).reduce((a,b)=>a+b,0)/50  : null
+          const ma200 = i >= 199 ? closes.slice(i-199, i+1).reduce((a,b)=>a+b,0)/200 : null
+          return { ts: timestamps[i] ?? Date.now(), close, ma50, ma200 }
+        })
+        setData(candles)
+        const last = closes[closes.length-1]
+        const prev = closes[closes.length-2]
+        setCurrentPrice(last)
+        setPriceChange(prev ? ((last-prev)/prev)*100 : null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  // Slice data to selected timeframe
+  const displayData = data.slice(-timeframe)
+
+  // Detect crosses from displayData
+  const crosses: { i: number; type: 'golden' | 'death' }[] = []
+  for (let i = 1; i < displayData.length; i++) {
+    const prev = displayData[i-1], cur = displayData[i]
+    if (!prev.ma50 || !prev.ma200 || !cur.ma50 || !cur.ma200) continue
+    if (prev.ma50 <= prev.ma200 && cur.ma50 > cur.ma200) crosses.push({ i, type: 'golden' })
+    if (prev.ma50 >= prev.ma200 && cur.ma50 < cur.ma200) crosses.push({ i, type: 'death' })
+  }
+
+  const W = 900, H = 200, PAD = { t:16, b:28, l:60, r:16 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const prices = displayData.map(d => d.close)
+  const minP = (prices.length ? Math.min(...prices) * 0.97 : 1) || 1
+  const maxP = (prices.length ? Math.max(...prices) * 1.03 : 2) || 2
+  function yPx(v: number) { return PAD.t + cH - ((v - minP) / (maxP - minP)) * cH }
+  function xPx(i: number) { return PAD.l + (i / (displayData.length - 1 || 1)) * cW }
+
+  const pricePts = displayData.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.close).toFixed(1)}`).join(' ')
+  const ma50Pts  = displayData.filter(d=>d.ma50!==null).map((d, _, arr) => {
+    const i = displayData.indexOf(d)
+    return `${xPx(i).toFixed(1)},${yPx(d.ma50!).toFixed(1)}`
+  }).join(' ')
+  const ma200Pts = displayData.filter(d=>d.ma200!==null).map((d) => {
+    const i = displayData.indexOf(d)
+    return `${xPx(i).toFixed(1)},${yPx(d.ma200!).toFixed(1)}`
+  }).join(' ')
+
+  const lastMa200 = displayData[displayData.length-1]?.ma200 ?? null
+  const isBull = lastMa200 !== null && currentPrice !== null && currentPrice > lastMa200
+  const accentColor = isBull ? '#34C759' : '#FF3B30'
+  const regimeLabel = isBull ? '🐂 Bull Market' : '🐻 Bear Market'
+
+  // Y-axis labels (5 evenly spaced)
+  const ySteps = 5
+  const yLabels = Array.from({length:ySteps}, (_, i) => minP + (maxP-minP) * (i/(ySteps-1)))
+
+  function fmtPrice(p: number) {
+    if (p >= 1000) return `$${(p/1000).toFixed(0)}K`
+    return `$${p.toFixed(0)}`
+  }
+
+  const curCandle = displayData[displayData.length-1]
+  const allPrices = data.map(d => d.close)
+  const ath = allPrices.length ? Math.max(...allPrices) : 0
+  const ddPct = ath > 0 && curCandle ? ((curCandle.close - ath) / ath) * 100 : 0
+  const symLabel = symbol.replace('USDT','').replace('-USD','')
+
+  return (
+    <div style={{ background:'rgba(8,12,22,0.9)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:24, backdropFilter:'blur(12px)', boxShadow:'0 0 60px rgba(0,0,0,0.4)', position:'relative', overflow:'hidden' }}>
+      {/* Top border gradient */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg, transparent, ${accentColor}, transparent)` }}/>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:16 }}>
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ fontSize:24 }}>{symLabel.slice(0,4)}</span>
+            <div>
+              <div style={{ fontSize:16, fontWeight:900, color:'#F0F2F5', fontFamily:'Syne,sans-serif' }}>{symbol} Price Chart</div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:2 }}>MA50 · MA200 · Bull/Bear Zones · Signaux de croisement</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign:'right' }}>
+          {currentPrice && (
+            <>
+              <div style={{ fontSize:28, fontWeight:900, color:accentColor, fontFamily:'JetBrains Mono,monospace', lineHeight:1 }}>
+                ${currentPrice.toLocaleString('en', { maximumFractionDigits:0 })}
+              </div>
+              <div style={{ fontSize:12, color: priceChange && priceChange>=0 ? '#34C759':'#FF3B30', marginTop:4, fontFamily:'JetBrains Mono,monospace' }}>
+                {priceChange !== null ? `${priceChange>=0?'+':''}${priceChange.toFixed(2)}% 24h` : ''}
+              </div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:4 }}>{regimeLabel} · DD: {ddPct.toFixed(1)}%</div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display:'flex', gap:16, marginBottom:12, flexWrap:'wrap' }}>
+        {[
+          { color:'rgba(255,255,255,0.7)', label:`Prix ${symLabel}` },
+          { color:'#FF9500', label:'MA50' },
+          { color:'#BF5AF2', label:'MA200' },
+          { color:'rgba(52,199,89,0.25)', label:'Zone Bull (> MA200)' },
+          { color:'rgba(255,59,48,0.2)', label:'Zone Bear (< MA200)' },
+          { color:'#FFD60A', label:'⚡ Golden Cross' },
+          { color:'#FF3B30', label:'💀 Death Cross' },
+        ].map(({ color, label }) => (
+          <div key={label} style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:14, height:3, borderRadius:2, background:color }}/>
+            <span style={{ fontSize:9, color:'rgba(255,255,255,0.4)', fontFamily:'JetBrains Mono,monospace' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Timeframe selector */}
+      <div style={{ display:'flex', gap:6, marginBottom:12 }}>
+        {([90, 180, 365, 730] as const).map(tf => (
+          <button key={tf} onClick={() => setTimeframe(tf)} style={{
+            padding:'4px 12px', borderRadius:20, fontSize:10, fontWeight:700, cursor:'pointer', border:'none',
+            background: timeframe === tf ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.06)',
+            color: timeframe === tf ? '#00E5FF' : 'rgba(255,255,255,0.4)',
+            transition:'all 0.2s',
+          }}>
+            {tf === 90 ? '3M' : tf === 180 ? '6M' : tf === 365 ? '1A' : '2A'}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ display:'flex', justifyContent:'center', height:H }}>
+          <div style={{ width:24, height:24, margin:'auto', borderRadius:'50%', border:'2px solid rgba(0,229,255,0.15)', borderTopColor:'#00E5FF', animation:'spin 0.8s linear infinite' }}/>
+        </div>
+      ) : displayData.length < 2 ? (
+        <div style={{ textAlign:'center', padding:40, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données indisponibles</div>
+      ) : (
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ width:'100%', height:'auto', display:'block', cursor:'crosshair' }}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const svgX = ((e.clientX - rect.left) / rect.width) * W
+            const dataX = svgX - PAD.l
+            const idx = Math.round((dataX / cW) * (displayData.length - 1))
+            setHoverIdx(Math.max(0, Math.min(displayData.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id="btc-hero-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={accentColor} stopOpacity="0.2"/>
+              <stop offset="100%" stopColor={accentColor} stopOpacity="0.01"/>
+            </linearGradient>
+            <clipPath id="chart-clip">
+              <rect x={PAD.l} y={PAD.t} width={cW} height={cH}/>
+            </clipPath>
+          </defs>
+
+          {/* Bull/Bear background zones */}
+          {(() => {
+            const zones: { x1:number; x2:number; bull:boolean }[] = []
+            let zoneStart = -1, zoneBull = false
+            for (let i = 0; i < displayData.length; i++) {
+              const d = displayData[i]
+              if (!d.ma200) continue
+              const bull = d.close > d.ma200
+              if (zoneStart === -1) { zoneStart = i; zoneBull = bull }
+              else if (bull !== zoneBull) {
+                zones.push({ x1:xPx(zoneStart), x2:xPx(i), bull:zoneBull })
+                zoneStart = i; zoneBull = bull
+              }
+            }
+            if (zoneStart >= 0) zones.push({ x1:xPx(zoneStart), x2:xPx(displayData.length-1), bull:zoneBull })
+            return zones.map((z,idx) => (
+              <rect key={idx} x={z.x1} y={PAD.t} width={z.x2-z.x1} height={cH}
+                fill={z.bull ? 'rgba(52,199,89,0.06)' : 'rgba(255,59,48,0.06)'} clipPath="url(#chart-clip)"/>
+            ))
+          })()}
+
+          {/* Cross markers */}
+          {crosses.slice(-5).map(cx => (
+            <g key={cx.i}>
+              <line x1={xPx(cx.i)} y1={PAD.t} x2={xPx(cx.i)} y2={PAD.t+cH}
+                stroke={cx.type==='golden' ? 'rgba(255,214,10,0.4)' : 'rgba(255,59,48,0.4)'}
+                strokeWidth={1.5} strokeDasharray="4 3"/>
+              <text x={xPx(cx.i)} y={PAD.t+12} textAnchor="middle" fontSize={14}>
+                {cx.type === 'golden' ? '⚡' : '💀'}
+              </text>
+            </g>
+          ))}
+
+          {/* Y-axis labels */}
+          {yLabels.map(v => (
+            <text key={v} x={PAD.l-6} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)"
+              fontSize={8} fontFamily="JetBrains Mono,monospace">{fmtPrice(v)}</text>
+          ))}
+
+          {/* Area fill */}
+          <polygon points={`${PAD.l},${yPx(minP)} ${pricePts} ${PAD.l+cW},${yPx(minP)}`}
+            fill="url(#btc-hero-grad)" clipPath="url(#chart-clip)"/>
+
+          {/* MA200 */}
+          {ma200Pts && <polyline points={ma200Pts} fill="none" stroke="#BF5AF2" strokeWidth={2}
+            strokeLinecap="round" strokeLinejoin="round" clipPath="url(#chart-clip)"/>}
+          {/* MA50 */}
+          {ma50Pts && <polyline points={ma50Pts} fill="none" stroke="#FF9500" strokeWidth={1.5}
+            strokeDasharray="6 3" strokeLinecap="round" clipPath="url(#chart-clip)"/>}
+          {/* Price */}
+          <polyline points={pricePts} fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth={1.5}
+            strokeLinecap="round" strokeLinejoin="round" clipPath="url(#chart-clip)"/>
+          {/* Last dot */}
+          {curCandle && (
+            <circle cx={xPx(displayData.length-1)} cy={yPx(curCandle.close)} r={5}
+              fill={accentColor} stroke="rgba(8,12,22,0.9)" strokeWidth={2}
+              style={{ filter:`drop-shadow(0 0 6px ${accentColor})` }}/>
+          )}
+
+          {/* X-axis dates */}
+          {[0, 0.25, 0.5, 0.75, 1].map(f => {
+            const idx = Math.min(displayData.length-1, Math.round(f*(displayData.length-1)))
+            return (
+              <text key={f} x={xPx(idx)} y={H-4} textAnchor="middle" fill="rgba(255,255,255,0.2)"
+                fontSize={8} fontFamily="JetBrains Mono,monospace">
+                {new Date(displayData[idx]?.ts ?? 0).toLocaleDateString('fr-FR', { month:'short', year:'2-digit' })}
+              </text>
+            )
+          })}
+
+          {/* Crosshair + tooltip */}
+          {hoverIdx !== null && (() => {
+            const d = displayData[hoverIdx]
+            if (!d) return null
+            const cx = xPx(hoverIdx)
+            const cy = yPx(d.close)
+            const date = new Date(d.ts).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'2-digit' })
+            const tooltipX = cx > W * 0.7 ? cx - 145 : cx + 10
+            const tooltipY = PAD.t + 10
+            const tooltipH = d.ma50 && d.ma200 ? 64 : d.ma50 || d.ma200 ? 52 : 40
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.25)" strokeWidth={1} strokeDasharray="3 3"/>
+                <line x1={PAD.l} y1={cy} x2={PAD.l+cW} y2={cy} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="3 3"/>
+                <rect x={0} y={cy - 8} width={PAD.l - 2} height={16} fill="rgba(0,0,0,0.7)" rx={3}/>
+                <text x={PAD.l - 4} y={cy + 4} textAnchor="end" fill="rgba(255,255,255,0.9)" fontSize={8} fontFamily="JetBrains Mono,monospace">{fmtPrice(d.close)}</text>
+                <rect x={tooltipX} y={tooltipY} width={140} height={tooltipH} fill="rgba(8,12,22,0.95)" stroke="rgba(0,229,255,0.3)" strokeWidth={1} rx={6}/>
+                <text x={tooltipX + 8} y={tooltipY + 14} fill="rgba(255,255,255,0.6)" fontSize={8} fontFamily="JetBrains Mono,monospace">{date}</text>
+                <text x={tooltipX + 8} y={tooltipY + 27} fill="rgba(255,255,255,0.9)" fontSize={9} fontWeight="bold" fontFamily="JetBrains Mono,monospace">Prix: {fmtPrice(d.close)}</text>
+                {d.ma50 && <text x={tooltipX + 8} y={tooltipY + 40} fill="#FF9500" fontSize={8} fontFamily="JetBrains Mono,monospace">MA50: {fmtPrice(d.ma50)}</text>}
+                {d.ma200 && <text x={tooltipX + 8} y={tooltipY + (d.ma50 ? 53 : 40)} fill="#BF5AF2" fontSize={8} fontFamily="JetBrains Mono,monospace">MA200: {fmtPrice(d.ma200)}</text>}
+                <circle cx={cx} cy={cy} r={5} fill="rgba(255,255,255,0.9)" stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Market Intelligence Panel (Score + Régime + Signal Confluence) ─────────
+function MarketIntelligencePanel({ symbol = 'BTCUSDT', isCrypto = true }: { symbol?: string; isCrypto?: boolean }) {
+  type RegimeName = 'Capitulation' | 'Recovery' | 'Expansion' | 'Distribution' | 'Compression' | 'Chargement…'
+  const [score, setScore]   = useState<number | null>(null)
+  const [fg, setFg]         = useState<number | null>(null)
+  const [btcChange, setBtcChange] = useState<number | null>(null)
+  const [mvrv, setMvrv]     = useState<number | null>(null)
+  const [funding, setFunding] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const tickerSym = isCrypto ? symbol : 'BTCUSDT'
+        const [fgRes, btcRes, mvrvRes, frRes] = await Promise.allSettled([
+          fetch('https://api.alternative.me/fng/?limit=1').then(r=>r.json()),
+          fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${tickerSym}`).then(r=>r.json()),
+          fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${new Date(Date.now()-5*86_400_000).toISOString().slice(0,10)}`).then(r=>r.json()),
+          fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT').then(r=>r.json()),
+        ])
+
+        let fgVal: number|null = null
+        let btcChg: number|null = null
+        let mvrvVal: number|null = null
+        let frVal: number|null = null
+
+        if (fgRes.status === 'fulfilled') {
+          const v = parseInt((fgRes.value as any)?.data?.[0]?.value ?? '')
+          fgVal = isNaN(v) ? null : v
+        }
+        if (btcRes.status === 'fulfilled') {
+          const v = parseFloat((btcRes.value as any)?.priceChangePercent)
+          btcChg = isNaN(v) ? null : v
+        }
+        if (mvrvRes.status === 'fulfilled') {
+          const d = (mvrvRes.value as any)?.data
+          if (d?.length) {
+            const v = parseFloat(d[d.length-1].CapMVRVCur)
+            mvrvVal = isNaN(v) ? null : v
+          }
+        }
+        if (frRes.status === 'fulfilled') {
+          const v = parseFloat((frRes.value as any)?.fundingRate)
+          frVal = isNaN(v) ? null : v * 100
+        }
+
+        setFg(fgVal)
+        setBtcChange(btcChg)
+        setMvrv(mvrvVal)
+        setFunding(frVal)
+
+        // Compute composite score (0-100)
+        let s = 50
+        if (fgVal !== null && !isNaN(fgVal))     s += (fgVal - 50) * 0.35
+        if (btcChg !== null && !isNaN(btcChg))   s += Math.max(-15, Math.min(15, btcChg)) * 0.5
+        if (mvrvVal !== null && !isNaN(mvrvVal))  s += Math.max(-20, Math.min(20, (mvrvVal - 2) * 10))
+        if (frVal !== null && !isNaN(frVal))      s += Math.max(-10, Math.min(10, frVal * 50))
+        const finalScore = isNaN(s) ? null : Math.max(0, Math.min(100, Math.round(s)))
+        setScore(finalScore)
+        setLoading(false)
+      } catch { setLoading(false) }
+    }
+    load()
+  }, [symbol, isCrypto])
+
+  const regime: RegimeName = score === null ? 'Chargement…'
+    : score < 20 ? 'Capitulation'
+    : score < 35 ? 'Recovery'
+    : score < 55 ? 'Compression'
+    : score < 75 ? 'Expansion'
+    : 'Distribution'
+
+  const regimeColor: Record<RegimeName, string> = {
+    'Capitulation': '#FF3B30',
+    'Recovery':     '#FF9500',
+    'Compression':  '#8E8E93',
+    'Expansion':    '#34C759',
+    'Distribution': '#BF5AF2',
+    'Chargement…':  '#8E8E93',
+  }
+
+  const regimeDesc: Record<RegimeName, string> = {
+    'Capitulation': 'Panique généralisée · Zone d\'accumulation historique',
+    'Recovery':     'Reprise timide · Sentiment fragile en amélioration',
+    'Compression':  'Marché indécis · Attente d\'un catalyseur directionnel',
+    'Expansion':    'Momentum haussier · Sentiment favorable croissant',
+    'Distribution': 'Euphorie potentielle · Prudence recommandée',
+    'Chargement…':  '',
+  }
+
+  const scoreColor = score === null ? '#8E8E93'
+    : score < 20 ? '#FF3B30'
+    : score < 40 ? '#FF9500'
+    : score < 60 ? '#8E8E93'
+    : score < 80 ? '#34C759'
+    : '#BF5AF2'
+
+  const scoreLabel = score === null ? '—'
+    : score < 20 ? 'Extreme Fear'
+    : score < 40 ? 'Bearish'
+    : score < 60 ? 'Neutral'
+    : score < 80 ? 'Bullish'
+    : 'Euphoria'
+
+  const priceLabel = isCrypto ? symbol.replace('USDT','') : 'BTC'
+
+  // Signal Confluence
+  const signals: { label: string; signal: 'bullish'|'bearish'|'neutral' }[] = []
+  if (fg !== null) signals.push({ label:'Fear & Greed', signal: fg>60?'bullish':fg<40?'bearish':'neutral' })
+  if (btcChange !== null) signals.push({ label:`${priceLabel} 24h`, signal: btcChange>2?'bullish':btcChange<-2?'bearish':'neutral' })
+  if (mvrv !== null) signals.push({ label:'MVRV', signal: mvrv<1.5?'bullish':mvrv>3?'bearish':'neutral' })
+  if (funding !== null) signals.push({ label:'Funding', signal: funding<-0.01?'bullish':funding>0.03?'bearish':'neutral' })
+  const bullCount = signals.filter(s=>s.signal==='bullish').length
+  const bearCount = signals.filter(s=>s.signal==='bearish').length
+  const neutCount = signals.filter(s=>s.signal==='neutral').length
+
+  // Gauge arc
+  const R=55, CX=80, CY=70
+  function gArc(pct: number) {
+    const angle = (pct/100)*180 - 180
+    const rad   = angle * Math.PI/180
+    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${pct>50?1:0} 1 ${(CX+R*Math.cos(rad)).toFixed(1)} ${(CY+R*Math.sin(rad)).toFixed(1)}`
+  }
+
+  const CARD: React.CSSProperties = {
+    background:'rgba(8,12,22,0.9)', border:'1px solid rgba(255,255,255,0.08)',
+    borderRadius:16, padding:20, backdropFilter:'blur(12px)',
+  }
+
+  if (loading) return (
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+      {[1,2,3].map(i=><div key={i} style={{...CARD,height:160,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{width:20,height:20,borderRadius:'50%',border:'2px solid rgba(0,229,255,0.15)',borderTopColor:'#00E5FF',animation:'spin 0.8s linear infinite'}}/>
+      </div>)}
+    </div>
+  )
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+      {/* Card 1: Market Score */}
+      <div style={{ ...CARD, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,transparent,${scoreColor},transparent)` }}/>
+        <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>MARKET SCORE</div>
+        <div style={{ display:'flex', alignItems:'flex-end', gap:12 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:44, fontWeight:900, color:scoreColor, fontFamily:'Syne,sans-serif', lineHeight:1 }}>{score ?? '—'}</div>
+            <div style={{ fontSize:11, color:scoreColor, marginTop:4, fontWeight:700 }}>{scoreLabel}</div>
+            {/* Progress bar */}
+            <div style={{ height:4, borderRadius:2, background:'rgba(255,255,255,0.07)', marginTop:10, overflow:'hidden' }}>
+              <div style={{ height:'100%', borderRadius:2, width:`${score ?? 0}%`, background:`linear-gradient(90deg,#FF3B30,#FF9500,#8E8E93,#34C759,#BF5AF2)`, transition:'width 1s ease' }}/>
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+              <span style={{ fontSize:8, color:'#FF3B30', fontFamily:'JetBrains Mono,monospace' }}>0 Panique</span>
+              <span style={{ fontSize:8, color:'#BF5AF2', fontFamily:'JetBrains Mono,monospace' }}>100 Euphorie</span>
+            </div>
+          </div>
+          {/* Gauge */}
+          <svg viewBox="0 0 160 90" style={{ width:130, flexShrink:0 }}>
+            <path d={`M ${CX-R} ${CY} A ${R} ${R} 0 0 1 ${CX+R} ${CY}`} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={10}/>
+            {score!==null&&<path d={gArc(score)} fill="none" stroke={scoreColor} strokeWidth={10} strokeLinecap="round"/>}
+          </svg>
+        </div>
+      </div>
+
+      {/* Card 2: Market Regime */}
+      <div style={{ ...CARD, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,transparent,${regimeColor[regime]},transparent)` }}/>
+        <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>MARKET REGIME</div>
+        <div style={{ fontSize:32, fontWeight:900, color:regimeColor[regime], fontFamily:'Syne,sans-serif', lineHeight:1, marginBottom:8 }}>
+          {regime === 'Capitulation' ? '💔' : regime === 'Recovery' ? '🌱' : regime === 'Compression' ? '⚡' : regime === 'Expansion' ? '🚀' : regime === 'Distribution' ? '🎯' : '⏳'} {regime}
+        </div>
+        <div style={{ fontSize:11, color:'rgba(255,255,255,0.45)', lineHeight:1.5, marginBottom:12 }}>{regimeDesc[regime]}</div>
+        {/* Regime indicators */}
+        {[
+          { label:'FG Index', value: fg !== null ? `${fg}/100` : '—', positive: fg !== null && fg > 50 },
+          { label:`${priceLabel} 24h`, value: btcChange !== null ? `${btcChange>=0?'+':''}${btcChange.toFixed(2)}%` : '—', positive: btcChange !== null && btcChange >= 0 },
+          { label:'MVRV', value: mvrv !== null ? mvrv.toFixed(2) : '—', positive: mvrv !== null && mvrv < 2 },
+        ].map(item => (
+          <div key={item.label} style={{ display:'flex', justifyContent:'space-between', padding:'3px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+            <span style={{ fontSize:10, color:'rgba(255,255,255,0.35)' }}>{item.label}</span>
+            <span style={{ fontSize:10, fontWeight:700, color: item.positive ? '#34C759' : '#FF9500', fontFamily:'JetBrains Mono,monospace' }}>{item.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Card 3: Signal Confluence */}
+      <div style={{ ...CARD, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.6),transparent)' }}/>
+        <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>SIGNAL CONFLUENCE</div>
+        {/* Count badges */}
+        <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+          {[
+            { count: bullCount, label:'Haussier', color:'#34C759', bg:'rgba(52,199,89,0.12)' },
+            { count: bearCount, label:'Baissier', color:'#FF3B30', bg:'rgba(255,59,48,0.12)' },
+            { count: neutCount, label:'Neutre', color:'#8E8E93', bg:'rgba(142,142,147,0.1)' },
+          ].map(b => (
+            <div key={b.label} style={{ flex:1, textAlign:'center', background:b.bg, border:`1px solid ${b.color}33`, borderRadius:10, padding:'8px 4px' }}>
+              <div style={{ fontSize:24, fontWeight:900, color:b.color, fontFamily:'Syne,sans-serif', lineHeight:1 }}>{b.count}</div>
+              <div style={{ fontSize:9, color:'rgba(255,255,255,0.4)', marginTop:3, fontWeight:600 }}>{b.label}</div>
+            </div>
+          ))}
+        </div>
+        {/* Individual signals */}
+        <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+          {signals.map(s => (
+            <div key={s.label} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 8px', borderRadius:7, background:'rgba(255,255,255,0.02)' }}>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,0.4)' }}>{s.label}</span>
+              <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:5,
+                background: s.signal==='bullish' ? 'rgba(52,199,89,0.15)' : s.signal==='bearish' ? 'rgba(255,59,48,0.15)' : 'rgba(142,142,147,0.1)',
+                color: s.signal==='bullish' ? '#34C759' : s.signal==='bearish' ? '#FF3B30' : '#8E8E93',
+              }}>
+                {s.signal === 'bullish' ? '▲ BULL' : s.signal === 'bearish' ? '▼ BEAR' : '● NEUT'}
+              </span>
+            </div>
+          ))}
+        </div>
+        {/* Overall bias */}
+        {signals.length > 0 && (
+          <div style={{ marginTop:12, padding:'8px 12px', borderRadius:10,
+            background: bullCount > bearCount ? 'rgba(52,199,89,0.08)' : bearCount > bullCount ? 'rgba(255,59,48,0.08)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${bullCount>bearCount?'rgba(52,199,89,0.2)':bearCount>bullCount?'rgba(255,59,48,0.2)':'rgba(255,255,255,0.08)'}`,
+          }}>
+            <span style={{ fontSize:11, fontWeight:700, color: bullCount>bearCount?'#34C759':bearCount>bullCount?'#FF3B30':'#8E8E93' }}>
+              {bullCount > bearCount ? '✅ Biais Haussier' : bearCount > bullCount ? '⚠️ Biais Baissier' : '⚖️ Marché Neutre'}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── NUPL Chart (approx: 1 - 1/MVRV from CoinMetrics) ──────────────────────
+function NUPLChart() {
+  const [data, setData]     = useState<{ date:string; nupl:number }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    const start = new Date(Date.now() - 365*86_400_000).toISOString().slice(0,10)
+    fetch(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${start}`)
+      .then(r => r.json())
+      .then((d: { data?: { time:string; CapMVRVCur:string }[] }) => {
+        const pts = (d.data ?? []).map(x => {
+          const mvrv = parseFloat(x.CapMVRVCur)
+          return { date: x.time.slice(0,10), nupl: !isNaN(mvrv) && mvrv > 0 ? 1 - 1/mvrv : 0 }
+        }).filter(x => !isNaN(x.nupl))
+        setData(pts); setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const W = 720, H = 130, PAD = { t:12, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  const minN = -0.5, maxN = 1.0
+  function yPx(v: number) { return PAD.t + cH - ((v-minN)/(maxN-minN))*cH }
+  function xPx(i: number) { return PAD.l + (i/(data.length-1||1))*cW }
+  const pts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.nupl).toFixed(1)}`).join(' ')
+  const curNupl = data[data.length-1]?.nupl ?? null
+  const nColor = curNupl===null ? '#8E8E93' : curNupl < 0 ? '#FF3B30' : curNupl < 0.25 ? '#FF9500' : curNupl < 0.5 ? '#34C759' : curNupl < 0.75 ? '#0A85FF' : '#BF5AF2'
+  const nLabel = curNupl===null ? '' : curNupl < 0 ? 'Capitulation' : curNupl < 0.25 ? 'Hope/Fear' : curNupl < 0.5 ? 'Optimism' : curNupl < 0.75 ? 'Belief/Denial' : 'Euphoria'
+
+  const zones: [number,number,string,string][] = [
+    [-0.5, 0,    'rgba(255,59,48,0.12)',   'Capitulation'],
+    [0,    0.25, 'rgba(255,149,0,0.08)',   'Hope'],
+    [0.25, 0.5,  'rgba(52,199,89,0.08)',   'Optimism'],
+    [0.5,  0.75, 'rgba(10,133,255,0.08)',  'Belief'],
+    [0.75, 1.0,  'rgba(191,90,242,0.12)',  'Euphoria'],
+  ]
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={nColor}
+        title="NUPL — Net Unrealized Profit/Loss"
+        sub="Profit/perte non réalisé du réseau Bitcoin · Calculé via MVRV (CoinMetrics)"
+        value={curNupl !== null ? curNupl.toFixed(3) : undefined}
+        valueSub={nLabel}
+      />
+      <div style={{ display:'flex', gap:12, marginBottom:10, flexWrap:'wrap' }}>
+        {zones.map(([,, bg, label]) => (
+          <div key={label} style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <div style={{ width:10, height:8, borderRadius:2, background:bg, border:'1px solid rgba(255,255,255,0.1)' }}/>
+            <span style={{ fontSize:9, color:'rgba(255,255,255,0.4)' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{ textAlign:'center', padding:32, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données indisponibles</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block', cursor:'crosshair' }}
+          onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+            setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+          }}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          <defs>
+            <linearGradient id="nupl-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={nColor} stopOpacity="0.3"/>
+              <stop offset="100%" stopColor={nColor} stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          {zones.map(([lo, hi, bg]) => (
+            <rect key={lo} x={PAD.l} y={yPx(hi)} width={cW} height={yPx(lo)-yPx(hi)} fill={bg}/>
+          ))}
+          {[0, 0.25, 0.5, 0.75].map(v => (
+            <line key={v} x1={PAD.l} y1={yPx(v)} x2={PAD.l+cW} y2={yPx(v)} stroke="rgba(255,255,255,0.08)" strokeWidth={1} strokeDasharray="4 3"/>
+          ))}
+          {[-0.5, 0, 0.5, 1.0].map(v => (
+            <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}</text>
+          ))}
+          {[0, 0.25, 0.5, 0.75, 1].map(f => {
+            const idx = Math.min(data.length-1, Math.round(f*(data.length-1)))
+            return <text key={f} x={xPx(idx)} y={H-4} textAnchor="middle" fill="rgba(255,255,255,0.2)" fontSize={8} fontFamily="JetBrains Mono,monospace">{data[idx]?.date.slice(5)}</text>
+          })}
+          <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill="url(#nupl-grad)"/>
+          <polyline points={pts} fill="none" stroke={nColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+          {curNupl !== null && (
+            <circle cx={xPx(data.length-1)} cy={yPx(curNupl)} r={4} fill={nColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+          )}
+          {/* Crosshair */}
+          {hoverIdx !== null && data[hoverIdx] && (() => {
+            const d = data[hoverIdx]
+            const cx = xPx(hoverIdx)
+            return (
+              <g>
+                <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                <circle cx={cx} cy={yPx(d.nupl)} r={4} fill={nColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+              </g>
+            )
+          })()}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+// ── Momentum Composite (RSI + Rate of Change + MA Slope) ──────────────────
+function MomentumCompositeChart({ symbol, isCrypto }: { symbol: string; isCrypto: boolean }) {
+  type Pt = { date: string; rsi: number; roc: number; maSlope: number; score: number }
+  const [data, setData]     = useState<Pt[]>([])
+  const [loading, setLoading] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchCloses(symbol, isCrypto, 200)
+      .then(closes => {
+        const pts: Pt[] = []
+        for (let i = 30; i < closes.length; i++) {
+          // RSI(14) normalized 0-1
+          const slice14 = closes.slice(i-14, i+1)
+          const gains: number[] = [], losses: number[] = []
+          for (let j = 1; j < slice14.length; j++) {
+            const d = slice14[j] - slice14[j-1]
+            if (d > 0) gains.push(d); else losses.push(Math.abs(d))
+          }
+          const avgGain = gains.length ? gains.reduce((a,b)=>a+b,0)/14 : 0
+          const avgLoss = losses.length ? losses.reduce((a,b)=>a+b,0)/14 : 0.001
+          const rs = avgGain/avgLoss
+          const rsiRaw = 100 - (100/(1+rs))
+          const rsiNorm = rsiRaw / 100
+
+          // Rate of Change (20) normalized 0-1
+          const roc20 = closes[i-20] ? ((closes[i] - closes[i-20]) / closes[i-20]) : 0
+          const rocNorm = Math.max(0, Math.min(1, (roc20 + 0.5) / 1))
+
+          // MA Slope: 20-day MA slope normalized
+          const ma20 = closes.slice(i-19, i+1).reduce((a,b)=>a+b,0)/20
+          const ma20Prev = closes.slice(i-20, i).reduce((a,b)=>a+b,0)/20
+          const slope = ma20Prev > 0 ? (ma20 - ma20Prev) / ma20Prev : 0
+          const slopeNorm = Math.max(0, Math.min(1, (slope + 0.02) / 0.04))
+
+          // Composite score (0-100)
+          const score = Math.round((rsiNorm * 0.4 + rocNorm * 0.35 + slopeNorm * 0.25) * 100)
+          pts.push({ date: `D${i}`, rsi:rsiRaw, roc:roc20*100, maSlope:slope*100, score })
+        }
+        setData(pts); setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [symbol, isCrypto])
+
+  const W = 720, H = 120, PAD = { t:10, b:24, l:44, r:12 }
+  const cW = W - PAD.l - PAD.r
+  const cH = H - PAD.t - PAD.b
+  function yPx(v: number) { return PAD.t + cH - (v/100)*cH }
+  function xPx(i: number) { return PAD.l + (i/(data.length-1||1))*cW }
+  const pts = data.map((d,i) => `${xPx(i).toFixed(1)},${yPx(d.score).toFixed(1)}`).join(' ')
+  const curPt = data[data.length-1]
+  const mColor = curPt ? (curPt.score > 70 ? '#34C759' : curPt.score > 50 ? '#0A85FF' : curPt.score > 30 ? '#FF9500' : '#FF3B30') : '#8E8E93'
+  const mLabel = curPt ? (curPt.score > 70 ? 'Fort momentum' : curPt.score > 50 ? 'Momentum positif' : curPt.score > 30 ? 'Momentum faible' : 'Momentum négatif') : ''
+
+  return (
+    <div style={CARD_STYLE}>
+      <CardHeader
+        color={mColor}
+        title="Momentum Composite"
+        sub={`RSI (40%) + Rate of Change (35%) + Pente MA (25%) — ${symbol}`}
+        value={curPt ? `${curPt.score}/100` : undefined}
+        valueSub={mLabel}
+      />
+      {loading ? <Spinner/> : data.length < 2 ? (
+        <div style={{ textAlign:'center', padding:32, color:'rgba(255,255,255,0.3)', fontSize:13 }}>Données insuffisantes</div>
+      ) : (
+        <>
+          {/* Component breakdown */}
+          {curPt && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:12 }}>
+              {[
+                { label:'RSI', value:`${curPt.rsi.toFixed(0)}`, color:curPt.rsi>60?'#34C759':curPt.rsi<40?'#FF3B30':'#FF9500' },
+                { label:'ROC 20j', value:`${curPt.roc>=0?'+':''}${curPt.roc.toFixed(1)}%`, color:curPt.roc>=0?'#34C759':'#FF3B30' },
+                { label:'MA Slope', value:`${curPt.maSlope>=0?'+':''}${curPt.maSlope.toFixed(3)}%`, color:curPt.maSlope>=0?'#34C759':'#FF3B30' },
+              ].map(c => (
+                <div key={c.label} style={{ background:'rgba(255,255,255,0.03)', borderRadius:8, padding:'8px 10px', textAlign:'center' }}>
+                  <div style={{ fontSize:9, color:'rgba(255,255,255,0.3)', marginBottom:3, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.08em' }}>{c.label}</div>
+                  <div style={{ fontSize:14, fontWeight:800, color:c.color, fontFamily:'JetBrains Mono,monospace' }}>{c.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block', cursor:'crosshair' }}
+            onMouseMove={(e: React.MouseEvent<SVGSVGElement>) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const idx = Math.round(((e.clientX - rect.left) / rect.width * W - PAD.l) / cW * (data.length - 1))
+              setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)))
+            }}
+            onMouseLeave={() => setHoverIdx(null)}
+          >
+            <defs>
+              <linearGradient id={`mom-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={mColor} stopOpacity="0.3"/>
+                <stop offset="100%" stopColor={mColor} stopOpacity="0.02"/>
+              </linearGradient>
+            </defs>
+            {/* 50 midline */}
+            <line x1={PAD.l} y1={yPx(50)} x2={PAD.l+cW} y2={yPx(50)} stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="4 3"/>
+            {[0,25,50,75,100].map(v => (
+              <text key={v} x={PAD.l-4} y={yPx(v)+4} textAnchor="end" fill="rgba(255,255,255,0.2)" fontSize={8} fontFamily="JetBrains Mono,monospace">{v}</text>
+            ))}
+            <polygon points={`${PAD.l},${yPx(0)} ${pts} ${xPx(data.length-1)},${yPx(0)}`} fill={`url(#mom-grad-${symbol})`}/>
+            <polyline points={pts} fill="none" stroke={mColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+            {curPt && (
+              <circle cx={xPx(data.length-1)} cy={yPx(curPt.score)} r={4} fill={mColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+            )}
+            {/* Crosshair */}
+            {hoverIdx !== null && data[hoverIdx] && (() => {
+              const d = data[hoverIdx]
+              const cx = xPx(hoverIdx)
+              return (
+                <g>
+                  <line x1={cx} y1={PAD.t} x2={cx} y2={PAD.t+cH} stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="3 3"/>
+                  <circle cx={cx} cy={yPx(d.score)} r={4} fill={mColor} stroke="rgba(8,12,22,0.8)" strokeWidth={2}/>
+                </g>
+              )
+            })()}
+          </svg>
+        </>
+      )}
     </div>
   )
 }

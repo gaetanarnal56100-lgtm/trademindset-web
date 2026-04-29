@@ -256,7 +256,7 @@ function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:
 }
 
 // ── Draw oscillator ───────────────────────────────────────────────────────
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,vpiData?:number[],compressionArr?:boolean[]) {
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,vpiData?:number[],compressionArr?:boolean[],rightMarginFrac=0) {
   // Resolve canvas-unsafe CSS vars to real colors
   const resolvedSignal = signalColor.startsWith('var(') ? resolveCSSColor(signalColor.replace(/^var\((.+)\)$/,'$1'),'#F59714') : signalColor
   const resolvedBg = resolveCSSColor('--tm-bg','#0D1117')
@@ -272,7 +272,9 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   const allVals=[...m,...s,...h,obLevel,osLevel,0]
   const minV=Math.min(...allVals)*1.1,maxV=Math.max(...allVals)*1.1,range=maxV-minV||1
   const yp=(v:number)=>oscH-((v-minV)/range)*oscH
-  const xp=(i:number)=>m.length>1?(i/(m.length-1))*W:W/2
+  // drawW: canvas width minus right margin — last bar lands at drawW exactly (mirrors LW)
+  const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
+  const xp=(i:number)=>m.length>1?(i/(m.length-1))*drawW:drawW/2
 
   // Background zones
   ctx.fillStyle=`rgba(255,59,48,0.06)`;ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
@@ -379,7 +381,7 @@ function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW,
 }
 
 // ── Viewport type ─────────────────────────────────────────────────────────
-interface Viewport { from: number; to: number }  // fractions 0-1
+interface Viewport { from: number; to: number; rawTo?: number }  // fractions 0-1, rawTo may exceed 1 (LW right margin)
 
 // ── Interactive canvas hook (viewport-aware, wheel+drag) ──────────────────
 function useInteractiveCanvas(
@@ -452,7 +454,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -485,14 +487,23 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      setViewport({ from: visibleRange.from, to: visibleRange.to })
+      // rawTo may exceed 1 (LW right margin) — preserve it for alignment
+      setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
   }, [visibleRange, candles.length])
 
   const total     = candles.length
   const viewStart = total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
-  const viewEnd   = total > 0 ? Math.min(total, Math.ceil(viewport.to   * total)) : 0
+  const viewEnd   = total > 0 ? Math.min(total, Math.ceil(Math.min(viewport.to, 1) * total)) : 0
   const viewSize  = Math.max(viewEnd - viewStart, 2)
+  // rightMarginFrac: fraction of canvas width reserved for empty space after last visible bar (mirrors LW)
+  const rawTo = viewport.rawTo ?? viewport.to
+  const inPlotMargin = rawTo > 1 && (rawTo - viewport.from) > 0
+    ? Math.min(0.2, (rawTo - 1) / (rawTo - viewport.from))
+    : 0
+  const areaRatio = visibleRange?.areaRatio ?? 1
+  // rightMarginFrac combines: price-axis width (1 - areaRatio) + empty bars after last candle (inPlotMargin * areaRatio)
+  const rightMarginFrac = (1 - areaRatio) + inPlotMargin * areaRatio
 
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
@@ -500,8 +511,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd)
-    }, [result, viewStart, viewEnd], viewSize, viewport, setViewport
+      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd,undefined,undefined,rightMarginFrac)
+    }, [result, viewStart, viewEnd, rightMarginFrac], viewSize, viewport, setViewport
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -556,7 +567,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null; onStatusReady?: (status: string, sig: number) => void }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -591,14 +602,20 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      setViewport({ from: visibleRange.from, to: visibleRange.to })
+      setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
   }, [visibleRange, candles.length])
 
   const vmcTotal     = candles.length
   const vmcViewStart = vmcTotal > 0 ? Math.max(0, Math.floor(viewport.from * vmcTotal)) : 0
-  const vmcViewEnd   = vmcTotal > 0 ? Math.min(vmcTotal, Math.ceil(viewport.to   * vmcTotal)) : 0
+  const vmcViewEnd   = vmcTotal > 0 ? Math.min(vmcTotal, Math.ceil(Math.min(viewport.to, 1) * vmcTotal)) : 0
   const vmcViewSize  = Math.max(vmcViewEnd - vmcViewStart, 2)
+  const vmcRawTo = viewport.rawTo ?? viewport.to
+  const vmcInPlotMargin = vmcRawTo > 1 && (vmcRawTo - viewport.from) > 0
+    ? Math.min(0.2, (vmcRawTo - 1) / (vmcRawTo - viewport.from))
+    : 0
+  const vmcAreaRatio = visibleRange?.areaRatio ?? 1
+  const vmcRightMargin = (1 - vmcAreaRatio) + vmcInPlotMargin * vmcAreaRatio
 
   const lastSig=result?.sig[result.sig.length-1]??0, lastMom=result?.momentum[result.momentum.length-1]??0
   const statusColor=result?.status==='BUY'?'var(--tm-profit)':result?.status==='SELL'?'var(--tm-loss)':result?.status==='OVERBOUGHT'?'var(--tm-loss)':result?.status==='OVERSOLD'?'var(--tm-profit)':'var(--tm-text-secondary)'
@@ -623,8 +640,8 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel], vmcViewSize, viewport, setViewport
+      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr,vmcRightMargin)
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin], vmcViewSize, viewport, setViewport
   )
 
   return (
@@ -807,7 +824,8 @@ function drawRSIBollinger(
   ctx: CanvasRenderingContext2D, W: number, H: number,
   result: RSIBBResult, hoverIdx: number | null,
   viewStart: number, viewEnd: number,
-  showTrendlines: boolean, showDivergence: boolean
+  showTrendlines: boolean, showDivergence: boolean,
+  rightMarginFrac = 0
 ) {
   ctx.fillStyle = resolveCSSColor('--tm-bg', '#0D1117'); ctx.fillRect(0, 0, W, H)
   const { rsi, basis, upper, lower, disp_up, disp_down, trendlines, divBull, divBear, tpUpperBars, tpLowerBars } = result
@@ -823,7 +841,8 @@ function drawRSIBollinger(
 
   const pad = { top: 8, bot: 8 }
   const oscH = H - pad.top - pad.bot
-  const xp    = (i: number) => n > 1 ? (i / (n - 1)) * W : W / 2
+  const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
+  const xp    = (i: number) => n > 1 ? (i / (n - 1)) * drawW : drawW / 2
   const yp    = (v: number) => pad.top + oscH * (1 - Math.max(0, Math.min(100, v)) / 100)
   const xpAbs = (abs: number) => xp(abs - si)
 
@@ -940,7 +959,7 @@ function drawRSIBollinger(
 }
 
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
-export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles]         = useState<Candle[]>([])
@@ -975,18 +994,24 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symb
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      setViewport({ from: visibleRange.from, to: visibleRange.to })
+      setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
   }, [visibleRange, candles.length])
 
   const total     = candles.length
   const viewStart = total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
-  const viewEnd   = total > 0 ? Math.min(total, Math.ceil(viewport.to * total)) : 0
+  const viewEnd   = total > 0 ? Math.min(total, Math.ceil(Math.min(viewport.to, 1) * total)) : 0
   const viewSize  = Math.max(viewEnd - viewStart, 2)
+  const rsbRawTo = viewport.rawTo ?? viewport.to
+  const rsbInPlotMargin = rsbRawTo > 1 && (rsbRawTo - viewport.from) > 0
+    ? Math.min(0.2, (rsbRawTo - 1) / (rsbRawTo - viewport.from))
+    : 0
+  const rsbAreaRatio = visibleRange?.areaRatio ?? 1
+  const rsbRightMargin = (1 - rsbAreaRatio) + rsbInPlotMargin * rsbAreaRatio
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
-    (ctx, W, H, hi) => { if (result) drawRSIBollinger(ctx, W, H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence) },
-    [result, viewStart, viewEnd, showTrendlines, showDivergence], viewSize, viewport, setViewport
+    (ctx, W, H, hi) => { if (result) drawRSIBollinger(ctx, W, H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin) },
+    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin], viewSize, viewport, setViewport
   )
 
   const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
@@ -1144,14 +1169,15 @@ function calcRSI(candles: Candle[], period = 14): number[] {
 }
 
 // ── RSI Canvas draw ──────────────────────────────────────────────────────────
-function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: number[], obLevel: number, osLevel: number, hoverIdx: number | null, viewStart?: number, viewEnd?: number) {
+function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: number[], obLevel: number, osLevel: number, hoverIdx: number | null, viewStart?: number, viewEnd?: number, rightMarginFrac = 0) {
   const pad = { top: 8, bottom: 8 }
   const oscH = H - pad.top - pad.bottom
   const startIdx = viewStart !== undefined ? viewStart : Math.max(0, rsiData.length - 150)
   const endIdx   = viewEnd   !== undefined ? Math.min(viewEnd, rsiData.length) : rsiData.length
   const data = rsiData.slice(startIdx, endIdx)
   const n = data.length
-  const xp = (i: number) => n > 1 ? (i / (n - 1)) * W : W / 2
+  const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
+  const xp = (i: number) => n > 1 ? (i / (n - 1)) * drawW : drawW / 2
   const yp = (v: number) => pad.top + oscH * (1 - v / 100)
 
   ctx.clearRect(0, 0, W, H)
@@ -1216,7 +1242,7 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 }
 
 // ── RSI Chart Component ──────────────────────────────────────────────────────
-export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number}|null }) {
+export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -1248,14 +1274,20 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
       const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
     } else {
-      setViewport({ from: visibleRange.from, to: visibleRange.to })
+      setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
   }, [visibleRange, candles.length])
 
   const rsiTotal     = candles.length
   const rsiViewStart = rsiTotal > 0 ? Math.max(0, Math.floor(viewport.from * rsiTotal)) : 0
-  const rsiViewEnd   = rsiTotal > 0 ? Math.min(rsiTotal, Math.ceil(viewport.to   * rsiTotal)) : 0
+  const rsiViewEnd   = rsiTotal > 0 ? Math.min(rsiTotal, Math.ceil(Math.min(viewport.to, 1) * rsiTotal)) : 0
   const rsiViewSize  = Math.max(rsiViewEnd - rsiViewStart, 2)
+  const rsiRawTo = viewport.rawTo ?? viewport.to
+  const rsiInPlotMargin = rsiRawTo > 1 && (rsiRawTo - viewport.from) > 0
+    ? Math.min(0.2, (rsiRawTo - 1) / (rsiRawTo - viewport.from))
+    : 0
+  const rsiAreaRatio = visibleRange?.areaRatio ?? 1
+  const rsiRightMargin = (1 - rsiAreaRatio) + rsiInPlotMargin * rsiAreaRatio
 
   const lastRsi = rsiData.length > 0 ? rsiData[rsiData.length - 1] : 50
   const badge = lastRsi >= obLevel ? { label: 'Suracheté', color: 'var(--tm-loss)' }
@@ -1265,8 +1297,8 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
     : { label: 'Neutre', color: 'var(--tm-text-secondary)' }
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
-    (ctx, W, H, hi) => { drawRSI(ctx, W, H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd) },
-    [rsiData, rsiViewStart, rsiViewEnd], rsiViewSize, viewport, setViewport
+    (ctx, W, H, hi) => { drawRSI(ctx, W, H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd, rsiRightMargin) },
+    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin], rsiViewSize, viewport, setViewport
   )
 
   return (
