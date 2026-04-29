@@ -14,7 +14,6 @@ import MarchesPage    from '@/pages/marches/MarchesPage'
 import JournalPage    from '@/pages/journal/JournalPage'
 import AlertesPage    from '@/pages/alertes/AlertesPage'
 import CalendrierPage from '@/pages/calendrier/CalendrierPage'
-import SystemesPage   from '@/pages/systemes/SystemesPage'
 import ProfilPage     from '@/pages/profil/ProfilPage'
 import SettingsPage   from '@/pages/settings/SettingsPage'
 import ExchangesPage  from '@/pages/exchanges/ExchangesPage'
@@ -25,7 +24,6 @@ import PredictPage   from '@/pages/predict/PredictPage'
 import WhaleAlertsPage from '@/pages/whales/WhaleAlertsPage'
 import ChartsPage     from '@/pages/charts/ChartsPage'
 import ChartDetailPage from '@/pages/charts/ChartDetailPage'
-import MultiAssetAnalytics from '@/pages/analytics/MultiAssetAnalytics'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
 import { ThemeProvider, getStoredTheme } from '@/contexts/ThemeContext'
 import { LanguageProvider } from '@/contexts/LanguageContext'
@@ -67,7 +65,7 @@ export default function App() {
         <Route path="journal"          element={<JournalPage />} />
         <Route path="alertes"          element={<AlertesPage />} />
         <Route path="calendrier"       element={<CalendrierPage />} />
-        <Route path="systemes"         element={<SystemesPage />} />
+
         <Route path="profil"           element={<ProfilPage />} />
         <Route path="settings"         element={<SettingsPage />} />
         <Route path="exchanges"        element={<ExchangesPage />} />
@@ -78,7 +76,7 @@ export default function App() {
         <Route path="whales"           element={<WhaleAlertsPage />} />
         <Route path="charts"           element={<ChartsPage />} />
         <Route path="charts/:id"       element={<ChartDetailPage />} />
-        <Route path="multi-asset"      element={<MultiAssetAnalytics />} />
+        {/* multi-asset & systemes : fusionnés dans marchés et trades */}
       </Route>
 
       {/* ── Fallback ── */}

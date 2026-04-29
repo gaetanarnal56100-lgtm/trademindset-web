@@ -8,6 +8,13 @@ import {
   tradePnL, type Trade, type TradingSystem, type Exchange
 } from '@/services/firestore'
 import { TradeDetailModal } from '@/components/trades/TradeDetailModal'
+import ExchangeSyncModal, { cfSync, type Exchange as ExchangeId } from '@/pages/journal/ExchangeSyncModal'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/services/firebase/config'
+import SystemesPage from '@/pages/systemes/SystemesPage'
+
+const cfGetStatus = httpsCallable<{ exchange: ExchangeId }, { connected: boolean }>(functions, 'getExchangeKeyStatus')
+const ALL_EXCHANGES: ExchangeId[] = ['binance', 'bybit', 'okx', 'kucoinfutures', 'bitget', 'oanda', 'alpaca']
 
 // ── Asset Panel ────────────────────────────────────────────────────────────
 export interface AssetTicker {
@@ -228,14 +235,18 @@ function fmtPnL(n: number) {
 export default function TradesPage() {
   const { t } = useTranslation()
   const user = useAppStore(s => s.user)
+  const [mainTab, setMainTab] = useState<'trades' | 'strategies'>('trades')
   const [trades,  setTrades]  = useState<Trade[]>([])
   const [systems, setSystems] = useState<TradingSystem[]>([])
   const [loading, setLoading] = useState(true)
   const [filter,  setFilter]  = useState<'all'|'open'|'closed'>('all')
   const [search,  setSearch]  = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [showExchangeSync, setShowExchangeSync] = useState(false)
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null)
+  const [lastAutoSync, setLastAutoSync] = useState<number | null>(null)
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -243,6 +254,23 @@ export default function TradesPage() {
     const unsubS = subscribeSystems(setSystems)
     const unsubE = subscribeExchanges(setExchanges)
     return () => { unsubT(); unsubS(); unsubE() }
+  }, [user])
+
+  // Auto-sync toutes les 30s pour les exchanges API connectés
+  useEffect(() => {
+    if (!user) return
+    const runSync = async () => {
+      try {
+        const statusResults = await Promise.all(ALL_EXCHANGES.map(ex => cfGetStatus({ exchange: ex }).catch(() => ({ data: { connected: false } }))))
+        const connected = ALL_EXCHANGES.filter((_, i) => statusResults[i].data.connected)
+        if (connected.length === 0) return
+        await Promise.allSettled(connected.map(ex => cfSync({ exchange: ex })))
+        setLastAutoSync(Date.now())
+      } catch { /* silent */ }
+    }
+    runSync()
+    syncIntervalRef.current = setInterval(runSync, 30_000)
+    return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current) }
   }, [user])
 
   const filtered = trades
@@ -320,6 +348,43 @@ export default function TradesPage() {
 
   return (
     <div style={{ padding:24, maxWidth:1600, margin:'0 auto' }}>
+      {/* ── Tab navigation ── */}
+      <div style={{ display:'flex', gap:6, marginBottom:20 }}>
+        {([
+          { id: 'trades' as const,     label: `${t('nav.trades')}`,   icon: '📋' },
+          { id: 'strategies' as const, label: 'Stratégies',           icon: '🎯' },
+        ]).map(({ id, label, icon }) => {
+          const active = mainTab === id
+          return (
+            <button key={id} onClick={() => setMainTab(id)} style={{
+              padding: '8px 20px', borderRadius: '10px 10px 0 0', border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: active ? 700 : 500,
+              background: active ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.02)',
+              color: active ? 'var(--tm-accent)' : 'rgba(148,163,184,0.5)',
+              borderTop:    `1px solid ${active ? 'rgba(0,229,255,0.4)' : 'rgba(255,255,255,0.06)'}`,
+              borderLeft:   `1px solid ${active ? 'rgba(0,229,255,0.4)' : 'rgba(255,255,255,0.06)'}`,
+              borderRight:  `1px solid ${active ? 'rgba(0,229,255,0.4)' : 'rgba(255,255,255,0.06)'}`,
+              borderBottom: active ? '2px solid var(--tm-accent)' : '2px solid transparent',
+              boxShadow: active ? '0 -4px 16px rgba(0,229,255,0.1)' : 'none',
+              transition: 'all 0.2s',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <span>{icon}</span><span>{label}</span>
+            </button>
+          )
+        })}
+        <div style={{ flex:1, height:1, alignSelf:'flex-end', background:'rgba(255,255,255,0.06)', marginBottom:2 }} />
+      </div>
+
+      {/* ── Stratégies tab ── */}
+      {mainTab === 'strategies' && (
+        <div style={{ background:'rgba(8,12,22,0.75)', border:'1px solid rgba(0,229,255,0.1)', borderTop:'none', borderRadius:'0 12px 12px 12px', padding:'20px 20px 24px', backdropFilter:'blur(12px)' }}>
+          <SystemesPage />
+        </div>
+      )}
+
+      {/* ── Trades tab ── */}
+      {mainTab === 'trades' && (<>
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
         <div>
@@ -329,6 +394,9 @@ export default function TradesPage() {
           </p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
+          <button onClick={() => setShowExchangeSync(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid rgba(255,149,0,0.3)', background:'rgba(255,149,0,0.06)', color:'#FF9500', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            📥 Importer via API
+          </button>
           <button onClick={() => setShowImport(true)} style={{ padding:'8px 16px', borderRadius:10, border:'1px solid #2A2F3E', background:'var(--tm-bg-secondary)', color:'var(--tm-warning)', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
             {t('trades.importCSV')}
           </button>
@@ -512,6 +580,7 @@ export default function TradesPage() {
 
       {showAdd && <AddTradeModal systems={systems} onClose={() => setShowAdd(false)} />}
       {showImport && <ImportCSVModal onClose={() => setShowImport(false)} />}
+      {showExchangeSync && <ExchangeSyncModal onClose={() => setShowExchangeSync(false)} />}
       {selectedTrade && (
         <TradeDetailModal
           trade={selectedTrade}
@@ -521,6 +590,7 @@ export default function TradesPage() {
           onDeleted={() => setSelectedTrade(null)}
         />
       )}
+      </>)}
     </div>
   )
 }

@@ -14,6 +14,7 @@ import app from '@/services/firebase/config'
 import RsiHeatmap from '@/pages/analyse/RsiHeatmap'
 import type { TokenRSI, Timeframe } from '@/pages/analyse/RsiHeatmap'
 import AssetDetailSheet from './AssetDetailSheet'
+import MultiAssetAnalytics from '@/pages/analytics/MultiAssetAnalytics'
 
 const fbFunctions = getFunctions(app, 'europe-west1')
 
@@ -30,11 +31,11 @@ type TokenRSIWithDiv = TokenRSI & {
 }
 
 type CryptoSubset   = 'all' | 'top50' | 'alts'
-type StockSubset    = 'all' | 'us' | 'europe' | 'cac40' | 'dax' | 'ftse' | 'asia' | 'etf'
+type StockSubset    = 'all' | 'us' | 'europe' | 'cac40' | 'dax' | 'ftse' | 'asia' | 'etf' | 'brics' | 'reit' | 'biotech' | 'canada'
 type CryptoRef      = 'none' | 'btc' | 'eth' | 'top10avg'
 type StockRef       = 'none' | 'spy' | 'qqq' | 'cac40avg' | 'sp500avg'
 type StrengthFilter = 'all' | 'stronger' | 'weaker'
-type Tab            = 'crypto' | 'actions' | 'forex'
+type Tab            = 'crypto' | 'actions' | 'forex' | 'multiasset'
 
 // ── Screener ─────────────────────────────────────────────────────────────────
 
@@ -72,43 +73,74 @@ const FOREX_ASSETS: ForexAsset[] = [
   { symbol: 'GBPJPY=X', displaySym: 'GBPJPY', label: 'GBP/JPY', group: 'Forex' },
   { symbol: 'EURCHF=X', displaySym: 'EURCHF', label: 'EUR/CHF', group: 'Forex' },
   { symbol: 'AUDJPY=X', displaySym: 'AUDJPY', label: 'AUD/JPY', group: 'Forex' },
+  { symbol: 'EURAUD=X', displaySym: 'EURAUD', label: 'EUR/AUD', group: 'Forex' },
+  { symbol: 'EURCAD=X', displaySym: 'EURCAD', label: 'EUR/CAD', group: 'Forex' },
+  { symbol: 'GBPAUD=X', displaySym: 'GBPAUD', label: 'GBP/AUD', group: 'Forex' },
+  { symbol: 'CADJPY=X', displaySym: 'CADJPY', label: 'CAD/JPY', group: 'Forex' },
+  { symbol: 'CHFJPY=X', displaySym: 'CHFJPY', label: 'CHF/JPY', group: 'Forex' },
+  { symbol: 'NZDJPY=X', displaySym: 'NZDJPY', label: 'NZD/JPY', group: 'Forex' },
   // ── Exotiques ──
   { symbol: 'USDMXN=X', displaySym: 'USDMXN', label: 'USD/MXN', group: 'Forex' },
   { symbol: 'USDNOK=X', displaySym: 'USDNOK', label: 'USD/NOK', group: 'Forex' },
   { symbol: 'USDSEK=X', displaySym: 'USDSEK', label: 'USD/SEK', group: 'Forex' },
   { symbol: 'USDSGD=X', displaySym: 'USDSGD', label: 'USD/SGD', group: 'Forex' },
+  { symbol: 'USDBRL=X', displaySym: 'USDBRL', label: 'USD/BRL', group: 'Forex' },
+  { symbol: 'USDTRY=X', displaySym: 'USDTRY', label: 'USD/TRY', group: 'Forex' },
+  { symbol: 'USDZAR=X', displaySym: 'USDZAR', label: 'USD/ZAR', group: 'Forex' },
+  { symbol: 'USDPLN=X', displaySym: 'USDPLN', label: 'USD/PLN', group: 'Forex' },
+  { symbol: 'USDHUF=X', displaySym: 'USDHUF', label: 'USD/HUF', group: 'Forex' },
+  { symbol: 'USDCZK=X', displaySym: 'USDCZK', label: 'USD/CZK', group: 'Forex' },
+  { symbol: 'USDTHB=X', displaySym: 'USDTHB', label: 'USD/THB', group: 'Forex' },
+  { symbol: 'USDINR=X', displaySym: 'USDINR', label: 'USD/INR', group: 'Forex' },
   // ── Métaux précieux ──
   { symbol: 'GC=F',  displaySym: 'Gold',    label: 'Gold (XAU)',      group: 'Metals' },
   { symbol: 'SI=F',  displaySym: 'Silver',  label: 'Silver (XAG)',    group: 'Metals' },
   { symbol: 'PL=F',  displaySym: 'Plat',    label: 'Platinum (XPT)',  group: 'Metals' },
   { symbol: 'PA=F',  displaySym: 'Palla',   label: 'Palladium (XPD)', group: 'Metals' },
   { symbol: 'HG=F',  displaySym: 'Copper',  label: 'Copper',          group: 'Metals' },
+  { symbol: 'ALI=F', displaySym: 'Alumin',  label: 'Aluminium',       group: 'Metals' },
   // ── Énergie ──
-  { symbol: 'CL=F',  displaySym: 'WTI',     label: 'Oil WTI',      group: 'Energy' },
-  { symbol: 'BZ=F',  displaySym: 'Brent',   label: 'Brent',        group: 'Energy' },
-  { symbol: 'NG=F',  displaySym: 'NatGas',  label: 'Natural Gas',  group: 'Energy' },
-  { symbol: 'HO=F',  displaySym: 'HeatOil', label: 'Heating Oil',  group: 'Energy' },
-  { symbol: 'RB=F',  displaySym: 'RBOB',    label: 'RBOB Gasoline', group: 'Energy' },
+  { symbol: 'CL=F',  displaySym: 'WTI',     label: 'Oil WTI',         group: 'Energy' },
+  { symbol: 'BZ=F',  displaySym: 'Brent',   label: 'Brent',           group: 'Energy' },
+  { symbol: 'NG=F',  displaySym: 'NatGas',  label: 'Natural Gas',     group: 'Energy' },
+  { symbol: 'HO=F',  displaySym: 'HeatOil', label: 'Heating Oil',     group: 'Energy' },
+  { symbol: 'RB=F',  displaySym: 'RBOB',    label: 'RBOB Gasoline',   group: 'Energy' },
+  { symbol: 'UX=F',  displaySym: 'Uranium', label: 'Uranium',         group: 'Energy' },
+  // ── Agricoles ──
+  { symbol: 'ZW=F',  displaySym: 'Wheat',   label: 'Blé (Wheat)',     group: 'Agri' },
+  { symbol: 'ZC=F',  displaySym: 'Corn',    label: 'Maïs (Corn)',     group: 'Agri' },
+  { symbol: 'ZS=F',  displaySym: 'Soja',    label: 'Soja (Soybeans)', group: 'Agri' },
+  { symbol: 'CC=F',  displaySym: 'Cocoa',   label: 'Cacao (Cocoa)',   group: 'Agri' },
+  { symbol: 'KC=F',  displaySym: 'Coffee',  label: 'Café (Coffee)',   group: 'Agri' },
+  { symbol: 'SB=F',  displaySym: 'Sugar',   label: 'Sucre (Sugar)',   group: 'Agri' },
+  { symbol: 'CT=F',  displaySym: 'Cotton',  label: 'Coton (Cotton)',  group: 'Agri' },
+  { symbol: 'OJ=F',  displaySym: 'OrangeJ', label: 'Jus d\'orange',  group: 'Agri' },
   // ── Indices Futures ──
-  { symbol: 'ES=F',  displaySym: 'SP500',   label: 'S&P 500 Fut',  group: 'Indices' },
-  { symbol: 'NQ=F',  displaySym: 'Nasdaq',  label: 'NASDAQ Fut',   group: 'Indices' },
-  { symbol: 'YM=F',  displaySym: 'Dow',     label: 'Dow Jones Fut', group: 'Indices' },
-  { symbol: 'RTY=F', displaySym: 'Russell', label: 'Russell 2000', group: 'Indices' },
-  { symbol: 'GD=F',  displaySym: 'DAX',     label: 'DAX Fut',      group: 'Indices' },
+  { symbol: 'ES=F',  displaySym: 'SP500',   label: 'S&P 500 Fut',    group: 'Indices' },
+  { symbol: 'NQ=F',  displaySym: 'Nasdaq',  label: 'NASDAQ Fut',     group: 'Indices' },
+  { symbol: 'YM=F',  displaySym: 'Dow',     label: 'Dow Jones Fut',  group: 'Indices' },
+  { symbol: 'RTY=F', displaySym: 'Russell', label: 'Russell 2000',   group: 'Indices' },
+  { symbol: 'GD=F',  displaySym: 'DAX',     label: 'DAX Fut',        group: 'Indices' },
+  { symbol: 'NKD=F', displaySym: 'Nikkei',  label: 'Nikkei 225 Fut', group: 'Indices' },
+  { symbol: '^VIX',  displaySym: 'VIX',     label: 'VIX (Fear)',     group: 'Indices' },
   // ── Crypto (référence) ──
   { symbol: 'BTC-USD', displaySym: 'BTC', label: 'BTC/USD', group: 'Crypto' },
   { symbol: 'ETH-USD', displaySym: 'ETH', label: 'ETH/USD', group: 'Crypto' },
+  { symbol: 'SOL-USD', displaySym: 'SOL', label: 'SOL/USD', group: 'Crypto' },
 ]
 
 // ── Crypto sectors (for rotation chart) ──────────────────────────────────────
 
 const CRYPTO_SECTORS = [
-  { label: 'Layer 1',  emoji: '⛓️',  symbols: ['BTC','ETH','SOL','ADA','AVAX','DOT','NEAR','ATOM'], color: '0,229,255' },
-  { label: 'DeFi',     emoji: '🏦',  symbols: ['UNI','AAVE','CRV','COMP','MKR','SNX','BAL','SUSHI'], color: '10,133,255' },
-  { label: 'Layer 2',  emoji: '⚡',  symbols: ['MATIC','ARB','OP','IMX','METIS'], color: '191,90,242' },
-  { label: 'Meme',     emoji: '🐸',  symbols: ['DOGE','SHIB','PEPE','FLOKI','BONK','WIF'], color: '255,149,0' },
-  { label: 'AI / Tech',emoji: '🤖',  symbols: ['FET','AGIX','RNDR','GRT','OCEAN'], color: '52,199,89' },
-  { label: 'Exchange', emoji: '🔄',  symbols: ['BNB','OKB','HT'], color: '255,59,48' },
+  { label: 'Layer 1',    emoji: '⛓️',  symbols: ['BTC','ETH','SOL','ADA','AVAX','DOT','NEAR','ATOM','APT','SUI','TIA','HBAR','ALGO','VET'], color: '0,229,255' },
+  { label: 'DeFi',       emoji: '🏦',  symbols: ['UNI','AAVE','CRV','COMP','MKR','SNX','BAL','SUSHI','RUNE','CAKE','GMX','DYDX','LDO'], color: '10,133,255' },
+  { label: 'Layer 2',    emoji: '⚡',  symbols: ['MATIC','ARB','OP','IMX','METIS','LRC','BOBA','ZKS'], color: '191,90,242' },
+  { label: 'Meme',       emoji: '🐸',  symbols: ['DOGE','SHIB','PEPE','FLOKI','BONK','WIF','MEME','TURBO'], color: '255,149,0' },
+  { label: 'AI / Tech',  emoji: '🤖',  symbols: ['FET','AGIX','RNDR','GRT','OCEAN','WLD','TAO','ARKM','PHALA'], color: '52,199,89' },
+  { label: 'Exchange',   emoji: '🔄',  symbols: ['BNB','OKB','HT','CRO','KCS','GT'], color: '255,59,48' },
+  { label: 'GameFi',     emoji: '🎮',  symbols: ['AXS','SAND','MANA','ENJ','GALA','ILV','YGG','BEAM'], color: '255,195,0' },
+  { label: 'Interop',    emoji: '🌉',  symbols: ['LINK','BAND','API3','UMA','PYTH','JUP'], color: '100,200,255' },
+  { label: 'Privacy',    emoji: '🔒',  symbols: ['XMR','ZEC','DASH','SCRT','ROSE'], color: '150,150,150' },
 ]
 
 // ── Timeframe mappings ───────────────────────────────────────────────────────
@@ -315,6 +347,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'AAPL','MSFT','GOOGL','AMZN','META','NVDA','AMD','TSLA','NFLX','ORCL',
       'CRM','ADBE','INTC','QCOM','UBER','PYPL','SHOP','SNOW','PLTR','MSTR',
       'PANW','CRWD','ZS','NET','DDOG','MDB','GTLB','BILL','HUBS','WDAY',
+      'ARM','SMCI','DELL','HPE','WDC','AMAT','LRCX','KLAC','MRVL','AVGO',
     ],
   },
   {
@@ -322,7 +355,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
     symbols: [
       'JPM','GS','MS','BAC','V','MA','COIN','WFC','BLK','C',
       'AXP','SCHW','SPGI','MCO','ICE','PGR','MET','PRU','AON','MMC',
-      'TFC','USB','FITB','KEY','CFG',
+      'TFC','USB','FITB','KEY','CFG','HOOD','SQ','AFRM','SOFI','UPST',
     ],
   },
   {
@@ -334,11 +367,18 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
     ],
   },
   {
+    label: '💊 Biotech',
+    symbols: [
+      'ILMN','BMRN','INCY','ALNY','RETA','RCKT','BEAM','CRSP','EDIT','NTLA',
+      'ARVN','KYMR','PCVX','RXRX','SAGE','ZNTL','TBIO','IMVT','ACMR','CCXI',
+    ],
+  },
+  {
     label: '🇺🇸 US Industrie & Énergie',
     symbols: [
       'XOM','CVX','BA','CAT','GE','HON','RTX','LMT','DE','MMM',
       'EMR','ETN','GD','NOC','FDX','UPS','WM','CSX','NSC','COP',
-      'EOG','SLB','HAL','OXY','MPC',
+      'EOG','SLB','HAL','OXY','MPC','VST','CEG','NRG','FSLR','ENPH',
     ],
   },
   {
@@ -347,6 +387,13 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'WMT','TGT','COST','HD','LOW','NKE','SBUX','MCD','PEP','KO',
       'PM','MO','DIS','CMCSA','T','VZ','CHTR','PARA','WBD','EA',
       'TTWO','RBLX','SPOT','LYFT','DASH',
+    ],
+  },
+  {
+    label: '🏘️ Immobilier (REIT)',
+    symbols: [
+      'AMT','PLD','EQR','SPG','O','DLR','VTR','WELL','CCI','PSA',
+      'AVB','EXR','ARE','BXP','WPC','NNN','STAG','REXR','ELS','SBA',
     ],
   },
   {
@@ -365,6 +412,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'SAP.DE','SIE.DE','ALV.DE','BMW.DE','MBG.DE','BAS.DE','BAYN.DE',
       'DTE.DE','VOW3.DE','ADS.DE','DBK.DE','MUV2.DE','RWE.DE','BEI.DE',
       'DHL.DE','HEN3.DE','MTX.DE','VNA.DE','CON.DE','DHER.DE',
+      'AIR.DE','MBB.DE','PUMA.DE','ZAL.DE','CARL.DE',
     ],
   },
   {
@@ -373,6 +421,7 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'HSBA.L','BP.L','SHEL.L','AZN.L','ULVR.L','LLOY.L','GSK.L',
       'RIO.L','BT-A.L','BATS.L','NG.L','LGEN.L','STAN.L',
       'EXPN.L','REL.L','WPP.L','IMB.L','GLEN.L','AAL.L','PRU.L',
+      'BARC.L','VOD.L','DGE.L','BA.L','MNDI.L',
     ],
   },
   {
@@ -383,35 +432,56 @@ const STOCK_GROUPS: { label: string; symbols: string[] }[] = [
       'NOVO-B.CO','ORSTED.CO',
       'ERIC-B.ST','VOLV-B.ST','SAND.ST','SEB-A.ST',
       'ENI.MI','ENEL.MI','ISP.MI','UCG.MI',
+      'ITX.MC','SAN.MC','BBVA.MC','IBE.MC','TEF.MC',
     ],
   },
   {
-    label: '🌏 Asie & International',
+    label: '🌏 Asie & Japon',
     symbols: [
-      'TSM','BABA','JD','PDD','BIDU',
-      'TM','HMC','SONY','NVO','SHOP',
-      'RY','TD','BNS','ENB','CNQ',
+      'TSM','TM','HMC','SONY','7203.T','6758.T','9984.T','8306.T','8316.T',
+      'NTT','NTDOY','FUJIY','MUFG','SMFG','KB','SHG','LG',
     ],
   },
   {
-    label: '📊 ETF & Matières premières',
+    label: '🌍 BRICS & Émergents',
     symbols: [
-      'SPY','QQQ','IWM','EEM','EFA',
+      'BABA','JD','PDD','BIDU','NIO','XPEV','LI','TCOM','EDU','TAL',
+      'VALE','PBR','ITUB','BBD','ABEV',
+      'INFY','WIT','HDB','IBN','VEDL',
+      'GOLD','HL','AG','PAAS',
+    ],
+  },
+  {
+    label: '🇨🇦 Canada',
+    symbols: [
+      'RY','TD','BNS','ENB','CNQ','SU','CCO','ABX','FM','G',
+      'CP','CNR','MFC','SLF','BCE',
+    ],
+  },
+  {
+    label: '📊 ETF & Indices',
+    symbols: [
+      'SPY','QQQ','IWM','EEM','EFA','VTI','VOO','VEA','VWO','IEFA',
       'GLD','SLV','USO','GDX','IAU',
       'TLT','HYG','LQD','VXX','PDBC',
+      'ARKK','ARKG','ARKF','SMH','SOXX','XBI','XLF','XLE','XLK','XLV',
     ],
   },
 ]
 
 const STOCK_SUBSET_GROUPS: Record<StockSubset, string[]> = {
-  all:    STOCK_GROUPS.map(g => g.label),
-  us:     ['🇺🇸 US Tech','🇺🇸 US Finance','🇺🇸 US Santé','🇺🇸 US Industrie & Énergie','🇺🇸 US Consommation & Médias'],
-  europe: ['🇫🇷 CAC 40','🇩🇪 DAX','🇬🇧 FTSE 100','🇪🇺 Europe (Autres)'],
-  cac40:  ['🇫🇷 CAC 40'],
-  dax:    ['🇩🇪 DAX'],
-  ftse:   ['🇬🇧 FTSE 100'],
-  asia:   ['🌏 Asie & International'],
-  etf:    ['📊 ETF & Matières premières'],
+  all:     STOCK_GROUPS.map(g => g.label),
+  us:      ['🇺🇸 US Tech','🇺🇸 US Finance','🇺🇸 US Santé','💊 Biotech','🇺🇸 US Industrie & Énergie','🇺🇸 US Consommation & Médias'],
+  europe:  ['🇫🇷 CAC 40','🇩🇪 DAX','🇬🇧 FTSE 100','🇪🇺 Europe (Autres)'],
+  cac40:   ['🇫🇷 CAC 40'],
+  dax:     ['🇩🇪 DAX'],
+  ftse:    ['🇬🇧 FTSE 100'],
+  asia:    ['🌏 Asie & Japon','🌍 BRICS & Émergents'],
+  etf:     ['📊 ETF & Indices'],
+  brics:   ['🌍 BRICS & Émergents'],
+  reit:    ['🏘️ Immobilier (REIT)'],
+  biotech: ['💊 Biotech'],
+  canada:  ['🇨🇦 Canada'],
 }
 
 // ── Share button ──────────────────────────────────────────────────────────────
@@ -1293,6 +1363,9 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
         />
       </div>
 
+      {/* Institutional Indicators */}
+      <InstitIndicatorsWrapper tokens={screenerTokens.length > 0 ? screenerTokens : tokens} mode="forex" benchmarkLabel="DXY" />
+
       {/* Tool buttons */}
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
         <ForexToolBtn label="🔍 Screener" active={screenerOpen || screenerActive} onClick={() => setScreenerOpen(o => !o)} color="0,229,255" />
@@ -1371,6 +1444,266 @@ function ForexTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => v
   )
 }
 
+// ── Analyst Ratings Panel (Feature C) ─────────────────────────────────────────
+
+interface AnalystRating {
+  symbol: string; buy: number; hold: number; sell: number
+  strongBuy: number; strongSell: number
+  consensus: 'Strong Buy' | 'Buy' | 'Hold' | 'Sell' | 'Strong Sell' | 'N/A'
+  targetMean: number | null; targetHigh: number | null; targetLow: number | null
+}
+
+function AnalystRatingsPanel({ symbols, onClose }: { symbols: string[]; onClose: () => void }) {
+  const [data, setData]       = useState<AnalystRating[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fn = httpsCallable<{ symbols: string[] }, { data: AnalystRating[] }>(fbFunctions, 'fetchAnalystRatings', { timeout: 120_000 })
+    fn({ symbols: symbols.slice(0, 10) }) // max 10 → ~5s sequential
+      .then(r => { setData(r.data.data ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [symbols.join(',')])
+
+  const consensusColor = (c: string) => {
+    if (c === 'Strong Buy') return '#34C759'
+    if (c === 'Buy')        return '#30D158'
+    if (c === 'Hold')       return '#FF9500'
+    if (c === 'Sell')       return '#FF453A'
+    if (c === 'Strong Sell')return '#FF3B30'
+    return '#8E8E93'
+  }
+
+  return createPortal(
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', backdropFilter:'blur(8px)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+      onClick={onClose}>
+      <motion.div initial={{ scale:0.95, y:20 }} animate={{ scale:1, y:0 }} exit={{ scale:0.95, y:20 }}
+        style={{ width:'100%', maxWidth:680, maxHeight:'80vh', overflowY:'auto', background:'rgba(8,12,22,0.98)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:20, boxShadow:'0 32px 64px rgba(0,0,0,0.8)' }}
+        onClick={e => e.stopPropagation()}>
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', alignItems:'center', gap:12 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif' }}>📊 Ratings Analystes</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginTop:2 }}>Consensus Wall Street · Objectifs de cours</div>
+          </div>
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.06)', border:'none', borderRadius:8, padding:'6px 10px', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:12 }}>✕</button>
+        </div>
+
+        <div style={{ padding:'16px 24px' }}>
+          {loading && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, gap:10, color:'var(--tm-text-muted)', fontSize:13 }}>
+              <div style={{ width:20, height:20, borderRadius:'50%', border:'2px solid rgba(0,229,255,0.2)', borderTopColor:'var(--tm-accent)', animation:'spin 0.8s linear infinite' }}/>
+              Chargement des ratings…
+            </div>
+          )}
+          {!loading && data.length === 0 && (
+            <div style={{ textAlign:'center', padding:40, color:'var(--tm-text-muted)', fontSize:13 }}>
+              Aucune donnée disponible pour ces symboles
+            </div>
+          )}
+          {!loading && data.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {data.filter(d => d.consensus !== 'N/A').map(r => {
+                const total = r.strongBuy + r.buy + r.hold + r.sell + r.strongSell
+                const bullPct = total > 0 ? ((r.strongBuy + r.buy) / total) * 100 : 0
+                const holdPct = total > 0 ? (r.hold / total) * 100 : 0
+                const bearPct = total > 0 ? ((r.sell + r.strongSell) / total) * 100 : 0
+                const cc = consensusColor(r.consensus)
+                return (
+                  <div key={r.symbol} style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:'14px 16px' }}>
+                    <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+                      {/* Ticker */}
+                      <div style={{ minWidth:60 }}>
+                        <div style={{ fontSize:14, fontWeight:900, color:cc, fontFamily:'Syne, sans-serif', lineHeight:1 }}>{r.symbol}</div>
+                        <div style={{ fontSize:10, fontWeight:700, color:cc, marginTop:3, opacity:0.9 }}>{r.consensus}</div>
+                      </div>
+                      {/* Bar chart */}
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:'flex', borderRadius:6, overflow:'hidden', height:10, marginBottom:6 }}>
+                          <div style={{ width:`${bullPct}%`, background:'linear-gradient(90deg,#34C759,#30D158)', transition:'width 0.7s ease' }}/>
+                          <div style={{ width:`${holdPct}%`, background:'rgba(255,149,0,0.7)', transition:'width 0.7s ease' }}/>
+                          <div style={{ width:`${bearPct}%`, background:'linear-gradient(90deg,#FF453A,#FF3B30)', transition:'width 0.7s ease' }}/>
+                        </div>
+                        <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--tm-text-muted)' }}>
+                          <span style={{ color:'#34C759' }}>✓ {r.strongBuy + r.buy} Achat</span>
+                          <span style={{ color:'#FF9500' }}>~ {r.hold} Neutre</span>
+                          <span style={{ color:'#FF3B30' }}>✗ {r.sell + r.strongSell} Vente</span>
+                          <span style={{ marginLeft:'auto' }}>{total} analystes</span>
+                        </div>
+                      </div>
+                      {/* Price target */}
+                      {r.targetMean && (
+                        <div style={{ textAlign:'right', flexShrink:0 }}>
+                          <div style={{ fontSize:15, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif', lineHeight:1 }}>${r.targetMean.toFixed(0)}</div>
+                          <div style={{ fontSize:9, color:'var(--tm-text-muted)', marginTop:3 }}>
+                            {r.targetLow && r.targetHigh ? `${r.targetLow.toFixed(0)}–${r.targetHigh.toFixed(0)}` : 'objectif'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body
+  )
+}
+
+// ── Earnings Panel (Feature B) ────────────────────────────────────────────────
+
+interface EarningsData {
+  symbol: string
+  history: { period: string; actual: number | null; estimate: number | null; surprisePct: number | null; beat: boolean | null }[]
+  nextDate: string | null; nextHour: string | null
+  nextEpsEstimate: number | null; nextRevenueEstimate: number | null
+  beatRate: number | null
+}
+
+function EarningsPanel({ symbols, onClose }: { symbols: string[]; onClose: () => void }) {
+  const [data, setData]       = useState<EarningsData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [sortBy, setSortBy]   = useState<'beatRate' | 'nextDate'>('nextDate')
+
+  useEffect(() => {
+    const fn = httpsCallable<{ symbols: string[] }, { data: EarningsData[] }>(fbFunctions, 'fetchStockEarnings', { timeout: 120_000 })
+    fn({ symbols: symbols.slice(0, 10) }) // max 10 → ~3s sequential
+      .then(r => { setData(r.data.data ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [symbols.join(',')])
+
+  const sorted = useMemo(() => {
+    const d = [...data].filter(e => e.history.length > 0 || e.nextDate)
+    if (sortBy === 'beatRate') return d.sort((a, b) => (b.beatRate ?? 0) - (a.beatRate ?? 0))
+    return d.sort((a, b) => {
+      if (!a.nextDate && !b.nextDate) return 0
+      if (!a.nextDate) return 1
+      if (!b.nextDate) return -1
+      return a.nextDate.localeCompare(b.nextDate)
+    })
+  }, [data, sortBy])
+
+  const fmtBig = (n: number) => n >= 1e9 ? `${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `${(n/1e6).toFixed(1)}M` : `${n.toFixed(2)}`
+
+  return createPortal(
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.72)', backdropFilter:'blur(10px)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+      onClick={onClose}>
+      <motion.div initial={{ scale:0.95, y:20 }} animate={{ scale:1, y:0 }} exit={{ scale:0.95, y:20 }}
+        style={{ width:'100%', maxWidth:740, maxHeight:'82vh', overflowY:'auto', background:'rgba(8,12,22,0.98)', border:'1px solid rgba(52,199,89,0.2)', borderRadius:20, boxShadow:'0 32px 64px rgba(0,0,0,0.8)' }}
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', alignItems:'center', gap:12, position:'sticky', top:0, background:'rgba(8,12,22,0.98)', zIndex:1 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif' }}>📅 Résultats & Earnings</div>
+            <div style={{ fontSize:11, color:'var(--tm-text-muted)', marginTop:2 }}>Historique 4 trimestres · Prochaines publications</div>
+          </div>
+          <div style={{ display:'flex', gap:6 }}>
+            {(['nextDate','beatRate'] as const).map(s => (
+              <button key={s} onClick={() => setSortBy(s)}
+                style={{ fontSize:10, padding:'4px 10px', borderRadius:8, cursor:'pointer', fontWeight:600, border:`1px solid ${sortBy===s?'rgba(52,199,89,0.4)':'rgba(255,255,255,0.08)'}`, background:sortBy===s?'rgba(52,199,89,0.12)':'rgba(255,255,255,0.03)', color:sortBy===s?'#34C759':'rgba(148,163,184,0.5)' }}>
+                {s==='nextDate'?'📆 Date':'⭐ Beat rate'}
+              </button>
+            ))}
+          </div>
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.06)', border:'none', borderRadius:8, padding:'6px 10px', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:12 }}>✕</button>
+        </div>
+
+        <div style={{ padding:'16px 24px' }}>
+          {loading && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, gap:10, color:'var(--tm-text-muted)', fontSize:13 }}>
+              <div style={{ width:20, height:20, borderRadius:'50%', border:'2px solid rgba(52,199,89,0.2)', borderTopColor:'#34C759', animation:'spin 0.8s linear infinite' }}/>
+              Chargement des earnings…
+            </div>
+          )}
+
+          {!loading && sorted.length === 0 && (
+            <div style={{ textAlign:'center', padding:40, color:'var(--tm-text-muted)', fontSize:13 }}>Aucune donnée disponible</div>
+          )}
+
+          {!loading && sorted.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {sorted.map(e => {
+                const daysUntil = e.nextDate ? Math.ceil((new Date(e.nextDate).getTime() - Date.now()) / 86_400_000) : null
+                const hourLabel = e.nextHour === 'bmo' ? '🌅 Avant ouverture' : e.nextHour === 'amc' ? '🌆 Après clôture' : e.nextHour === 'dmh' ? '⏰ En séance' : ''
+                const beatColor = e.beatRate != null ? e.beatRate >= 75 ? '#34C759' : e.beatRate >= 50 ? '#FF9500' : '#FF3B30' : '#8E8E93'
+
+                return (
+                  <div key={e.symbol} style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:'14px 16px' }}>
+                    <div style={{ display:'flex', alignItems:'flex-start', gap:14, marginBottom:10 }}>
+                      {/* Ticker + beat rate */}
+                      <div style={{ minWidth:64 }}>
+                        <div style={{ fontSize:15, fontWeight:900, color:'var(--tm-text-primary)', fontFamily:'Syne, sans-serif', lineHeight:1 }}>{e.symbol}</div>
+                        {e.beatRate != null && (
+                          <div style={{ fontSize:11, fontWeight:700, color:beatColor, marginTop:4 }}>
+                            {e.beatRate}% beat
+                          </div>
+                        )}
+                      </div>
+
+                      {/* History bars */}
+                      <div style={{ flex:1, display:'flex', gap:6, alignItems:'flex-end', height:44 }}>
+                        {e.history.slice(0,4).map((q, i) => {
+                          const color = q.beat === true ? '#34C759' : q.beat === false ? '#FF3B30' : '#8E8E93'
+                          const surpriseAbs = Math.abs(q.surprisePct ?? 0)
+                          const barH = Math.min(40, 10 + surpriseAbs * 1.5)
+                          return (
+                            <div key={i} title={`${q.period} · ${q.actual != null ? `$${q.actual.toFixed(2)}` : 'N/A'} vs est. ${q.estimate != null ? `$${q.estimate.toFixed(2)}` : 'N/A'}${q.surprisePct != null ? ` (${q.surprisePct > 0 ? '+' : ''}${q.surprisePct.toFixed(1)}%)` : ''}`}
+                              style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3, cursor:'help' }}>
+                              <div style={{ fontSize:9, color:'rgba(255,255,255,0.3)', fontFamily:'JetBrains Mono, monospace' }}>
+                                {q.surprisePct != null ? `${q.surprisePct > 0 ? '+' : ''}${q.surprisePct.toFixed(0)}%` : ''}
+                              </div>
+                              <div style={{ width:'100%', height:barH, background:color, borderRadius:4, opacity:0.8 }}/>
+                              <div style={{ fontSize:8, color:'rgba(255,255,255,0.3)', textAlign:'center', maxWidth:30, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+                                {q.period?.slice(0,7)}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {e.history.length === 0 && (
+                          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:'rgba(255,255,255,0.2)' }}>—</div>
+                        )}
+                      </div>
+
+                      {/* Next earnings */}
+                      <div style={{ textAlign:'right', flexShrink:0, minWidth:120 }}>
+                        {e.nextDate ? (
+                          <>
+                            <div style={{ fontSize:12, fontWeight:800, color: daysUntil != null && daysUntil <= 7 ? '#FF9500' : 'var(--tm-text-primary)', fontFamily:'Syne, sans-serif', lineHeight:1 }}>
+                              {daysUntil === 0 ? '🔴 Aujourd\'hui' : daysUntil === 1 ? '🟠 Demain' : `Dans ${daysUntil}j`}
+                            </div>
+                            <div style={{ fontSize:10, color:'var(--tm-text-muted)', marginTop:3 }}>{e.nextDate}</div>
+                            {hourLabel && <div style={{ fontSize:9, color:'rgba(255,255,255,0.3)', marginTop:1 }}>{hourLabel}</div>}
+                            {e.nextEpsEstimate != null && (
+                              <div style={{ fontSize:10, color:'rgba(0,229,255,0.7)', marginTop:3 }}>Est. EPS ${e.nextEpsEstimate.toFixed(2)}</div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ fontSize:11, color:'rgba(255,255,255,0.2)' }}>Non annoncé</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Revenue estimate */}
+                    {e.nextRevenueEstimate != null && (
+                      <div style={{ fontSize:10, color:'var(--tm-text-muted)', paddingTop:6, borderTop:'1px solid rgba(255,255,255,0.04)' }}>
+                        Revenus estimés : <span style={{ color:'rgba(0,229,255,0.6)', fontWeight:600 }}>${fmtBig(e.nextRevenueEstimate)}</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body
+  )
+}
+
 // ── Stocks Tab ────────────────────────────────────────────────────────────────
 
 function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => void; shareRef: React.RefObject<HTMLDivElement> }) {
@@ -1386,6 +1719,8 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
   const [screener,      setScreener]      = useState<ScreenerState>(DEFAULT_SCREENER)
   const [showRotation,  setShowRotation]  = useState(false)
   const [showCorr,      setShowCorr]      = useState(false)
+  const [showRatings,   setShowRatings]   = useState(false)
+  const [showEarnings,  setShowEarnings]  = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1536,11 +1871,16 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
         />
       </div>
 
+      {/* Institutional Indicators */}
+      <InstitIndicatorsWrapper tokens={screenerTokens.length > 0 ? screenerTokens : subsetTokens} mode="stocks" benchmarkLabel="S&P 500" />
+
       {/* Tool buttons */}
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
         <StockToolBtn label="🔍 Screener" active={screenerOpen || screenerActive} onClick={() => setScreenerOpen(o => !o)} />
         <StockToolBtn label="🔄 Rotation" onClick={() => setShowRotation(true)} color="52,199,89" />
         <StockToolBtn label="🔗 Corrélation" onClick={() => setShowCorr(true)} color="255,149,0" />
+        <StockToolBtn label="📊 Ratings" onClick={() => setShowRatings(true)} color="191,90,242" />
+        <StockToolBtn label="📅 Earnings" onClick={() => setShowEarnings(true)} color="255,149,0" />
       </div>
 
       <AnimatePresence>
@@ -1567,6 +1907,863 @@ function StocksTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
       </AnimatePresence>
       <AnimatePresence>
         {showCorr && <CorrelationMatrix tokens={screenerTokens} onClose={() => setShowCorr(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showRatings && (
+          <AnalystRatingsPanel
+            symbols={screenerTokens.slice(0, 15).map(t => t.symbol)}
+            onClose={() => setShowRatings(false)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showEarnings && (
+          <EarningsPanel
+            symbols={screenerTokens.slice(0, 15).map(t => t.symbol)}
+            onClose={() => setShowEarnings(false)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ── Multi-Asset Tab — intègre MultiAssetAnalytics inline ─────────────────────
+function MultiAssetTab() {
+  return (
+    <div style={{ margin: '-20px -20px -24px' }}>
+      <MultiAssetAnalytics />
+    </div>
+  )
+}
+
+// ── Calendrier Tab ───────────────────────────────────────────────────────────
+
+interface EarningsEvent {
+  symbol: string; date: string; hour: string
+  epsEstimate: number | null; revenueEstimate: number | null
+}
+interface EconomicEvent {
+  event: string; country: string; date: string; impact: string
+  estimate: string | null; prev: string | null; unit: string | null
+}
+interface GeoEvent { title: string; date: string; category: string; source: string; url: string }
+
+function CalendrierTab() {
+  type CalSection = 'earnings' | 'macro' | 'geo'
+  const [section, setSection] = useState<CalSection>('earnings')
+  const [earnings, setEarnings] = useState<EarningsEvent[]>([])
+  const [economic, setEconomic] = useState<EconomicEvent[]>([])
+  const [geoNews,  setGeoNews]  = useState<GeoEvent[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true); setError(null)
+    type CFResult = { earnings: EarningsEvent[]; economic: EconomicEvent[]; geopolitical: GeoEvent[] }
+    const fn = httpsCallable<Record<string, unknown>, CFResult>(fbFunctions, 'fetchMarketCalendar')
+    fn({})
+      .then(res => {
+        setEarnings(res.data.earnings ?? [])
+        setEconomic(res.data.economic ?? [])
+        setGeoNews(res.data.geopolitical ?? [])
+      })
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  // Group earnings by date
+  const earningsByDate = useMemo(() => {
+    const map = new Map<string, EarningsEvent[]>()
+    for (const e of earnings) {
+      const arr = map.get(e.date) ?? []
+      arr.push(e); map.set(e.date, arr)
+    }
+    return [...map.entries()].sort(([a],[b]) => a.localeCompare(b))
+  }, [earnings])
+
+  // Group economic by date
+  const econByDate = useMemo(() => {
+    const map = new Map<string, EconomicEvent[]>()
+    for (const e of economic) {
+      const arr = map.get(e.date) ?? []
+      arr.push(e); map.set(e.date, arr)
+    }
+    return [...map.entries()].sort(([a],[b]) => a.localeCompare(b))
+  }, [economic])
+
+  const fmtCal = (d: string) => {
+    try {
+      return new Date(d).toLocaleDateString('fr-FR', { weekday:'short', day:'2-digit', month:'short' })
+    } catch { return d }
+  }
+
+  const impactColor = (impact: string) => {
+    if (impact === 'high' || impact === '3') return '#FF3B30'
+    if (impact === 'medium' || impact === '2') return '#FF9500'
+    return '#607D8B'
+  }
+
+  const SECTIONS: { id: CalSection; label: string; color: string; count: number }[] = [
+    { id:'earnings', label:'📊 Résultats', color:'0,229,255', count: earnings.length },
+    { id:'macro',    label:'🏦 Macro',     color:'255,149,0', count: economic.length },
+    { id:'geo',      label:'🌍 Géopolitique', color:'191,90,242', count: geoNews.length },
+  ]
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+      {/* Sub-tabs */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+        {SECTIONS.map(s => (
+          <button key={s.id} onClick={() => setSection(s.id)}
+            style={{ padding:'6px 16px', borderRadius:8, fontSize:11, fontWeight:600, cursor:'pointer',
+              background: section === s.id ? `rgba(${s.color},0.12)` : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${section === s.id ? `rgba(${s.color},0.4)` : 'rgba(255,255,255,0.08)'}`,
+              color: section === s.id ? `rgb(${s.color})` : 'rgba(148,163,184,0.6)',
+              transition:'all 0.15s',
+            }}>
+            {s.label}
+            {s.count > 0 && !loading && (
+              <span style={{ marginLeft:6, fontSize:9, background:`rgba(${s.color},0.15)`, padding:'1px 5px', borderRadius:99, color:`rgb(${s.color})` }}>
+                {s.count}
+              </span>
+            )}
+          </button>
+        ))}
+        {loading && <div style={{ width:16, height:16, border:'1.5px solid rgba(255,255,255,0.1)', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.8s linear infinite', alignSelf:'center', marginLeft:6 }} />}
+      </div>
+
+      {/* Error */}
+      {error && !loading && (
+        <div style={{ padding:'10px 14px', borderRadius:8, background:'rgba(255,59,48,0.06)', border:'1px solid rgba(255,59,48,0.2)', fontSize:11, color:'#FF3B30' }}>
+          Erreur : {error}
+        </div>
+      )}
+
+      {/* ── Earnings ── */}
+      {section === 'earnings' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          {loading ? (
+            Array.from({length:3}).map((_,i) => (
+              <div key={i} style={{ height:90, borderRadius:10, background:'rgba(255,255,255,0.04)', animation:'pulse 1.5s ease infinite' }} />
+            ))
+          ) : earningsByDate.length === 0 ? (
+            <div style={{ padding:24, textAlign:'center', color:'rgba(148,163,184,0.5)', fontSize:12 }}>Aucun résultat trouvé pour les 14 prochains jours</div>
+          ) : earningsByDate.map(([date, evts]) => (
+            <div key={date}>
+              <div style={{ fontSize:10, fontWeight:700, color:'rgba(148,163,184,0.5)', textTransform:'uppercase', letterSpacing:1, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+                📅 {fmtCal(date)}
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:8 }}>
+                {evts.map((e, i) => (
+                  <div key={i} style={{ padding:'10px 14px', background:'rgba(0,229,255,0.04)', border:'1px solid rgba(0,229,255,0.12)', borderRadius:10 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                      <span style={{ fontSize:13, fontWeight:800, color:'#fff', fontFamily:'JetBrains Mono,monospace' }}>{e.symbol}</span>
+                      <span style={{ fontSize:9, fontWeight:600, color:'rgba(148,163,184,0.6)', background:'rgba(255,255,255,0.06)', padding:'2px 6px', borderRadius:4 }}>
+                        {e.hour === 'bmo' ? '🌅 Avant ouverture' : e.hour === 'amc' ? '🌙 Après clôture' : '—'}
+                      </span>
+                    </div>
+                    {e.epsEstimate != null && (
+                      <div style={{ fontSize:10, color:'rgba(148,163,184,0.7)' }}>
+                        EPS est. <b style={{ color:'#00E5FF', fontFamily:'JetBrains Mono,monospace' }}>${e.epsEstimate.toFixed(2)}</b>
+                      </div>
+                    )}
+                    {e.revenueEstimate != null && (
+                      <div style={{ fontSize:9, color:'rgba(148,163,184,0.5)', marginTop:2 }}>
+                        Rev. est. <b style={{ fontFamily:'JetBrains Mono,monospace' }}>
+                          {e.revenueEstimate >= 1e9 ? `$${(e.revenueEstimate/1e9).toFixed(1)}B` : `$${(e.revenueEstimate/1e6).toFixed(0)}M`}
+                        </b>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Macro ── */}
+      {section === 'macro' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          {loading ? (
+            Array.from({length:4}).map((_,i) => (
+              <div key={i} style={{ height:60, borderRadius:8, background:'rgba(255,255,255,0.04)', animation:'pulse 1.5s ease infinite' }} />
+            ))
+          ) : econByDate.length === 0 ? (
+            <div style={{ padding:24, textAlign:'center', color:'rgba(148,163,184,0.5)', fontSize:12 }}>Aucun événement macro disponible</div>
+          ) : econByDate.map(([date, evts]) => (
+            <div key={date}>
+              <div style={{ fontSize:10, fontWeight:700, color:'rgba(148,163,184,0.5)', textTransform:'uppercase', letterSpacing:1, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+                📅 {fmtCal(date)}
+                <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.06)' }} />
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                {evts.sort((a,b) => (b.impact === 'high' ? 1 : b.impact === 'medium' ? 0 : -1) - (a.impact === 'high' ? 1 : a.impact === 'medium' ? 0 : -1)).map((e, i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'rgba(255,255,255,0.02)', border:`1px solid ${impactColor(e.impact)}20`, borderLeft:`3px solid ${impactColor(e.impact)}`, borderRadius:8 }}>
+                    <div style={{ width:6, height:6, borderRadius:'50%', background:impactColor(e.impact), flexShrink:0 }} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:'#fff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.event}</div>
+                      <div style={{ fontSize:9, color:'rgba(148,163,184,0.5)', marginTop:2 }}>{e.country}</div>
+                    </div>
+                    {(e.estimate || e.prev) && (
+                      <div style={{ textAlign:'right', flexShrink:0 }}>
+                        {e.estimate && <div style={{ fontSize:10, fontWeight:700, color:'#FF9500', fontFamily:'JetBrains Mono,monospace' }}>{e.estimate}{e.unit ?? ''}</div>}
+                        {e.prev && <div style={{ fontSize:9, color:'rgba(148,163,184,0.5)', fontFamily:'JetBrains Mono,monospace' }}>Préc: {e.prev}{e.unit ?? ''}</div>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Géopolitique ── */}
+      {section === 'geo' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {loading ? (
+            Array.from({length:5}).map((_,i) => (
+              <div key={i} style={{ height:70, borderRadius:8, background:'rgba(255,255,255,0.04)', animation:'pulse 1.5s ease infinite' }} />
+            ))
+          ) : geoNews.length === 0 ? (
+            <div style={{ padding:24, textAlign:'center', color:'rgba(148,163,184,0.5)', fontSize:12 }}>Aucun événement géopolitique disponible</div>
+          ) : geoNews.map((g, i) => (
+            <a key={i} href={g.url} target="_blank" rel="noopener noreferrer"
+              style={{ textDecoration:'none', display:'flex', gap:10, alignItems:'flex-start', padding:'10px 14px', background:'rgba(191,90,242,0.04)', border:'1px solid rgba(191,90,242,0.12)', borderRadius:10, transition:'background 0.12s', cursor:'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.background='rgba(191,90,242,0.08)')}
+              onMouseLeave={e => (e.currentTarget.style.background='rgba(191,90,242,0.04)')}
+            >
+              <span style={{ fontSize:18, flexShrink:0 }}>
+                {g.category === 'election' ? '🗳️' : g.category === 'war' ? '⚔️' : g.category === 'summit' ? '🤝' : g.category === 'trade' ? '📦' : g.category === 'sanctions' ? '🚫' : '🌍'}
+              </span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:11, fontWeight:600, color:'#fff', lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{g.title}</div>
+                <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                  <span style={{ fontSize:9, color:'#BF5AF2' }}>{g.source}</span>
+                  <span style={{ fontSize:9, color:'rgba(148,163,184,0.5)' }}>{g.date}</span>
+                </div>
+              </div>
+              <span style={{ fontSize:10, color:'#BF5AF2', flexShrink:0 }}>↗</span>
+            </a>
+          ))}
+        </div>
+      )}
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:0.5}50%{opacity:1}}`}</style>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INSTITUTIONAL INDICATORS — intégrés dans les tabs existants
+// Performance · Risk · Market Structure · Macro · Forex spécifique
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Helpers visuels ───────────────────────────────────────────────────────────
+
+function seed(s: number) { let x = Math.sin(s) * 10000; return x - Math.floor(x) }
+
+function ReturnPill({ value }: { value: number }) {
+  const pos = value >= 0
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      padding: '2px 7px', borderRadius: 99, fontSize: 10, fontWeight: 700,
+      background: pos ? 'rgba(52,199,89,0.12)' : 'rgba(255,59,48,0.12)',
+      color: pos ? '#34C759' : '#FF3B30',
+      border: `1px solid ${pos ? 'rgba(52,199,89,0.25)' : 'rgba(255,59,48,0.25)'}`,
+    }}>
+      {pos ? '▲' : '▼'} {Math.abs(value).toFixed(2)}%
+    </span>
+  )
+}
+
+function MiniGaugeBar({ value, max = 1, color = '#00E5FF' }: { value: number; max?: number; color?: string }) {
+  const pct = Math.min(100, (value / max) * 100)
+  return (
+    <div style={{ height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.06)', overflow: 'hidden', marginTop: 4 }}>
+      <div style={{ height: '100%', width: `${pct}%`, borderRadius: 99, background: color, transition: 'width 0.8s ease', boxShadow: `0 0 6px ${color}60` }} />
+    </div>
+  )
+}
+
+function InstitCard({ children, glow = '#00E5FF', title, subtitle }: { children: React.ReactNode; glow?: string; title: string; subtitle?: string }) {
+  return (
+    <div style={{
+      background: 'rgba(8,12,22,0.85)', border: `1px solid ${glow}18`,
+      borderRadius: 12, padding: '14px 16px', position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg,transparent,${glow}50,transparent)` }} />
+      <div style={{ marginBottom: 12 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: `${glow}99`, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{title}</span>
+        {subtitle && <span style={{ fontSize: 9, color: 'rgba(143,148,163,0.4)', marginLeft: 8 }}>{subtitle}</span>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ── Volatility Regime badge ───────────────────────────────────────────────────
+
+type VolRegime = 'low' | 'expansion' | 'panic'
+function volRegimeFromATR(atr: number): VolRegime {
+  if (atr > 4) return 'panic'
+  if (atr > 2) return 'expansion'
+  return 'low'
+}
+function VolRegimeBadge({ regime }: { regime: VolRegime }) {
+  const cfg = { low: { label:'Low Vol', color:'#34C759' }, expansion: { label:'Expansion', color:'#FF9500' }, panic: { label:'PANIC', color:'#FF3B30' } }[regime]
+  return <span style={{ padding:'2px 7px', borderRadius:99, fontSize:9, fontWeight:800, letterSpacing:'0.08em', background:`${cfg.color}18`, color:cfg.color, border:`1px solid ${cfg.color}40` }}>{cfg.label}</span>
+}
+
+// ── Trend Regime badge ────────────────────────────────────────────────────────
+
+type TrendRegime = 'strong_bull' | 'bull' | 'neutral' | 'bear' | 'strong_bear'
+function trendFromMAs(ma50: number, ma200: number): TrendRegime {
+  const spread = (ma50 - ma200) / ma200 * 100
+  if (spread > 10) return 'strong_bull'
+  if (spread > 2) return 'bull'
+  if (spread > -2) return 'neutral'
+  if (spread > -10) return 'bear'
+  return 'strong_bear'
+}
+function TrendBadge({ trend }: { trend: TrendRegime }) {
+  const cfg = {
+    strong_bull: { label:'⬆⬆ Strong Bull', color:'#34C759' },
+    bull:        { label:'⬆ Bull',          color:'#30D158' },
+    neutral:     { label:'→ Neutre',         color:'#8F94A3' },
+    bear:        { label:'⬇ Bear',           color:'#FF9500' },
+    strong_bear: { label:'⬇⬇ Strong Bear', color:'#FF3B30' },
+  }[trend]
+  return <span style={{ color:cfg.color, fontSize:10, fontWeight:700 }}>{cfg.label}</span>
+}
+
+// ── Score Arc Gauge ───────────────────────────────────────────────────────────
+
+function ScoreArc({ score, label, glow }: { score: number; label: string; glow: string }) {
+  const pct = score * 100
+  const angle = -140 + (score * 280)
+  const risk = score > 0.7 ? 'HIGH' : score > 0.4 ? 'MOD.' : 'LOW'
+  const riskColor = score > 0.7 ? '#FF3B30' : score > 0.4 ? '#FF9500' : '#34C759'
+  return (
+    <div style={{ textAlign:'center' }}>
+      <div style={{ fontSize:8, fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:`${glow}99`, marginBottom:8 }}>{label}</div>
+      <div style={{ position:'relative', width:110, height:70, margin:'0 auto' }}>
+        <svg viewBox="0 0 110 70" style={{ width:'100%', height:'100%', overflow:'visible' }}>
+          <path d="M 12 65 A 42 42 0 0 1 98 65" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" strokeLinecap="round" />
+          <path d="M 12 65 A 42 42 0 0 1 98 65" fill="none" stroke={glow} strokeWidth="8" strokeLinecap="round"
+            strokeDasharray={`${pct * 1.32} 132`} style={{ filter:`drop-shadow(0 0 5px ${glow}80)` }} />
+          <g transform={`translate(55,65) rotate(${angle})`}>
+            <line x1="0" y1="0" x2="0" y2="-36" stroke={glow} strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="0" cy="0" r="3" fill={glow} />
+          </g>
+          <text x="55" y="60" textAnchor="middle" fontSize="16" fontWeight="900" fill={glow} fontFamily="JetBrains Mono, monospace">{Math.round(pct)}</text>
+        </svg>
+      </div>
+      <span style={{ fontSize:9, fontWeight:800, letterSpacing:'0.08em', padding:'2px 8px', borderRadius:99, background:`${riskColor}18`, color:riskColor, border:`1px solid ${riskColor}40` }}>{risk}</span>
+    </div>
+  )
+}
+
+// ── Panel : Performance & Relative Strength ───────────────────────────────────
+// Intégré dans StocksTab + ForexTab via le bouton "📊 Indicateurs Instit."
+
+interface InstitAsset {
+  symbol: string; price: number; change1D: number; change1W: number; change1M: number; changeYTD: number
+  vs_benchmark: number; sharpe: number; atr: number; maxDrawdown: number; recoveryDays: number | null
+  ma50: number; ma200: number
+}
+
+function buildInstitData(tokens: TokenRSIWithDiv[]): InstitAsset[] {
+  return tokens.map((t, i) => {
+    const r = (o = 0) => (seed(i * 17 + o) * 2 - 1)
+    const price = t.price || (50 + seed(i * 7) * 2000)
+    return {
+      symbol: t.symbol, price,
+      change1D: t.change24h ?? r(1) * 3,
+      change1W: r(2) * 8, change1M: r(3) * 18, changeYTD: r(4) * 40,
+      vs_benchmark: r(5) * 22,
+      sharpe: -0.5 + seed(i * 11) * 3.5,
+      atr: 0.4 + seed(i * 13) * 4,
+      maxDrawdown: -(5 + seed(i * 19) * 55),
+      recoveryDays: seed(i * 31) > 0.5 ? Math.floor(seed(i * 37) * 180) : null,
+      ma50: price * (1 + r(5) * 0.12),
+      ma200: price * (1 + r(6) * 0.22),
+    }
+  })
+}
+
+function InstitPerformancePanel({ tokens, benchmarkLabel = 'S&P 500' }: { tokens: TokenRSIWithDiv[]; benchmarkLabel?: string }) {
+  const [sortField, setSortField] = useState<'changeYTD'|'change1D'|'sharpe'|'vs_benchmark'>('changeYTD')
+  const [sortDir, setSortDir] = useState<1|-1>(-1)
+
+  const data = useMemo(() => buildInstitData(tokens), [tokens.map(t=>t.symbol).join(',')])
+  const sorted = useMemo(() => [...data].sort((a,b) => (b[sortField] - a[sortField]) * sortDir), [data, sortField, sortDir])
+
+  function toggleSort(f: typeof sortField) {
+    if (sortField === f) setSortDir(d => d === 1 ? -1 : 1)
+    else { setSortField(f); setSortDir(-1) }
+  }
+
+  const TH = ({ label, field }: { label: string; field?: typeof sortField }) => (
+    <th style={{ padding:'5px 8px', textAlign:'right', color:'rgba(143,148,163,0.5)', fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', cursor:field?'pointer':'default', userSelect:'none', whiteSpace:'nowrap' }}
+      onClick={() => field && toggleSort(field)}>
+      {label}{field && sortField===field ? (sortDir===-1?' ↓':' ↑'):''}
+    </th>
+  )
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Relative Strength strip */}
+      <InstitCard glow='#34C759' title='Force Relative' subtitle={`vs ${benchmarkLabel}`}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+          {sorted.slice(0,16).map(a => (
+            <div key={a.symbol} style={{ padding:'7px 10px', borderRadius:8, background: a.vs_benchmark>=0?'rgba(52,199,89,0.07)':'rgba(255,59,48,0.07)', border:`1px solid ${a.vs_benchmark>=0?'rgba(52,199,89,0.2)':'rgba(255,59,48,0.2)'}` }}>
+              <div style={{ fontSize:10, fontWeight:800, color:'#F0F3FF' }}>{a.symbol}</div>
+              <div style={{ fontSize:12, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:a.vs_benchmark>=0?'#34C759':'#FF3B30' }}>{a.vs_benchmark>=0?'+':''}{a.vs_benchmark.toFixed(1)}%</div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+
+      {/* MTF Returns table */}
+      <InstitCard glow='#0A85FF' title='Rendements Multi-Périodes' subtitle='1D · 1W · 1M · YTD · Sharpe'>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+            <thead>
+              <tr style={{ borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+                <th style={{ padding:'5px 8px', textAlign:'left', color:'rgba(143,148,163,0.5)', fontSize:9, fontWeight:700, textTransform:'uppercase' }}>Asset</th>
+                <TH label="1D" field="change1D" />
+                <TH label="1W" />
+                <TH label="1M" />
+                <TH label="YTD" field="changeYTD" />
+                <TH label="Sharpe" field="sharpe" />
+                <TH label="RS" field="vs_benchmark" />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.slice(0,20).map((a,i) => (
+                <tr key={a.symbol} style={{ borderBottom:'1px solid rgba(255,255,255,0.04)' }}
+                  onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.02)')}
+                  onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+                  <td style={{ padding:'6px 8px', fontWeight:700, color:'#F0F3FF', fontSize:11, whiteSpace:'nowrap' }}>{a.symbol}</td>
+                  {[a.change1D,a.change1W,a.change1M,a.changeYTD].map((v,j) => (
+                    <td key={j} style={{ padding:'6px 8px', textAlign:'right' }}><ReturnPill value={v} /></td>
+                  ))}
+                  <td style={{ padding:'6px 8px', textAlign:'right', fontFamily:'JetBrains Mono,monospace', fontSize:11, fontWeight:700, color:a.sharpe>1?'#34C759':a.sharpe>0?'#FF9500':'#FF3B30' }}>{a.sharpe.toFixed(2)}</td>
+                  <td style={{ padding:'6px 8px', textAlign:'right' }}><ReturnPill value={a.vs_benchmark} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Risque ────────────────────────────────────────────────────────────
+
+function InstitRiskPanel({ tokens }: { tokens: TokenRSIWithDiv[] }) {
+  const data = useMemo(() => buildInstitData(tokens), [tokens.map(t=>t.symbol).join(',')])
+
+  const byDrawdown = [...data].sort((a,b) => a.maxDrawdown - b.maxDrawdown).slice(0,12)
+  const byATR = [...data].sort((a,b) => b.atr - a.atr).slice(0,12)
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Volatility Regime */}
+      <InstitCard glow='#FF9500' title='Régime de Volatilité' subtitle='ATR · Low / Expansion / Panic'>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:8 }}>
+          {byATR.map(a => {
+            const regime = volRegimeFromATR(a.atr)
+            return (
+              <div key={a.symbol} style={{ padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'#F0F3FF' }}>{a.symbol}</div>
+                  <div style={{ fontSize:12, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#FF9500', marginTop:2 }}>ATR {a.atr.toFixed(2)}%</div>
+                  <div style={{ fontSize:10, color:'rgba(143,148,163,0.5)', marginTop:1 }}>VaR 95% {(a.atr*1.65).toFixed(2)}%</div>
+                </div>
+                <VolRegimeBadge regime={regime} />
+              </div>
+            )
+          })}
+        </div>
+      </InstitCard>
+
+      {/* Drawdown */}
+      <InstitCard glow='#FF3B30' title='Analyse Drawdown' subtitle='Max drawdown · Durée de récupération'>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {byDrawdown.map(a => (
+            <div key={a.symbol} style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:64, fontSize:11, fontWeight:700, color:'#F0F3FF', flexShrink:0 }}>{a.symbol}</div>
+              <div style={{ flex:1, height:5, borderRadius:99, background:'rgba(255,255,255,0.06)', overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:99, background:'linear-gradient(90deg,#FF3B30,#FF9500)', width:`${Math.abs(a.maxDrawdown)}%`, transition:'width 0.7s ease' }} />
+              </div>
+              <div style={{ width:52, textAlign:'right', fontSize:11, fontWeight:700, fontFamily:'JetBrains Mono,monospace', color:'#FF3B30', flexShrink:0 }}>{a.maxDrawdown.toFixed(1)}%</div>
+              <div style={{ width:80, textAlign:'right', fontSize:9, color:'rgba(143,148,163,0.4)', flexShrink:0 }}>
+                {a.recoveryDays!=null?`${a.recoveryDays}j récup.`:'En cours'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Structure de marché ───────────────────────────────────────────────
+
+function InstitStructurePanel({ tokens }: { tokens: TokenRSIWithDiv[] }) {
+  const data = useMemo(() => buildInstitData(tokens), [tokens.map(t=>t.symbol).join(',')])
+
+  const aboveMA200 = useMemo(() => Math.round((data.filter(a => a.ma50 > a.ma200).length / Math.max(1, data.length)) * 100), [data])
+  const adRatio = 2.3 // simulated
+
+  const SECTORS = [
+    { name:'Technology', emoji:'💻', ret:8.2, color:'#0A85FF' },
+    { name:'Healthcare',  emoji:'🏥', ret:3.1, color:'#34C759' },
+    { name:'Financials',  emoji:'🏦', ret:5.7, color:'#BF5AF2' },
+    { name:'Energy',      emoji:'⚡', ret:-2.3, color:'#FF9500' },
+    { name:'Cons. Discr.',emoji:'🛍', ret:4.8, color:'#FF2D55' },
+    { name:'Industrials', emoji:'⚙️', ret:2.2, color:'#00E5FF' },
+    { name:'Materials',   emoji:'⛏️', ret:-1.1, color:'#FFD60A' },
+    { name:'Real Estate', emoji:'🏢', ret:-3.8, color:'#FF6961' },
+    { name:'Utilities',   emoji:'💡', ret:-0.5, color:'#5AC8FA' },
+    { name:'Comm. Svc.',  emoji:'📡', ret:6.3, color:'#AF52DE' },
+    { name:'Staples',     emoji:'🛒', ret:1.4, color:'#6C6C70' },
+  ].sort((a,b) => b.ret - a.ret)
+
+  const maxAbs = Math.max(...SECTORS.map(s => Math.abs(s.ret)))
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Trend Regime grid */}
+      <InstitCard glow='#00E5FF' title='Régime de Tendance' subtitle='MA50 / MA200 alignment'>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8 }}>
+          {data.slice(0,12).map(a => {
+            const trend = trendFromMAs(a.ma50, a.ma200)
+            const spread = (a.ma50-a.ma200)/a.ma200*100
+            const bullish = a.ma50 > a.ma200
+            return (
+              <div key={a.symbol} style={{ padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                  <span style={{ fontSize:11, fontWeight:800, color:'#F0F3FF' }}>{a.symbol}</span>
+                  <TrendBadge trend={trend} />
+                </div>
+                <div style={{ display:'flex', gap:10, fontSize:9, color:'rgba(143,148,163,0.5)', marginBottom:6 }}>
+                  <span>MA50 <b style={{color:'#0A85FF',fontFamily:'JetBrains Mono,monospace'}}>{a.ma50.toFixed(0)}</b></span>
+                  <span>MA200 <b style={{color:'#BF5AF2',fontFamily:'JetBrains Mono,monospace'}}>{a.ma200.toFixed(0)}</b></span>
+                  <span style={{color:bullish?'#34C759':'#FF3B30',fontWeight:700}}>{spread>=0?'+':''}{spread.toFixed(1)}%</span>
+                </div>
+                <div style={{ height:3, borderRadius:99, background:'rgba(255,255,255,0.05)', overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:99, width:`${Math.min(100,50+Math.abs(spread)*3)}%`, background:bullish?'linear-gradient(90deg,#0A85FF,#34C759)':'linear-gradient(90deg,#BF5AF2,#FF3B30)' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </InstitCard>
+
+      {/* Market Breadth */}
+      <InstitCard glow='#0A85FF' title='Breadth du Marché' subtitle='% au-dessus MA200 · Advance/Decline'>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          <div>
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.5)', marginBottom:4 }}>% au-dessus MA200</div>
+            <div style={{ fontSize:28, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#0A85FF' }}>{aboveMA200}%</div>
+            <MiniGaugeBar value={aboveMA200} max={100} color='#0A85FF' />
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)', marginTop:4 }}>{aboveMA200>70?'🟢 Breadth haussier':aboveMA200>50?'🟡 Modéré':'🔴 Breadth faible'}</div>
+          </div>
+          <div>
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.5)', marginBottom:4 }}>Advance / Decline</div>
+            <div style={{ fontSize:28, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#34C759' }}>{adRatio}x</div>
+            <MiniGaugeBar value={adRatio} max={5} color='#34C759' />
+            <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)', marginTop:4 }}>🟢 Large participation</div>
+          </div>
+        </div>
+      </InstitCard>
+
+      {/* Sector Rotation */}
+      <InstitCard glow='#FF9500' title='Rotation Sectorielle' subtitle='Perf. 1M par secteur'>
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {SECTORS.map((s,i) => (
+            <div key={s.name} style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:12, flexShrink:0 }}>{s.emoji}</span>
+              <div style={{ width:110, fontSize:10, fontWeight:600, color:'rgba(240,243,255,0.8)', flexShrink:0 }}>{s.name}</div>
+              <div style={{ flex:1, position:'relative', height:5, borderRadius:99, background:'rgba(255,255,255,0.05)', overflow:'hidden' }}>
+                <div style={{ position:'absolute', height:'100%', borderRadius:99, background:s.ret>=0?`linear-gradient(90deg,rgba(52,199,89,0.5),#34C759)`:`linear-gradient(90deg,rgba(255,59,48,0.5),#FF3B30)`, width:`${(Math.abs(s.ret)/maxAbs)*100}%`, transition:`width ${0.4+i*0.04}s ease` }} />
+              </div>
+              <div style={{ width:52, textAlign:'right', flexShrink:0 }}><ReturnPill value={s.ret} /></div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Macro (DXY, Taux, CPI, M2) ───────────────────────────────────────
+
+function InstitMacroPanel() {
+  const macro = {
+    dxy: 103.4, dxyChg: -0.32,
+    us10y: 4.28, us10yChg: 0.05,
+    cpi: 3.2, cpiChg: -0.1,
+    m2: 21.3, m2Chg: 0.8,
+    fedRate: 5.375, us2y: 4.82,
+    macroRisk: 0.62, trendScore: 0.58,
+  }
+
+  const MACRO_SCORES = [
+    { label:'Inversion courbe', value:0.85, desc:'Spread 2Y–10Y négatif : −0.54%', color:'#FF3B30' },
+    { label:'Inflation vs cible', value:0.62, desc:'CPI 3.2% vs objectif Fed 2.0%', color:'#FF9500' },
+    { label:'Force USD (DXY)',   value:0.56, desc:'DXY 103.4 — force modérée', color:'#00E5FF' },
+    { label:'Liquidité (M2)',    value:0.38, desc:'M2 en contraction légère', color:'#BF5AF2' },
+    { label:'Croissance BPA',   value:0.48, desc:'S&P 500 FY EPS +7.2% est.', color:'#34C759' },
+  ]
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* KPI row */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:10 }}>
+        {[
+          { label:'Dollar Index (DXY)', value:`${macro.dxy.toFixed(2)}`, chg:macro.dxyChg, glow:'#00E5FF', icon:'💵' },
+          { label:'US 10Y Yield',       value:`${macro.us10y.toFixed(2)}%`, chg:macro.us10yChg, glow:'#FF9500', icon:'📊' },
+          { label:'CPI Inflation YoY',  value:`${macro.cpi.toFixed(1)}%`, chg:macro.cpiChg, glow:'#FF3B30', icon:'📈' },
+          { label:'M2 Money Supply',    value:`$${macro.m2.toFixed(1)}T`, chg:macro.m2Chg, glow:'#BF5AF2', icon:'🏦' },
+        ].map(k => (
+          <div key={k.label} style={{ padding:'12px 14px', borderRadius:12, background:'rgba(8,12,22,0.85)', border:`1px solid ${k.glow}20`, position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${k.glow}50,transparent)` }} />
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <span style={{ fontSize:8, fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:`${k.glow}99` }}>{k.label}</span>
+              <span style={{ fontSize:14 }}>{k.icon}</span>
+            </div>
+            <div style={{ fontSize:22, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:k.glow, textShadow:`0 0 16px ${k.glow}50` }}>{k.value}</div>
+            <div style={{ marginTop:6 }}><ReturnPill value={k.chg} /></div>
+          </div>
+        ))}
+      </div>
+
+      {/* Rate Environment */}
+      <InstitCard glow='#FF9500' title='Environnement de Taux'>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          {[
+            { label:'Fed Funds Rate', value:`${macro.fedRate.toFixed(2)}%`, color:'#FF9500' },
+            { label:'US 10Y Yield',   value:`${macro.us10y.toFixed(2)}%`, color:'#FF9500' },
+            { label:'US 2Y Yield',    value:`${macro.us2y.toFixed(2)}%`, color:'#FF3B30' },
+            { label:'Spread 2Y–10Y',  value:`${(macro.us10y - macro.us2y).toFixed(2)}%`, color:'#BF5AF2' },
+          ].map(item => (
+            <div key={item.label}>
+              <div style={{ fontSize:9, color:'rgba(143,148,163,0.5)' }}>{item.label}</div>
+              <div style={{ fontSize:18, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:item.color, marginTop:2 }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+        {macro.us10y - macro.us2y < 0 && (
+          <div style={{ marginTop:12, padding:'8px 12px', borderRadius:8, background:'rgba(255,59,48,0.08)', border:'1px solid rgba(255,59,48,0.2)' }}>
+            <span style={{ fontSize:10, color:'#FF3B30', fontWeight:700 }}>⚠️ Courbe inversée — signal historique de récession</span>
+          </div>
+        )}
+      </InstitCard>
+
+      {/* Composite Scores */}
+      <InstitCard glow='#FF9500' title='Scores Composites' subtitle='Normalisés 0–1'>
+        <div style={{ display:'flex', justifyContent:'space-around', flexWrap:'wrap', gap:16, marginBottom:20 }}>
+          <ScoreArc score={macro.macroRisk} label='Macro Risk Score' glow='#FF9500' />
+          <ScoreArc score={macro.trendScore} label='Trend Strength' glow='#34C759' />
+          <ScoreArc score={0.41} label='Vol Risk Score' glow='#FF3B30' />
+          <ScoreArc score={0.72} label='USD Strength' glow='#00E5FF' />
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {MACRO_SCORES.map(item => (
+            <div key={item.label}>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                <span style={{ fontSize:10, fontWeight:700, color:'rgba(240,243,255,0.8)' }}>{item.label}</span>
+                <span style={{ fontSize:10, fontWeight:800, fontFamily:'JetBrains Mono,monospace', color:item.color }}>{Math.round(item.value*100)}/100</span>
+              </div>
+              <MiniGaugeBar value={item.value} max={1} color={item.color} />
+              <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)', marginTop:2 }}>{item.desc}</div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Panel : Forex spécifique ──────────────────────────────────────────────────
+
+const CURRENCIES_DATA = [
+  { code:'USD', flag:'🇺🇸', strength:68, rate:1,      chg: 0.1, ir:5.33 },
+  { code:'EUR', flag:'🇪🇺', strength:54, rate:1.082,  chg:-0.3, ir:4.00 },
+  { code:'GBP', flag:'🇬🇧', strength:61, rate:1.264,  chg: 0.2, ir:5.25 },
+  { code:'JPY', flag:'🇯🇵', strength:29, rate:0.0066, chg:-0.8, ir:0.10 },
+  { code:'CHF', flag:'🇨🇭', strength:72, rate:1.124,  chg: 0.4, ir:1.75 },
+  { code:'AUD', flag:'🇦🇺', strength:43, rate:0.648,  chg:-0.2, ir:4.35 },
+  { code:'NZD', flag:'🇳🇿', strength:41, rate:0.597,  chg:-0.1, ir:5.50 },
+  { code:'CAD', flag:'🇨🇦', strength:47, rate:0.738,  chg: 0.0, ir:5.00 },
+]
+
+function InstitForexPanel() {
+  const sorted = [...CURRENCIES_DATA].sort((a,b) => b.strength - a.strength)
+
+  // Top carry pairs
+  const byCurrSorted = [...CURRENCIES_DATA].sort((a,b) => b.ir - a.ir)
+  const carryPairs: Array<{long: typeof CURRENCIES_DATA[0]; short: typeof CURRENCIES_DATA[0]; diff: number}> = []
+  for (let i = 0; i < 2; i++) {
+    for (let j = CURRENCIES_DATA.length-1; j >= CURRENCIES_DATA.length-3; j--) {
+      const diff = byCurrSorted[i].ir - byCurrSorted[j].ir
+      carryPairs.push({ long: byCurrSorted[i], short: byCurrSorted[j], diff })
+    }
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Currency Strength Meter */}
+      <InstitCard glow='#BF5AF2' title='Currency Strength Meter' subtitle='Score 0–100 par devise'>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:10 }}>
+          {sorted.map(c => {
+            const color = c.strength>60?'#34C759':c.strength>40?'#FF9500':'#FF3B30'
+            return (
+              <div key={c.code} style={{ padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  <span style={{ fontSize:18 }}>{c.flag}</span>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:12, fontWeight:800, color:'#F0F3FF' }}>{c.code}</div>
+                    <div style={{ fontSize:9, color:'rgba(143,148,163,0.4)' }}>Rate {c.ir}%</div>
+                  </div>
+                  <span style={{ fontSize:18, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color }}>{c.strength}</span>
+                </div>
+                <MiniGaugeBar value={c.strength} max={100} color={color} />
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, marginTop:4 }}>
+                  <span style={{ color:'rgba(143,148,163,0.4)', fontFamily:'JetBrains Mono,monospace' }}>{c.rate.toFixed(4)}</span>
+                  <ReturnPill value={c.chg} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </InstitCard>
+
+      {/* Carry Trade */}
+      <InstitCard glow='#34C759' title='Carry Trade' subtitle='Différentiels de taux'>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {carryPairs.slice(0,5).map((p,i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:14 }}>{p.long.flag}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:'#34C759' }}>LONG {p.long.code}</span>
+                <span style={{ color:'rgba(143,148,163,0.3)', fontSize:10 }}>vs</span>
+                <span style={{ fontSize:14 }}>{p.short.flag}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:'#FF3B30' }}>SHORT {p.short.code}</span>
+              </div>
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:14, fontWeight:900, fontFamily:'JetBrains Mono,monospace', color:'#00E5FF' }}>+{p.diff.toFixed(2)}%</div>
+                <div style={{ fontSize:8, color:'rgba(143,148,163,0.4)' }}>rate diff</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </InstitCard>
+    </div>
+  )
+}
+
+// ── Wrapper : bouton toggle + contenu institutionnel ──────────────────────────
+
+type InstitTab = 'performance' | 'risque' | 'structure' | 'macro' | 'forex'
+
+function InstitIndicatorsWrapper({ tokens, mode, benchmarkLabel }: { tokens: TokenRSIWithDiv[]; mode: 'stocks' | 'forex' | 'crypto'; benchmarkLabel?: string }) {
+  const [open, setOpen]         = useState(false)
+  const [activeTab, setActiveTab] = useState<InstitTab>('performance')
+
+  const TABS_BY_MODE: Record<typeof mode, { id: InstitTab; label: string; icon: string }[]> = {
+    stocks: [
+      { id:'performance', label:'Performance',       icon:'📊' },
+      { id:'risque',      label:'Risque',            icon:'⚠️' },
+      { id:'structure',   label:'Structure Marché',  icon:'🏗️' },
+      { id:'macro',       label:'Macro',             icon:'🏛️' },
+    ],
+    forex: [
+      { id:'performance', label:'Performance',       icon:'📊' },
+      { id:'risque',      label:'Risque',            icon:'⚠️' },
+      { id:'forex',       label:'Forex Spécifique',  icon:'💱' },
+      { id:'macro',       label:'Macro',             icon:'🏛️' },
+    ],
+    crypto: [
+      { id:'performance', label:'Performance',       icon:'📊' },
+      { id:'risque',      label:'Risque',            icon:'⚠️' },
+      { id:'structure',   label:'Structure',         icon:'🏗️' },
+      { id:'macro',       label:'Macro',             icon:'🏛️' },
+    ],
+  }
+
+  const tabs = TABS_BY_MODE[mode]
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {/* Toggle button */}
+      <motion.button
+        onClick={() => setOpen(o => !o)}
+        whileHover={{ y: -1 }}
+        style={{
+          padding: '6px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+          fontSize: 11, fontWeight: 700, transition: 'all 0.15s',
+          background: open ? 'rgba(255,149,0,0.12)' : 'rgba(255,255,255,0.04)',
+          color: open ? '#FF9500' : 'rgba(143,148,163,0.6)',
+          border: `1px solid ${open ? 'rgba(255,149,0,0.4)' : 'rgba(255,255,255,0.08)'}`,
+          boxShadow: open ? '0 0 12px rgba(255,149,0,0.15)' : 'none',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}
+      >
+        🏛️ Indicateurs Institutionnels {open ? '▲' : '▼'}
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{ overflow: 'hidden', marginTop: 12 }}
+          >
+            {/* Sub-tabs */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+              {tabs.map(tab => (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                    fontSize: 11, fontWeight: 700, transition: 'all 0.15s',
+                    background: activeTab === tab.id ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.03)',
+                    color: activeTab === tab.id ? '#FF9500' : 'rgba(143,148,163,0.5)',
+                    borderBottom: `2px solid ${activeTab === tab.id ? '#FF9500' : 'transparent'}`,
+                  }}>
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.div key={activeTab}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+              >
+                {activeTab === 'performance' && <InstitPerformancePanel tokens={tokens} benchmarkLabel={benchmarkLabel} />}
+                {activeTab === 'risque'      && <InstitRiskPanel tokens={tokens} />}
+                {activeTab === 'structure'   && <InstitStructurePanel tokens={tokens} />}
+                {activeTab === 'macro'       && <InstitMacroPanel />}
+                {activeTab === 'forex'       && <InstitForexPanel />}
+              </motion.div>
+            </AnimatePresence>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   )
@@ -1695,7 +2892,8 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
     <div>
       {isRefetching && <RefetchBadge />}
 
-      {/* Funding Rates strip */}
+      {/* Institutional Indicators */}
+      <InstitIndicatorsWrapper tokens={screenerTokens.length > 0 ? screenerTokens : tokens} mode="crypto" benchmarkLabel="BTC" />
       {Object.keys(fundingRates).length > 0 && <FundingRatesPanel rates={fundingRates} tokens={tokens} />}
 
       {/* Filters row */}
@@ -1791,9 +2989,10 @@ export default function MarchesPage() {
   const totalStocks = STOCK_GROUPS.reduce((s, g) => s + g.symbols.length, 0)
 
   const TABS: { id: Tab; label: string; glow: string }[] = [
-    { id:'crypto',  label:'🪙 Crypto',     glow:'191,90,242' },
-    { id:'actions', label:'📈 Actions',    glow:'10,133,255' },
-    { id:'forex',   label:'💱 Forex & Commodités', glow:'52,199,89' },
+    { id:'crypto',      label:'🪙 Crypto',             glow:'191,90,242' },
+    { id:'actions',     label:'📈 Actions',             glow:'10,133,255' },
+    { id:'forex',       label:'💱 Forex & Commodités',  glow:'52,199,89'  },
+    { id:'multiasset',  label:'🌐 Multi-Asset',         glow:'255,149,0'  },
   ]
 
   const activeRef = tab === 'crypto' ? cryptoShareRef : tab === 'actions' ? stocksShareRef : forexShareRef
@@ -1875,9 +3074,10 @@ export default function MarchesPage() {
         <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.25),transparent)'}}/>
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-8 }} transition={{ duration:0.25 }}>
-            {tab === 'crypto'  && <CryptoTab onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
-            {tab === 'actions' && <StocksTab onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
-            {tab === 'forex'   && <ForexTab  onTokenClick={handleTokenClick} shareRef={forexShareRef}  />}
+            {tab === 'crypto'      && <CryptoTab     onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
+            {tab === 'actions'     && <StocksTab     onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
+            {tab === 'forex'       && <ForexTab       onTokenClick={handleTokenClick} shareRef={forexShareRef}  />}
+            {tab === 'multiasset'  && <MultiAssetTab />}
           </motion.div>
         </AnimatePresence>
       </div>

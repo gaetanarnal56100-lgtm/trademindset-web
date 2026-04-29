@@ -1,4 +1,4 @@
-// src/components/layout/Sidebar.tsx
+// src/components/layout/Sidebar.tsx — Flat Design v3
 import XPBar from '@/components/gamification/XPBar'
 import { useState, useEffect } from 'react'
 import NotificationBell from '@/components/notifications/NotificationBell'
@@ -10,7 +10,7 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
-  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconAI, IconMarches, IconPredict,
+  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconMarches, IconWhale,
 } from '@/components/ui/Icons'
 
 export default function Sidebar() {
@@ -23,10 +23,9 @@ export default function Sidebar() {
     { to: '/app/trades',      label: t('nav.trades'),      Icon: IconTrades },
     { to: '/app/analyse',     label: t('nav.analyse'),     Icon: IconAnalyse },
     { to: '/app/marches',     label: t('nav.marches'),     Icon: IconMarches },
-    { to: '/app/predict',     label: t('nav.predictions'), Icon: IconPredict },
+    { to: '/app/whales',      label: 'Whale Alerts',        Icon: IconWhale },
     { to: '/app/journal',     label: t('nav.journal'),     Icon: IconJournal },
-    { to: '/app/calendrier',  label: t('nav.calendrier'),  Icon: IconCalendrier },
-    { to: '/app/systemes',    label: t('nav.systemes'),    Icon: IconSystemes },
+    { to: '/app/alertes',     label: t('nav.alertes'),     Icon: IconAlertes },
   ]
   const NAV_BOTTOM = [
     { to: '/app/badges',   label: t('nav.badges'),   Icon: IconStar },
@@ -38,7 +37,6 @@ export default function Sidebar() {
   const [profileName, setProfileName] = useState<string|null>(null)
   async function handleLogout() { await logout(); navigate('/') }
 
-  // Subscribe to Firestore user doc for live photo/name updates
   useEffect(() => {
     const uid = user?.uid
     if (!uid) return
@@ -49,117 +47,112 @@ export default function Sidebar() {
         setProfilePhoto(photo)
         if (d.displayName) setProfileName(d.displayName)
       }
-    }, () => { /* ignore errors */ })
+    }, () => {})
     return () => unsub()
   }, [user?.uid])
 
   return (
-    <aside style={{
-      width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column',
-      height: '100vh', position: 'sticky', top: 0,
-      background: 'var(--tm-bg)',
-      borderRight: '1px solid var(--tm-border)',
-    }}>
-      {/* Logo */}
-      <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(var(--tm-accent-rgb,0,229,255),0.1)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <aside className="w-[220px] flex-shrink-0 flex flex-col h-screen sticky top-0"
+      style={{ background: 'var(--tm-bg)', borderRight: '1px solid rgba(42,47,62,0.7)' }}>
+
+      {/* ── Logo ── */}
+      <div className="px-4 py-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        {/* Subtle gradient top line */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--tm-accent), transparent)', opacity: 0.4 }} />
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(var(--tm-accent-rgb,0,229,255),0.1)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.25)' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--tm-accent)" strokeWidth="2.5" strokeLinecap="round">
               <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
               <polyline points="16 7 22 7 22 13" />
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'Syne, sans-serif', letterSpacing: '-0.01em' }}>TradeMindset</div>
-            <div style={{ fontSize: 9, color: 'var(--tm-accent)', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 1 }}>Pro</div>
+            <div className="text-sm font-bold tracking-tight" style={{ fontFamily: 'Syne, sans-serif', color: 'var(--tm-text-primary)' }}>TradeMindset</div>
+            <div className="text-[9px] font-bold tracking-widest uppercase" style={{ color: 'var(--tm-accent)', marginTop: 1 }}>Pro</div>
           </div>
         </div>
       </div>
 
-      {/* Main nav */}
-      <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {/* ── Main nav ── */}
+      <nav className="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-0.5">
         {NAV.map(({ to, label, Icon, end }) => (
-          <NavLink key={to} to={to} end={end} style={{ textDecoration: 'none' }}>
+          <NavLink key={to} to={to} end={end} className="no-underline block">
             {({ isActive }) => (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
-                fontSize: 13, fontWeight: isActive ? 500 : 400,
+              <div className={`
+                flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer relative
+                transition-all duration-150 text-sm
+                ${isActive
+                  ? 'font-semibold'
+                  : 'font-normal hover:bg-white/[0.04]'
+                }
+              `}
+              style={{
                 color: isActive ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
-                background: isActive ? 'rgba(var(--tm-accent-rgb,0,229,255),0.08)' : 'transparent',
-                position: 'relative',
-                transition: 'all 0.15s',
+                background: isActive ? 'rgba(var(--tm-accent-rgb,0,229,255),0.1)' : undefined,
               }}>
-                {isActive && <div style={{ position: 'absolute', left: 0, top: '25%', bottom: '25%', width: 2, borderRadius: 99, background: 'var(--tm-accent)' }} />}
-                <Icon size={16} />
-                {label}
+                {/* Active indicator bar */}
+                {isActive && (
+                  <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full"
+                    style={{ background: 'var(--tm-accent)', boxShadow: '0 0 8px var(--tm-accent)' }} />
+                )}
+                <Icon size={15} />
+                <span>{label}</span>
               </div>
             )}
           </NavLink>
         ))}
 
-        {/* Coach IA — Coming Soon */}
-        <div
-          title={t('nav.comingSoon')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '9px 12px', borderRadius: 10, cursor: 'not-allowed',
-            fontSize: 13, fontWeight: 400,
-            color: 'var(--tm-text-muted)',
-            opacity: 0.7,
-            position: 'relative',
-          }}
-        >
-          <IconAI size={16} />
-          <span>{t('nav.coachIA')}</span>
-          <span style={{
-            marginLeft: 'auto',
-            fontSize: 9, fontWeight: 700,
-            padding: '2px 6px', borderRadius: 99,
-            background: 'linear-gradient(135deg, #BF5AF222, #0A85FF22)',
-            border: '1px solid #BF5AF244',
-            color: '#BF5AF2',
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-          }}>
-            Soon
-          </span>
-        </div>
+        {/* Coach IA — temporairement masqué */}
       </nav>
 
-      {/* Bottom */}
-      <div style={{ padding: '8px 8px 8px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {/* ── Bottom ── */}
+      <div className="px-2 pb-2 flex flex-col gap-0.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
         {NAV_BOTTOM.map(({ to, label, Icon }) => (
-          <NavLink key={to} to={to} style={{ textDecoration: 'none' }}>
+          <NavLink key={to} to={to} className="no-underline block">
             {({ isActive }) => (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: isActive ? 'var(--tm-accent)' : 'var(--tm-text-secondary)', background: isActive ? 'rgba(var(--tm-accent-rgb,0,229,255),0.08)' : 'transparent', transition: 'all 0.15s' }}>
-                <Icon size={16} />
-                {label}
+              <div className={`
+                flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-sm
+                transition-all duration-150
+                ${isActive ? 'font-semibold' : 'font-normal hover:bg-white/[0.04]'}
+              `}
+              style={{
+                color: isActive ? 'var(--tm-accent)' : 'var(--tm-text-secondary)',
+                background: isActive ? 'rgba(var(--tm-accent-rgb,0,229,255),0.1)' : undefined,
+              }}>
+                <Icon size={15} />
+                <span>{label}</span>
               </div>
             )}
           </NavLink>
         ))}
 
+        <div className="mt-1">
           <XPBar />
-          {/* User row */}
-        <div style={{ marginTop: 6, padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #0A85FF33, #00E5FF33)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--tm-accent)', flexShrink: 0, overflow: 'hidden' }}>
-            {profilePhoto ? (
-              <img src={profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              (profileName || user?.displayName)?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'G'
-            )}
+        </div>
+
+        {/* User row */}
+        <div className="flex items-center gap-2.5 px-3 py-2.5 mt-1 rounded-xl"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #0A85FF33, #00E5FF33)', border: '1px solid rgba(var(--tm-accent-rgb,0,229,255),0.25)', color: 'var(--tm-accent)' }}>
+            {profilePhoto
+              ? <img src={profilePhoto} alt="" className="w-full h-full object-cover" />
+              : (profileName || user?.displayName)?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'G'
+            }
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--tm-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-medium truncate" style={{ color: 'var(--tm-text-primary)' }}>
               {profileName || user?.displayName || 'Trader'}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div className="text-[10px] truncate" style={{ color: 'var(--tm-text-muted)' }}>
               {user?.email}
             </div>
           </div>
           <NotificationBell />
-          <button onClick={handleLogout} title={t('nav.logout')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6, color: 'var(--tm-text-muted)', display: 'flex', alignItems: 'center' }}>
+          <button onClick={handleLogout} title={t('nav.logout')}
+            className="p-1.5 rounded-lg transition-colors hover:bg-white/5 cursor-pointer"
+            style={{ background: 'none', border: 'none', color: 'var(--tm-text-muted)' }}>
             <IconLogout size={14} />
           </button>
         </div>
