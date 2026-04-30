@@ -1,4 +1,4 @@
-// OUChannelIndicator.tsx — v1
+// OUChannelIndicator.tsx — v3 (UX overhaul)
 // Canal Adaptatif Ornstein-Uhlenbeck + Détecteur d'Excès Statistiques
 // VMC enrichi avec Efficiency Ratio de Kaufman (ER)
 // Inspiré des indicateurs OU Trend Channel Pro et MRE-VWAP
@@ -11,22 +11,22 @@ import type { } from './OscillatorCharts'
 interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
 
 interface OUResult {
-  mean:        number[]   // mean-reversion level (mu)
-  upper1:      number[]   // +1σ band
-  upper2:      number[]   // +2σ band (excess zone)
-  lower1:      number[]   // -1σ band
-  lower2:      number[]   // -2σ band (excess zone)
-  zscore:      number[]   // standardized position
-  kappa:       number[]   // mean-reversion speed (regime-local)
-  sigma:       number[]   // local vol
+  mean:        number[]
+  upper1:      number[]
+  upper2:      number[]
+  lower1:      number[]
+  lower2:      number[]
+  zscore:      number[]
+  kappa:       number[]
+  sigma:       number[]
   excess:      ('none' | 'overbought' | 'oversold' | 'extreme_ob' | 'extreme_os')[]
   regime:      ('trending' | 'ranging' | 'breakout')[]
 }
 
 interface KaufmanERResult {
-  er:          number[]   // Efficiency Ratio 0-1 (1=trending, 0=noisy)
-  fastAlpha:   number     // current dynamic alpha
-  erSmoothed:  number[]   // EMA of ER for regime filter
+  er:          number[]
+  fastAlpha:   number
+  erSmoothed:  number[]
 }
 
 interface VMCEnhancedResult {
@@ -40,8 +40,92 @@ interface VMCEnhancedResult {
   excessLevel: number
   erQuality:   'strong' | 'moderate' | 'weak'
   erColor:     string
-  confluence:  number    // -1 to +1
+  confluence:  number
   trendBias:   'bullish' | 'bearish' | 'neutral'
+}
+
+interface SignalEntry {
+  time: string
+  label: string
+  color: string
+  excess: string
+}
+
+interface HoverData {
+  x: number
+  idx: number
+  z: number
+  excess: string
+  price: number
+}
+
+// ─── Natural language helpers ─────────────────────────────────────────────────
+function naturalZ(z: number): string {
+  if (z > 2.5)  return 'Surévaluation extrême'
+  if (z > 1.5)  return 'Surévaluation modérée'
+  if (z > 0.5)  return 'Légèrement surévalué'
+  if (z > -0.5) return 'Zone d\'équilibre'
+  if (z > -1.5) return 'Légèrement sous-évalué'
+  if (z > -2.5) return 'Sous-évaluation modérée'
+  return 'Sous-évaluation extrême'
+}
+
+function naturalER(er: number): string {
+  if (er > 0.65) return 'Mouvement directionnel fort'
+  if (er > 0.40) return 'Signal modéré à confirmer'
+  return 'Marché bruité (range/consolidation)'
+}
+
+function naturalKappa(k: number): string {
+  if (k > 1.2) return 'Retour très rapide (range fort)'
+  if (k > 0.5) return 'Retour modéré à la moyenne'
+  if (k > 0.25) return 'Retour lent (tendance modérée)'
+  return 'Très lent (tendance forte)'
+}
+
+function reboundProb(z: number): string {
+  if (z < -2.5) return '~82% de probabilité de rebond'
+  if (z < -1.5) return '~67% de probabilité de rebond'
+  if (z < -0.5) return '~52% — zone neutre basse'
+  if (z > 2.5)  return '~82% de probabilité de correction'
+  if (z > 1.5)  return '~67% de probabilité de correction'
+  return '~50% — pas de signal clair'
+}
+
+function zoneAdvice(excess: string, regime: string): { emoji: string; title: string; bullets: string[]; warning?: string } {
+  if (excess === 'extreme_os' || excess === 'oversold') {
+    return {
+      emoji: '🟢',
+      title: 'Zone Achat',
+      bullets: [
+        'Marché statistiquement sous-évalué',
+        'Probabilité de retour à la moyenne élevée',
+        regime === 'ranging' ? 'Régime Range → signal fiable' : 'Régime Tendance → signal plus risqué',
+      ],
+      warning: regime === 'trending' ? '⚠️ Éviter en forte tendance baissière' : undefined,
+    }
+  }
+  if (excess === 'extreme_ob' || excess === 'overbought') {
+    return {
+      emoji: '🔴',
+      title: 'Zone Vente / Sortie',
+      bullets: [
+        'Marché statistiquement surévalué',
+        'Probabilité de correction ou retour à la moyenne',
+        regime === 'ranging' ? 'Régime Range → signal fiable' : 'Régime Tendance → possible continuation',
+      ],
+      warning: regime === 'trending' ? '⚠️ En tendance haussière, attendre confirmation' : undefined,
+    }
+  }
+  return {
+    emoji: '🔵',
+    title: 'Zone Neutre',
+    bullets: [
+      'Prix proches de la valeur d\'équilibre statistique',
+      'Pas de signal d\'excès — attendre un bord de canal',
+      'Surveiller la direction du Z-Score',
+    ],
+  }
 }
 
 // ─── Math helpers ─────────────────────────────────────────────────────────────
@@ -64,12 +148,7 @@ function rollingStd(arr: number[], len: number): number[] {
   return out
 }
 
-
 // ─── Ornstein-Uhlenbeck Channel ───────────────────────────────────────────────
-// Process: dX = κ(μ - X)dt + σdW
-// Approche correcte : on travaille directement en prix (résidus = close - EMA)
-// σ_OU = std(résidus) sur fenêtre glissante — bandes naturellement calibrées
-// κ = -ln(autocorr AR(1) des résidus) — vitesse de retour à la moyenne
 export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 30): OUResult {
   const n = candles.length
   const empty: OUResult = {
@@ -79,17 +158,10 @@ export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 30
   if (n < lookback + 10) return empty
 
   const close = candles.map(c => c.c)
-
-  // μ : EMA(lookback) = niveau d'équilibre OU
   const mean = emaArr(close, lookback)
-
-  // Résidus = close - μ (processus centré autour de 0)
   const residuals = close.map((c, i) => c - mean[i])
-
-  // σ_OU = std rolling des résidus sur sigmaWindow barres (en unités de prix)
   const sigmaArr = rollingStd(residuals, sigmaWindow)
 
-  // κ = -ln(ρ₁) où ρ₁ = autocorrélation lag-1 des résidus (fenêtre glissante)
   const kappaArr = new Array(n).fill(0.3)
   const kappaWin = Math.max(sigmaWindow, 20)
   for (let i = kappaWin; i < n; i++) {
@@ -102,13 +174,9 @@ export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 30
       den += centered[j-1] ** 2
     }
     const rho = den > 0 ? Math.max(0.001, Math.min(0.999, num / den)) : 0.5
-    // κ > 1 → retour rapide (range), κ < 0.3 → retour lent (tendance)
     kappaArr[i] = -Math.log(rho)
   }
 
-  // Bandes adaptatives : μ ± n × σ_OU × facteur(κ)
-  // Le facteur(κ) module les bandes selon le régime :
-  //   κ élevé (range) → bandes normales, κ faible (trend) → bandes légèrement élargies
   const upper1: number[] = [], upper2: number[] = []
   const lower1: number[] = [], lower2: number[] = []
   const zscore: number[] = []
@@ -119,13 +187,8 @@ export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 30
     const mu = mean[i]
     const price = close[i]
     const kappa = kappaArr[i]
-
-    // std des résidus — jamais inférieure à 0.3% du prix pour éviter les bandes nulles
     const rawSigma = sigmaArr[i] > 0 ? sigmaArr[i] : mu * 0.003
     const sigma = Math.max(rawSigma, mu * 0.003)
-
-    // Facteur adaptatif : en range (κ élevé) les bandes restent normales,
-    // en tendance (κ faible) on les élargit légèrement pour éviter les faux signaux
     const kappaFactor = kappa > 0 ? Math.min(1.5, Math.max(0.7, 1 / Math.sqrt(kappa))) : 1.0
     const adaptedSigma = sigma * kappaFactor
 
@@ -134,37 +197,25 @@ export function calcOUChannel(candles: Candle[], lookback = 50, sigmaWindow = 30
     lower1.push(mu - 1.0 * adaptedSigma)
     lower2.push(mu - 2.0 * adaptedSigma)
 
-    // Z-score = (prix - μ) / σ_OU — normalisé dans l'espace OU
     const z = adaptedSigma > 0 ? (price - mu) / adaptedSigma : 0
     zscore.push(z)
 
-    // Détection d'excès statistiques
     if (z > 2.5)       excess.push('extreme_ob')
     else if (z > 1.5)  excess.push('overbought')
     else if (z < -2.5) excess.push('extreme_os')
     else if (z < -1.5) excess.push('oversold')
     else               excess.push('none')
 
-    // Régime : κ → vitesse de retour
-    // κ > 1.0 = range fort (retour rapide)
-    // κ < 0.25 = tendance forte (retour lent)
-    // entre les deux + z extrême = breakout potentiel
     if (kappa > 1.0)             regime.push('ranging')
     else if (kappa < 0.25)       regime.push('trending')
     else if (Math.abs(z) > 1.8)  regime.push('breakout')
     else                          regime.push('ranging')
   }
 
-  return {
-    mean, upper1, upper2, lower1, lower2,
-    zscore, kappa: kappaArr, sigma: sigmaArr, excess, regime,
-  }
+  return { mean, upper1, upper2, lower1, lower2, zscore, kappa: kappaArr, sigma: sigmaArr, excess, regime }
 }
 
 // ─── Kaufman Efficiency Ratio ─────────────────────────────────────────────────
-// ER = |net price change| / sum(abs(period-over-period changes))
-// ER → 1 = strong trend (price goes one direction)
-// ER → 0 = choppy/noise
 export function calcKaufmanER(candles: Candle[], period = 14, erSmoothing = 10): KaufmanERResult {
   const close = candles.map(c => c.c)
   const n = close.length
@@ -181,7 +232,6 @@ export function calcKaufmanER(candles: Candle[], period = 14, erSmoothing = 10):
 
   const erSmoothed = emaArr(er, erSmoothing)
   const fastAlpha = erSmoothed[n-1] ?? 0.5
-
   return { er, erSmoothed, fastAlpha }
 }
 
@@ -210,7 +260,6 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
   const hlc3  = candles.map(c => (c.h + c.l + c.c) / 3)
   const n     = candles.length
 
-  // RSI(14)
   const rsiLen = 14
   const gains  = hlc3.map((v, i) => i === 0 ? 0 : Math.max(v - hlc3[i-1], 0))
   const losses = hlc3.map((v, i) => i === 0 ? 0 : Math.max(hlc3[i-1] - v, 0))
@@ -218,7 +267,6 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
   const alArr  = emaArr(losses, rsiLen)
   const rsi    = agArr.map((g, i) => alArr[i] === 0 ? 100 : 100 - 100 / (1 + g / alArr[i]))
 
-  // MFI(7)
   const tp = hlc3
   const pmf = new Array(n).fill(0), nmf = new Array(n).fill(0)
   for (let i = 1; i < n; i++) {
@@ -232,7 +280,6 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
     return d === 0 ? 50 : (p / d) * 100
   })
 
-  // Stochastic RSI
   const computeStoch = (src: number[], len: number) => {
     const out = src.map((v, i) => {
       const win = src.slice(Math.max(0, i - len + 1), i + 1)
@@ -243,7 +290,6 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
   }
   const stoch = computeStoch(rsi, rsiLen)
 
-  // Core VMC
   const mfiW = 0.40, stochW = 0.40, denom = 1 + mfiW + stochW
   const core = rsi.map((r, i) => (r + mfiW * mfi[i] + stochW * stoch[i]) / denom)
   const transform = (arr: number[]) => arr.map(v => {
@@ -254,7 +300,6 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
   const sigSignal = transform(emaArr(core, 18))
   const momentum  = sig.map((s, i) => s - sigSignal[i])
 
-  // Kaufman ER
   const { er, erSmoothed } = calcKaufmanER(candles, erPeriod, 10)
 
   const last      = n - 1
@@ -262,16 +307,12 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
   const momLast   = momentum[last] ?? 0
   const erLast    = erSmoothed[last] ?? 0.5
 
-  // ER quality classification
   let erQuality: VMCEnhancedResult['erQuality']
   let erColor: string
   if (erLast > 0.65) { erQuality = 'strong';   erColor = '#34C759' }
   else if (erLast > 0.40) { erQuality = 'moderate'; erColor = '#FF9500' }
   else { erQuality = 'weak'; erColor = '#FF453A' }
 
-  // ER-weighted trend bias
-  // High ER = trend is real → amplify VMC signal
-  // Low ER = noise → dampened signal, range mode
   const erWeight = erLast
   const biasScore = sigLast * erWeight + momLast * 0.5
 
@@ -280,22 +321,18 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
   else if (biasScore < -5) trendBias = 'bearish'
   else trendBias = 'neutral'
 
-  // Status with ER integration
   let status = 'NEUTRAL'
   let statusColor = '#8E8E93'
 
   if (erQuality === 'weak') {
-    // Low ER: range mode signals
     if (sigLast < -40) { status = 'ZONE ACHAT (Consolidation)'; statusColor = '#42A5F5' }
     else if (sigLast > 40) { status = 'ZONE VENTE (Consolidation)'; statusColor = '#FF9500' }
     else { status = 'RANGE · ER Faible'; statusColor = '#8E8E93' }
   } else if (erQuality === 'strong') {
-    // High ER: trend confirmed signals
     if (trendBias === 'bullish') { status = 'TENDANCE HAUSSIÈRE ✓'; statusColor = '#34C759' }
     else if (trendBias === 'bearish') { status = 'TENDANCE BAISSIÈRE ✓'; statusColor = '#FF3B30' }
     else { status = 'TENDANCE NEUTRE'; statusColor = '#FF9500' }
   } else {
-    // Moderate ER: standard signals
     if (sigLast < -40) { status = 'SURVENTE'; statusColor = '#34C759' }
     else if (sigLast > 40) { status = 'SURACHAT'; statusColor = '#FF3B30' }
     else if (trendBias === 'bullish') { status = 'BIAIS HAUSSIER'; statusColor = '#66BB6A' }
@@ -303,36 +340,26 @@ export function calcVMCEnhanced(candles: Candle[], erPeriod = 14): VMCEnhancedRe
     else { status = 'NEUTRE'; statusColor = '#8E8E93' }
   }
 
-  // Confluence score -1 to +1
   const confluence = Math.max(-1, Math.min(1, biasScore / 50))
   const excessLevel = Math.abs(sigLast)
 
-  return {
-    sig, sigSignal, momentum, er, erSmoothed,
-    status, statusColor, excessLevel,
-    erQuality, erColor, confluence, trendBias,
-  }
+  return { sig, sigSignal, momentum, er, erSmoothed, status, statusColor, excessLevel, erQuality, erColor, confluence, trendBias }
 }
 
-// ─── Canvas renderer helpers ──────────────────────────────────────────────────
+// ─── Canvas helpers ───────────────────────────────────────────────────────────
 function resolveCSSColor(v: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback
   return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback
 }
 
 // ─── OU Channel Chart ─────────────────────────────────────────────────────────
-interface OUChannelChartProps {
-  candles:   Candle[]
-  ou:        OUResult
-  height?:   number
-}
-function OUChannelChart({ candles, ou, height = 200 }: OUChannelChartProps) {
+interface OUChannelChartProps { candles: Candle[]; ou: OUResult; height?: number; onHover?: (d: HoverData | null) => void }
+function OUChannelChart({ candles, ou, height = 200, onHover }: OUChannelChartProps) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     const canvas = ref.current
     if (!canvas || candles.length < 20 || ou.mean.length < 20) return
-
     const dpr = window.devicePixelRatio || 1
     const W   = canvas.offsetWidth || 800
     const H   = height
@@ -340,223 +367,180 @@ function OUChannelChart({ candles, ou, height = 200 }: OUChannelChartProps) {
     canvas.height = H * dpr
     const ctx = canvas.getContext('2d')!
     ctx.scale(dpr, dpr)
-
     const profit = resolveCSSColor('--tm-profit', '#22C759')
     const loss   = resolveCSSColor('--tm-loss',   '#FF3B30')
 
-    // Y range: price range
     const prices = candles.map(c => c.c)
     const allBands = [...ou.upper2.filter(Boolean), ...ou.lower2.filter(Boolean)]
     const yMin = Math.min(...prices, ...allBands) * 0.997
     const yMax = Math.max(...prices, ...allBands) * 1.003
     const yRange = yMax - yMin || 1
-
     const toY = (v: number) => H - ((v - yMin) / yRange) * H
     const toX = (i: number) => (i / (candles.length - 1)) * W
 
-    // Background
     ctx.fillStyle = '#080C14'
     ctx.fillRect(0, 0, W, H)
 
-    // OU excess zones (fill between ±2σ and ±1σ)
-    // Upper excess zone (overbought): between upper1 and upper2
+    // Upper excess zone
     ctx.beginPath()
-    ou.upper1.forEach((v, i) => {
-      const x = toX(i), y = toY(v)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    })
-    for (let i = ou.upper2.length - 1; i >= 0; i--) {
-      ctx.lineTo(toX(i), toY(ou.upper2[i]))
-    }
-    ctx.closePath()
-    ctx.fillStyle = 'rgba(255,59,48,0.10)'
-    ctx.fill()
+    ou.upper1.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    for (let i = ou.upper2.length - 1; i >= 0; i--) ctx.lineTo(toX(i), toY(ou.upper2[i]))
+    ctx.closePath(); ctx.fillStyle = 'rgba(255,59,48,0.10)'; ctx.fill()
 
-    // Lower excess zone (oversold): between lower2 and lower1
+    // Lower excess zone
     ctx.beginPath()
-    ou.lower1.forEach((v, i) => {
-      const x = toX(i), y = toY(v)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    })
-    for (let i = ou.lower2.length - 1; i >= 0; i--) {
-      ctx.lineTo(toX(i), toY(ou.lower2[i]))
-    }
-    ctx.closePath()
-    ctx.fillStyle = 'rgba(52,199,89,0.10)'
-    ctx.fill()
+    ou.lower1.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    for (let i = ou.lower2.length - 1; i >= 0; i--) ctx.lineTo(toX(i), toY(ou.lower2[i]))
+    ctx.closePath(); ctx.fillStyle = 'rgba(52,199,89,0.10)'; ctx.fill()
 
-    // OU ±1σ band fill (normal zone)
+    // Normal zone fill
     ctx.beginPath()
-    ou.upper1.forEach((v, i) => {
-      const x = toX(i), y = toY(v)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    })
-    for (let i = ou.lower1.length - 1; i >= 0; i--) {
-      ctx.lineTo(toX(i), toY(ou.lower1[i]))
-    }
-    ctx.closePath()
-    ctx.fillStyle = 'rgba(0,229,255,0.04)'
-    ctx.fill()
+    ou.upper1.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    for (let i = ou.lower1.length - 1; i >= 0; i--) ctx.lineTo(toX(i), toY(ou.lower1[i]))
+    ctx.closePath(); ctx.fillStyle = 'rgba(0,229,255,0.04)'; ctx.fill()
 
-    // Draw bands
     const drawLine = (pts: number[], color: string, lw = 1, dash?: number[]) => {
-      ctx.beginPath()
-      if (dash) ctx.setLineDash(dash)
-      else ctx.setLineDash([])
-      pts.forEach((v, i) => {
-        if (!v) return
-        const x = toX(i), y = toY(v)
-        i === 0 || !pts[i-1] ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-      })
-      ctx.strokeStyle = color
-      ctx.lineWidth = lw
-      ctx.stroke()
-      ctx.setLineDash([])
+      ctx.beginPath(); if (dash) ctx.setLineDash(dash); else ctx.setLineDash([])
+      pts.forEach((v, i) => { if (!v) return; const x = toX(i), y = toY(v); i === 0 || !pts[i-1] ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke(); ctx.setLineDash([])
     }
 
     drawLine(ou.upper2, 'rgba(255,59,48,0.6)',  1, [4, 3])
     drawLine(ou.upper1, 'rgba(255,149,0,0.5)',  1, [3, 3])
-    drawLine(ou.mean,   'rgba(0,229,255,0.7)',   1.5)
-    drawLine(ou.lower1, 'rgba(52,199,89,0.5)',   1, [3, 3])
-    drawLine(ou.lower2, 'rgba(0,200,100,0.6)',   1, [4, 3])
+    drawLine(ou.mean,   'rgba(0,229,255,0.7)',  1.5)
+    drawLine(ou.lower1, 'rgba(52,199,89,0.5)',  1, [3, 3])
+    drawLine(ou.lower2, 'rgba(0,200,100,0.6)',  1, [4, 3])
 
-    // Price line — colored by zone
+    // Price line
     for (let i = 1; i < candles.length; i++) {
       const excess = ou.excess[i]
       let color = 'rgba(255,255,255,0.7)'
       if (excess === 'extreme_ob' || excess === 'overbought') color = loss
       else if (excess === 'extreme_os' || excess === 'oversold') color = profit
-
-      ctx.beginPath()
-      ctx.moveTo(toX(i-1), toY(candles[i-1].c))
-      ctx.lineTo(toX(i),   toY(candles[i].c))
-      ctx.strokeStyle = color
-      ctx.lineWidth = 1.5
-      ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(toX(i-1), toY(candles[i-1].c)); ctx.lineTo(toX(i), toY(candles[i].c))
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke()
     }
 
-    // Regime markers — dots at bottom
+    // Regime dots
     const regimeY = H - 6
     ou.regime.forEach((r, i) => {
       if (i % 5 !== 0) return
-      const x = toX(i)
-      ctx.beginPath()
-      ctx.arc(x, regimeY, 2, 0, Math.PI * 2)
-      if (r === 'trending')  ctx.fillStyle = 'rgba(255,149,0,0.6)'
-      else if (r === 'ranging')  ctx.fillStyle = 'rgba(0,229,255,0.4)'
-      else ctx.fillStyle = 'rgba(191,90,242,0.7)' // breakout
+      ctx.beginPath(); ctx.arc(toX(i), regimeY, 2, 0, Math.PI * 2)
+      if (r === 'trending') ctx.fillStyle = 'rgba(255,149,0,0.6)'
+      else if (r === 'ranging') ctx.fillStyle = 'rgba(0,229,255,0.4)'
+      else ctx.fillStyle = 'rgba(191,90,242,0.7)'
       ctx.fill()
     })
 
-    // Excess event markers
+    // Excess markers
     ou.excess.forEach((e, i) => {
       if (e === 'none') return
-      const x = toX(i)
-      const y = toY(candles[i].c)
-      const isOB = e.includes('ob')
-      ctx.beginPath()
-      ctx.arc(x, y, e.includes('extreme') ? 4 : 3, 0, Math.PI * 2)
-      ctx.fillStyle = isOB ? loss : profit
-      ctx.fill()
-      ctx.strokeStyle = '#080C14'
-      ctx.lineWidth = 1
-      ctx.stroke()
+      ctx.beginPath(); ctx.arc(toX(i), toY(candles[i].c), e.includes('extreme') ? 4 : 3, 0, Math.PI * 2)
+      ctx.fillStyle = e.includes('ob') ? loss : profit
+      ctx.fill(); ctx.strokeStyle = '#080C14'; ctx.lineWidth = 1; ctx.stroke()
     })
 
   }, [candles, ou, height])
 
-  if (candles.length < 20) {
-    return (
-      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
-        Données insuffisantes…
-      </div>
-    )
-  }
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onHover || candles.length < 2) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const xRatio = (e.clientX - rect.left) / rect.width
+    const idx = Math.min(candles.length - 1, Math.max(0, Math.round(xRatio * (candles.length - 1))))
+    onHover({ x: e.clientX - rect.left, idx, z: ou.zscore[idx] ?? 0, excess: ou.excess[idx] ?? 'none', price: candles[idx]?.c ?? 0 })
+  }, [candles, ou, onHover])
+
+  if (candles.length < 20) return (
+    <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
+      Données insuffisantes…
+    </div>
+  )
 
   return (
-    <canvas ref={ref} style={{ width: '100%', height, borderRadius: 8, display: 'block' }} />
+    <canvas ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => onHover?.(null)}
+      style={{ width: '100%', height, borderRadius: 8, display: 'block', cursor: 'crosshair' }}
+    />
   )
 }
 
 // ─── Z-Score Oscillator Chart ─────────────────────────────────────────────────
-function ZScoreChart({ zscore, excess, height = 100 }: { zscore: number[]; excess: OUResult['excess']; height?: number }) {
+function ZScoreChart({ zscore, excess, height = 100, onHover }: { zscore: number[]; excess: OUResult['excess']; height?: number; onHover?: (d: HoverData | null) => void }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     const canvas = ref.current
     if (!canvas || zscore.length < 10) return
-
     const dpr = window.devicePixelRatio || 1
     const W   = canvas.offsetWidth || 800
     const H   = height
-    canvas.width  = W * dpr
-    canvas.height = H * dpr
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(dpr, dpr)
+    canvas.width  = W * dpr; canvas.height = H * dpr
+    const ctx = canvas.getContext('2d')!; ctx.scale(dpr, dpr)
 
-    ctx.fillStyle = '#080C14'
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const yMin = -4, yMax = 4, yRange = yMax - yMin
     const toY = (v: number) => H - ((v - yMin) / yRange) * H
     const toX = (i: number) => (i / (zscore.length - 1)) * W
 
-    // Reference lines
-    const lines: [number, string][] = [
-      [2.5, 'rgba(255,59,48,0.4)'],
-      [1.5, 'rgba(255,149,0,0.3)'],
-      [0,   'rgba(255,255,255,0.15)'],
-      [-1.5, 'rgba(52,199,89,0.3)'],
-      [-2.5, 'rgba(52,199,89,0.5)'],
+    const lines: [number, string, string][] = [
+      [2.5, 'rgba(255,59,48,0.4)',  '>+2.5σ Extrême'],
+      [1.5, 'rgba(255,149,0,0.3)',  '+1.5σ Surachat'],
+      [0,   'rgba(255,255,255,0.15)', '0'],
+      [-1.5, 'rgba(52,199,89,0.3)', '-1.5σ Survente'],
+      [-2.5, 'rgba(52,199,89,0.5)', '<-2.5σ Extrême'],
     ]
     lines.forEach(([v, color]) => {
-      ctx.beginPath()
-      ctx.moveTo(0, toY(v))
-      ctx.lineTo(W, toY(v))
-      ctx.strokeStyle = color
-      ctx.lineWidth = 1
-      ctx.setLineDash([3, 3])
-      ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, toY(v as number)); ctx.lineTo(W, toY(v as number))
+      ctx.strokeStyle = color as string; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke()
     })
     ctx.setLineDash([])
 
-    // Fill between ±1.5 (normal zone)
-    ctx.beginPath()
-    ctx.rect(0, toY(1.5), W, toY(-1.5) - toY(1.5))
-    ctx.fillStyle = 'rgba(0,229,255,0.03)'
-    ctx.fill()
+    // Zone labels on right
+    ctx.font = '8px JetBrains Mono, monospace'
+    ctx.fillStyle = 'rgba(255,59,48,0.6)'; ctx.textAlign = 'right'; ctx.fillText('Extrême OB', W - 3, toY(2.8))
+    ctx.fillStyle = 'rgba(255,149,0,0.6)'; ctx.fillText('Surachat', W - 3, toY(2.0))
+    ctx.fillStyle = 'rgba(0,229,255,0.4)'; ctx.fillText('Neutre', W - 3, toY(0.3))
+    ctx.fillStyle = 'rgba(52,199,89,0.6)'; ctx.fillText('Survente', W - 3, toY(-1.7))
+    ctx.fillStyle = 'rgba(52,199,89,0.8)'; ctx.fillText('Extrême OS', W - 3, toY(-2.8))
+    ctx.textAlign = 'left'
 
-    // Z-score bars
+    ctx.beginPath(); ctx.rect(0, toY(1.5), W, toY(-1.5) - toY(1.5))
+    ctx.fillStyle = 'rgba(0,229,255,0.03)'; ctx.fill()
+
     for (let i = 1; i < zscore.length; i++) {
-      const z     = zscore[i]
-      const x     = toX(i)
-      const zY    = toY(z)
-      const midY  = toY(0)
-      const exc   = excess[i]
-
+      const z = zscore[i], x = toX(i), zY = toY(z), midY = toY(0), exc = excess[i]
       let color = 'rgba(0,229,255,0.6)'
       if (exc === 'extreme_ob') color = 'rgba(255,59,48,0.85)'
       else if (exc === 'overbought') color = 'rgba(255,149,0,0.7)'
       else if (exc === 'extreme_os') color = 'rgba(52,199,89,0.85)'
       else if (exc === 'oversold')   color = 'rgba(42,160,80,0.7)'
-
       ctx.fillStyle = color
       ctx.fillRect(x - 1, Math.min(zY, midY), 2, Math.abs(zY - midY))
     }
 
-    // Z-score line
     ctx.beginPath()
-    zscore.forEach((v, i) => {
-      const x = toX(i), y = toY(v)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    })
-    ctx.strokeStyle = 'rgba(0,229,255,0.5)'
-    ctx.lineWidth = 1
-    ctx.stroke()
+    zscore.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 1; ctx.stroke()
 
   }, [zscore, excess, height])
 
-  return <canvas ref={ref} style={{ width: '100%', height, borderRadius: 8, display: 'block' }} />
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onHover || zscore.length < 2) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const xRatio = (e.clientX - rect.left) / rect.width
+    const idx = Math.min(zscore.length - 1, Math.max(0, Math.round(xRatio * (zscore.length - 1))))
+    onHover({ x: e.clientX - rect.left, idx, z: zscore[idx] ?? 0, excess: excess[idx] ?? 'none', price: 0 })
+  }, [zscore, excess, onHover])
+
+  return (
+    <canvas ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => onHover?.(null)}
+      style={{ width: '100%', height, borderRadius: 8, display: 'block', cursor: 'crosshair' }}
+    />
+  )
 }
 
 // ─── VMC+ER Chart ─────────────────────────────────────────────────────────────
@@ -566,110 +550,134 @@ function VMCEnhancedChart({ vmc, height = 130 }: { vmc: VMCEnhancedResult; heigh
   useEffect(() => {
     const canvas = ref.current
     if (!canvas || vmc.sig.length < 10) return
-
     const dpr = window.devicePixelRatio || 1
-    const W   = canvas.offsetWidth || 800
-    const H   = height
-    canvas.width  = W * dpr
-    canvas.height = H * dpr
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(dpr, dpr)
+    const W = canvas.offsetWidth || 800, H = height
+    canvas.width = W * dpr; canvas.height = H * dpr
+    const ctx = canvas.getContext('2d')!; ctx.scale(dpr, dpr)
 
-    ctx.fillStyle = '#080C14'
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const n = vmc.sig.length
     const yMin = -80, yMax = 80, yRange = yMax - yMin
     const toY  = (v: number) => H * 0.85 - ((v - yMin) / yRange) * (H * 0.85)
     const toX  = (i: number) => (i / (n - 1)) * W
 
-    // ER panel (bottom 15%)
-    const erPanelTop = H * 0.88
-    const erPanelH   = H * 0.10
+    const erPanelTop = H * 0.88, erPanelH = H * 0.10
     const toYER = (v: number) => erPanelTop + erPanelH - v * erPanelH
 
-    // Reference lines
     ctx.setLineDash([3, 3])
     ;[40, 0, -40].forEach(v => {
-      ctx.beginPath()
-      ctx.moveTo(0, toY(v))
-      ctx.lineTo(W, toY(v))
+      ctx.beginPath(); ctx.moveTo(0, toY(v)); ctx.lineTo(W, toY(v))
       ctx.strokeStyle = v === 0 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'
-      ctx.lineWidth = 1
-      ctx.stroke()
+      ctx.lineWidth = 1; ctx.stroke()
     })
     ctx.setLineDash([])
 
-    // Overbought/oversold zones
-    ctx.fillStyle = 'rgba(255,59,48,0.06)'
-    ctx.fillRect(0, 0, W, toY(40))
-    ctx.fillStyle = 'rgba(52,199,89,0.06)'
-    ctx.fillRect(0, toY(-40), W, H - toY(-40))
+    // Zone labels
+    ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right'
+    ctx.fillStyle = 'rgba(255,59,48,0.5)'; ctx.fillText('Surachat', W - 3, toY(45))
+    ctx.fillStyle = 'rgba(52,199,89,0.5)'; ctx.fillText('Survente', W - 3, toY(-35))
+    ctx.textAlign = 'left'
 
-    // Momentum bars colored by ER quality
+    ctx.fillStyle = 'rgba(255,59,48,0.06)'; ctx.fillRect(0, 0, W, toY(40))
+    ctx.fillStyle = 'rgba(52,199,89,0.06)'; ctx.fillRect(0, toY(-40), W, H - toY(-40))
+
     for (let i = 1; i < n; i++) {
-      const mom = vmc.momentum[i]
-      const er  = vmc.erSmoothed[i] ?? 0.5
-      const x   = toX(i)
-      const zeroY = toY(0)
-      const momY  = toY(mom)
-
-      let alpha = 0.3 + er * 0.5
-      const isPos = mom >= 0
-      const color = isPos
-        ? `rgba(52,199,89,${alpha.toFixed(2)})`
-        : `rgba(255,59,48,${alpha.toFixed(2)})`
-
-      ctx.fillStyle = color
+      const mom = vmc.momentum[i], er = vmc.erSmoothed[i] ?? 0.5
+      const x = toX(i), zeroY = toY(0), momY = toY(mom)
+      const alpha = 0.3 + er * 0.5
+      ctx.fillStyle = mom >= 0 ? `rgba(52,199,89,${alpha.toFixed(2)})` : `rgba(255,59,48,${alpha.toFixed(2)})`
       ctx.fillRect(x - 1.5, Math.min(momY, zeroY), 3, Math.abs(momY - zeroY))
     }
 
-    // Signal line
     ctx.beginPath()
-    vmc.sigSignal.forEach((v, i) => {
-      const x = toX(i), y = toY(v)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    })
-    ctx.strokeStyle = 'rgba(255,149,0,0.7)'
-    ctx.lineWidth = 1.2
-    ctx.stroke()
+    vmc.sigSignal.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.strokeStyle = 'rgba(255,149,0,0.7)'; ctx.lineWidth = 1.2; ctx.stroke()
 
-    // Main VMC line — colored by ER quality
     ctx.beginPath()
-    vmc.sig.forEach((v, i) => {
-      const x = toX(i), y = toY(v)
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-    })
-    const lineColor = vmc.erQuality === 'strong' ? '#34C759' : vmc.erQuality === 'moderate' ? '#FF9500' : '#8E8E93'
-    ctx.strokeStyle = lineColor
-    ctx.lineWidth = 1.8
-    ctx.stroke()
+    vmc.sig.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    ctx.strokeStyle = vmc.erQuality === 'strong' ? '#34C759' : vmc.erQuality === 'moderate' ? '#FF9500' : '#8E8E93'
+    ctx.lineWidth = 1.8; ctx.stroke()
 
-    // ER bar at bottom
-    ctx.fillStyle = 'rgba(255,255,255,0.06)'
-    ctx.fillRect(0, erPanelTop, W, erPanelH)
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(0, erPanelTop, W, erPanelH)
     for (let i = 1; i < n; i++) {
-      const er = vmc.erSmoothed[i] ?? 0
-      const x  = toX(i)
-      const erColor = er > 0.65 ? `rgba(52,199,89,0.7)` : er > 0.4 ? `rgba(255,149,0,0.6)` : `rgba(255,59,48,0.5)`
-      ctx.fillStyle = erColor
+      const er = vmc.erSmoothed[i] ?? 0, x = toX(i)
+      ctx.fillStyle = er > 0.65 ? 'rgba(52,199,89,0.7)' : er > 0.4 ? 'rgba(255,149,0,0.6)' : 'rgba(255,59,48,0.5)'
       ctx.fillRect(x - 1.5, toYER(er), 3, toYER(0) - toYER(er))
     }
-    ctx.fillStyle = 'rgba(255,255,255,0.3)'
-    ctx.font = '8px JetBrains Mono, monospace'
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '8px JetBrains Mono, monospace'
     ctx.fillText('ER', 4, erPanelTop + 10)
 
   }, [vmc, height])
 
-  if (vmc.sig.length < 10) {
-    return (
-      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
-        Chargement VMC…
-      </div>
-    )
-  }
-
+  if (vmc.sig.length < 10) return (
+    <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
+      Chargement VMC…
+    </div>
+  )
   return <canvas ref={ref} style={{ width: '100%', height, borderRadius: 8, display: 'block' }} />
+}
+
+// ─── Tooltip component ────────────────────────────────────────────────────────
+function HoverTooltip({ hover, candles, ou }: { hover: HoverData; candles: Candle[]; ou: OUResult }) {
+  const z = hover.z
+  const excess = hover.excess
+  const price = hover.price || candles[hover.idx]?.c || 0
+  const mean = ou.mean[hover.idx] || 0
+  const zColor = excess === 'extreme_ob' ? '#FF3B30' : excess === 'overbought' ? '#FF9500'
+    : excess === 'extreme_os' ? '#22C759' : excess === 'oversold' ? '#42A5F5' : '#8E8E93'
+
+  return (
+    <div style={{
+      position: 'absolute', top: 8, left: Math.min(hover.x + 8, 220),
+      background: 'rgba(8,12,20,0.97)', border: `1px solid ${zColor}40`,
+      borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 50,
+      minWidth: 200, backdropFilter: 'blur(12px)',
+      boxShadow: `0 0 20px ${zColor}20`,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: zColor, marginBottom: 6 }}>
+        {naturalZ(z)}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>
+          Z-Score : <span style={{ color: zColor, fontWeight: 700 }}>{z >= 0 ? '+' : ''}{z.toFixed(2)}σ</span>
+        </div>
+        {price > 0 && <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>
+          Prix : <span style={{ color: 'var(--tm-text-primary)' }}>{price >= 1 ? `$${price.toFixed(2)}` : `$${price.toFixed(5)}`}</span>
+        </div>}
+        {mean > 0 && <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>
+          μ OU : <span style={{ color: '#00E5FF' }}>{mean >= 1 ? `$${mean.toFixed(2)}` : `$${mean.toFixed(5)}`}</span>
+        </div>}
+        <div style={{ fontSize: 10, color: '#BF5AF2', marginTop: 4, fontStyle: 'italic' }}>
+          {reboundProb(z)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Tooltip badge (hover) ────────────────────────────────────────────────────
+function TooltipBadge({ children, tip }: { children: React.ReactNode; tip: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(8,12,20,0.97)', border: '1px solid rgba(0,229,255,0.2)',
+          borderRadius: 8, padding: '8px 12px', zIndex: 100,
+          fontSize: 11, color: 'var(--tm-text-primary)', whiteSpace: 'normal' as any,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)', pointerEvents: 'none',
+          maxWidth: 220, minWidth: 160,
+          lineHeight: 1.5,
+        }}>
+          {tip}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Timeframe selector ───────────────────────────────────────────────────────
@@ -682,24 +690,12 @@ const TF_OPTIONS = [
   { label: '1S',  interval: '1w',  limit: 150 },
 ]
 
-// ─── MTF Heatmap row ──────────────────────────────────────────────────────────
-interface MTFRow {
-  tf:       string
-  zscore:   number
-  excess:   string
-  erScore:  number
-  vmcBias:  string
-  regime:   string
-}
+interface MTFRow { tf: string; zscore: number; excess: string; erScore: number; vmcBias: string; regime: string }
+
+interface OUChannelIndicatorProps { symbol: string; syncInterval?: string; visibleRange?: { from: number; to: number } | null }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-interface OUChannelIndicatorProps {
-  symbol:         string
-  syncInterval?:  string
-  visibleRange?:  { from: number; to: number } | null
-}
-
-export default function OUChannelIndicator({ symbol, syncInterval, visibleRange }: OUChannelIndicatorProps) {
+export default function OUChannelIndicator({ symbol, syncInterval, visibleRange: _visibleRange }: OUChannelIndicatorProps) {
   const [tf, setTf]               = useState('1h')
   const [candles, setCandles]     = useState<Candle[]>([])
   const [ou, setOu]               = useState<OUResult | null>(null)
@@ -709,9 +705,12 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
   const [mtfRows, setMtfRows]     = useState<MTFRow[]>([])
   const [mtfLoading, setMtfLoading] = useState(false)
   const [activeView, setActiveView] = useState<'channel' | 'zscore' | 'vmc'>('channel')
+  const [proMode, setProMode]     = useState(false)
+  const [showDecision, setShowDecision] = useState(false)
+  const [hoverData, setHoverData] = useState<HoverData | null>(null)
+  const [signalHistory, setSignalHistory] = useState<SignalEntry[]>([])
   const loadRef = useRef(0)
 
-  // Sync with parent timeframe if provided
   useEffect(() => {
     if (syncInterval) {
       const match = TF_OPTIONS.find(t => t.interval === syncInterval)
@@ -722,27 +721,32 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
   const loadData = useCallback(async (interval: string) => {
     if (!symbol) return
     const id = ++loadRef.current
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
       const opt = TF_OPTIONS.find(t => t.interval === interval) ?? TF_OPTIONS[1]
       const data = await fetchCandles(symbol, opt.interval, opt.limit)
       if (id !== loadRef.current) return
 
       setCandles(data)
-
-      // OU Channel
       const ouResult = calcOUChannel(data, 50, 20)
       setOu(ouResult)
-
-      // Enhanced VMC
       const vmcResult = calcVMCEnhanced(data, 14)
       setVmc(vmcResult)
 
-    } catch (e: unknown) {
-      if (id === loadRef.current) {
-        setError(e instanceof Error ? e.message : 'Erreur de chargement')
+      // Record signal history
+      const n = data.length - 1
+      const excess = ouResult.excess[n]
+      if (excess !== 'none') {
+        const label = excess === 'extreme_ob' ? '⚠️ Surachat Extrême'
+          : excess === 'overbought' ? '🔴 Surachat OU'
+          : excess === 'extreme_os' ? '🚀 Survente Extrême'
+          : '🟢 Survente OU'
+        const color = excess.includes('ob') ? '#FF3B30' : '#34C759'
+        const now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+        setSignalHistory(prev => [{ time: now, label, color, excess }, ...prev].slice(0, 6))
       }
+    } catch (e: unknown) {
+      if (id === loadRef.current) setError(e instanceof Error ? e.message : 'Erreur de chargement')
     } finally {
       if (id === loadRef.current) setLoading(false)
     }
@@ -750,7 +754,6 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
 
   useEffect(() => { loadData(tf) }, [tf, loadData])
 
-  // MTF scan
   const loadMTF = useCallback(async () => {
     if (!symbol) return
     setMtfLoading(true)
@@ -762,20 +765,10 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
         const ouR = calcOUChannel(data, 50, 20)
         const vmcR = calcVMCEnhanced(data, 14)
         const n = data.length - 1
-        rows.push({
-          tf:       interval,
-          zscore:   ouR.zscore[n] ?? 0,
-          excess:   ouR.excess[n] ?? 'none',
-          erScore:  vmcR.erSmoothed[n] ?? 0,
-          vmcBias:  vmcR.trendBias,
-          regime:   ouR.regime[n] ?? 'ranging',
-        })
+        rows.push({ tf: interval, zscore: ouR.zscore[n] ?? 0, excess: ouR.excess[n] ?? 'none', erScore: vmcR.erSmoothed[n] ?? 0, vmcBias: vmcR.trendBias, regime: ouR.regime[n] ?? 'ranging' })
       } catch { /* ignore */ }
     }))
-    rows.sort((a, b) => {
-      const order: Record<string, number> = { '15m': 0, '1h': 1, '4h': 2, '1d': 3 }
-      return (order[a.tf] ?? 99) - (order[b.tf] ?? 99)
-    })
+    rows.sort((a, b) => ({ '15m': 0, '1h': 1, '4h': 2, '1d': 3 } as Record<string, number>)[a.tf] - ({ '15m': 0, '1h': 1, '4h': 2, '1d': 3 } as Record<string, number>)[b.tf])
     setMtfRows(rows)
     setMtfLoading(false)
   }, [symbol])
@@ -790,208 +783,330 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
   const curKappa  = ou?.kappa[n] ?? 0
   const curMean   = ou?.mean[n] ?? 0
   const curPrice  = candles[n]?.c ?? 0
+  const curUpper1 = ou?.upper1[n] ?? 0
+  const curLower2 = ou?.lower2[n] ?? 0
 
-  const zColor = curExcess === 'extreme_ob' ? '#FF3B30'
-    : curExcess === 'overbought' ? '#FF9500'
-    : curExcess === 'extreme_os' ? '#22C759'
-    : curExcess === 'oversold'   ? '#42A5F5'
-    : '#8E8E93'
-
-  const regimeColor = curRegime === 'trending' ? '#FF9500'
-    : curRegime === 'breakout' ? '#BF5AF2'
-    : '#00E5FF'
+  const zColor = curExcess === 'extreme_ob' ? '#FF3B30' : curExcess === 'overbought' ? '#FF9500'
+    : curExcess === 'extreme_os' ? '#22C759' : curExcess === 'oversold' ? '#42A5F5' : '#8E8E93'
+  const regimeColor = curRegime === 'trending' ? '#FF9500' : curRegime === 'breakout' ? '#BF5AF2' : '#00E5FF'
 
   const excessLabel = {
-    extreme_ob: '⚠️ Excès Extrême',
-    overbought: '🔴 Surachat OU',
-    extreme_os: '🚀 Rebond Extrême',
-    oversold:   '🟢 Survente OU',
-    none:       '🔵 Zone Neutre',
+    extreme_ob: '⚠️ Surachat Extrême', overbought: '🔴 Surachat OU',
+    extreme_os: '🚀 Survente Extrême', oversold: '🟢 Survente OU', none: '🔵 Zone Neutre',
   }[curExcess] ?? '—'
 
-  function fmtP(p: number): string {
+  function fmtP(p: number) {
     if (p >= 10000) return `$${p.toLocaleString('en', { maximumFractionDigits: 0 })}`
-    if (p >= 1)     return `$${p.toFixed(2)}`
+    if (p >= 1) return `$${p.toFixed(2)}`
     return `$${p.toFixed(5)}`
   }
 
+  // ── MTF Confluence Score (0–100%) ──
+  const confluenceScore = mtfRows.length > 0 ? (() => {
+    let bullScore = 0, bearScore = 0, total = mtfRows.length
+    mtfRows.forEach(r => {
+      const w = r.erScore > 0.6 ? 1.5 : r.erScore > 0.4 ? 1.0 : 0.5
+      if (r.vmcBias === 'bullish') bullScore += w
+      else if (r.vmcBias === 'bearish') bearScore += w
+      if (r.excess.includes('os')) bullScore += 0.5
+      if (r.excess.includes('ob')) bearScore += 0.5
+    })
+    const maxScore = total * 2
+    const dominant = bullScore >= bearScore ? bullScore : bearScore
+    return Math.min(100, Math.round((dominant / maxScore) * 100))
+  })() : 0
+
+  const confluenceDir = mtfRows.length > 0 ? (() => {
+    const bulls = mtfRows.filter(r => r.vmcBias === 'bullish').length
+    const bears = mtfRows.filter(r => r.vmcBias === 'bearish').length
+    if (bulls > bears) return 'bullish'
+    if (bears > bulls) return 'bearish'
+    return 'neutral'
+  })() : 'neutral'
+
+  const confluenceLabel = confluenceScore < 30 ? { text: 'Contre-trend', color: '#FF453A' }
+    : confluenceScore < 60 ? { text: 'Signal incertain', color: '#FF9500' }
+    : { text: 'Aligné', color: '#34C759' }
+
+  const conflIcon = confluenceScore < 30 ? '⚠️' : confluenceScore < 60 ? '◑' : '✅'
+
+  // ── Zone advice ──
+  const zoneInfo = zoneAdvice(curExcess, curRegime)
+
+  // ── Decision plan ──
+  const decisionPlan = (() => {
+    if (curExcess === 'none') return null
+    const isBuy = curExcess.includes('os')
+    return {
+      action: isBuy ? '📈 Opportunité Achat' : '📉 Opportunité Vente/Sortie',
+      color: isBuy ? '#34C759' : '#FF3B30',
+      entry: isBuy ? `Zone actuelle (${fmtP(curPrice)})` : `Zone actuelle (${fmtP(curPrice)})`,
+      tp: isBuy ? `Retour à μ OU (${fmtP(curMean)}) → +${curMean > 0 && curPrice > 0 ? ((curMean/curPrice - 1)*100).toFixed(1) : '?'}%` : `Retour à μ OU (${fmtP(curMean)})`,
+      sl: isBuy ? `Cassure bande -2σ (${fmtP(curLower2)})` : `Cassure bande +1σ (${fmtP(curUpper1)})`,
+      rationale: `Z-Score ${curZ.toFixed(2)}σ · ${naturalZ(curZ)} · ${curRegime === 'ranging' ? 'Régime Range → signal fiable' : 'Régime Tendance → confirmer direction'}`,
+    }
+  })()
+
   const C = {
-    card: {
-      background:  'rgba(13,17,35,0.7)',
-      border:      '1px solid rgba(255,255,255,0.06)',
-      borderRadius: 16,
-      overflow:    'hidden' as const,
-      position:    'relative' as const,
-      backdropFilter: 'blur(12px)',
-    },
+    card: { background: 'rgba(13,17,35,0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden' as const, position: 'relative' as const, backdropFilter: 'blur(12px)' },
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', zIndex: 1 }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
-        @keyframes ouPulse { 0%,100%{opacity:0.6}50%{opacity:1} }
+        @keyframes ouPulse { 0%,100%{opacity:0.6;transform:scale(1)}50%{opacity:1;transform:scale(1.05)} }
+        @keyframes signalPulse { 0%,100%{box-shadow:0 0 8px ${zColor}40}50%{box-shadow:0 0 20px ${zColor}80} }
       `}</style>
 
-      {/* ── Header Card ── */}
-      <div style={{ ...C.card, padding: '14px 18px', borderColor: `${zColor}40` }}>
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-          background: `linear-gradient(90deg,transparent,${zColor}80,transparent)`,
-        }} />
+      {/* ── Verdict Global (signal principal — GRAND) ── */}
+      <div style={{
+        ...C.card, padding: '16px 20px',
+        borderColor: `${zColor}50`,
+        background: `linear-gradient(135deg, rgba(13,17,35,0.9), ${zColor}08)`,
+        animation: curExcess !== 'none' ? 'signalPulse 2.5s ease-in-out infinite' : undefined,
+      }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg,transparent,${zColor}80,transparent)` }} />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          {/* Title */}
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: `linear-gradient(135deg,rgba(0,229,255,0.15),rgba(191,90,242,0.15))`,
-              border: '1px solid rgba(0,229,255,0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 16,
-            }}>〜</div>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${zColor}20,${zColor}08)`, border: `1px solid ${zColor}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>〜</div>
             <div>
-              <div style={{
-                fontSize: 13, fontWeight: 800, color: 'var(--tm-text-primary)',
-                fontFamily: 'Syne,sans-serif',
-              }}>
-                Canal OU · Excès Statistiques
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>
-                Ornstein-Uhlenbeck · VMC + Kaufman ER
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--tm-text-primary)', fontFamily: 'Syne,sans-serif' }}>Canal OU · Excès Statistiques</div>
+              <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>Ornstein-Uhlenbeck · VMC + Kaufman ER</div>
             </div>
           </div>
 
-          {/* Key stats */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* Z-score badge */}
-            <div style={{
-              padding: '5px 12px', borderRadius: 8,
-              background: `${zColor}15`,
-              border: `1px solid ${zColor}40`,
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
+          {/* Mode toggle + reload */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button onClick={() => setProMode(p => !p)} style={{
+              padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              background: proMode ? 'rgba(191,90,242,0.15)' : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${proMode ? 'rgba(191,90,242,0.4)' : 'rgba(255,255,255,0.1)'}`,
+              color: proMode ? '#BF5AF2' : 'var(--tm-text-muted)', transition: 'all 0.2s',
             }}>
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>Z-SCORE OU</span>
-              <span style={{ fontSize: 16, fontWeight: 800, color: zColor, fontFamily: 'JetBrains Mono' }}>
-                {curZ >= 0 ? '+' : ''}{curZ.toFixed(2)}σ
-              </span>
-            </div>
-
-            {/* Excess label */}
-            <div style={{
-              padding: '5px 12px', borderRadius: 8,
-              background: `${zColor}10`,
-              border: `1px solid ${zColor}25`,
-            }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: zColor }}>{excessLabel}</span>
-            </div>
-
-            {/* Regime */}
-            <div style={{
-              padding: '5px 10px', borderRadius: 8,
-              background: `${regimeColor}10`,
-              border: `1px solid ${regimeColor}25`,
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-            }}>
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>RÉGIME</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: regimeColor, textTransform: 'uppercase' }}>
-                {curRegime === 'trending' ? '📈 Tendance' : curRegime === 'breakout' ? '💥 Breakout' : '🔄 Range'}
-              </span>
-            </div>
-
-            {/* κ (mean-reversion speed) */}
-            <div style={{
-              padding: '5px 10px', borderRadius: 8,
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-            }}>
-              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>κ REVERSION</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#BF5AF2', fontFamily: 'JetBrains Mono' }}>
-                {curKappa.toFixed(2)}
-              </span>
-            </div>
-
-            {/* VMC ER quality */}
-            {vmc && (
-              <div style={{
-                padding: '5px 10px', borderRadius: 8,
-                background: `${vmc.erColor}10`,
-                border: `1px solid ${vmc.erColor}25`,
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-              }}>
-                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>ER KAUFMAN</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: vmc.erColor, fontFamily: 'JetBrains Mono' }}>
-                  {vmc.erQuality === 'strong' ? '⚡ Fort' : vmc.erQuality === 'moderate' ? '◐ Modéré' : '○ Faible'}
-                </span>
-              </div>
-            )}
-
-            {/* Mean price */}
-            {curMean > 0 && (
-              <div style={{
-                padding: '5px 10px', borderRadius: 8,
-                background: 'rgba(0,229,255,0.05)',
-                border: '1px solid rgba(0,229,255,0.15)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-              }}>
-                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>μ OU</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#00E5FF', fontFamily: 'JetBrains Mono' }}>
-                  {fmtP(curMean)}
-                </span>
-              </div>
-            )}
-
-            {/* Reload */}
-            <button onClick={() => loadData(tf)} disabled={loading} style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: 'none', border: '1px solid rgba(255,255,255,0.1)',
-              cursor: loading ? 'wait' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--tm-text-muted)', fontSize: 14,
-            }}>
+              {proMode ? '⚙️ Pro' : '🎓 Débutant'}
+            </button>
+            <button onClick={() => loadData(tf)} disabled={loading} style={{ width: 32, height: 32, borderRadius: 8, background: 'none', border: '1px solid rgba(255,255,255,0.1)', cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 14 }}>
               {loading ? <div style={{ width: 12, height: 12, border: '2px solid #2A2F3E', borderTopColor: '#00E5FF', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> : '↻'}
             </button>
           </div>
         </div>
 
-        {/* VMC Status bar */}
+        {/* ── SIGNAL PRINCIPAL ── */}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
+          {/* Z-score + label GROS */}
+          <div style={{ flex: '0 0 auto', padding: '12px 20px', borderRadius: 12, background: `${zColor}12`, border: `1px solid ${zColor}35`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 120 }}>
+            <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono', letterSpacing: '0.08em' }}>Z-SCORE OU</span>
+            <span style={{ fontSize: 28, fontWeight: 900, color: zColor, fontFamily: 'JetBrains Mono', lineHeight: 1 }}>
+              {curZ >= 0 ? '+' : ''}{curZ.toFixed(2)}σ
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: zColor, textAlign: 'center' }}>{excessLabel}</span>
+          </div>
+
+          {/* Interprétation naturelle */}
+          <div style={{ flex: 1, minWidth: 200, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: zColor, fontFamily: 'Syne,sans-serif' }}>
+              {zoneInfo.emoji} {zoneInfo.title}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {zoneInfo.bullets.map((b, i) => (
+                <div key={i} style={{ fontSize: 11, color: i === 0 ? 'var(--tm-text-primary)' : 'var(--tm-text-muted)', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                  <span style={{ color: zColor, marginTop: 1 }}>→</span> {b}
+                </div>
+              ))}
+              {zoneInfo.warning && (
+                <div style={{ fontSize: 10, color: '#FF9500', marginTop: 2, fontStyle: 'italic' }}>{zoneInfo.warning}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Plan décision */}
+          {decisionPlan && (
+            <div style={{ flex: '0 0 auto' }}>
+              <button onClick={() => setShowDecision(d => !d)} style={{
+                height: '100%', padding: '10px 14px', borderRadius: 12, cursor: 'pointer',
+                background: showDecision ? `${decisionPlan.color}15` : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${showDecision ? decisionPlan.color + '40' : 'rgba(255,255,255,0.1)'}`,
+                color: showDecision ? decisionPlan.color : 'var(--tm-text-muted)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+                fontSize: 11, fontWeight: 700, transition: 'all 0.2s',
+              }}>
+                <span style={{ fontSize: 18 }}>🎯</span>
+                Que faire ?
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Plan "Que faire ?" ── */}
+        {showDecision && decisionPlan && (
+          <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 12, background: `${decisionPlan.color}08`, border: `1px solid ${decisionPlan.color}30` }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: decisionPlan.color, marginBottom: 10, fontFamily: 'Syne,sans-serif' }}>
+              📌 {decisionPlan.action}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              {[
+                { label: '🎯 Entrée', value: decisionPlan.entry, color: '#00E5FF' },
+                { label: '✅ TP cible', value: decisionPlan.tp, color: '#34C759' },
+                { label: '🛑 SL', value: decisionPlan.sl, color: '#FF3B30' },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ fontSize: 9, color: 'var(--tm-text-muted)', marginBottom: 3, fontWeight: 700 }}>{label}</div>
+                  <div style={{ fontSize: 10, color, fontWeight: 600, fontFamily: 'JetBrains Mono', lineHeight: 1.4 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 10, color: 'var(--tm-text-muted)', fontStyle: 'italic' }}>{decisionPlan.rationale}</div>
+            <div style={{ marginTop: 6, fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>⚠️ Ce plan est indicatif — toujours confirmer avec votre analyse de risque.</div>
+          </div>
+        )}
+
+        {/* ── VMC Status ── */}
         {vmc && (
-          <div style={{
-            marginTop: 10, padding: '6px 12px', borderRadius: 8,
-            background: `${vmc.statusColor}10`,
-            border: `1px solid ${vmc.statusColor}25`,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
+          <div style={{ marginTop: 10, padding: '8px 14px', borderRadius: 8, background: `${vmc.statusColor}10`, border: `1px solid ${vmc.statusColor}25`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: vmc.statusColor, boxShadow: `0 0 6px ${vmc.statusColor}` }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: vmc.statusColor, fontFamily: 'Syne,sans-serif' }}>
-                {vmc.status}
+              <span style={{ fontSize: 12, fontWeight: 700, color: vmc.statusColor, fontFamily: 'Syne,sans-serif' }}>{vmc.status}</span>
+            </div>
+            {/* Probabilité de rebond */}
+            <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontStyle: 'italic' }}>{reboundProb(curZ)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Stats badges (mode Pro uniquement) ── */}
+      {proMode && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <TooltipBadge tip={`${naturalKappa(curKappa)}\n\nκ élevé = range (bandes plus étroites)\nκ faible = tendance (bandes élargies)`}>
+            <div style={{ padding: '5px 10px', borderRadius: 8, background: 'rgba(191,90,242,0.08)', border: '1px solid rgba(191,90,242,0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'help' }}>
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>κ REVERSION</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#BF5AF2', fontFamily: 'JetBrains Mono' }}>{curKappa.toFixed(2)}</span>
+              <span style={{ fontSize: 8, color: 'rgba(191,90,242,0.6)' }}>{naturalKappa(curKappa).split(' (')[0]}</span>
+            </div>
+          </TooltipBadge>
+
+          {vmc && (
+            <TooltipBadge tip={`${naturalER(vmc.erSmoothed[n] ?? 0)}\n\nER > 0.65 → signal VMC fiable\nER < 0.40 → marché en range, signal bruité\n\nER = |variation nette| / Σ|variations|`}>
+              <div style={{ padding: '5px 10px', borderRadius: 8, background: `${vmc.erColor}0D`, border: `1px solid ${vmc.erColor}25`, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'help' }}>
+                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>ER KAUFMAN</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: vmc.erColor, fontFamily: 'JetBrains Mono' }}>
+                  {vmc.erQuality === 'strong' ? '⚡ Fort' : vmc.erQuality === 'moderate' ? '◐ Modéré' : '○ Faible'}
+                </span>
+                <span style={{ fontSize: 8, color: vmc.erColor, opacity: 0.7 }}>{naturalER(vmc.erSmoothed[n] ?? 0).split(' (')[0]}</span>
+              </div>
+            </TooltipBadge>
+          )}
+
+          <TooltipBadge tip={`Régime actuel : ${curRegime}\n\n🔄 Range → signaux de retour à la moyenne fiables\n📈 Tendance → éviter les contre-trades\n💥 Breakout → fort mouvement imminent`}>
+            <div style={{ padding: '5px 10px', borderRadius: 8, background: `${regimeColor}0D`, border: `1px solid ${regimeColor}25`, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'help' }}>
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>RÉGIME</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: regimeColor }}>
+                {curRegime === 'trending' ? '📈 Tendance' : curRegime === 'breakout' ? '💥 Breakout' : '🔄 Range'}
               </span>
             </div>
-            {/* Confluence bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>Confluence</span>
-              <div style={{ width: 80, height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.08)', position: 'relative' }}>
-                <div style={{
-                  position: 'absolute',
-                  left: vmc.confluence >= 0 ? '50%' : `${(0.5 + vmc.confluence * 0.5) * 100}%`,
-                  width: `${Math.abs(vmc.confluence) * 50}%`,
-                  height: '100%',
-                  background: vmc.confluence > 0 ? '#34C759' : '#FF3B30',
-                  borderRadius: 3,
-                  transition: 'all 0.3s',
-                }} />
-                <div style={{ position: 'absolute', left: '50%', top: '-1px', width: 1, height: 8, background: 'rgba(255,255,255,0.3)' }} />
+          </TooltipBadge>
+
+          {curMean > 0 && (
+            <div style={{ padding: '5px 10px', borderRadius: 8, background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.15)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>μ OU</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#00E5FF', fontFamily: 'JetBrains Mono' }}>{fmtP(curMean)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Confluence Score ── */}
+      <div style={{ ...C.card, padding: '12px 16px' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(0,229,255,0.15),transparent)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'Syne,sans-serif' }}>
+            📊 Confluence Multi-Timeframes
+          </span>
+          {mtfLoading && <div style={{ width: 12, height: 12, border: '2px solid #2A2F3E', borderTopColor: '#00E5FF', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />}
+        </div>
+
+        {/* Score visuel agrégé */}
+        {mtfRows.length > 0 && (
+          <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: `${confluenceLabel.color}0D`, border: `1px solid ${confluenceLabel.color}30` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 18 }}>{conflIcon}</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: confluenceLabel.color, fontFamily: 'Syne,sans-serif' }}>
+                    Confluence : {confluenceScore}% {confluenceDir !== 'neutral' ? (confluenceDir === 'bullish' ? '▲' : '▼') : ''}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{confluenceLabel.text}</div>
+                </div>
               </div>
-              <span style={{
-                fontSize: 10, fontWeight: 700,
-                color: vmc.confluence > 0.2 ? '#34C759' : vmc.confluence < -0.2 ? '#FF3B30' : '#8E8E93',
-                fontFamily: 'JetBrains Mono',
-              }}>
-                {vmc.confluence >= 0 ? '+' : ''}{(vmc.confluence * 100).toFixed(0)}%
-              </span>
+            </div>
+            {/* Barre interprétée */}
+            <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, width: `${confluenceScore}%`, height: '100%', background: `linear-gradient(90deg, #FF453A, #FF9500 30%, ${confluenceLabel.color})`, borderRadius: 4, transition: 'width 0.6s ease' }} />
+              <div style={{ position: 'absolute', left: '30%', top: 0, width: 1, height: '100%', background: 'rgba(255,255,255,0.2)' }} />
+              <div style={{ position: 'absolute', left: '60%', top: 0, width: 1, height: '100%', background: 'rgba(255,255,255,0.2)' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+              <span style={{ fontSize: 8, color: '#FF453A', fontFamily: 'JetBrains Mono' }}>Contre-trend</span>
+              <span style={{ fontSize: 8, color: '#FF9500', fontFamily: 'JetBrains Mono' }}>Incertain</span>
+              <span style={{ fontSize: 8, color: '#34C759', fontFamily: 'JetBrains Mono' }}>Aligné</span>
+            </div>
+          </div>
+        )}
+
+        {/* Table MTF (mode Pro uniquement) */}
+        {proMode && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '60px 90px 100px 80px 100px 80px', gap: 4, marginBottom: 6 }}>
+              {['TF', 'Z-Score', 'Signal', 'ER', 'VMC Biais', 'Régime'].map(h => (
+                <div key={h} style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</div>
+              ))}
+            </div>
+            {mtfRows.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--tm-text-muted)', fontSize: 12 }}>Calcul MTF en cours…</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {mtfRows.map(row => {
+                  const zc = Math.abs(row.zscore) > 2.5 ? '#FF3B30' : Math.abs(row.zscore) > 1.5 ? '#FF9500' : '#8E8E93'
+                  const ec = row.excess.includes('ob') ? '#FF3B30' : row.excess.includes('os') ? '#34C759' : '#8E8E93'
+                  const erc = row.erScore > 0.65 ? '#34C759' : row.erScore > 0.4 ? '#FF9500' : '#FF453A'
+                  const bc = row.vmcBias === 'bullish' ? '#34C759' : row.vmcBias === 'bearish' ? '#FF3B30' : '#8E8E93'
+                  const rc = row.regime === 'trending' ? '#FF9500' : row.regime === 'breakout' ? '#BF5AF2' : '#00E5FF'
+                  const isActive = row.tf === tf
+                  return (
+                    <div key={row.tf} onClick={() => setTf(row.tf)} style={{ display: 'grid', gridTemplateColumns: '60px 90px 100px 80px 100px 80px', gap: 4, padding: '6px 8px', borderRadius: 8, cursor: 'pointer', background: isActive ? 'rgba(0,229,255,0.06)' : 'rgba(255,255,255,0.02)', border: `1px solid ${isActive ? 'rgba(0,229,255,0.2)' : 'transparent'}`, transition: 'all 0.15s' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: isActive ? '#00E5FF' : 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono' }}>{row.tf}</span>
+                      <TooltipBadge tip={`${naturalZ(row.zscore)}\n${reboundProb(row.zscore)}`}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: zc, fontFamily: 'JetBrains Mono', cursor: 'help' }}>{row.zscore >= 0 ? '+' : ''}{row.zscore.toFixed(2)}σ</span>
+                      </TooltipBadge>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: ec }}>
+                        {row.excess === 'extreme_ob' ? '⚠️ Extrême OB' : row.excess === 'overbought' ? '🔴 Surachat' : row.excess === 'extreme_os' ? '🚀 Extrême OS' : row.excess === 'oversold' ? '🟢 Survente' : '● Neutre'}
+                      </span>
+                      <TooltipBadge tip={naturalER(row.erScore)}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: erc, fontFamily: 'JetBrains Mono', cursor: 'help' }}>{row.erScore.toFixed(2)} {row.erScore > 0.65 ? '⚡' : row.erScore > 0.4 ? '◐' : '○'}</span>
+                      </TooltipBadge>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: bc }}>{row.vmcBias === 'bullish' ? '▲ Haussier' : row.vmcBias === 'bearish' ? '▼ Baissier' : '● Neutre'}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: rc }}>{row.regime === 'trending' ? '📈 Trend' : row.regime === 'breakout' ? '💥 Break' : '🔄 Range'}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Signal historique */}
+        {signalHistory.length > 0 && (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginBottom: 6, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'JetBrains Mono' }}>Historique signaux</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {signalHistory.map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: 1 - i * 0.15 }}>
+                  <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono', minWidth: 36 }}>{s.time}</span>
+                  <span style={{ fontSize: 10, color: s.color, fontWeight: 600 }}>{s.label}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -999,48 +1114,34 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
 
       {/* ── View selector + TF ── */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        {/* View tabs */}
-        {((['channel', 'zscore', 'vmc'] as const).map(v => ({
-          id: v,
-          label: v === 'channel' ? '〜 Canal OU' : v === 'zscore' ? '± Z-Score' : '≋ VMC + ER',
-        }))).map(tab => (
+        {(['channel', 'zscore', 'vmc'] as const).map(v => ({
+          id: v, label: v === 'channel' ? '〜 Canal OU' : v === 'zscore' ? '± Z-Score' : '≋ VMC + ER',
+        })).map(tab => (
           <button key={tab.id} onClick={() => setActiveView(tab.id)} style={{
-            padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600,
-            cursor: 'pointer',
+            padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             background: activeView === tab.id ? 'rgba(0,229,255,0.12)' : 'rgba(255,255,255,0.04)',
             border: `1px solid ${activeView === tab.id ? 'rgba(0,229,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
-            color: activeView === tab.id ? '#00E5FF' : 'var(--tm-text-muted)',
-            transition: 'all 0.15s',
-          }}>
-            {tab.label}
-          </button>
+            color: activeView === tab.id ? '#00E5FF' : 'var(--tm-text-muted)', transition: 'all 0.15s',
+          }}>{tab.label}</button>
         ))}
 
         <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
 
-        {/* TF selector */}
         {TF_OPTIONS.map(opt => (
           <button key={opt.label} onClick={() => setTf(opt.interval)} style={{
-            padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600,
-            cursor: 'pointer',
+            padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: 'pointer',
             background: tf === opt.interval ? 'rgba(191,90,242,0.15)' : 'transparent',
             border: `1px solid ${tf === opt.interval ? 'rgba(191,90,242,0.5)' : 'rgba(255,255,255,0.07)'}`,
-            color: tf === opt.interval ? '#BF5AF2' : 'var(--tm-text-muted)',
-            transition: 'all 0.15s',
-          }}>
-            {opt.label}
-          </button>
+            color: tf === opt.interval ? '#BF5AF2' : 'var(--tm-text-muted)', transition: 'all 0.15s',
+          }}>{opt.label}</button>
         ))}
       </div>
 
-      {/* ── Error ── */}
       {error && (
-        <div style={{ padding: '10px 16px', borderRadius: 10, background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.3)', color: '#FF3B30', fontSize: 12 }}>
-          ⚠️ {error}
-        </div>
+        <div style={{ padding: '10px 16px', borderRadius: 10, background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.3)', color: '#FF3B30', fontSize: 12 }}>⚠️ {error}</div>
       )}
 
-      {/* ── Charts ── */}
+      {/* ── Charts with hover tooltip ── */}
       {loading && !candles.length ? (
         <div style={{ ...C.card, padding: 40, textAlign: 'center' as const, color: 'var(--tm-text-muted)', fontSize: 12 }}>
           <div style={{ width: 20, height: 20, border: '2px solid #2A2F3E', borderTopColor: '#00E5FF', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 8px' }} />
@@ -1049,50 +1150,42 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Legend */}
-          <div style={{
-            display: 'flex', gap: 12, flexWrap: 'wrap',
-            padding: '6px 12px',
-            background: 'rgba(0,0,0,0.3)', borderRadius: '8px 8px 0 0',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', padding: '6px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px 8px 0 0', border: '1px solid rgba(255,255,255,0.06)' }}>
             {activeView === 'channel' && [
-              ['rgba(0,229,255,0.7)', 'μ (moyenne OU)'],
-              ['rgba(255,149,0,0.5)', '+/-1σ adaptatif'],
-              ['rgba(255,59,48,0.6)', '+/-2σ (excès)'],
-              ['#22C759', 'Prix en survente'],
-              ['#FF3B30', 'Prix en surachat'],
+              ['rgba(0,229,255,0.7)', 'μ — Équilibre OU'],
+              ['rgba(255,149,0,0.5)', '±1σ — Zone normale'],
+              ['rgba(255,59,48,0.6)', '±2σ — Zone d\'excès'],
+              ['#22C759', 'Prix sous-évalué'],
+              ['#FF3B30', 'Prix surévalué'],
             ].map(([c, l]) => (
               <div key={l as string} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div style={{ width: 14, height: 2, background: c as string, borderRadius: 1 }} />
-                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>{l as string}</span>
+                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>{l as string}</span>
               </div>
             ))}
             {activeView === 'zscore' && [
-              ['rgba(255,59,48,0.8)', '> +2.5σ Extrême'],
+              ['rgba(255,59,48,0.8)', '> +2.5σ Extrême OB'],
               ['rgba(255,149,0,0.7)', '+1.5 à +2.5σ Surachat'],
               ['rgba(0,229,255,0.6)', 'Zone neutre'],
-              ['rgba(42,160,80,0.7)', '-1.5 à -2.5σ Survente'],
-              ['rgba(52,199,89,0.8)', '< -2.5σ Extrême'],
+              ['rgba(42,160,80,0.7)', '-2.5 à -1.5σ Survente'],
+              ['rgba(52,199,89,0.8)', '< -2.5σ Extrême OS'],
             ].map(([c, l]) => (
               <div key={l as string} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div style={{ width: 10, height: 10, background: c as string, borderRadius: 2 }} />
-                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>{l as string}</span>
+                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>{l as string}</span>
               </div>
             ))}
             {activeView === 'vmc' && [
-              ['#34C759', 'VMC (ER Fort)'],
-              ['#FF9500', 'VMC Signal'],
+              ['#34C759', 'VMC (ER Fort = signal fiable)'],
+              ['#FF9500', 'Signal VMC'],
               ['rgba(52,199,89,0.6)', 'Momentum +'],
               ['rgba(255,59,48,0.6)', 'Momentum -'],
-              ['#34C759', 'ER > 0.65 (tendance)'],
-              ['#FF453A', 'ER < 0.40 (range)'],
             ].map(([c, l]) => (
               <div key={l as string} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div style={{ width: 14, height: 2, background: c as string, borderRadius: 1 }} />
-                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>{l as string}</span>
+                <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>{l as string}</span>
               </div>
             ))}
-            {/* Regime legend */}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               {[['#FF9500', '● Tendance'], ['#00E5FF', '● Range'], ['#BF5AF2', '● Breakout']].map(([c, l]) => (
                 <span key={l as string} style={{ fontSize: 9, color: c as string, fontFamily: 'JetBrains Mono' }}>{l as string}</span>
@@ -1100,17 +1193,25 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
             </div>
           </div>
 
-          {/* Chart area */}
-          <div style={{
-            background: '#080C14', borderRadius: '0 0 8px 8px',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderTop: 'none', overflow: 'hidden',
-          }}>
+          {/* Chart area with hover tooltip */}
+          <div style={{ background: '#080C14', borderRadius: '0 0 8px 8px', border: '1px solid rgba(255,255,255,0.06)', borderTop: 'none', overflow: 'hidden', position: 'relative' }}>
             {activeView === 'channel' && ou && (
-              <OUChannelChart candles={candles} ou={ou} height={220} />
+              <>
+                <OUChannelChart candles={candles} ou={ou} height={220} onHover={setHoverData} />
+                {hoverData && <HoverTooltip hover={hoverData} candles={candles} ou={ou} />}
+              </>
             )}
             {activeView === 'zscore' && ou && (
-              <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130} />
+              <>
+                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130} onHover={setHoverData} />
+                {hoverData && ou && (
+                  <div style={{ position: 'absolute', top: 8, left: Math.min(hoverData.x + 8, 240), background: 'rgba(8,12,20,0.97)', border: `1px solid rgba(0,229,255,0.2)`, borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 50, minWidth: 200, backdropFilter: 'blur(12px)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: hoverData.z > 1.5 ? '#FF3B30' : hoverData.z < -1.5 ? '#34C759' : '#8E8E93', marginBottom: 4 }}>{naturalZ(hoverData.z)}</div>
+                    <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>Z-Score : <span style={{ color: 'var(--tm-text-primary)', fontWeight: 700 }}>{hoverData.z >= 0 ? '+' : ''}{hoverData.z.toFixed(2)}σ</span></div>
+                    <div style={{ fontSize: 10, color: '#BF5AF2', marginTop: 4, fontStyle: 'italic' }}>{reboundProb(hoverData.z)}</div>
+                  </div>
+                )}
+              </>
             )}
             {activeView === 'vmc' && vmc && (
               <VMCEnhancedChart vmc={vmc} height={150} />
@@ -1119,120 +1220,18 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange 
         </div>
       )}
 
-      {/* ── MTF Confluence Table ── */}
-      <div style={{ ...C.card, padding: '12px 14px' }}>
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: 1,
-          background: 'linear-gradient(90deg,transparent,rgba(0,229,255,0.15),transparent)',
-        }} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'Syne,sans-serif' }}>
-            📊 Confluence Multi-Timeframes
-          </span>
-          {mtfLoading && (
-            <div style={{ width: 12, height: 12, border: '2px solid #2A2F3E', borderTopColor: '#00E5FF', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-          )}
+      {/* ── Theory (mode Pro uniquement) ── */}
+      {proMode && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(0,229,255,0.03)', border: '1px solid rgba(0,229,255,0.08)', fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.7, fontFamily: 'JetBrains Mono' }}>
+          <span style={{ color: '#00E5FF' }}>OU</span>: dX = κ(μ−X)dt + σdW · Bandes ±1σ/±2σ adaptatives
+          &nbsp;|&nbsp;
+          <span style={{ color: '#BF5AF2' }}>κ</span>: vitesse de retour à la moyenne (élevée = range)
+          &nbsp;|&nbsp;
+          <span style={{ color: '#FF9500' }}>ER Kaufman</span>: |Δprix| / Σ|Δ| — 1=tendance pure, 0=bruit
+          &nbsp;|&nbsp;
+          <span style={{ color: '#34C759' }}>VMC+ER</span>: signal amplifié par la qualité du mouvement
         </div>
-
-        {/* Column headers */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: '60px 90px 100px 80px 100px 80px',
-          gap: 4, marginBottom: 6,
-        }}>
-          {['TF', 'Z-Score OU', 'Excès OU', 'ER Kaufman', 'VMC Biais', 'Régime'].map(h => (
-            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</div>
-          ))}
-        </div>
-
-        {/* Rows */}
-        {mtfRows.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--tm-text-muted)', fontSize: 12 }}>Calcul MTF en cours…</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {mtfRows.map(row => {
-              const zc = Math.abs(row.zscore) > 2.5 ? '#FF3B30' : Math.abs(row.zscore) > 1.5 ? '#FF9500' : '#8E8E93'
-              const ec = row.excess.includes('ob') ? '#FF3B30' : row.excess.includes('os') ? '#34C759' : '#8E8E93'
-              const erc = row.erScore > 0.65 ? '#34C759' : row.erScore > 0.4 ? '#FF9500' : '#FF453A'
-              const bc = row.vmcBias === 'bullish' ? '#34C759' : row.vmcBias === 'bearish' ? '#FF3B30' : '#8E8E93'
-              const rc = row.regime === 'trending' ? '#FF9500' : row.regime === 'breakout' ? '#BF5AF2' : '#00E5FF'
-              const isActive = row.tf === tf
-
-              return (
-                <div
-                  key={row.tf}
-                  onClick={() => setTf(row.tf)}
-                  style={{
-                    display: 'grid', gridTemplateColumns: '60px 90px 100px 80px 100px 80px',
-                    gap: 4, padding: '6px 8px', borderRadius: 8, cursor: 'pointer',
-                    background: isActive ? 'rgba(0,229,255,0.06)' : 'rgba(255,255,255,0.02)',
-                    border: `1px solid ${isActive ? 'rgba(0,229,255,0.2)' : 'transparent'}`,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <span style={{ fontSize: 11, fontWeight: 700, color: isActive ? '#00E5FF' : 'var(--tm-text-primary)', fontFamily: 'JetBrains Mono' }}>{row.tf}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: zc, fontFamily: 'JetBrains Mono' }}>
-                    {row.zscore >= 0 ? '+' : ''}{row.zscore.toFixed(2)}σ
-                  </span>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: ec }}>
-                    {row.excess === 'extreme_ob' ? '⚠️ Extrême OB' : row.excess === 'overbought' ? '🔴 Surachat' : row.excess === 'extreme_os' ? '🚀 Extrême OS' : row.excess === 'oversold' ? '🟢 Survente' : '● Neutre'}
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: erc, fontFamily: 'JetBrains Mono' }}>
-                    {row.erScore.toFixed(2)} {row.erScore > 0.65 ? '⚡' : row.erScore > 0.4 ? '◐' : '○'}
-                  </span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: bc }}>
-                    {row.vmcBias === 'bullish' ? '▲ Haussier' : row.vmcBias === 'bearish' ? '▼ Baissier' : '● Neutre'}
-                  </span>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: rc }}>
-                    {row.regime === 'trending' ? '📈 Trend' : row.regime === 'breakout' ? '💥 Break' : '🔄 Range'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Overall confluence signal */}
-        {mtfRows.length > 0 && (() => {
-          const bulls = mtfRows.filter(r => r.vmcBias === 'bullish').length
-          const bears = mtfRows.filter(r => r.vmcBias === 'bearish').length
-          const osRows = mtfRows.filter(r => r.excess.includes('os')).length
-          const obRows = mtfRows.filter(r => r.excess.includes('ob')).length
-          const strongER = mtfRows.filter(r => r.erScore > 0.6).length
-
-          const signal = bulls > bears + 1 ? { color: '#34C759', label: '✅ Confluence Haussière', sub: `${bulls}/${mtfRows.length} TF bullish · ER fort sur ${strongER} TF` }
-            : bears > bulls + 1 ? { color: '#FF3B30', label: '⚠️ Confluence Baissière', sub: `${bears}/${mtfRows.length} TF bearish · ${obRows} TF en surachat OU` }
-            : osRows >= 2 ? { color: '#42A5F5', label: '🟢 Multi-TF Survente OU', sub: `${osRows} timeframes en zone survente — rebond probable` }
-            : obRows >= 2 ? { color: '#FF9500', label: '🔴 Multi-TF Surachat OU', sub: `${obRows} timeframes en zone surachat — prudence` }
-            : { color: '#8E8E93', label: '⚖️ Pas de confluence claire', sub: 'Signaux mixtes — attendre la confirmation' }
-
-          return (
-            <div style={{
-              marginTop: 10, padding: '8px 12px', borderRadius: 8,
-              background: `${signal.color}10`,
-              border: `1px solid ${signal.color}30`,
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: signal.color, marginBottom: 2 }}>{signal.label}</div>
-              <div style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{signal.sub}</div>
-            </div>
-          )
-        })()}
-      </div>
-
-      {/* ── Theory explainer ── */}
-      <div style={{
-        padding: '10px 14px', borderRadius: 10,
-        background: 'rgba(0,229,255,0.03)', border: '1px solid rgba(0,229,255,0.08)',
-        fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.7,
-        fontFamily: 'JetBrains Mono,monospace',
-      }}>
-        <span style={{ color: '#00E5FF' }}>OU</span>: dX = κ(μ−X)dt + σdW · Bandes ±1σ/±2σ adaptatives
-        &nbsp;|&nbsp;
-        <span style={{ color: '#BF5AF2' }}>κ</span>: vitesse de retour à la moyenne (élevée = range)
-        &nbsp;|&nbsp;
-        <span style={{ color: '#FF9500' }}>ER Kaufman</span>: |Δprix| / Σ|Δ| — 1=tendance pure, 0=bruit
-        &nbsp;|&nbsp;
-        <span style={{ color: '#34C759' }}>VMC+ER</span>: signal amplifié par la qualité du mouvement
-      </div>
+      )}
     </div>
   )
 }
