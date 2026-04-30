@@ -1092,6 +1092,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
   const [mtfRows, setMtfRows]     = useState<MTFRow[]>([])
   const [mtfLoading, setMtfLoading] = useState(false)
   const [activeView, setActiveView] = useState<'channel' | 'zscore' | 'vmc' | 'confluence'>('channel')
+  const [showStats, setShowStats] = useState(true)
   const isCrypto = /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
   const [proMode, setProMode]     = useState(false)
   const [showDecision, setShowDecision] = useState(false)
@@ -1277,8 +1278,21 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
             </div>
           </div>
 
-          {/* Mode toggle + reload */}
+          {/* Mode toggle + collapse + reload */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {/* Compact signal pill when collapsed */}
+            {!showStats && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', borderRadius: 8,
+                background: `${zColor}12`, border: `1px solid ${zColor}30`,
+              }}>
+                <span style={{ fontSize: 10, fontWeight: 800, color: zColor, fontFamily: 'JetBrains Mono' }}>
+                  {curZ >= 0 ? '+' : ''}{curZ.toFixed(2)}σ
+                </span>
+                <span style={{ fontSize: 9, color: zColor, fontWeight: 600 }}>{excessLabel}</span>
+              </div>
+            )}
             <button onClick={() => setProMode(p => !p)} style={{
               padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
               background: proMode ? 'rgba(191,90,242,0.15)' : 'rgba(255,255,255,0.05)',
@@ -1290,10 +1304,19 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
             <button onClick={() => loadData(tf)} disabled={loading} style={{ width: 32, height: 32, borderRadius: 8, background: 'none', border: '1px solid rgba(255,255,255,0.1)', cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 14 }}>
               {loading ? <div style={{ width: 12, height: 12, border: '2px solid #2A2F3E', borderTopColor: '#00E5FF', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> : '↻'}
             </button>
+            <button onClick={() => setShowStats(s => !s)} style={{
+              width: 32, height: 32, borderRadius: 8, background: 'none',
+              border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--tm-text-muted)', fontSize: 12, transition: 'all 0.2s',
+            }} title={showStats ? 'Réduire les stats' : 'Afficher les stats'}>
+              {showStats ? '▲' : '▼'}
+            </button>
           </div>
         </div>
 
         {/* ── SIGNAL PRINCIPAL ── */}
+        {showStats && (<>
         <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
           {/* Z-score + label GROS */}
           <div style={{ flex: '0 0 auto', padding: '12px 20px', borderRadius: 12, background: `${zColor}12`, border: `1px solid ${zColor}35`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 120 }}>
@@ -1373,10 +1396,11 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
             <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontStyle: 'italic' }}>{reboundProb(curZ)}</span>
           </div>
         )}
+        </>)}
       </div>
 
       {/* ── Stats badges (mode Pro uniquement) ── */}
-      {proMode && (
+      {showStats && proMode && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <TooltipBadge tip={`${naturalKappa(curKappa)}\n\nκ élevé = range (bandes plus étroites)\nκ faible = tendance (bandes élargies)`}>
             <div style={{ padding: '5px 10px', borderRadius: 8, background: 'rgba(191,90,242,0.08)', border: '1px solid rgba(191,90,242,0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'help' }}>
@@ -1417,7 +1441,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
       )}
 
       {/* ── Confluence Score ── */}
-      <div style={{ ...C.card, padding: '12px 16px' }}>
+      {showStats && <div style={{ ...C.card, padding: '12px 16px' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(0,229,255,0.15),transparent)' }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'Syne,sans-serif' }}>
@@ -1509,7 +1533,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── View selector + TF ── */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
