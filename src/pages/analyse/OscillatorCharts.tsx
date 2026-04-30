@@ -387,7 +387,8 @@ interface Viewport { from: number; to: number; rawTo?: number }  // fractions 0-
 function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
   deps: unknown[], viewSize: number,
-  viewport: Viewport, setViewport: (vp:Viewport) => void
+  viewport: Viewport, setViewport: (vp:Viewport) => void,
+  externalHoverIdx?: number | null  // from LW chart crosshair sync
 ) {
   const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
@@ -405,9 +406,11 @@ function useInteractiveCanvas(
     c.style.width = cssW + 'px'; c.style.height = cssH + 'px'
     const ctx = c.getContext('2d')!
     ctx.scale(dpr, dpr); ctx.clearRect(0, 0, cssW, cssH)
-    draw(ctx, cssW, cssH, hoverIdx)
+    // direct mouse hover takes priority; fall back to crosshair from main chart
+    const effectiveHover = hoverIdx ?? (externalHoverIdx != null ? externalHoverIdx : null)
+    draw(ctx, cssW, cssH, effectiveHover)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, hoverIdx])
+  }, [...deps, hoverIdx, externalHoverIdx])
 
   const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault()
@@ -454,7 +457,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -507,12 +510,13 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
+  const wtExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1)))) : null
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
       drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd,undefined,undefined,rightMarginFrac)
-    }, [result, viewStart, viewEnd, rightMarginFrac], viewSize, viewport, setViewport
+    }, [result, viewStart, viewEnd, rightMarginFrac], viewSize, viewport, setViewport, wtExternalIdx
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -567,7 +571,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -637,11 +641,13 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
     return []
   }) : []
 
+  const vmcExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(vmcViewSize - 1, Math.round(crosshairFrac * (vmcViewSize - 1)))) : null
+
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr,vmcRightMargin)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin], vmcViewSize, viewport, setViewport
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin], vmcViewSize, viewport, setViewport, vmcExternalIdx
   )
 
   return (
@@ -959,7 +965,7 @@ function drawRSIBollinger(
 }
 
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
-export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null }) {
+export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles]         = useState<Candle[]>([])
@@ -1008,10 +1014,11 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange }: { symb
     : 0
   const rsbAreaRatio = visibleRange?.areaRatio ?? 1
   const rsbRightMargin = (1 - rsbAreaRatio) + rsbInPlotMargin * rsbAreaRatio
+  const rsbExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1)))) : null
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => { if (result) drawRSIBollinger(ctx, W, H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin) },
-    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin], viewSize, viewport, setViewport
+    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin], viewSize, viewport, setViewport, rsbExternalIdx
   )
 
   const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
@@ -1242,7 +1249,7 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 }
 
 // ── RSI Chart Component ──────────────────────────────────────────────────────
-export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null }) {
+export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
@@ -1288,6 +1295,7 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
     : 0
   const rsiAreaRatio = visibleRange?.areaRatio ?? 1
   const rsiRightMargin = (1 - rsiAreaRatio) + rsiInPlotMargin * rsiAreaRatio
+  const rsiExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(rsiViewSize - 1, Math.round(crosshairFrac * (rsiViewSize - 1)))) : null
 
   const lastRsi = rsiData.length > 0 ? rsiData[rsiData.length - 1] : 50
   const badge = lastRsi >= obLevel ? { label: 'Suracheté', color: 'var(--tm-loss)' }
@@ -1298,7 +1306,7 @@ export function RSIChart({ symbol, syncInterval, visibleRange }: { symbol: strin
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => { drawRSI(ctx, W, H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd, rsiRightMargin) },
-    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin], rsiViewSize, viewport, setViewport
+    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin], rsiViewSize, viewport, setViewport, rsiExternalIdx
   )
 
   return (

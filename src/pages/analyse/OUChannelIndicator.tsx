@@ -814,10 +814,10 @@ const TF_OPTIONS = [
 
 interface MTFRow { tf: string; zscore: number; excess: string; erScore: number; vmcBias: string; regime: string }
 
-interface OUChannelIndicatorProps { symbol: string; syncInterval?: string; visibleRange?: { from: number; to: number } | null }
+interface OUChannelIndicatorProps { symbol: string; syncInterval?: string; visibleRange?: { from: number; to: number } | null; crosshairFrac?: number | null }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function OUChannelIndicator({ symbol, syncInterval, visibleRange: _visibleRange }: OUChannelIndicatorProps) {
+export default function OUChannelIndicator({ symbol, syncInterval, visibleRange: _visibleRange, crosshairFrac }: OUChannelIndicatorProps) {
   const [tf, setTf]               = useState('1h')
   const [candles, setCandles]     = useState<Candle[]>([])
   const [ou, setOu]               = useState<OUResult | null>(null)
@@ -830,8 +830,19 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
   const [proMode, setProMode]     = useState(false)
   const [showDecision, setShowDecision] = useState(false)
   const [hoverData, setHoverData] = useState<HoverData | null>(null)
+  const isDirectHover = useRef(false)  // true when mouse is directly on one of our canvases
   const [signalHistory, setSignalHistory] = useState<SignalEntry[]>([])
   const loadRef = useRef(0)
+
+  // Sync crosshair from main LW chart when not directly hovering
+  useEffect(() => {
+    if (isDirectHover.current) return  // local hover takes priority
+    if (crosshairFrac == null || !candles.length) { setHoverData(null); return }
+    const idx = Math.max(0, Math.min(candles.length - 1, Math.round(crosshairFrac * (candles.length - 1))))
+    const c = candles[idx]
+    if (!c) return
+    setHoverData({ x: 0, idx, z: ou?.zscore[idx] ?? 0, excess: ou?.excess[idx] ?? 'none', price: c.c })
+  }, [crosshairFrac, candles, ou])
 
   useEffect(() => {
     if (syncInterval) {
@@ -1319,13 +1330,17 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
           <div style={{ background: '#080C14', borderRadius: '0 0 8px 8px', border: '1px solid rgba(255,255,255,0.06)', borderTop: 'none', overflow: 'hidden', position: 'relative' }}>
             {activeView === 'channel' && ou && (
               <>
-                <OUChannelChart candles={candles} ou={ou} height={220} onHover={setHoverData} hoverIdx={hoverData?.idx ?? null} />
+                <OUChannelChart candles={candles} ou={ou} height={220}
+                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }}
+                  hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && <HoverTooltip hover={hoverData} candles={candles} ou={ou} />}
               </>
             )}
             {activeView === 'zscore' && ou && (
               <>
-                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130} onHover={setHoverData} candles={candles} hoverIdx={hoverData?.idx ?? null} />
+                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130}
+                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }}
+                  candles={candles} hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && ou && (
                   <div style={{ position: 'absolute', top: 8, left: Math.min(hoverData.x + 8, 240), background: 'rgba(8,12,20,0.97)', border: `1px solid rgba(0,229,255,0.2)`, borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 50, minWidth: 200, backdropFilter: 'blur(12px)' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: hoverData.z > 1.5 ? '#FF3B30' : hoverData.z < -1.5 ? '#34C759' : '#8E8E93', marginBottom: 4 }}>{naturalZ(hoverData.z)}</div>
@@ -1336,7 +1351,8 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
               </>
             )}
             {activeView === 'vmc' && vmc && (
-              <VMCEnhancedChart vmc={vmc} height={150} candles={candles} hoverIdx={hoverData?.idx ?? null} onHover={setHoverData} />
+              <VMCEnhancedChart vmc={vmc} height={150} candles={candles} hoverIdx={hoverData?.idx ?? null}
+                onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }} />
             )}
           </div>
         </div>

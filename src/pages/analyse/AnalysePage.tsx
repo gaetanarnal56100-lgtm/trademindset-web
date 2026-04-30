@@ -938,7 +938,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
   type LayoutMode = 'lw' | 'tv'
   const [mode, setMode] = useState<LayoutMode>('lw')
 
@@ -977,7 +977,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
 
       {/* Graphique */}
       {mode === 'lw'
-        ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} />
+        ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} onCrosshairChange={onCrosshairChange} />
         : <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
       }
     </div>
@@ -1378,6 +1378,7 @@ export default function AnalysePage() {
   const [mode,   setMode]   = useState<Mode>('micro')
   const [syncInterval, setSyncInterval] = useState<string>('1h')
   const [syncRange,    setSyncRange]    = useState<{from:number;to:number;areaRatio?:number}|null>(null)
+  const [crosshairFrac, setCrosshairFrac] = useState<number | null>(null)
 
   // ── Panel drag & drop state ───────────────────────────────────────────────
   const [panelOrder, setPanelOrder] = useState<string[]>(DEFAULT_PANEL_ORDER)
@@ -2089,7 +2090,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} lwChartRef={lwChartRef} /></div>}
+      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} lwChartRef={lwChartRef} /></div>}
 
       {/* Canal OU + Excès Statistiques + VMC Kaufman */}
       {symbol && (() => {
@@ -2098,7 +2099,7 @@ export default function AnalysePage() {
             <CollapsiblePanel key="canal-ou" panelId="canal-ou" label="Canal OU · Excès Statistiques · Kaufman ER" icon="〜" accent="rgba(0,229,255,0.5)" defaultOpen={true}
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'canal-ou'}>
-              <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+              <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} />
             </CollapsiblePanel>
           ),
           'wavetrend': (
@@ -2107,7 +2108,7 @@ export default function AnalysePage() {
               isDragging={dragItemRef.current === 'wavetrend'}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-                  onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} />
+                  onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} crosshairFrac={crosshairFrac} />
               </div>
             </CollapsiblePanel>
           ),
@@ -2116,21 +2117,21 @@ export default function AnalysePage() {
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'vmc'}>
               <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-                onStatusReady={(status)=>setPdfVmcStatus(status)} />
+                onStatusReady={(status)=>setPdfVmcStatus(status)} crosshairFrac={crosshairFrac} />
             </CollapsiblePanel>
           ),
           'rsi': (
             <CollapsiblePanel key="rsi" panelId="rsi" label="RSI" icon="📈" accent="rgba(52,199,89,0.5)" defaultOpen={false}
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'rsi'}>
-              <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+              <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} />
             </CollapsiblePanel>
           ),
           'rsi-bollinger': (
             <CollapsiblePanel key="rsi-bollinger" panelId="rsi-bollinger" label="RSI Bollinger" icon="📉" accent="rgba(255,69,58,0.5)" defaultOpen={false}
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'rsi-bollinger'}>
-              <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} />
+              <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} />
             </CollapsiblePanel>
           ),
           'trade-plan': (
