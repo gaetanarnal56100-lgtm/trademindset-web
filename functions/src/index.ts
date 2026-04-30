@@ -2026,44 +2026,47 @@ async function fetchMEXCTrades(apiKey: string, secret: string, startTime?: numbe
     }
   } catch (e) { debugInfo.push(`pos err: ${(e as Error).message}`); }
 
-  // ── 2. Order history fallback ──────────────────────────────────────
-  try {
-    const p2 = `end_time=${now}&page_size=100&start_time=${start}`;
-    const r2 = await fetch(`https://contract.mexc.com/api/v1/private/order/list/history_orders?${p2}`, {
-      headers: mexcHeaders(p2),
-    });
-    const raw2 = await r2.text();
-    debugInfo.push(`ord HTTP=${r2.status} body=${raw2.slice(0, 400)}`);
-    interface MEXCOrder {
-      orderId: string; symbol: string; side: number;
-      dealAvgPrice: number; dealVol: number; profit: number;
-      createTime: number; orderType: number;
-    }
-    // MEXC returns data as a direct array here too
-    const d2 = JSON.parse(raw2) as { code: number; data?: MEXCOrder[] | { resultList?: MEXCOrder[] } };
-    const rawList2: MEXCOrder[] = Array.isArray(d2.data) ? d2.data : ((d2.data as {resultList?: MEXCOrder[]})?.resultList ?? []);
-    // side 2=close long, 4=close short
-    const list2 = rawList2.filter(i => [2, 4].includes(i.side));
-    debugInfo.push(`ord close-sides=${list2.length}`);
-    const existingIds = new Set(results.map(r => r.externalId));
-    for (const i of list2) {
-      const extId = `ord_${i.orderId}`;
-      if (existingIds.has(extId)) continue;
-      const tsF = admin.firestore.Timestamp.fromMillis(i.createTime);
-      results.push({
-        id: i.orderId, date: tsF, symbol: i.symbol,
-        type: (i.side === 2 ? "Long" : "Short") as "Long" | "Short", // 2=close long, 4=close short
-        entryPrice: i.dealAvgPrice, quantity: i.dealVol,
-        leverage: 1, exchangeId: "MEXC",
-        orderRole: (i.orderType === 5 ? "Maker" : "Taker") as "Maker" | "Taker",
-        systemId: "imported", session: getSession(i.createTime),
-        flashPnLNet: i.profit,
-        notes: `Auto-importé MEXC Futures order (id: ${i.orderId})`,
-        tags: ["mexc", "auto-import"], status: "closed" as const,
-        source: "mexc" as const, externalId: extId, closedAt: tsF,
+  // ── 2. Order history — TRUE fallback only (when positions returned 0) ──
+  // IMPORTANT: both endpoints are NOT run in parallel to avoid double-importing
+  // the same physical trade with different externalIds (pos_xxx vs ord_xxx).
+  // MEXC side convention for closing orders:
+  //   side 2 = close SHORT (buy to close) → "Short"
+  //   side 4 = close LONG  (sell to close) → "Long"
+  if (results.length === 0) {
+    try {
+      const p2 = `end_time=${now}&page_size=100&start_time=${start}`;
+      const r2 = await fetch(`https://contract.mexc.com/api/v1/private/order/list/history_orders?${p2}`, {
+        headers: mexcHeaders(p2),
       });
-    }
-  } catch (e) { debugInfo.push(`ord err: ${(e as Error).message}`); }
+      const raw2 = await r2.text();
+      debugInfo.push(`ord HTTP=${r2.status} body=${raw2.slice(0, 400)}`);
+      interface MEXCOrder {
+        orderId: string; symbol: string; side: number;
+        dealAvgPrice: number; dealVol: number; profit: number;
+        createTime: number; orderType: number;
+      }
+      const d2 = JSON.parse(raw2) as { code: number; data?: MEXCOrder[] | { resultList?: MEXCOrder[] } };
+      const rawList2: MEXCOrder[] = Array.isArray(d2.data) ? d2.data : ((d2.data as {resultList?: MEXCOrder[]})?.resultList ?? []);
+      // side 2=close SHORT (acheter pour fermer), side 4=close LONG (vendre pour fermer)
+      const list2 = rawList2.filter(i => [2, 4].includes(i.side) && i.profit !== 0);
+      debugInfo.push(`ord close-sides=${list2.length}`);
+      for (const i of list2) {
+        const tsF = admin.firestore.Timestamp.fromMillis(i.createTime);
+        results.push({
+          id: i.orderId, date: tsF, symbol: i.symbol,
+          type: (i.side === 4 ? "Long" : "Short") as "Long" | "Short", // 4=close long→Long, 2=close short→Short
+          entryPrice: i.dealAvgPrice, quantity: i.dealVol,
+          leverage: 1, exchangeId: "MEXC",
+          orderRole: (i.orderType === 5 ? "Maker" : "Taker") as "Maker" | "Taker",
+          systemId: "imported", session: getSession(i.createTime),
+          flashPnLNet: i.profit,
+          notes: `Auto-importé MEXC Futures order (id: ${i.orderId})`,
+          tags: ["mexc", "auto-import"], status: "closed" as const,
+          source: "mexc" as const, externalId: `ord_${i.orderId}`, closedAt: tsF,
+        });
+      }
+    } catch (e) { debugInfo.push(`ord err: ${(e as Error).message}`); }
+  }
 
   if (results.length === 0) {
     throw new Error(`MEXC debug: ${debugInfo.join(" | ")}`);
