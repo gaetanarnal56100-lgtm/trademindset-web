@@ -8,7 +8,7 @@ import { fetchCandles } from './OscillatorCharts'
 import type { } from './OscillatorCharts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
+interface Candle { o: number; h: number; l: number; c: number; v: number; t: number; bv?: number }
 
 interface OUResult {
   mean:        number[]
@@ -57,6 +57,271 @@ interface HoverData {
   z: number
   excess: string
   price: number
+}
+
+// ─── Confluence Brain ─────────────────────────────────────────────────────────
+interface ConfluenceState {
+  ouBias:        'bull' | 'bear' | 'neutral'
+  ouStrength:    'strong' | 'moderate' | 'weak'
+  vmcBias:       'bull' | 'bear' | 'neutral'
+  vmcStrength:   'strong' | 'moderate' | 'weak'
+  cvdBias:       'bull' | 'bear' | 'neutral' | null  // null if non-crypto
+  cvdDivergence: boolean
+  cvdArr:        number[]  // normalized sparkline
+  signal:        'long' | 'short' | 'absorption' | 'trap' | 'setup_long' | 'setup_short' | 'neutral'
+  confidence:    number   // aligned signals count
+  total:         number   // max possible score
+  reason:        string
+}
+
+function computeCVD(candles: Candle[], lookback = 30): { bias: 'bull'|'bear'|'neutral'; divergence: boolean; arr: number[] } {
+  if (candles.length < 5) return { bias: 'neutral', divergence: false, arr: [] }
+  const slice = candles.slice(-lookback)
+  let cum = 0
+  const arr: number[] = []
+  for (const c of slice) {
+    const range = c.h - c.l
+    const buyFrac = range > 0 ? (c.c - c.l) / range : 0.5
+    const buyVol = c.bv != null ? c.bv : c.v * buyFrac
+    cum += buyVol - (c.v - buyVol)
+    arr.push(cum)
+  }
+  // normalize for sparkline
+  const mn = Math.min(...arr), mx = Math.max(...arr), rng = mx - mn || 1
+  const norm = arr.map(v => (v - mn) / rng)
+  // trend: last 6 avg vs prev 6 avg
+  const half = Math.max(3, Math.floor(arr.length / 4))
+  const late = arr.slice(-half).reduce((a, b) => a + b, 0) / half
+  const prev = arr.slice(-half * 2, -half).reduce((a, b) => a + b, 0) / half
+  const bias: 'bull'|'bear'|'neutral' = late > prev * 1.01 ? 'bull' : late < prev * 0.99 ? 'bear' : 'neutral'
+  // divergence: price direction vs CVD direction
+  const priceTrend = slice[slice.length - 1].c > slice[0].c
+  const cvdTrend   = arr[arr.length - 1] > arr[0]
+  const divergence = priceTrend !== cvdTrend
+  return { bias, divergence, arr: norm }
+}
+
+function computeConfluence(
+  ou: OUResult, vmc: VMCEnhancedResult, candles: Candle[], isCrypto: boolean
+): ConfluenceState {
+  const n = candles.length
+  if (n < 20) return {
+    ouBias:'neutral', ouStrength:'weak', vmcBias:'neutral', vmcStrength:'weak',
+    cvdBias:null, cvdDivergence:false, cvdArr:[], signal:'neutral', confidence:0, total:2, reason:'Données insuffisantes'
+  }
+
+  // ── OU bias ────────────────────────────────────────────────────────────────
+  const exLast = ou.excess[ou.excess.length - 1]
+  const zLast  = ou.zscore[ou.zscore.length - 1] ?? 0
+  const ouBias: 'bull'|'bear'|'neutral' =
+    (exLast === 'oversold' || exLast === 'extreme_os') ? 'bull'
+    : (exLast === 'overbought' || exLast === 'extreme_ob') ? 'bear'
+    : zLast < -0.7 ? 'bull' : zLast > 0.7 ? 'bear' : 'neutral'
+  const ouStrength: 'strong'|'moderate'|'weak' =
+    exLast.includes('extreme') ? 'strong' : exLast !== 'none' ? 'moderate' : 'weak'
+
+  // ── VMC bias ───────────────────────────────────────────────────────────────
+  const sigLast = vmc.sig[vmc.sig.length - 1] ?? 0
+  const sslLast = vmc.sigSignal[vmc.sigSignal.length - 1] ?? 0
+  const momLast = vmc.momentum[vmc.momentum.length - 1] ?? 0
+  const vmcBias: 'bull'|'bear'|'neutral' =
+    (vmc.trendBias === 'bullish' && (momLast > 0 || sigLast > sslLast)) ? 'bull'
+    : (vmc.trendBias === 'bearish' && (momLast < 0 || sigLast < sslLast)) ? 'bear'
+    : sigLast > sslLast && momLast > 0 ? 'bull'
+    : sigLast < sslLast && momLast < 0 ? 'bear' : 'neutral'
+  const vmcStrength: 'strong'|'moderate'|'weak' = vmc.erQuality
+
+  // ── CVD (crypto only) ──────────────────────────────────────────────────────
+  let cvdBias: 'bull'|'bear'|'neutral'|null = null
+  let cvdDivergence = false
+  let cvdArr: number[] = []
+  if (isCrypto) {
+    const cvd = computeCVD(candles, 40)
+    cvdBias = cvd.bias; cvdDivergence = cvd.divergence; cvdArr = cvd.arr
+  }
+
+  // ── Score & signal ─────────────────────────────────────────────────────────
+  const all = [ouBias, vmcBias, ...(cvdBias ? [cvdBias] : [])]
+  const bulls = all.filter(s => s === 'bull').length
+  const bears = all.filter(s => s === 'bear').length
+  const total = all.length
+
+  let signal: ConfluenceState['signal'] = 'neutral'
+  let confidence = 0
+  let reason = ''
+
+  if (bulls === total)      { signal = 'long';        confidence = total;  reason = `${total}/${total} signaux alignés — setup propre` }
+  else if (bears === total) { signal = 'short';       confidence = total;  reason = `${total}/${total} signaux alignés — setup propre` }
+  else if (bulls >= 2 && cvdBias === 'bear' && cvdDivergence)
+    { signal = 'absorption'; confidence = 2; reason = 'Structure bullish MAIS CVD diverge — smart money possible' }
+  else if (bears >= 2 && cvdBias === 'bull' && cvdDivergence)
+    { signal = 'trap';       confidence = 2; reason = 'Structure bearish MAIS CVD diverge — piège possible' }
+  else if (bulls >= 2)      { signal = 'setup_long';  confidence = bulls;  reason = `${bulls}/${total} signaux bull — en attente de confirmation` }
+  else if (bears >= 2)      { signal = 'setup_short'; confidence = bears;  reason = `${bears}/${total} signaux bear — en attente de confirmation` }
+  else                       { signal = 'neutral';     confidence = 0;      reason = 'Signaux mixtes ou neutres — attendre' }
+
+  return { ouBias, ouStrength, vmcBias, vmcStrength, cvdBias, cvdDivergence, cvdArr, signal, confidence, total, reason }
+}
+
+const CONF_CONFIG: Record<ConfluenceState['signal'], { emoji: string; label: string; color: string; glow: string }> = {
+  long:        { emoji: '🟢', label: 'LONG CONFIRMÉ',       color: '#34C759', glow: '52,199,89'  },
+  short:       { emoji: '🔴', label: 'SHORT CONFIRMÉ',      color: '#FF3B30', glow: '255,59,48'  },
+  absorption:  { emoji: '⚠️', label: 'ABSORPTION / PIÈGE',  color: '#FF9500', glow: '255,149,0'  },
+  trap:        { emoji: '⚠️', label: 'PIÈGE BAISSIER',      color: '#FF9500', glow: '255,149,0'  },
+  setup_long:  { emoji: '🟡', label: 'SETUP LONG',          color: '#FFD60A', glow: '255,214,10' },
+  setup_short: { emoji: '🟡', label: 'SETUP SHORT',         color: '#FFD60A', glow: '255,214,10' },
+  neutral:     { emoji: '⚫', label: 'NEUTRE',              color: '#8E8E93', glow: '142,142,147' },
+}
+
+function CVDSparkline({ arr, color }: { arr: number[]; color: string }) {
+  if (arr.length < 2) return null
+  const W = 100, H = 28
+  const pts = arr.map((v, i) => `${(i / (arr.length - 1)) * W},${H - v * H}`).join(' ')
+  const last = arr[arr.length - 1]
+  const fillPts = `0,${H} ${pts} ${W},${H}`
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}>
+      <defs>
+        <linearGradient id="cvdgrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <polygon points={fillPts} fill="url(#cvdgrad)" />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
+      <circle cx={(arr.length - 1) / (arr.length - 1) * W} cy={H - last * H} r={2.5} fill={color} />
+    </svg>
+  )
+}
+
+function ConfluenceView({ ou, vmc, candles, isCrypto }: { ou: OUResult; vmc: VMCEnhancedResult; candles: Candle[]; isCrypto: boolean }) {
+  const state = computeConfluence(ou, vmc, candles, isCrypto)
+  const cfg = CONF_CONFIG[state.signal]
+
+  const biasColor = (b: 'bull'|'bear'|'neutral'|null) =>
+    b === 'bull' ? '#34C759' : b === 'bear' ? '#FF3B30' : '#8E8E93'
+  const biasEmoji = (b: 'bull'|'bear'|'neutral'|null) =>
+    b === 'bull' ? '↑' : b === 'bear' ? '↓' : '—'
+  const biasLabel = (b: 'bull'|'bear'|'neutral'|null) =>
+    b === 'bull' ? 'Haussier' : b === 'bear' ? 'Baissier' : 'Neutre'
+
+  const pillStyle = (active: boolean, color: string): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    padding: '3px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600,
+    background: active ? `rgba(${color},0.18)` : 'rgba(255,255,255,0.04)',
+    border: `1px solid rgba(${color},${active ? 0.5 : 0.12})`,
+    color: active ? `rgb(${color})` : 'var(--tm-text-muted)',
+  })
+
+  const zLast    = ou.zscore[ou.zscore.length - 1] ?? 0
+  const erLast   = vmc.erSmoothed[vmc.erSmoothed.length - 1] ?? 0
+  const momLast  = vmc.momentum[vmc.momentum.length - 1] ?? 0
+  const exLast   = ou.excess[ou.excess.length - 1]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
+
+      {/* ── Main signal ─────────────────────────────────────────────────── */}
+      <div style={{
+        padding: '18px 20px', borderRadius: 14, textAlign: 'center' as const,
+        background: `linear-gradient(135deg, rgba(${cfg.glow},0.08), rgba(${cfg.glow},0.03))`,
+        border: `1px solid rgba(${cfg.glow},0.3)`,
+        boxShadow: `0 0 32px rgba(${cfg.glow},0.12)`,
+      }}>
+        <div style={{ fontSize: 32, marginBottom: 6 }}>{cfg.emoji}</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: cfg.color, fontFamily: 'Syne, sans-serif', letterSpacing: '0.04em' }}>
+          {cfg.label}
+        </div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4, fontFamily: 'JetBrains Mono, monospace' }}>
+          {state.reason}
+        </div>
+        {/* Confidence dots */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+          {Array.from({ length: state.total }, (_, i) => (
+            <div key={i} style={{
+              width: 10, height: 10, borderRadius: '50%',
+              background: i < state.confidence ? cfg.color : 'rgba(255,255,255,0.1)',
+              boxShadow: i < state.confidence ? `0 0 6px ${cfg.color}80` : 'none',
+              transition: 'all 0.3s',
+            }} />
+          ))}
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'JetBrains Mono', marginLeft: 4, alignSelf: 'center' }}>
+            {state.confidence}/{state.total}
+          </span>
+        </div>
+      </div>
+
+      {/* ── 3-column breakdown ──────────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: isCrypto ? '1fr 1fr 1fr' : '1fr 1fr', gap: 8 }}>
+
+        {/* Canal OU */}
+        <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(0,229,255,0.04)', border: `1px solid rgba(0,229,255,0.12)` }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(0,229,255,0.6)', fontFamily: 'JetBrains Mono', textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>
+            〜 Canal OU
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: biasColor(state.ouBias) }}>{biasEmoji(state.ouBias)}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: biasColor(state.ouBias) }}>{biasLabel(state.ouBias)}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={pillStyle(state.ouStrength !== 'weak', '0,229,255')}>
+              Z {zLast >= 0 ? '+' : ''}{zLast.toFixed(2)}σ
+            </div>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'JetBrains Mono', marginTop: 2 }}>
+              {exLast === 'none' ? 'Zone neutre' : exLast.replace(/_/g,' ').replace('ob','surachat').replace('os','survente').replace('extreme','extrême')}
+            </div>
+          </div>
+        </div>
+
+        {/* CVD (crypto only) */}
+        {isCrypto && (
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,214,10,0.03)', border: `1px solid rgba(255,214,10,0.12)` }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,214,10,0.6)', fontFamily: 'JetBrains Mono', textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>
+              📊 CVD
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: biasColor(state.cvdBias) }}>{biasEmoji(state.cvdBias)}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: biasColor(state.cvdBias) }}>{biasLabel(state.cvdBias)}</span>
+            </div>
+            {state.cvdArr.length > 0 && <CVDSparkline arr={state.cvdArr} color={biasColor(state.cvdBias)} />}
+            {state.cvdDivergence && (
+              <div style={{ marginTop: 4, fontSize: 9, color: '#FF9500', fontFamily: 'JetBrains Mono', fontWeight: 600 }}>
+                ⚡ Divergence détectée
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* VMC + ER */}
+        <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(191,90,242,0.04)', border: `1px solid rgba(191,90,242,0.12)` }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(191,90,242,0.6)', fontFamily: 'JetBrains Mono', textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>
+            ≋ VMC + ER
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: biasColor(state.vmcBias) }}>{biasEmoji(state.vmcBias)}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: biasColor(state.vmcBias) }}>{biasLabel(state.vmcBias)}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={pillStyle(erLast > 0.4, '191,90,242')}>
+              ER {(erLast * 100).toFixed(0)}% — {vmc.erQuality === 'strong' ? 'Fort' : vmc.erQuality === 'moderate' ? 'Modéré' : 'Faible'}
+            </div>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'JetBrains Mono', marginTop: 2 }}>
+              Mom {momLast >= 0 ? '+' : ''}{momLast.toFixed(1)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Context legend ──────────────────────────────────────────────── */}
+      <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.7, fontFamily: 'JetBrains Mono' }}>
+        <span style={{ color: '#34C759' }}>🟢 Long</span>{' : '}Z &lt; −1σ · VMC bull · CVD ↑
+        {' · '}
+        <span style={{ color: '#FF3B30' }}>🔴 Short</span>{' : '}Z &gt; +1σ · VMC bear · CVD ↓
+        {' · '}
+        <span style={{ color: '#FF9500' }}>⚠️ Absorption</span>{' : '}Structure ≠ CVD (order flow diverge)
+      </div>
+    </div>
+  )
 }
 
 // ─── Natural language helpers ─────────────────────────────────────────────────
@@ -826,7 +1091,8 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
   const [error, setError]         = useState('')
   const [mtfRows, setMtfRows]     = useState<MTFRow[]>([])
   const [mtfLoading, setMtfLoading] = useState(false)
-  const [activeView, setActiveView] = useState<'channel' | 'zscore' | 'vmc'>('channel')
+  const [activeView, setActiveView] = useState<'channel' | 'zscore' | 'vmc' | 'confluence'>('channel')
+  const isCrypto = /USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)
   const [proMode, setProMode]     = useState(false)
   const [showDecision, setShowDecision] = useState(false)
   const [hoverData, setHoverData] = useState<HoverData | null>(null)
@@ -1247,14 +1513,17 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
 
       {/* ── View selector + TF ── */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        {(['channel', 'zscore', 'vmc'] as const).map(v => ({
-          id: v, label: v === 'channel' ? '〜 Canal OU' : v === 'zscore' ? '± Z-Score' : '≋ VMC + ER',
-        })).map(tab => (
+        {([
+          { id: 'channel',    label: '〜 Canal OU',    activeColor: '#00E5FF',  activeBg: 'rgba(0,229,255,0.12)',   activeBorder: 'rgba(0,229,255,0.4)'   },
+          { id: 'zscore',     label: '± Z-Score',      activeColor: '#00E5FF',  activeBg: 'rgba(0,229,255,0.12)',   activeBorder: 'rgba(0,229,255,0.4)'   },
+          { id: 'vmc',        label: '≋ VMC + ER',     activeColor: '#BF5AF2',  activeBg: 'rgba(191,90,242,0.12)',  activeBorder: 'rgba(191,90,242,0.4)'  },
+          { id: 'confluence', label: '🧠 Confluence',  activeColor: '#34C759',  activeBg: 'rgba(52,199,89,0.12)',   activeBorder: 'rgba(52,199,89,0.4)'   },
+        ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveView(tab.id)} style={{
             padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-            background: activeView === tab.id ? 'rgba(0,229,255,0.12)' : 'rgba(255,255,255,0.04)',
-            border: `1px solid ${activeView === tab.id ? 'rgba(0,229,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
-            color: activeView === tab.id ? '#00E5FF' : 'var(--tm-text-muted)', transition: 'all 0.15s',
+            background: activeView === tab.id ? tab.activeBg : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${activeView === tab.id ? tab.activeBorder : 'rgba(255,255,255,0.08)'}`,
+            color: activeView === tab.id ? tab.activeColor : 'var(--tm-text-muted)', transition: 'all 0.15s',
           }}>{tab.label}</button>
         ))}
 
@@ -1319,6 +1588,11 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
                 <span style={{ fontSize: 9, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>{l as string}</span>
               </div>
             ))}
+            {activeView === 'confluence' && (
+              <span style={{ fontSize: 9, color: 'rgba(52,199,89,0.7)', fontFamily: 'JetBrains Mono' }}>
+                🧠 Analyse combinée — Canal OU · VMC+ER{isCrypto ? ' · CVD' : ''}
+              </span>
+            )}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               {[['#FF9500', '● Tendance'], ['#00E5FF', '● Range'], ['#BF5AF2', '● Breakout']].map(([c, l]) => (
                 <span key={l as string} style={{ fontSize: 9, color: c as string, fontFamily: 'JetBrains Mono' }}>{l as string}</span>
@@ -1353,6 +1627,11 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
             {activeView === 'vmc' && vmc && (
               <VMCEnhancedChart vmc={vmc} height={150} candles={candles} hoverIdx={hoverData?.idx ?? null}
                 onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }} />
+            )}
+            {activeView === 'confluence' && ou && vmc && (
+              <div style={{ padding: '14px 16px', overflowY: 'auto', maxHeight: 420 }}>
+                <ConfluenceView ou={ou} vmc={vmc} candles={candles} isCrypto={isCrypto} />
+              </div>
             )}
           </div>
         </div>

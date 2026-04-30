@@ -13,7 +13,7 @@ const TF_REFRESH_MS: Record<string, number> = {
   '2h':7200000,'4h':14400000,'12h':43200000,'1d':86400000,'1w':604800000,
 }
 
-interface Candle { o: number; h: number; l: number; c: number; v: number; t: number }
+interface Candle { o: number; h: number; l: number; c: number; v: number; t: number; bv?: number }
 
 const TF_OPTIONS = [
   { label:'5m',  interval:'5m',  limit:500 },
@@ -45,6 +45,7 @@ export async function fetchCandles(symbol: string, interval: string, limit: numb
               return data.map(a => ({
                 t: Number(a[0]), o: parseFloat(a[1] as string), h: parseFloat(a[2] as string),
                 l: parseFloat(a[3] as string), c: parseFloat(a[4] as string), v: parseFloat(a[5] as string),
+                bv: a[9] != null ? parseFloat(a[9] as string) : undefined, // taker buy base volume
               }))
             }
           }
