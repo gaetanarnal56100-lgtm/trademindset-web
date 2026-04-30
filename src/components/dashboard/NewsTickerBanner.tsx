@@ -36,59 +36,22 @@ function classifyCategory(t: string): Category {
   return'MARKETS'
 }
 
-/** Essaie plusieurs proxies CORS dans l'ordre — retourne le contenu XML du premier qui répond */
-async function fetchViaProxy(url:string):Promise<string|null>{
-  // Proxy 1: allorigins (retourne {contents:string})
-  try{
-    const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,{signal:AbortSignal.timeout(8000)})
-    if(r.ok){const d=await r.json() as{contents?:string};if(d.contents?.includes('<item')||d.contents?.includes('<entry'))return d.contents}
-  }catch{/**/}
-  // Proxy 2: corsproxy.io (retourne le body directement)
-  try{
-    const r=await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`,{signal:AbortSignal.timeout(8000)})
-    if(r.ok){const t=await r.text();if(t.includes('<item')||t.includes('<entry'))return t}
-  }catch{/**/}
-  // Proxy 3: rss2json (retourne JSON avec articles)
-  try{
-    const r=await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&count=10`,{signal:AbortSignal.timeout(8000)})
-    if(r.ok){
-      const d=await r.json() as{items?:{title?:string;link?:string}[]}
-      if(d.items?.length){
-        // Convertir en XML-like pour que fetchFeed puisse parser
-        const xml=d.items.map(it=>`<item><title><![CDATA[${it.title||''}]]></title><link>${it.link||''}</link></item>`).join('')
-        return `<rss>${xml}</rss>`
-      }
-    }
-  }catch{/**/}
-  return null
-}
-
-async function fetchFeed(url:string,label:string):Promise<{title:string;source:string;url?:string}[]>{
-  try{
-    const contents=await fetchViaProxy(url)
-    if(!contents?.includes('<item')&&!contents?.includes('<entry'))return[]
-    const items:{title:string;source:string;url?:string}[]=[]
-    const itemRx=/<item[\s\S]*?<\/item>|<entry[\s\S]*?<\/entry>/gi
-    const titleRx=/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i
-    // Multiple link patterns: <link>url</link>, <link href="url"/>, <link href="url">, guid
-    const linkPatterns=[
-      /<link[^>]*href\s*=\s*"([^"]+)"/i,
-      /<link[^>]*href\s*=\s*'([^']+)'/i,
-      /<link[^>]*>([^<]+)<\/link>/i,
-      /<guid[^>]*>([^<]+)<\/guid>/i,
-    ]
-    let m
-    while((m=itemRx.exec(contents))!==null){
-      const b=m[0]
-      const tm=titleRx.exec(b)
-      let linkUrl:string|undefined
-      for(const lrx of linkPatterns){const lm=lrx.exec(b);if(lm?.[1]?.trim()?.startsWith('http')){linkUrl=lm[1].trim();break}}
-      const title=tm?.[1]?.trim().replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#39;/g,"'").replace(/&quot;/g,'"')
-      if(title&&title.length>10)items.push({title,source:label,url:linkUrl})
-      if(items.length>=10)break
-    }
-    return items
-  }catch{return[]}
+/** Fetch news from CryptoCompare (free, CORS-enabled, no API key needed) */
+async function fetchCryptoCompareNews(): Promise<{title:string;source:string;url?:string;image?:string}[]> {
+  try {
+    const r = await fetch(
+      'https://data-api.cryptocompare.com/news/v1/article/list?lang=EN&limit=40&sort_order=POPULAR',
+      { signal: AbortSignal.timeout(8000) }
+    )
+    if (!r.ok) return []
+    const d = await r.json() as { Data?: { TITLE:string; URL:string; SOURCE_INFO:{NAME:string;IMG:string}; IMAGE_URL:string }[] }
+    return (d.Data ?? []).map(n => ({
+      title: n.TITLE,
+      source: n.SOURCE_INFO?.NAME ?? 'CryptoCompare',
+      url: n.URL,
+      image: n.IMAGE_URL || undefined,
+    }))
+  } catch { return [] }
 }
 
 async function enrichWithGPT(raw:{title:string;source:string;url?:string}[]):Promise<NewsItem[]>{
@@ -148,21 +111,30 @@ export default function NewsTickerBanner(){
     if(!force&&lastRefresh&&(lastRefresh instanceof Date ? Date.now()-lastRefresh.getTime() : Infinity)<600000)return
     setLoading(true)
     try{
-      const allRaw:{title:string;source:string;url?:string}[]=[]
-      const seen=new Set<string>()
-      // Flux publics sans auth — Bloomberg bloque souvent, on utilise Reuters / FT / CoinDesk / Yahoo Finance
-      await Promise.allSettled([
-        {url:'https://feeds.reuters.com/reuters/businessNews',         label:'Reuters'},
-        {url:'https://feeds.reuters.com/reuters/technologyNews',       label:'Tech'},
-        {url:'https://www.coindesk.com/arc/outboundfeeds/rss/',        label:'Crypto'},
-        {url:'https://feeds.marketwatch.com/marketwatch/topstories/',  label:'Markets'},
-        {url:'https://finance.yahoo.com/news/rssindex',                label:'Finance'},
-      ].map(async f=>{
-        const its=await fetchFeed(f.url,f.label)
-        its.forEach(it=>{const k=it.title.slice(0,40).toLowerCase();if(!seen.has(k)){seen.add(k);allRaw.push(it)}})
-      }))
-      const enriched=await enrichWithGPT(allRaw)
-      if(enriched.length>0)setItems(enriched)
+      // CryptoCompare: free, no API key, CORS-enabled, replaces broken RSS proxies
+      const allRaw = await fetchCryptoCompareNews()
+      if(allRaw.length>0){
+        // Classify and format locally (no GPT needed — avoids extra latency)
+        const seen=new Set<string>()
+        const enriched: NewsItem[] = []
+        for(const r of allRaw){
+          const k=r.title.slice(0,40).toLowerCase()
+          if(seen.has(k)) continue
+          seen.add(k)
+          const title=r.title.length>80?r.title.slice(0,77)+'…':r.title
+          enriched.push({
+            id:`cc-${enriched.length}`,
+            title,
+            source:r.source,
+            category:classifyCategory(r.title),
+            sentiment:'neutral' as Sentiment,
+            url:r.url,
+            fetchedAt:new Date(),
+          })
+          if(enriched.length>=20) break
+        }
+        if(enriched.length>0) setItems(enriched)
+      }
       setLastRefresh(new Date())
     }catch{/*keep existing*/}
     setLoading(false)
