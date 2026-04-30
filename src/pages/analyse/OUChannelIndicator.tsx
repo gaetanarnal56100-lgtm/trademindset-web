@@ -655,8 +655,51 @@ function fmtCandleTime(ts: number): string {
   return `${dd}/${mo} ${hh}:${mm}`
 }
 
-interface OUChannelChartProps { candles: Candle[]; ou: OUResult; height?: number; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void }
-function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover }: OUChannelChartProps) {
+function fmtAxisLabel(ts: number, interval: string): string {
+  const d = new Date(ts)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  if (interval === '1w' || interval === '1d') return `${dd}/${mo}`
+  if (interval === '12h' || interval === '4h') return `${dd} ${hh}:${mm}`
+  return `${hh}:${mm}` // 15m / 1h
+}
+
+/** Draws static time labels in the 14px bottom strip already reserved by each chart */
+function drawOUTimeAxis(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  candles: Candle[], interval: string
+) {
+  if (candles.length < 2) return
+  const STRIP = 14
+  // Dark background strip
+  ctx.fillStyle = 'rgba(8,12,20,0.95)'
+  ctx.fillRect(0, H - STRIP, W, STRIP)
+  // Separator line
+  ctx.save()
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.setLineDash([])
+  ctx.beginPath(); ctx.moveTo(0, H - STRIP); ctx.lineTo(W, H - STRIP); ctx.stroke()
+
+  const maxLabels = Math.max(2, Math.floor(W / 72))
+  const step = Math.max(1, Math.floor(candles.length / maxLabels))
+  ctx.font = '8px JetBrains Mono, monospace'
+
+  for (let i = 0; i < candles.length; i += step) {
+    const x = (i / (candles.length - 1)) * W
+    const label = fmtAxisLabel(candles[i].t, interval)
+    // Tick mark
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(x, H - STRIP); ctx.lineTo(x, H - STRIP + 3); ctx.stroke()
+    // Label text
+    ctx.fillStyle = 'rgba(143,148,163,0.65)'; ctx.textAlign = 'center'
+    ctx.fillText(label, Math.min(Math.max(x, 20), W - 20), H - 3)
+  }
+  ctx.restore()
+}
+
+interface OUChannelChartProps { candles: Candle[]; ou: OUResult; height?: number; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string }
+function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover, interval = '1h' }: OUChannelChartProps) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -744,6 +787,9 @@ function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover }: OUChan
       ctx.fill(); ctx.strokeStyle = '#080C14'; ctx.lineWidth = 1; ctx.stroke()
     })
 
+    // Time axis (static labels)
+    drawOUTimeAxis(ctx, W, H, candles, interval)
+
     // Crosshair
     if (hoverIdx != null && candles[hoverIdx]) {
       const cx = toX(hoverIdx)
@@ -765,7 +811,7 @@ function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover }: OUChan
       ctx.textAlign = 'right'; ctx.fillText(pl, W - 4, cy + 4)
     }
 
-  }, [candles, ou, height, hoverIdx])
+  }, [candles, ou, height, hoverIdx, interval])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || candles.length < 2) return
@@ -791,7 +837,7 @@ function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover }: OUChan
 }
 
 // ─── Z-Score Oscillator Chart ─────────────────────────────────────────────────
-function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover }: { zscore: number[]; excess: OUResult['excess']; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void }) {
+function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover, interval = '1h' }: { zscore: number[]; excess: OUResult['excess']; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -850,6 +896,9 @@ function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover 
     zscore.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
     ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 1; ctx.stroke()
 
+    // Time axis (static labels)
+    if (candles && candles.length > 1) drawOUTimeAxis(ctx, W, H, candles, interval)
+
     // Crosshair
     if (hoverIdx != null && zscore[hoverIdx] != null) {
       const cx = toX(hoverIdx), cy = toY(zscore[hoverIdx])
@@ -874,7 +923,7 @@ function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover 
       ctx.textAlign = 'right'; ctx.fillText(zv, W - 4, cy + 4)
     }
 
-  }, [zscore, excess, height, hoverIdx, candles])
+  }, [zscore, excess, height, hoverIdx, candles, interval])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || zscore.length < 2) return
@@ -894,7 +943,7 @@ function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover 
 }
 
 // ─── VMC+ER Chart ─────────────────────────────────────────────────────────────
-function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover }: { vmc: VMCEnhancedResult; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void }) {
+function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover, interval = '1h' }: { vmc: VMCEnhancedResult; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -958,6 +1007,9 @@ function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover }: { v
     ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '8px JetBrains Mono, monospace'
     ctx.fillText('ER', 4, erPanelTop + 10)
 
+    // Time axis (static labels)
+    if (candles && candles.length > 1) drawOUTimeAxis(ctx, W, H, candles, interval)
+
     // Crosshair
     if (hoverIdx != null && vmc.sig[hoverIdx] != null) {
       const cx = toX(hoverIdx), cy = toY(vmc.sig[hoverIdx])
@@ -981,7 +1033,7 @@ function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover }: { v
       ctx.textAlign = 'right'; ctx.fillText(vmcv, W - 4, cy + 4)
     }
 
-  }, [vmc, height, hoverIdx, candles])
+  }, [vmc, height, hoverIdx, candles, interval])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || vmc.sig.length < 2) return
@@ -1628,7 +1680,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
           <div style={{ background: '#080C14', borderRadius: '0 0 8px 8px', border: '1px solid rgba(255,255,255,0.06)', borderTop: 'none', overflow: 'hidden', position: 'relative' }}>
             {activeView === 'channel' && ou && (
               <>
-                <OUChannelChart candles={candles} ou={ou} height={220}
+                <OUChannelChart candles={candles} ou={ou} height={220} interval={tf}
                   onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }}
                   hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && <HoverTooltip hover={hoverData} candles={candles} ou={ou} />}
@@ -1636,7 +1688,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
             )}
             {activeView === 'zscore' && ou && (
               <>
-                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130}
+                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130} interval={tf}
                   onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }}
                   candles={candles} hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && ou && (
@@ -1649,7 +1701,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
               </>
             )}
             {activeView === 'vmc' && vmc && (
-              <VMCEnhancedChart vmc={vmc} height={150} candles={candles} hoverIdx={hoverData?.idx ?? null}
+              <VMCEnhancedChart vmc={vmc} height={150} interval={tf} candles={candles} hoverIdx={hoverData?.idx ?? null}
                 onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }} />
             )}
             {activeView === 'confluence' && ou && vmc && (
