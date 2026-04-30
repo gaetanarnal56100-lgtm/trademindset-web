@@ -68,7 +68,11 @@ function SystemPnLChart({ trades, color, systemId }: { trades: Trade[]; color: s
     // Fill gradient
     const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH)
     const finalPnL = pts[pts.length - 1]
-    const fillColor = finalPnL >= 0 ? color : resolveCSSColor('--tm-loss','#FF3B30')
+    // Resolve CSS variable strings (e.g. 'var(--tm-profit)') to actual hex colors before using in Canvas
+    const resolvedColor = color.startsWith('var(') || color.startsWith('--')
+      ? resolveCSSColor(color, '#0A85FF')
+      : color
+    const fillColor = finalPnL >= 0 ? resolvedColor : resolveCSSColor('--tm-loss','#FF3B30')
     grad.addColorStop(0, fillColor + '40')
     grad.addColorStop(1, fillColor + '05')
 
@@ -241,9 +245,13 @@ function SystemsComparisonChart({ systemStats, trades }: {
     curves.forEach(c => {
       if (c.pts.length < 2) return
       const isHov = hoveredId === c.id
+      // Resolve CSS variable strings to actual hex colors for canvas
+      const paintColor = (c.color.startsWith('var(') || c.color.startsWith('--'))
+        ? resolveCSSColor(c.color, '#0A85FF')
+        : c.color
       ctx.globalAlpha = hoveredId && !isHov ? 0.25 : 1
       ctx.beginPath()
-      ctx.strokeStyle = c.color
+      ctx.strokeStyle = paintColor
       ctx.lineWidth = isHov ? 2.5 : 1.5
       ctx.lineJoin = 'round'
       ctx.moveTo(toX(0, c.pts.length), toY(c.pts[0]))
@@ -260,7 +268,7 @@ function SystemsComparisonChart({ systemStats, trades }: {
       const lastY = toY(c.pts[c.pts.length - 1])
       ctx.beginPath()
       ctx.arc(lastX, lastY, isHov ? 5 : 3, 0, Math.PI * 2)
-      ctx.fillStyle = c.color
+      ctx.fillStyle = paintColor
       ctx.fill()
       ctx.globalAlpha = 1
     })
@@ -376,9 +384,29 @@ function SystemsComparisonChart({ systemStats, trades }: {
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
+// Known CSS-variable → absolute color fallbacks (used when var() can't be resolved by Canvas)
+const VAR_FALLBACKS: Record<string, string> = {
+  '--tm-accent':  '#0A85FF',
+  '--tm-profit':  '#22C759',
+  '--tm-warning': '#FF9500',
+  '--tm-loss':    '#FF3B30',
+  '--tm-text-muted':    '#555C70',
+  '--tm-border':        '#2A2F3E',
+  '--tm-bg':            '#0D1117',
+}
+
+/**
+ * Resolves a CSS variable name (--tm-xxx) or var(--tm-xxx) string
+ * to an absolute color that Canvas can parse.
+ */
 function resolveCSSColor(varName: string, fallback: string): string {
   if (typeof window === 'undefined') return fallback
-  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
+  // Strip var() wrapper if present
+  const name = varName.startsWith('var(') ? varName.slice(4, -1).trim() : varName
+  const resolved = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  // If getPropertyValue returned another var() reference or empty string, use known fallback or provided fallback
+  if (!resolved || resolved.startsWith('var(')) return VAR_FALLBACKS[name] ?? fallback
+  return resolved
 }
 
 export default function SystemesPage() {
