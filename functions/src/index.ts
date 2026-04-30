@@ -2327,9 +2327,17 @@ async function fetchIGTrades(apiKey: string, password: string, username: string,
 }
 
 // ── Capital.com (session-based) ────────────────────────────────────────
+// Docs: https://open-api.capital.com
+// Base URL: https://api-capital.backend-capital.com
+// Auth: POST /api/v1/session → CST + X-SECURITY-TOKEN headers
+// Transactions: GET /api/v1/history/transactions?type=TRADE&from=YYYY-MM-DDTHH:MM:SS&to=...
+// Response fields: date, dateUtc, instrumentName, transactionType, note, reference, size, currency, status
+// NOTE: openLevel/closeLevel/profitAndLoss do NOT exist in the API response.
+//       'size' = P&L amount (positive = profit, negative = loss)
+//       Direction (Long/Short) inferred from 'note' field (e.g. "BTCUSD Buy" or "BTCUSD Sell")
 async function fetchCapitalTrades(apiKey: string, password: string, email: string, startTime?: number): Promise<ImportedTrade[]> {
   // Step 1: create session
-  const sessionR = await fetch("https://api-capital.backend.gbg.com/api/v1/session", {
+  const sessionR = await fetch("https://api-capital.backend-capital.com/api/v1/session", {
     method: "POST",
     headers: { "X-CAP-API-KEY": apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({ identifier: email, encryptedPassword: false, password }),
@@ -2340,37 +2348,50 @@ async function fetchCapitalTrades(apiKey: string, password: string, email: strin
   if (!cst || !secToken) throw new Error("Capital.com: missing session tokens");
 
   // Step 2: fetch transactions
-  const from = startTime
-    ? new Date(startTime).toISOString()
-    : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-  const to = new Date().toISOString();
+  // Date format must be YYYY-MM-DDTHH:MM:SS (no milliseconds, no Z)
+  const fmtDate = (d: Date) => d.toISOString().slice(0, 19);
+  const from = fmtDate(startTime ? new Date(startTime) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000));
+  const to = fmtDate(new Date());
 
   const r = await fetch(
-    `https://api-capital.backend.gbg.com/api/v1/history/transactions?type=TRADE&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&lastPeriod=86400`,
+    `https://api-capital.backend-capital.com/api/v1/history/transactions?type=TRADE&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     { headers: { "X-CAP-API-KEY": apiKey, "CST": cst, "X-SECURITY-TOKEN": secToken } }
   );
   if (!r.ok) throw new Error(`Capital.com trades: ${r.status} ${await r.text()}`);
-  const data = await r.json() as { transactions?: { instrumentName: string; date: string; openLevel: string; closeLevel: string; size: string; profitAndLoss: string }[] };
+  const data = await r.json() as {
+    transactions?: {
+      date: string; dateUtc?: string; instrumentName: string;
+      transactionType: string; note?: string; reference: string;
+      size: string | number; currency: string; status?: string;
+    }[]
+  };
   if (!data.transactions) return [];
 
-  return data.transactions.map(t => {
-    const ts = new Date(t.date).getTime();
-    const tsF = admin.firestore.Timestamp.fromMillis(ts);
-    const pnl = parseFloat(String(t.profitAndLoss).replace(/[^-0-9.]/g, ""));
-    const size = parseFloat(String(t.size).replace(/[^-0-9.]/g, ""));
-    return {
-      id: `capitalcom-${t.instrumentName}-${ts}`, date: tsF, symbol: t.instrumentName,
-      type: (size >= 0 ? "Long" : "Short") as "Long" | "Short",
-      entryPrice: parseFloat(t.openLevel), exitPrice: parseFloat(t.closeLevel), quantity: Math.abs(size),
-      leverage: 1, exchangeId: "Capital.com",
-      orderRole: "Taker" as const,
-      systemId: "imported", session: getSession(ts),
-      flashPnLNet: pnl,
-      notes: `Auto-importé Capital.com (${t.instrumentName})`,
-      tags: ["capitalcom", "forex", "auto-import"], status: "closed" as const,
-      source: "capitalcom" as const, externalId: `capitalcom-${t.instrumentName}-${ts}`, closedAt: tsF,
-    };
-  });
+  return data.transactions
+    .filter(t => t.transactionType === "TRADE")
+    .map(t => {
+      const ts = new Date(t.dateUtc ?? t.date).getTime();
+      const tsF = admin.firestore.Timestamp.fromMillis(ts);
+      const pnl = parseFloat(String(t.size).replace(/[^-0-9.]/g, "")) || 0;
+      // Infer direction from note field: "BTCUSD Buy" → Long, "BTCUSD Sell" → Short
+      const note = (t.note ?? "").toLowerCase();
+      const isLong = note.includes("buy") || note.includes("long") || !note.includes("sell");
+      return {
+        id: t.reference || `capitalcom-${t.instrumentName}-${ts}`,
+        date: tsF, symbol: t.instrumentName,
+        type: (isLong ? "Long" : "Short") as "Long" | "Short",
+        entryPrice: 0, quantity: 0, // not available from transactions endpoint
+        leverage: 1, exchangeId: "Capital.com",
+        orderRole: "Taker" as const,
+        systemId: "imported", session: getSession(ts),
+        flashPnLNet: pnl,
+        notes: `Auto-importé Capital.com (${t.instrumentName})${t.note ? " — " + t.note : ""}`,
+        tags: ["capitalcom", "forex", "auto-import"], status: "closed" as const,
+        source: "capitalcom" as const,
+        externalId: t.reference || `capitalcom-${t.instrumentName}-${ts}`,
+        closedAt: tsF,
+      };
+    });
 }
 
 // ── Tastytrade (session-based) ─────────────────────────────────────────
@@ -2598,7 +2619,7 @@ export const saveExchangeAPIKey = onCall(
         valid = sessionRI.ok;
         if (!valid) errorMsg = `IG Group: ${sessionRI.status}`;
       } else if (exchange === "capitalcom") {
-        const sessionRC = await fetch("https://api-capital.backend.gbg.com/api/v1/session", {
+        const sessionRC = await fetch("https://api-capital.backend-capital.com/api/v1/session", {
           method: "POST",
           headers: { "X-CAP-API-KEY": apiKey, "Content-Type": "application/json" },
           body: JSON.stringify({ identifier: passphrase ?? "", encryptedPassword: false, password: apiSecret }),
