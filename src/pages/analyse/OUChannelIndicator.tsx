@@ -353,8 +353,45 @@ function resolveCSSColor(v: string, fallback: string): string {
 }
 
 // ─── OU Channel Chart ─────────────────────────────────────────────────────────
-interface OUChannelChartProps { candles: Candle[]; ou: OUResult; height?: number; onHover?: (d: HoverData | null) => void }
-function OUChannelChart({ candles, ou, height = 200, onHover }: OUChannelChartProps) {
+// ── Shared crosshair drawing helper ──────────────────────────────────────────
+function drawCrosshair(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  x: number, timeLabel: string, accentColor = 'rgba(0,229,255,0.5)'
+) {
+  // Vertical line
+  ctx.save()
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'
+  ctx.lineWidth = 1
+  ctx.setLineDash([3, 3])
+  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H - 14); ctx.stroke()
+  ctx.setLineDash([])
+
+  // Time label background + text at bottom
+  const tw = ctx.measureText(timeLabel).width + 10
+  const lx = Math.min(Math.max(x, tw / 2 + 2), W - tw / 2 - 2)
+  ctx.fillStyle = accentColor
+  const bx = lx - tw / 2, by = H - 14, bh = 13
+  ctx.beginPath()
+  ctx.roundRect(bx, by, tw, bh, 3)
+  ctx.fill()
+  ctx.fillStyle = '#080C14'
+  ctx.font = 'bold 8px JetBrains Mono,monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText(timeLabel, lx, by + 9)
+  ctx.restore()
+}
+
+function fmtCandleTime(ts: number): string {
+  const d = new Date(ts)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${dd}/${mo} ${hh}:${mm}`
+}
+
+interface OUChannelChartProps { candles: Candle[]; ou: OUResult; height?: number; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void }
+function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover }: OUChannelChartProps) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -375,7 +412,9 @@ function OUChannelChart({ candles, ou, height = 200, onHover }: OUChannelChartPr
     const yMin = Math.min(...prices, ...allBands) * 0.997
     const yMax = Math.max(...prices, ...allBands) * 1.003
     const yRange = yMax - yMin || 1
-    const toY = (v: number) => H - ((v - yMin) / yRange) * H
+    // Reserve 14px bottom for time label
+    const drawH = H - 14
+    const toY = (v: number) => drawH - ((v - yMin) / yRange) * drawH
     const toX = (i: number) => (i / (candles.length - 1)) * W
 
     ctx.fillStyle = '#080C14'
@@ -440,7 +479,28 @@ function OUChannelChart({ candles, ou, height = 200, onHover }: OUChannelChartPr
       ctx.fill(); ctx.strokeStyle = '#080C14'; ctx.lineWidth = 1; ctx.stroke()
     })
 
-  }, [candles, ou, height])
+    // Crosshair
+    if (hoverIdx != null && candles[hoverIdx]) {
+      const cx = toX(hoverIdx)
+      const cy = toY(candles[hoverIdx].c)
+      const excess = ou.excess[hoverIdx]
+      const dotColor = excess === 'extreme_ob' ? loss : excess === 'overbought' ? '#FF9500'
+        : excess === 'extreme_os' ? profit : excess === 'oversold' ? '#42A5F5' : '#00E5FF'
+      drawCrosshair(ctx, W, H, cx, fmtCandleTime(candles[hoverIdx].t), 'rgba(0,229,255,0.5)')
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2)
+      ctx.fillStyle = dotColor; ctx.fill()
+      ctx.strokeStyle = '#080C14'; ctx.lineWidth = 1.5; ctx.stroke()
+      // Price label on Y axis (right side)
+      const price = candles[hoverIdx].c
+      const pl = price.toFixed(price < 10 ? 4 : price < 1000 ? 2 : 0)
+      ctx.fillStyle = 'rgba(0,229,255,0.5)'
+      const pw = ctx.measureText(pl).width + 8
+      ctx.beginPath(); ctx.roundRect(W - pw - 2, cy - 7, pw + 2, 14, 2); ctx.fill()
+      ctx.fillStyle = '#080C14'; ctx.font = 'bold 8px JetBrains Mono,monospace'
+      ctx.textAlign = 'right'; ctx.fillText(pl, W - 4, cy + 4)
+    }
+
+  }, [candles, ou, height, hoverIdx])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || candles.length < 2) return
@@ -466,7 +526,7 @@ function OUChannelChart({ candles, ou, height = 200, onHover }: OUChannelChartPr
 }
 
 // ─── Z-Score Oscillator Chart ─────────────────────────────────────────────────
-function ZScoreChart({ zscore, excess, height = 100, onHover }: { zscore: number[]; excess: OUResult['excess']; height?: number; onHover?: (d: HoverData | null) => void }) {
+function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover }: { zscore: number[]; excess: OUResult['excess']; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -481,7 +541,8 @@ function ZScoreChart({ zscore, excess, height = 100, onHover }: { zscore: number
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const yMin = -4, yMax = 4, yRange = yMax - yMin
-    const toY = (v: number) => H - ((v - yMin) / yRange) * H
+    const drawH = H - 14 // reserve 14px for time label
+    const toY = (v: number) => drawH - ((v - yMin) / yRange) * drawH
     const toX = (i: number) => (i / (zscore.length - 1)) * W
 
     const lines: [number, string, string][] = [
@@ -524,7 +585,31 @@ function ZScoreChart({ zscore, excess, height = 100, onHover }: { zscore: number
     zscore.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
     ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 1; ctx.stroke()
 
-  }, [zscore, excess, height])
+    // Crosshair
+    if (hoverIdx != null && zscore[hoverIdx] != null) {
+      const cx = toX(hoverIdx), cy = toY(zscore[hoverIdx])
+      const exc = excess[hoverIdx]
+      const dotColor = exc === 'extreme_ob' ? '#FF3B30' : exc === 'overbought' ? '#FF9500'
+        : exc === 'extreme_os' ? '#34C759' : exc === 'oversold' ? '#42A5F5' : '#00E5FF'
+      const label = candles?.[hoverIdx] ? fmtCandleTime(candles[hoverIdx].t) : `i:${hoverIdx}`
+      drawCrosshair(ctx, W, H, cx, label, 'rgba(0,229,255,0.5)')
+      // Horizontal line at Z value
+      ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.setLineDash([3,3])
+      ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke()
+      ctx.setLineDash([]); ctx.restore()
+      // Dot on line
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2)
+      ctx.fillStyle = dotColor; ctx.fill(); ctx.strokeStyle = '#080C14'; ctx.lineWidth = 1.5; ctx.stroke()
+      // Z value badge right side
+      const zv = zscore[hoverIdx].toFixed(2)
+      ctx.fillStyle = 'rgba(0,229,255,0.4)'
+      const zw = ctx.measureText(zv).width + 8
+      ctx.beginPath(); ctx.roundRect(W - zw - 2, cy - 7, zw + 2, 14, 2); ctx.fill()
+      ctx.fillStyle = '#080C14'; ctx.font = 'bold 8px JetBrains Mono,monospace'
+      ctx.textAlign = 'right'; ctx.fillText(zv, W - 4, cy + 4)
+    }
+
+  }, [zscore, excess, height, hoverIdx, candles])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || zscore.length < 2) return
@@ -544,7 +629,7 @@ function ZScoreChart({ zscore, excess, height = 100, onHover }: { zscore: number
 }
 
 // ─── VMC+ER Chart ─────────────────────────────────────────────────────────────
-function VMCEnhancedChart({ vmc, height = 130 }: { vmc: VMCEnhancedResult; height?: number }) {
+function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover }: { vmc: VMCEnhancedResult; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -559,10 +644,10 @@ function VMCEnhancedChart({ vmc, height = 130 }: { vmc: VMCEnhancedResult; heigh
 
     const n = vmc.sig.length
     const yMin = -80, yMax = 80, yRange = yMax - yMin
-    const toY  = (v: number) => H * 0.85 - ((v - yMin) / yRange) * (H * 0.85)
+    const drawH = H - 14 // reserve 14px for time label
+    const erPanelTop = drawH * 0.88, erPanelH = drawH * 0.10
+    const toY  = (v: number) => erPanelTop * (1 - (v - yMin) / yRange)
     const toX  = (i: number) => (i / (n - 1)) * W
-
-    const erPanelTop = H * 0.88, erPanelH = H * 0.10
     const toYER = (v: number) => erPanelTop + erPanelH - v * erPanelH
 
     ctx.setLineDash([3, 3])
@@ -580,7 +665,7 @@ function VMCEnhancedChart({ vmc, height = 130 }: { vmc: VMCEnhancedResult; heigh
     ctx.textAlign = 'left'
 
     ctx.fillStyle = 'rgba(255,59,48,0.06)'; ctx.fillRect(0, 0, W, toY(40))
-    ctx.fillStyle = 'rgba(52,199,89,0.06)'; ctx.fillRect(0, toY(-40), W, H - toY(-40))
+    ctx.fillStyle = 'rgba(52,199,89,0.06)'; ctx.fillRect(0, toY(-40), W, erPanelTop - toY(-40))
 
     for (let i = 1; i < n; i++) {
       const mom = vmc.momentum[i], er = vmc.erSmoothed[i] ?? 0.5
@@ -608,14 +693,51 @@ function VMCEnhancedChart({ vmc, height = 130 }: { vmc: VMCEnhancedResult; heigh
     ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '8px JetBrains Mono, monospace'
     ctx.fillText('ER', 4, erPanelTop + 10)
 
-  }, [vmc, height])
+    // Crosshair
+    if (hoverIdx != null && vmc.sig[hoverIdx] != null) {
+      const cx = toX(hoverIdx), cy = toY(vmc.sig[hoverIdx])
+      const er = vmc.erSmoothed[hoverIdx] ?? 0
+      const dotColor = er > 0.65 ? '#34C759' : er > 0.4 ? '#FF9500' : '#FF3B30'
+      const label = candles?.[hoverIdx] ? fmtCandleTime(candles[hoverIdx].t) : `i:${hoverIdx}`
+      drawCrosshair(ctx, W, H, cx, label, 'rgba(191,90,242,0.5)')
+      // Horizontal line at VMC value
+      ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.setLineDash([3,3])
+      ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke()
+      ctx.setLineDash([]); ctx.restore()
+      // Dot on VMC line
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2)
+      ctx.fillStyle = dotColor; ctx.fill(); ctx.strokeStyle = '#080C14'; ctx.lineWidth = 1.5; ctx.stroke()
+      // VMC value badge right side
+      const vmcv = vmc.sig[hoverIdx].toFixed(1)
+      ctx.fillStyle = 'rgba(191,90,242,0.4)'
+      const vw = ctx.measureText(vmcv).width + 8
+      ctx.beginPath(); ctx.roundRect(W - vw - 2, cy - 7, vw + 2, 14, 2); ctx.fill()
+      ctx.fillStyle = '#080C14'; ctx.font = 'bold 8px JetBrains Mono,monospace'
+      ctx.textAlign = 'right'; ctx.fillText(vmcv, W - 4, cy + 4)
+    }
+
+  }, [vmc, height, hoverIdx, candles])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onHover || vmc.sig.length < 2) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const xRatio = (e.clientX - rect.left) / rect.width
+    const idx = Math.min(vmc.sig.length - 1, Math.max(0, Math.round(xRatio * (vmc.sig.length - 1))))
+    onHover({ x: e.clientX - rect.left, idx, z: 0, excess: 'none', price: candles?.[idx]?.c ?? 0 })
+  }, [vmc, candles, onHover])
 
   if (vmc.sig.length < 10) return (
     <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
       Chargement VMC…
     </div>
   )
-  return <canvas ref={ref} style={{ width: '100%', height, borderRadius: 8, display: 'block' }} />
+  return (
+    <canvas ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => onHover?.(null)}
+      style={{ width: '100%', height, borderRadius: 8, display: 'block', cursor: 'crosshair' }}
+    />
+  )
 }
 
 // ─── Tooltip component ────────────────────────────────────────────────────────
@@ -1197,13 +1319,13 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
           <div style={{ background: '#080C14', borderRadius: '0 0 8px 8px', border: '1px solid rgba(255,255,255,0.06)', borderTop: 'none', overflow: 'hidden', position: 'relative' }}>
             {activeView === 'channel' && ou && (
               <>
-                <OUChannelChart candles={candles} ou={ou} height={220} onHover={setHoverData} />
+                <OUChannelChart candles={candles} ou={ou} height={220} onHover={setHoverData} hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && <HoverTooltip hover={hoverData} candles={candles} ou={ou} />}
               </>
             )}
             {activeView === 'zscore' && ou && (
               <>
-                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130} onHover={setHoverData} />
+                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130} onHover={setHoverData} candles={candles} hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && ou && (
                   <div style={{ position: 'absolute', top: 8, left: Math.min(hoverData.x + 8, 240), background: 'rgba(8,12,20,0.97)', border: `1px solid rgba(0,229,255,0.2)`, borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 50, minWidth: 200, backdropFilter: 'blur(12px)' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: hoverData.z > 1.5 ? '#FF3B30' : hoverData.z < -1.5 ? '#34C759' : '#8E8E93', marginBottom: 4 }}>{naturalZ(hoverData.z)}</div>
@@ -1214,7 +1336,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
               </>
             )}
             {activeView === 'vmc' && vmc && (
-              <VMCEnhancedChart vmc={vmc} height={150} />
+              <VMCEnhancedChart vmc={vmc} height={150} candles={candles} hoverIdx={hoverData?.idx ?? null} onHover={setHoverData} />
             )}
           </div>
         </div>
