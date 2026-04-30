@@ -1655,11 +1655,12 @@ async function fetchBybitTrades(
 ): Promise<ImportedTrade[]> {
   const now = Date.now();
   const start = startTime ?? now - 90 * 24 * 60 * 60 * 1000;
-  const params = `category=linear&limit=200&startTime=${start}`;
+  // /v5/position/closed-pnl has real closedPnl; /v5/execution/list does not
+  const params = `category=linear&limit=200&startTime=${start}&endTime=${now}`;
   const payload = `${now}${apiKey}5000${params}`;
   const sig = hmac(secret, payload);
 
-  const res = await fetch(`https://api.bybit.com/v5/execution/list?${params}`, {
+  const res = await fetch(`https://api.bybit.com/v5/position/closed-pnl?${params}`, {
     headers: {
       "X-BAPI-API-KEY": apiKey,
       "X-BAPI-SIGN": sig,
@@ -1673,9 +1674,9 @@ async function fetchBybitTrades(
     retCode: number;
     result?: {
       list?: {
-        symbol: string; orderId: string; side: string; execTime: string;
-        execPrice: string; execQty: string; closedPnl: string;
-        execType: string; isMaker: string;
+        symbol: string; orderId: string; side: string; updatedTime: string;
+        avgEntryPrice: string; avgExitPrice: string; qty: string;
+        closedPnl: string; leverage: string;
       }[];
     };
   };
@@ -1683,20 +1684,21 @@ async function fetchBybitTrades(
   if (data.retCode !== 0 || !data.result?.list) return [];
 
   return data.result.list
-    .filter(i => i.execType === "Trade" && parseFloat(i.closedPnl) !== 0)
+    .filter(i => parseFloat(i.closedPnl) !== 0)
     .map(i => {
-      const ts = parseInt(i.execTime);
+      const ts = parseInt(i.updatedTime);
       const tsF = admin.firestore.Timestamp.fromMillis(ts);
       return {
         id: i.orderId,
         date: tsF,
         symbol: i.symbol,
         type: (i.side === "Buy" ? "Long" : "Short") as "Long" | "Short",
-        entryPrice: parseFloat(i.execPrice),
-        quantity: parseFloat(i.execQty),
-        leverage: 1,
+        entryPrice: parseFloat(i.avgEntryPrice),
+        exitPrice: parseFloat(i.avgExitPrice),
+        quantity: parseFloat(i.qty),
+        leverage: parseFloat(i.leverage) || 1,
         exchangeId: "Bybit",
-        orderRole: (i.isMaker === "true" ? "Maker" : "Taker") as "Maker" | "Taker",
+        orderRole: "Taker" as const,
         systemId: "imported",
         session: getSession(ts),
         flashPnLNet: parseFloat(i.closedPnl),
@@ -1716,12 +1718,15 @@ async function fetchOKXTrades(
 ): Promise<ImportedTrade[]> {
   const now = Date.now();
   const start = startTime ?? now - 90 * 24 * 60 * 60 * 1000;
-  const path = "/api/v5/trade/fills-history?instType=SWAP";
+  // Pre-sign MUST include the FULL path + query string (OKX requirement)
+  const basePath = "/api/v5/trade/fills-history";
+  const qs = `instType=SWAP&after=${start}&limit=100`;
+  const fullPath = `${basePath}?${qs}`;
   const ts = new Date().toISOString();
-  const preSign = `${ts}GET${path}`;
+  const preSign = `${ts}GET${fullPath}`;
   const sig = nodeCrypto.createHmac("sha256", secret).update(preSign).digest("base64");
 
-  const r = await fetch(`https://www.okx.com${path}&after=${start}`, {
+  const r = await fetch(`https://www.okx.com${fullPath}`, {
     headers: {
       "OK-ACCESS-KEY": apiKey,
       "OK-ACCESS-SIGN": sig,
@@ -1774,24 +1779,25 @@ async function fetchKuCoinTrades(
     },
   });
   if (!r.ok) throw new Error(`KuCoin: ${r.status} ${await r.text()}`);
-  const data = await r.json() as { code: string; data?: { items?: { symbol: string; orderId: string; side: string; price: string; size: string; closedPnl: string; createdAt: number; liquidity: string }[] } };
+  // KuCoin Futures fills do NOT have closedPnl — PnL is at position close level, not fill level
+  const data = await r.json() as { code: string; data?: { items?: { symbol: string; tradeId: string; orderId: string; side: string; price: string; size: string; fee: string; createdAt: number; liquidity: string; settleCurrency: string }[] } };
   if (data.code !== "200000" || !data.data?.items) return [];
 
   return data.data.items
-    .filter(i => parseFloat(i.closedPnl) !== 0)
+    .filter(i => parseFloat(i.size) > 0)
     .map(i => {
       const tsF = admin.firestore.Timestamp.fromMillis(i.createdAt);
       return {
-        id: i.orderId, date: tsF, symbol: i.symbol,
+        id: i.tradeId || i.orderId, date: tsF, symbol: i.symbol,
         type: (i.side === "buy" ? "Long" : "Short") as "Long" | "Short",
         entryPrice: parseFloat(i.price), quantity: parseFloat(i.size),
         leverage: 1, exchangeId: "KuCoin Futures",
         orderRole: (i.liquidity === "maker" ? "Maker" : "Taker") as "Maker" | "Taker",
         systemId: "imported", session: getSession(i.createdAt),
-        flashPnLNet: parseFloat(i.closedPnl),
-        notes: `Auto-importé KuCoin Futures (orderId: ${i.orderId})`,
+        flashPnLNet: 0, // KuCoin fills endpoint does not expose per-fill PnL
+        notes: `Auto-importé KuCoin Futures (tradeId: ${i.tradeId || i.orderId})`,
         tags: ["kucoinfutures", "auto-import"], status: "closed" as const,
-        source: "kucoinfutures" as const, externalId: i.orderId, closedAt: tsF,
+        source: "kucoinfutures" as const, externalId: i.tradeId || i.orderId, closedAt: tsF,
       };
     });
 }
@@ -1843,33 +1849,42 @@ async function fetchBitgetTrades(
 async function fetchOANDATrades(
   bearerToken: string, accountId: string, startTime?: number
 ): Promise<ImportedTrade[]> {
-  const fromDate = startTime
+  // OANDA /v3/trades does NOT support date filtering — use /transactions with from/to
+  const from = startTime
     ? new Date(startTime).toISOString()
     : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const to = new Date().toISOString();
 
+  // Fetch ORDER_FILL transactions (type=ORDER_FILL) which include trade open/close events
   const r = await fetch(
-    `https://api-fxtrade.oanda.com/v3/accounts/${accountId}/trades?state=CLOSED&count=500&before=${encodeURIComponent(fromDate)}`,
+    `https://api-fxtrade.oanda.com/v3/accounts/${accountId}/transactions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&type=ORDER_FILL`,
     { headers: { "Authorization": `Bearer ${bearerToken}`, "Content-Type": "application/json" } }
   );
   if (!r.ok) throw new Error(`OANDA: ${r.status} ${await r.text()}`);
-  const data = await r.json() as { trades?: { id: string; instrument: string; currentUnits: string; initialUnits: string; price: string; closingTransactionIDs: string[]; unrealizedPL: string; realizedPL: string; closeTime: string; openTime: string }[] };
-  if (!data.trades) return [];
+  const data = await r.json() as {
+    transactions?: {
+      id: string; type: string; instrument?: string; units?: string; price?: string;
+      pl?: string; tradesClosed?: { tradeID: string; units: string }[];
+      tradeOpened?: { tradeID: string }; time: string;
+    }[];
+  };
+  if (!data.transactions) return [];
 
-  return data.trades
-    .filter(t => parseFloat(t.realizedPL) !== 0)
+  return data.transactions
+    .filter(t => t.type === "ORDER_FILL" && t.pl && parseFloat(t.pl) !== 0 && t.tradesClosed?.length)
     .map(t => {
-      const closeTs = new Date(t.closeTime).getTime();
+      const closeTs = new Date(t.time).getTime();
       const tsF = admin.firestore.Timestamp.fromMillis(closeTs);
-      const units = parseFloat(t.initialUnits);
+      const units = parseFloat(t.units ?? "0");
       return {
-        id: t.id, date: tsF, symbol: t.instrument,
+        id: t.id, date: tsF, symbol: t.instrument ?? "UNKNOWN",
         type: (units > 0 ? "Long" : "Short") as "Long" | "Short",
-        entryPrice: parseFloat(t.price), quantity: Math.abs(units),
+        entryPrice: parseFloat(t.price ?? "0"), quantity: Math.abs(units),
         leverage: 1, exchangeId: "OANDA",
         orderRole: "Taker" as const,
         systemId: "imported", session: getSession(closeTs),
-        flashPnLNet: parseFloat(t.realizedPL),
-        notes: `Auto-importé OANDA (tradeId: ${t.id})`,
+        flashPnLNet: parseFloat(t.pl ?? "0"),
+        notes: `Auto-importé OANDA (txId: ${t.id})`,
         tags: ["oanda", "forex", "auto-import"], status: "closed" as const,
         source: "oanda" as const, externalId: t.id, closedAt: tsF,
       };
@@ -1916,7 +1931,9 @@ async function fetchGateioTrades(apiKey: string, secret: string, startTime?: num
   const now = Math.floor(Date.now() / 1000);
   const start = startTime ? Math.floor(startTime / 1000) : now - 90 * 24 * 3600;
   const path = "/api/v4/futures/usdt/my_trades";
-  const queryString = `settle=usdt&limit=1000&from=${start}&to=${now}`;
+  // Gate.io my_trades returns: id, create_time, contract, size, price, is_internal
+  // pnl/role/close_size are NOT in the response — PnL must be treated as 0 at fill level
+  const queryString = `limit=1000&from=${start}&to=${now}`;
   const bodyHash = nodeCrypto.createHash("sha512").update("").digest("hex");
   const signStr = `GET\n${path}\n${queryString}\n${bodyHash}\n${now}`;
   const sig = nodeCrypto.createHmac("sha512", secret).update(signStr).digest("hex");
@@ -1925,19 +1942,22 @@ async function fetchGateioTrades(apiKey: string, secret: string, startTime?: num
     headers: { "KEY": apiKey, "SIGN": sig, "Timestamp": String(now) },
   });
   if (!r.ok) throw new Error(`Gate.io: ${r.status} ${await r.text()}`);
-  const data = await r.json() as { id: number; contract: string; size: number; price: string; role: string; close_size: number; pnl: string; create_time: number }[];
+  const data = await r.json() as { id: number; contract: string; size: number; price: string; create_time: number; create_time_ms?: number }[];
+  if (!Array.isArray(data)) return [];
+
   return data
-    .filter(i => parseFloat(i.pnl) !== 0)
+    .filter(i => i.size !== 0) // skip zero-size entries
     .map(i => {
-      const tsF = admin.firestore.Timestamp.fromMillis(i.create_time * 1000);
+      const ms = i.create_time_ms ?? i.create_time * 1000;
+      const tsF = admin.firestore.Timestamp.fromMillis(ms);
       return {
         id: String(i.id), date: tsF, symbol: i.contract,
         type: (i.size > 0 ? "Long" : "Short") as "Long" | "Short",
         entryPrice: parseFloat(i.price), quantity: Math.abs(i.size),
         leverage: 1, exchangeId: "Gate.io",
-        orderRole: (i.role === "maker" ? "Maker" : "Taker") as "Maker" | "Taker",
-        systemId: "imported", session: getSession(i.create_time * 1000),
-        flashPnLNet: parseFloat(i.pnl),
+        orderRole: "Taker" as const, // role not available in this endpoint
+        systemId: "imported", session: getSession(ms),
+        flashPnLNet: 0, // Gate.io my_trades does not include per-fill PnL
         notes: `Auto-importé Gate.io (id: ${i.id})`,
         tags: ["gateio", "auto-import"], status: "closed" as const,
         source: "gateio" as const, externalId: String(i.id), closedAt: tsF,
@@ -2053,38 +2073,58 @@ async function fetchMEXCTrades(apiKey: string, secret: string, startTime?: numbe
 
 // ── HTX (Huobi) Futures ───────────────────────────────────────────────
 async function fetchHTXTrades(apiKey: string, secret: string, startTime?: number): Promise<ImportedTrade[]> {
-  const ts = new Date().toISOString().replace(/\.\d+Z$/, "");
-  const method = "GET";
+  // HTX linear-swap uses POST with URL query auth (signature covers GET method string even for POST)
+  // POST body is NOT signed — only the query params are signed
   const host = "api.hbdm.com";
-  const path = "/linear-swap-api/v1/swap_matchresults";
-  const qs = `AccessKeyId=${apiKey}&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=${encodeURIComponent(ts)}`;
-  const signStr = `${method}\n${host}\n${path}\n${qs}`;
-  const sig = encodeURIComponent(nodeCrypto.createHmac("sha256", secret).update(signStr).digest("base64"));
-  const r = await fetch(`https://${host}${path}?${qs}&Signature=${sig}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contract_code: "BTC-USDT", trade_type: 0, start_date: startTime ? new Date(startTime).toISOString().split("T")[0] : undefined }),
-  });
-  if (!r.ok) throw new Error(`HTX: ${r.status} ${await r.text()}`);
-  const data = await r.json() as { status: string; data?: { trades?: { match_id: string; contract_code: string; direction: string; trade_price: number; trade_volume: number; profit: number; create_date: number; role: string }[] } };
-  if (data.status !== "ok" || !data.data?.trades) return [];
-  return data.data.trades
-    .filter(i => i.profit !== 0)
-    .map(i => {
-      const tsF = admin.firestore.Timestamp.fromMillis(i.create_date);
-      return {
-        id: String(i.match_id), date: tsF, symbol: i.contract_code,
-        type: (i.direction === "buy" ? "Long" : "Short") as "Long" | "Short",
-        entryPrice: i.trade_price, quantity: i.trade_volume,
-        leverage: 1, exchangeId: "HTX",
-        orderRole: (i.role === "maker" ? "Maker" : "Taker") as "Maker" | "Taker",
-        systemId: "imported", session: getSession(i.create_date),
-        flashPnLNet: i.profit,
-        notes: `Auto-importé HTX (matchId: ${i.match_id})`,
-        tags: ["htx", "auto-import"], status: "closed" as const,
-        source: "htx" as const, externalId: String(i.match_id), closedAt: tsF,
-      };
+  const path = "/linear-swap-api/v1/swap_matchresults_exact";
+
+  // Helper to sign & call for one contract
+  const fetchForContract = async (contractCode: string): Promise<{ match_id: string; contract_code: string; direction: string; trade_price: number; trade_volume: number; profit: number; create_date: number; role: string }[]> => {
+    const ts = new Date().toISOString().replace(/\.\d+Z$/, "");
+    const qs = `AccessKeyId=${apiKey}&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=${encodeURIComponent(ts)}`;
+    // Note: method in sign string is always "POST" for this endpoint
+    const signStr = `POST\n${host}\n${path}\n${qs}`;
+    const sig = encodeURIComponent(nodeCrypto.createHmac("sha256", secret).update(signStr).digest("base64"));
+    const body: Record<string, unknown> = { contract_code: contractCode, trade_type: 0 };
+    if (startTime) body.start_time = startTime;
+    const r = await fetch(`https://${host}${path}?${qs}&Signature=${sig}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
+    if (!r.ok) return [];
+    const data = await r.json() as { status: string; data?: { trades?: { match_id: string; contract_code: string; direction: string; trade_price: number; trade_volume: number; profit: number; create_date: number; role: string }[] } };
+    return (data.status === "ok" ? data.data?.trades ?? [] : []);
+  };
+
+  // Fetch for the most common contracts (can't fetch all at once)
+  const contracts = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT", "DOGE-USDT", "ADA-USDT", "MATIC-USDT", "AVAX-USDT", "LTC-USDT"];
+  const allTrades: ImportedTrade[] = [];
+  const seen = new Set<string>();
+
+  for (const contract of contracts) {
+    try {
+      const trades = await fetchForContract(contract);
+      for (const i of trades) {
+        if (i.profit === 0 || seen.has(String(i.match_id))) continue;
+        seen.add(String(i.match_id));
+        const tsF = admin.firestore.Timestamp.fromMillis(i.create_date);
+        allTrades.push({
+          id: String(i.match_id), date: tsF, symbol: i.contract_code,
+          type: (i.direction === "buy" ? "Long" : "Short") as "Long" | "Short",
+          entryPrice: i.trade_price, quantity: i.trade_volume,
+          leverage: 1, exchangeId: "HTX",
+          orderRole: (i.role === "maker" ? "Maker" : "Taker") as "Maker" | "Taker",
+          systemId: "imported", session: getSession(i.create_date),
+          flashPnLNet: i.profit,
+          notes: `Auto-importé HTX (matchId: ${i.match_id})`,
+          tags: ["htx", "auto-import"], status: "closed" as const,
+          source: "htx" as const, externalId: String(i.match_id), closedAt: tsF,
+        });
+      }
+    } catch { /* skip contract */ }
+  }
+  return allTrades;
 }
 
 // ── Kraken (HMAC-SHA512) ──────────────────────────────────────────────
@@ -2139,7 +2179,8 @@ async function fetchPhemexTrades(apiKey: string, secret: string, startTime?: num
   void startTime; // Phemex returns last 200 filled orders, pagination handled by offset
   const expiry = Math.floor(Date.now() / 1000) + 60;
   const path = "/exchange/order/v2/tradingList";
-  const query = "currency=USD&limit=200&offset=0";
+  // currency=USDT for linear/USDT-margined contracts (USD = legacy inverse contracts)
+  const query = "currency=USDT&limit=200&offset=0";
   const signStr = `${path}${query}${expiry}`;
   const sig = nodeCrypto.createHmac("sha256", secret).update(signStr).digest("hex");
 
@@ -2151,26 +2192,37 @@ async function fetchPhemexTrades(apiKey: string, secret: string, startTime?: num
     },
   });
   if (!r.ok) throw new Error(`Phemex: ${r.status} ${await r.text()}`);
-  const data = await r.json() as { code: number; msg?: string; data?: { rows?: { symbol: string; side: string; execStatus: string; avgPriceEp: number; execQty: number; closedPnlEv: number; transactTimeNs: number }[] } };
+  // USDT-margined linear contracts use *Rv fields (real values, not scaled integers)
+  const data = await r.json() as { code: number; msg?: string; data?: { rows?: {
+    symbol: string; side: string; execStatus: string; transactTimeNs: number;
+    avgPriceRv?: string; execQtyRv?: string; closedPnlRv?: string;  // USDT linear
+    avgPriceEp?: number; execQty?: number; closedPnlEv?: number;    // USD inverse (fallback)
+  }[] } };
   if (data.code !== 0) throw new Error(`Phemex: ${data.msg}`);
   if (!data.data?.rows) return [];
 
-  const EP_SCALE = 1e8; // Phemex uses scaled integers
-  const EV_SCALE = 1e8;
+  const EP_SCALE = 1e8; // for legacy inverse contracts
 
   return data.data.rows
-    .filter(i => i.execStatus === "FullyFilled" && i.closedPnlEv !== 0)
+    .filter(i => i.execStatus === "FullyFilled")
+    .filter(i => {
+      const pnl = i.closedPnlRv != null ? parseFloat(i.closedPnlRv) : (i.closedPnlEv ?? 0) / EP_SCALE;
+      return pnl !== 0;
+    })
     .map(i => {
       const ts = Math.floor(i.transactTimeNs / 1_000_000);
       const tsF = admin.firestore.Timestamp.fromMillis(ts);
+      const price = i.avgPriceRv != null ? parseFloat(i.avgPriceRv) : (i.avgPriceEp ?? 0) / EP_SCALE;
+      const qty   = i.execQtyRv != null ? parseFloat(i.execQtyRv)   : (i.execQty ?? 0);
+      const pnl   = i.closedPnlRv != null ? parseFloat(i.closedPnlRv) : (i.closedPnlEv ?? 0) / EP_SCALE;
       return {
         id: `${i.symbol}-${i.transactTimeNs}`, date: tsF, symbol: i.symbol,
         type: (i.side === "Buy" ? "Long" : "Short") as "Long" | "Short",
-        entryPrice: i.avgPriceEp / EP_SCALE, quantity: i.execQty,
+        entryPrice: price, quantity: qty,
         leverage: 1, exchangeId: "Phemex",
         orderRole: "Taker" as const,
         systemId: "imported", session: getSession(ts),
-        flashPnLNet: i.closedPnlEv / EV_SCALE,
+        flashPnLNet: pnl,
         notes: `Auto-importé Phemex (symbol: ${i.symbol})`,
         tags: ["phemex", "auto-import"], status: "closed" as const,
         source: "phemex" as const, externalId: `${i.symbol}-${i.transactTimeNs}`, closedAt: tsF,
