@@ -383,6 +383,55 @@ function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW,
 // ── Viewport type ─────────────────────────────────────────────────────────
 interface Viewport { from: number; to: number; rawTo?: number }  // fractions 0-1, rawTo may exceed 1 (LW right margin)
 
+// ── Time axis helpers ──────────────────────────────────────────────────────
+const TIME_AXIS_H = 18
+
+function fmtAxisLabel(ts: number, interval: string): string {
+  const d = new Date(ts)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  if (interval === '1w' || interval === '1d') return `${dd}/${mo}`
+  if (interval === '12h' || interval === '4h' || interval === '2h') return `${dd} ${hh}:${mm}`
+  return `${hh}:${mm}`  // 5m / 15m / 30m / 1h
+}
+
+function drawTimeAxis(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  candles: Candle[], viewStart: number, viewEnd: number,
+  rightMarginFrac: number, interval: string
+) {
+  const slice = candles.slice(viewStart, viewEnd)
+  if (slice.length < 2) return
+  const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
+  const xp = (i: number) => (i / (slice.length - 1)) * drawW
+
+  // Background strip
+  ctx.fillStyle = 'rgba(8,12,20,0.97)'
+  ctx.fillRect(0, H - TIME_AXIS_H, W, TIME_AXIS_H)
+  ctx.save(); ctx.setLineDash([])
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(0, H - TIME_AXIS_H); ctx.lineTo(W, H - TIME_AXIS_H); ctx.stroke()
+
+  // ~5 evenly-spaced labels
+  const maxLabels = Math.max(2, Math.floor(drawW / 70))
+  const step = Math.max(1, Math.floor(slice.length / maxLabels))
+
+  ctx.font = '8px JetBrains Mono, monospace'
+  for (let i = 0; i < slice.length; i += step) {
+    const x = xp(i)
+    const label = fmtAxisLabel(slice[i].t, interval)
+    // tick mark
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+    ctx.beginPath(); ctx.moveTo(x, H - TIME_AXIS_H); ctx.lineTo(x, H - TIME_AXIS_H + 3); ctx.stroke()
+    // label
+    ctx.fillStyle = 'rgba(143,148,163,0.7)'; ctx.textAlign = 'center'
+    ctx.fillText(label, x, H - 4)
+  }
+  ctx.restore()
+}
+
 // ── Interactive canvas hook (viewport-aware, wheel+drag) ──────────────────
 function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
@@ -459,7 +508,8 @@ function resolveCSSColor(varName: string, fallback: string): string {
 
 export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
-  const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
+  const [tfOverride, setTfOverride] = useState(false)
+  const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
   const [result, setResult] = useState<WTResult|null>(null)
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
@@ -515,8 +565,9 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd,undefined,undefined,rightMarginFrac)
-    }, [result, viewStart, viewEnd, rightMarginFrac], viewSize, viewport, setViewport, wtExternalIdx
+      drawOscillator(ctx,W,H-TIME_AXIS_H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd,undefined,undefined,rightMarginFrac)
+      drawTimeAxis(ctx,W,H,candles,viewStart,viewEnd,rightMarginFrac,tf.interval)
+    }, [result, viewStart, viewEnd, rightMarginFrac, tf.interval, candles], viewSize, viewport, setViewport, wtExternalIdx
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -542,9 +593,10 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
           <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
-      {!syncInterval && <div style={{display:'flex',gap:4,padding:'0 16px 10px',overflowX:'auto',scrollbarWidth:'none'}}>
-        {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setLocalTf(t)} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
-      </div>}
+      <div style={{display:'flex',gap:4,padding:'0 16px 10px',overflowX:'auto',scrollbarWidth:'none',alignItems:'center'}}>
+        {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>{setLocalTf(t);setTfOverride(true)}} style={{padding:'3px 10px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(255,149,0,0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
+        {tfOverride && syncInterval && <button onClick={()=>setTfOverride(false)} title="Resynchroniser avec la chart principale" style={{padding:'3px 8px',borderRadius:20,fontSize:9,cursor:'pointer',border:'1px solid rgba(0,229,255,0.3)',background:'rgba(0,229,255,0.08)',color:'rgba(0,229,255,0.7)',whiteSpace:'nowrap'}}>↺ sync</button>}
+      </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8,flexDirection:'column'}}>
           <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
@@ -553,10 +605,10 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={180}
+        <canvas ref={canvasRef} width={800} height={180+TIME_AXIS_H}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{width:'100%',height:180,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
+          style={{width:'100%',height:180+TIME_AXIS_H,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
         {hoverIdx !== null && result && result.wt1.length > 0 && (
           <CrosshairTooltip candles={candles} main={result.wt1} signal={result.wt2} histogram={histogram} hoverIdx={hoverIdx} canvasW={canvasW} type="wt" viewStart={viewStart} viewEnd={viewEnd}/>
         )}
@@ -573,7 +625,8 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
 export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
-  const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
+  const [tfOverride, setTfOverride] = useState(false)
+  const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
   const [result, setResult] = useState<VMCResult|null>(null)
   const [status, setStatus] = useState<'idle'|'loading'|'error'>('idle')
@@ -646,8 +699,9 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr,vmcRightMargin)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin], vmcViewSize, viewport, setViewport, vmcExternalIdx
+      drawOscillator(ctx,W,H-TIME_AXIS_H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr,vmcRightMargin)
+      drawTimeAxis(ctx,W,H,candles,vmcViewStart,vmcViewEnd,vmcRightMargin,tf.interval)
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin, tf.interval, candles], vmcViewSize, viewport, setViewport, vmcExternalIdx
   )
 
   return (
@@ -677,9 +731,10 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
           <button onClick={loadCandles} style={{background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:7,padding:'4px 9px',cursor:'pointer',fontSize:11,color:'var(--tm-text-secondary)'}}>↻</button>
         </div>
       </div>
-      {!syncInterval && <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none'}}>
-          {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>setLocalTf(t)} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
-      </div>}
+      <div style={{display:'flex',gap:3,padding:'0 16px 8px',overflowX:'auto',scrollbarWidth:'none',alignItems:'center'}}>
+        {TF_OPTIONS.map(t=><button key={t.label} onClick={()=>{setLocalTf(t);setTfOverride(true)}} style={{padding:'3px 9px',borderRadius:20,fontSize:10,fontWeight:500,cursor:'pointer',border:`1px solid ${t.label===tf.label?'var(--tm-warning)':'var(--tm-border)'}`,background:t.label===tf.label?`rgba(255,149,0,0.15)`:'var(--tm-bg-tertiary)',color:t.label===tf.label?'var(--tm-warning)':'var(--tm-text-muted)',whiteSpace:'nowrap'}}>{t.label}</button>)}
+        {tfOverride && syncInterval && <button onClick={()=>setTfOverride(false)} title="Resynchroniser avec la chart principale" style={{padding:'3px 8px',borderRadius:20,fontSize:9,cursor:'pointer',border:'1px solid rgba(0,229,255,0.3)',background:'rgba(0,229,255,0.08)',color:'rgba(0,229,255,0.7)',whiteSpace:'nowrap'}}>↺ sync</button>}
+      </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>
           <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
@@ -688,10 +743,10 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
           <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={230}
+        <canvas ref={canvasRef} width={800} height={230+TIME_AXIS_H}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{width:'100%',height:230,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
+          style={{width:'100%',height:230+TIME_AXIS_H,display:'block',borderRadius:8,cursor:'crosshair',userSelect:'none'}}/>
         {hoverIdx !== null && result && result.sig.length > 0 && (
           <CrosshairTooltip candles={candles} main={result.sig} signal={result.sigSignal} histogram={result.momentum} hoverIdx={hoverIdx} canvasW={canvasW} type="vmc" viewStart={vmcViewStart} viewEnd={vmcViewEnd}/>
         )}
@@ -967,7 +1022,8 @@ function drawRSIBollinger(
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
 export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
-  const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
+  const [tfOverride, setTfOverride] = useState(false)
+  const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles]         = useState<Candle[]>([])
   const [result,  setResult]          = useState<RSIBBResult | null>(null)
   const [status,  setStatus]          = useState<'idle'|'loading'|'error'>('idle')
@@ -1017,8 +1073,11 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
   const rsbExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1)))) : null
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
-    (ctx, W, H, hi) => { if (result) drawRSIBollinger(ctx, W, H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin) },
-    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin], viewSize, viewport, setViewport, rsbExternalIdx
+    (ctx, W, H, hi) => {
+      if (result) drawRSIBollinger(ctx, W, H - TIME_AXIS_H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin)
+      drawTimeAxis(ctx, W, H, candles, viewStart, viewEnd, rsbRightMargin, tf.interval)
+    },
+    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin, tf.interval, candles], viewSize, viewport, setViewport, rsbExternalIdx
   )
 
   const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
@@ -1081,14 +1140,13 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
         </div>
       )}
 
-      {/* TF pills (hidden when synced) */}
-      {!syncInterval && (
-        <div style={{ display:'flex', gap:4, padding:'0 16px 10px', overflowX:'auto', scrollbarWidth:'none' as const }}>
-          {TF_OPTIONS.map(t => (
-            <button key={t.label} onClick={() => setLocalTf(t)} style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:500, cursor:'pointer', border:`1px solid ${t.label===tf.label?'#00E5FF':'var(--tm-border)'}`, background:t.label===tf.label?'rgba(0,229,255,0.15)':'var(--tm-bg-tertiary)', color:t.label===tf.label?'#00E5FF':'var(--tm-text-muted)', whiteSpace:'nowrap' }}>{t.label}</button>
-          ))}
-        </div>
-      )}
+      {/* TF pills */}
+      <div style={{ display:'flex', gap:4, padding:'0 16px 10px', overflowX:'auto', scrollbarWidth:'none' as const, alignItems:'center' }}>
+        {TF_OPTIONS.map(t => (
+          <button key={t.label} onClick={() => { setLocalTf(t); setTfOverride(true) }} style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:500, cursor:'pointer', border:`1px solid ${t.label===tf.label?'#00E5FF':'var(--tm-border)'}`, background:t.label===tf.label?'rgba(0,229,255,0.15)':'var(--tm-bg-tertiary)', color:t.label===tf.label?'#00E5FF':'var(--tm-text-muted)', whiteSpace:'nowrap' }}>{t.label}</button>
+        ))}
+        {tfOverride && syncInterval && <button onClick={()=>setTfOverride(false)} title="Resynchroniser avec la chart principale" style={{padding:'3px 8px',borderRadius:20,fontSize:9,cursor:'pointer',border:'1px solid rgba(0,229,255,0.3)',background:'rgba(0,229,255,0.08)',color:'rgba(0,229,255,0.7)',whiteSpace:'nowrap'}}>↺ sync</button>}
+      </div>
 
       {/* Canvas */}
       <div style={{ padding:'0 16px 16px', position:'relative' }}>
@@ -1104,10 +1162,10 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
             <span style={{ fontSize:11, fontWeight:600, color:'var(--tm-loss)' }}>{errorMsg}</span>
           </div>
         )}
-        <canvas ref={canvasRef} width={800} height={200}
+        <canvas ref={canvasRef} width={800} height={200+TIME_AXIS_H}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{ width:'100%', height:200, display:'block', borderRadius:8, cursor:'crosshair', userSelect:'none' }} />
+          style={{ width:'100%', height:200+TIME_AXIS_H, display:'block', borderRadius:8, cursor:'crosshair', userSelect:'none' }} />
 
         {/* Hover tooltip */}
         {hoverIdx !== null && result && (() => {
@@ -1251,7 +1309,8 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 // ── RSI Chart Component ──────────────────────────────────────────────────────
 export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
-  const tf = syncInterval ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
+  const [tfOverride, setTfOverride] = useState(false)
+  const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
   const [candles, setCandles] = useState<Candle[]>([])
   const [rsiData, setRsiData] = useState<number[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
@@ -1305,8 +1364,11 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: 
     : { label: 'Neutre', color: 'var(--tm-text-secondary)' }
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
-    (ctx, W, H, hi) => { drawRSI(ctx, W, H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd, rsiRightMargin) },
-    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin], rsiViewSize, viewport, setViewport, rsiExternalIdx
+    (ctx, W, H, hi) => {
+      drawRSI(ctx, W, H - TIME_AXIS_H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd, rsiRightMargin)
+      drawTimeAxis(ctx, W, H, candles, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval)
+    },
+    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval, candles], rsiViewSize, viewport, setViewport, rsiExternalIdx
   )
 
   return (
@@ -1324,9 +1386,10 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: 
           <button onClick={loadCandles} style={{ background: 'var(--tm-bg-tertiary)', border: '1px solid #2A2F3E', borderRadius: 7, padding: '4px 9px', cursor: 'pointer', fontSize: 11, color: 'var(--tm-text-secondary)' }}>↻</button>
         </div>
       </div>
-      {!syncInterval && <div style={{ display: 'flex', gap: 4, padding: '0 16px 10px', overflowX: 'auto', scrollbarWidth: 'none' as const }}>
-        {TF_OPTIONS.map(t => <button key={t.label} onClick={() => setLocalTf(t)} style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 500, cursor: 'pointer', border: `1px solid ${t.label === tf.label ? '#BF5AF2' : 'var(--tm-border)'}`, background: t.label === tf.label ? 'rgba(191,90,242,0.15)' : 'var(--tm-bg-tertiary)', color: t.label === tf.label ? '#BF5AF2' : 'var(--tm-text-muted)', whiteSpace: 'nowrap' }}>{t.label}</button>)}
-      </div>}
+      <div style={{ display: 'flex', gap: 4, padding: '0 16px 10px', overflowX: 'auto', scrollbarWidth: 'none' as const, alignItems: 'center' }}>
+        {TF_OPTIONS.map(t => <button key={t.label} onClick={() => { setLocalTf(t); setTfOverride(true) }} style={{ padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 500, cursor: 'pointer', border: `1px solid ${t.label === tf.label ? '#BF5AF2' : 'var(--tm-border)'}`, background: t.label === tf.label ? 'rgba(191,90,242,0.15)' : 'var(--tm-bg-tertiary)', color: t.label === tf.label ? '#BF5AF2' : 'var(--tm-text-muted)', whiteSpace: 'nowrap' }}>{t.label}</button>)}
+        {tfOverride && syncInterval && <button onClick={()=>setTfOverride(false)} title="Resynchroniser avec la chart principale" style={{padding:'3px 8px',borderRadius:20,fontSize:9,cursor:'pointer',border:'1px solid rgba(0,229,255,0.3)',background:'rgba(0,229,255,0.08)',color:'rgba(0,229,255,0.7)',whiteSpace:'nowrap'}}>↺ sync</button>}
+      </div>
       <div style={{ padding: '0 16px 16px', position: 'relative' }}>
         {status === 'loading' && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,12,20,0.85)', borderRadius: 8, zIndex: 30, gap: 8 }}>
           <div style={{ width: 18, height: 18, border: '2px solid #2A2F3E', borderTopColor: '#BF5AF2', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /><span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Chargement {symbol}...</span>
@@ -1334,10 +1397,10 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: 
         {status === 'error' && <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
           <span style={{ fontSize: 22 }}>📡</span><span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-loss)' }}>{errorMsg}</span>
         </div>}
-        <canvas ref={canvasRef} width={800} height={180}
+        <canvas ref={canvasRef} width={800} height={180+TIME_AXIS_H}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onLeave}
-          style={{ width: '100%', height: 180, display: 'block', borderRadius: 8, cursor: 'crosshair', userSelect: 'none' }} />
+          style={{ width: '100%', height: 180+TIME_AXIS_H, display: 'block', borderRadius: 8, cursor: 'crosshair', userSelect: 'none' }} />
         {hoverIdx !== null && rsiData.length > 0 && (() => {
           const dataIdx = rsiViewStart + hoverIdx
           const candle = candles[dataIdx]
