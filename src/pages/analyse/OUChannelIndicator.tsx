@@ -1134,7 +1134,7 @@ interface MTFRow { tf: string; zscore: number; excess: string; erScore: number; 
 interface OUChannelIndicatorProps { symbol: string; syncInterval?: string; visibleRange?: { from: number; to: number } | null; crosshairFrac?: number | null }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function OUChannelIndicator({ symbol, syncInterval, visibleRange: _visibleRange, crosshairFrac }: OUChannelIndicatorProps) {
+export default function OUChannelIndicator({ symbol, syncInterval, visibleRange, crosshairFrac }: OUChannelIndicatorProps) {
   const [tf, setTf]               = useState('1h')
   const [candles, setCandles]     = useState<Candle[]>([])
   const [ou, setOu]               = useState<OUResult | null>(null)
@@ -1153,15 +1153,54 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
   const [signalHistory, setSignalHistory] = useState<SignalEntry[]>([])
   const loadRef = useRef(0)
 
+  // ── Viewport — mirrors WaveTrend so Canal OU shows the same time window ──
+  const [viewport, setViewport] = useState({ from: 0, to: 1 })
+
+  useEffect(() => {
+    if (!visibleRange) {
+      const n = candles.length || 1
+      setViewport({ from: Math.max(0, 1 - 150 / n), to: 1 })
+    } else {
+      setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1) })
+    }
+  }, [visibleRange, candles.length])
+
+  const total     = candles.length
+  const viewStart = total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
+  const viewEnd   = total > 0 ? Math.min(total, Math.ceil(Math.min(viewport.to, 1) * total)) : 0
+  const viewSize  = Math.max(viewEnd - viewStart, 2)
+
+  const viewCandles = candles.slice(viewStart, viewEnd)
+  const viewOu: OUResult | null = ou ? {
+    mean:   ou.mean.slice(viewStart, viewEnd),
+    upper1: ou.upper1.slice(viewStart, viewEnd),
+    upper2: ou.upper2.slice(viewStart, viewEnd),
+    lower1: ou.lower1.slice(viewStart, viewEnd),
+    lower2: ou.lower2.slice(viewStart, viewEnd),
+    zscore: ou.zscore.slice(viewStart, viewEnd),
+    kappa:  ou.kappa.slice(viewStart, viewEnd),
+    sigma:  ou.sigma.slice(viewStart, viewEnd),
+    excess: ou.excess.slice(viewStart, viewEnd),
+    regime: ou.regime.slice(viewStart, viewEnd),
+  } : null
+  const viewVmc: VMCEnhancedResult | null = vmc ? {
+    ...vmc,
+    sig:        vmc.sig.slice(viewStart, viewEnd),
+    sigSignal:  vmc.sigSignal.slice(viewStart, viewEnd),
+    momentum:   vmc.momentum.slice(viewStart, viewEnd),
+    er:         vmc.er.slice(viewStart, viewEnd),
+    erSmoothed: vmc.erSmoothed.slice(viewStart, viewEnd),
+  } : null
+
   // Sync crosshair from main LW chart when not directly hovering
   useEffect(() => {
     if (isDirectHover.current) return  // local hover takes priority
-    if (crosshairFrac == null || !candles.length) { setHoverData(null); return }
-    const idx = Math.max(0, Math.min(candles.length - 1, Math.round(crosshairFrac * (candles.length - 1))))
-    const c = candles[idx]
+    if (crosshairFrac == null || !viewCandles.length) { setHoverData(null); return }
+    const idx = Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1))))
+    const c = viewCandles[idx]
     if (!c) return
-    setHoverData({ x: 0, idx, z: ou?.zscore[idx] ?? 0, excess: ou?.excess[idx] ?? 'none', price: c.c })
-  }, [crosshairFrac, candles, ou])
+    setHoverData({ x: 0, idx, z: viewOu?.zscore[idx] ?? 0, excess: viewOu?.excess[idx] ?? 'none', price: c.c })
+  }, [crosshairFrac, viewCandles, viewOu, viewSize])
 
   useEffect(() => {
     if (syncInterval) {
@@ -1678,20 +1717,20 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
 
           {/* Chart area with hover tooltip */}
           <div style={{ background: '#080C14', borderRadius: '0 0 8px 8px', border: '1px solid rgba(255,255,255,0.06)', borderTop: 'none', overflow: 'hidden', position: 'relative' }}>
-            {activeView === 'channel' && ou && (
+            {activeView === 'channel' && viewOu && (
               <>
-                <OUChannelChart candles={candles} ou={ou} height={220} interval={tf}
+                <OUChannelChart candles={viewCandles} ou={viewOu} height={220} interval={tf}
                   onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }}
                   hoverIdx={hoverData?.idx ?? null} />
-                {hoverData && <HoverTooltip hover={hoverData} candles={candles} ou={ou} />}
+                {hoverData && <HoverTooltip hover={hoverData} candles={viewCandles} ou={viewOu} />}
               </>
             )}
-            {activeView === 'zscore' && ou && (
+            {activeView === 'zscore' && viewOu && (
               <>
-                <ZScoreChart zscore={ou.zscore} excess={ou.excess} height={130} interval={tf}
+                <ZScoreChart zscore={viewOu.zscore} excess={viewOu.excess} height={130} interval={tf}
                   onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }}
-                  candles={candles} hoverIdx={hoverData?.idx ?? null} />
-                {hoverData && ou && (
+                  candles={viewCandles} hoverIdx={hoverData?.idx ?? null} />
+                {hoverData && viewOu && (
                   <div style={{ position: 'absolute', top: 8, left: Math.min(hoverData.x + 8, 240), background: 'rgba(8,12,20,0.97)', border: `1px solid rgba(0,229,255,0.2)`, borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 50, minWidth: 200, backdropFilter: 'blur(12px)' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: hoverData.z > 1.5 ? '#FF3B30' : hoverData.z < -1.5 ? '#34C759' : '#8E8E93', marginBottom: 4 }}>{naturalZ(hoverData.z)}</div>
                     <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono' }}>Z-Score : <span style={{ color: 'var(--tm-text-primary)', fontWeight: 700 }}>{hoverData.z >= 0 ? '+' : ''}{hoverData.z.toFixed(2)}σ</span></div>
@@ -1700,13 +1739,13 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange:
                 )}
               </>
             )}
-            {activeView === 'vmc' && vmc && (
-              <VMCEnhancedChart vmc={vmc} height={150} interval={tf} candles={candles} hoverIdx={hoverData?.idx ?? null}
+            {activeView === 'vmc' && viewVmc && (
+              <VMCEnhancedChart vmc={viewVmc} height={150} interval={tf} candles={viewCandles} hoverIdx={hoverData?.idx ?? null}
                 onHover={d => { isDirectHover.current = d !== null; setHoverData(d) }} />
             )}
-            {activeView === 'confluence' && ou && vmc && (
+            {activeView === 'confluence' && viewOu && viewVmc && (
               <div style={{ padding: '14px 16px', overflowY: 'auto', maxHeight: 420 }}>
-                <ConfluenceView ou={ou} vmc={vmc} candles={candles} isCrypto={isCrypto} />
+                <ConfluenceView ou={viewOu} vmc={viewVmc} candles={viewCandles} isCrypto={isCrypto} />
               </div>
             )}
           </div>
