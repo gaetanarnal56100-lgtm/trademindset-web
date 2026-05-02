@@ -76,6 +76,17 @@ interface StyleConfig {
   duration: string     // "secondes–15min" etc.
   sessionCritical: boolean
   color: string
+  // ── Confluence weights (must sum to 1.0) ───────────────────────────────
+  // MTF confluence: how much multi-timeframe trend matters for this style
+  // Signal align:   how much WT/VMC/OU short-term signal alignment matters
+  // OU regime:      bonus for trending/breakout regimes
+  wMtf: number         // weight for mtfConfluence
+  wSignal: number      // weight for signal alignment (WT/VMC/OU/conf)
+  wRegime: number      // weight for OU regime bonus
+  // ── NO TRADE threshold ─────────────────────────────────────────────────
+  // Scalping needs very high confluence (small window, tight stop)
+  // Position can trade with lower confluence (long time to be right)
+  noTradeThreshold: number
 }
 
 const STYLES: StyleConfig[] = [
@@ -83,41 +94,49 @@ const STYLES: StyleConfig[] = [
     id: 'scalping',
     emoji: '⚡', label: 'Scalping', sublabel: '1m–5m · sec–15min',
     chartTfs: ['1m','3m','5m'],
-    stopPct: 0.0015,       // 0.15% → $142 sur BTC 95k
-    entryOffsetPct: 0.0003, // 0.03% → entrée très proche
-    tp1R: 1.0, tp2R: 1.5, tp3R: 2.0,   // cibles serrées (1:1 max)
+    stopPct: 0.0015, entryOffsetPct: 0.0003,
+    tp1R: 1.0, tp2R: 1.5, tp3R: 2.0,
     riskPct: '0.25–0.5%', duration: 'sec → 15min',
     sessionCritical: true, color: '#BF5AF2',
+    // Scalping: court terme domine, MTF à peine utile
+    wMtf: 0.15, wSignal: 0.65, wRegime: 0.20,
+    noTradeThreshold: 50,  // besoin d'alignement quasi-parfait
   },
   {
     id: 'daytrading',
     emoji: '🌅', label: 'Day Trading', sublabel: '5m–1h · min–heures',
     chartTfs: ['5m','15m','30m','1h'],
-    stopPct: 0.008,        // 0.8% → $760 sur BTC 95k
-    entryOffsetPct: 0.002,
+    stopPct: 0.008, entryOffsetPct: 0.002,
     tp1R: 1.5, tp2R: 2.5, tp3R: 4.0,
     riskPct: '0.5–1%', duration: 'quelques heures (intraday)',
     sessionCritical: true, color: '#0A85FF',
+    // Day trading: équilibre signaux CT / MT
+    wMtf: 0.30, wSignal: 0.50, wRegime: 0.20,
+    noTradeThreshold: 35,
   },
   {
     id: 'swing',
     emoji: '📈', label: 'Swing', sublabel: '4h–1d · jours–semaines',
     chartTfs: ['4h','8h','12h','1d'],
-    stopPct: 0.03,         // 3% → $2 850 sur BTC 95k
-    entryOffsetPct: 0.006,
+    stopPct: 0.03, entryOffsetPct: 0.006,
     tp1R: 2.0, tp2R: 3.5, tp3R: 6.0,
     riskPct: '1–2%', duration: 'quelques jours à 2–3 semaines',
     sessionCritical: false, color: '#34C759',
+    // Swing: MTF prédomine, signaux CT moins critiques
+    wMtf: 0.45, wSignal: 0.35, wRegime: 0.20,
+    noTradeThreshold: 25,
   },
   {
     id: 'position',
     emoji: '🏔️', label: 'Position', sublabel: '1d–1w · semaines–mois',
     chartTfs: ['3d','1w'],
-    stopPct: 0.07,         // 7% → $6 650 sur BTC 95k
-    entryOffsetPct: 0.01,
+    stopPct: 0.07, entryOffsetPct: 0.01,
     tp1R: 3.0, tp2R: 5.0, tp3R: 8.0,
     riskPct: '1–3%', duration: 'semaines à plusieurs mois',
     sessionCritical: false, color: '#FF9500',
+    // Position: MTF long terme domine, signaux CT presque ignorés
+    wMtf: 0.60, wSignal: 0.25, wRegime: 0.15,
+    noTradeThreshold: 15,  // peut trader avec peu de confluence CT
   },
 ]
 
@@ -214,25 +233,29 @@ function generateScenarios(
     : bearSignals > bullSignals ? 'bear'
     : 'neutral'
 
-  // ── 3. Confluence score (0–100) ──────────────────────────────────────────
-  // MTF confluence weight 40%, signal alignment 35%, OU regime 25%
+  // ── 3. Confluence score (0–100) — style-weighted ─────────────────────────
+  // Signal alignment: % des signaux dans la direction dominante
   const signalAlignPct = primaryBias === 'bull' ? (bullSignals / 5) * 100
     : primaryBias === 'bear' ? (bearSignals / 5) * 100
     : 50 - Math.abs(bullSignals - bearSignals) * 10
-  const ouRegimeBonus = ouRegime === 'ranging' ? 20 : ouRegime === 'breakout' ? 10 : 0
+  // OU regime bonus : ranging = bon pour mean-reversion, trending/breakout = tendance
+  const ouRegimeBonus = ouRegime === 'ranging' ? 25 : ouRegime === 'breakout' ? 15 : 5
+  // Pondération selon le style de trading
   const confluenceScore = Math.round(
-    mtfConfluence * 0.40 + signalAlignPct * 0.35 + ouRegimeBonus * 0.25
+    mtfConfluence * style.wMtf
+    + signalAlignPct * style.wSignal
+    + ouRegimeBonus * style.wRegime
   )
 
-  // ── 4. NO TRADE detection ────────────────────────────────────────────────
+  // ── 4. NO TRADE — seuil variable selon le style ───────────────────────────
   const conflicting = (wtBull && vmcBear) || (wtBear && vmcBull)
-  const noTrade = confluenceScore < 25
+  const noTrade = confluenceScore < style.noTradeThreshold
     || (Math.abs(ouZ) < 0.5 && ouRegime === 'ranging' && bullSignals === bearSignals)
     || conflicting
   const noTradeReason = conflicting
-    ? 'Conflicting signals (WT vs VMC)'
-    : confluenceScore < 25
-      ? `Low confluence (${confluenceScore}%) — wait for alignment`
+    ? 'Conflicting signals (WT vs VMC) — wait for resolution'
+    : confluenceScore < style.noTradeThreshold
+      ? `Confluence ${confluenceScore}/100 < ${style.noTradeThreshold} required for ${style.label} — wait for alignment`
       : 'Market in equilibrium — no statistical edge'
 
   // ── 5. Setup quality ─────────────────────────────────────────────────────
