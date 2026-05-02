@@ -1015,9 +1015,6 @@ export default function WhaleAlertsPage() {
         {/* Exchange flows */}
         {!loading && <ExchangeFlow alerts={alerts}/>}
 
-        {/* Smart Money — Insider trades */}
-        {!loading && <InsiderTradesSection/>}
-
         {/* Market News */}
         {!loading && (
           <MarketNewsSection topTokens={[...new Set(alerts.slice(0,10).map(a => a.tokenSymbol))].filter(s => s !== 'ETH' && s !== 'BTC').slice(0,5)}/>
