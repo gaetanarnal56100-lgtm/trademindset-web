@@ -2200,6 +2200,7 @@ export default function AnalysePage() {
               <TradePlanCard
                 symbol={symbol}
                 price={price || 0}
+                chartInterval={syncInterval}
                 mtfScore={pdfMtfSnap?.globalScore ?? 0}
                 mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
                 mtfConfluence={pdfMtfSnap?.confluence ?? 0}

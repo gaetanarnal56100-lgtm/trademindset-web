@@ -52,9 +52,69 @@ interface GPTSections {
 
 export type { TradePlanData, GPTSections, TradeScenario }
 
+// ── Timeframe presets ──────────────────────────────────────────────────────
+
+type TradingStyle = 'scalping' | 'intraday' | 'swing' | 'position'
+
+interface StyleConfig {
+  id: TradingStyle
+  emoji: string
+  label: string
+  sublabel: string        // duration hint
+  chartTfs: string[]      // chart intervals that map here by default
+  atrMult: number         // multiplier on base ATR for stop sizing
+  tpMult: number          // multiplier on risk for TP1/2/3
+  riskPct: string         // suggested % per trade
+  sessionCritical: boolean
+  color: string
+}
+
+const STYLES: StyleConfig[] = [
+  {
+    id: 'scalping',
+    emoji: '⚡', label: 'Scalping', sublabel: 'Minutes · 1–5m',
+    chartTfs: ['1m','3m','5m'],
+    atrMult: 0.25, tpMult: 1.0,
+    riskPct: '0.25–0.5%', sessionCritical: true, color: '#BF5AF2',
+  },
+  {
+    id: 'intraday',
+    emoji: '🌅', label: 'Intraday', sublabel: 'Hours · 15m–1h',
+    chartTfs: ['15m','30m','1h'],
+    atrMult: 1.0, tpMult: 1.0,
+    riskPct: '0.5–1%', sessionCritical: true, color: '#0A85FF',
+  },
+  {
+    id: 'swing',
+    emoji: '📈', label: 'Swing', sublabel: 'Days · 4h–1d',
+    chartTfs: ['4h','8h','12h','1d'],
+    atrMult: 2.5, tpMult: 1.5,
+    riskPct: '1–2%', sessionCritical: false, color: '#34C759',
+  },
+  {
+    id: 'position',
+    emoji: '🏔️', label: 'Position', sublabel: 'Weeks · 1w+',
+    chartTfs: ['3d','1w'],
+    atrMult: 5.0, tpMult: 2.0,
+    riskPct: '2–3%', sessionCritical: false, color: '#FF9500',
+  },
+]
+
+function styleFromInterval(interval: string): TradingStyle {
+  for (const s of STYLES) {
+    if (s.chartTfs.includes(interval)) return s.id
+  }
+  // fallback heuristic
+  if (['1m','3m','5m'].includes(interval)) return 'scalping'
+  if (['15m','30m','1h'].includes(interval)) return 'intraday'
+  if (['4h','8h','12h','1d'].includes(interval)) return 'swing'
+  return 'position'
+}
+
 interface Props {
   symbol: string
   price: number
+  chartInterval?: string  // current chart TF → sets default style
   mtfScore?: number
   mtfSignal?: string
   mtfConfluence?: number
@@ -109,8 +169,10 @@ function generateScenarios(
   confluenceSignal: string,
   keyLevels: KeyLevel[],
   _isCrypto: boolean,
+  style: StyleConfig,
 ): TradePlanData {
-  const atr = calcATR(price, mtfScore)
+  const baseAtr = calcATR(price, mtfScore)
+  const atr = baseAtr * style.atrMult
 
   // ── 1. Signal alignment ──────────────────────────────────────────────────
   const wtBull = ['Bullish Reversal','Smart Bullish','Oversold'].includes(wtStatus)
@@ -182,9 +244,9 @@ function generateScenarios(
     ? Math.min(nearSupport.price - atr * 0.3, price - atr * 1.2 * bullMult)
     : price - atr * 1.5 * bullMult
   const bullRisk = Math.max(bullEntry - bullStop, atr * 0.5)
-  const bullTp1 = nearResist ? Math.min(nearResist.price * 0.998, bullEntry + bullRisk * 1.5) : bullEntry + bullRisk * 1.5
-  const bullTp2 = bullEntry + bullRisk * 2.5
-  const bullTp3 = bullEntry + bullRisk * 4.0
+  const bullTp1 = nearResist ? Math.min(nearResist.price * 0.998, bullEntry + bullRisk * 1.5 * style.tpMult) : bullEntry + bullRisk * 1.5 * style.tpMult
+  const bullTp2 = bullEntry + bullRisk * 2.5 * style.tpMult
+  const bullTp3 = bullEntry + bullRisk * 4.0 * style.tpMult
 
   const bullConditions: string[] = []
   if (ouBear || ouExcess === 'none') bullConditions.push('OU oversold confirmation (Z < −1.0σ)')
@@ -220,9 +282,9 @@ function generateScenarios(
     ? Math.max(nearResist.price + atr * 0.3, price + atr * 1.2 * bearMult)
     : price + atr * 1.5 * bearMult
   const bearRisk = Math.max(bearStop - bearEntry, atr * 0.5)
-  const bearTp1 = nearSupport ? Math.max(nearSupport.price * 1.002, bearEntry - bearRisk * 1.5) : bearEntry - bearRisk * 1.5
-  const bearTp2 = bearEntry - bearRisk * 2.5
-  const bearTp3 = bearEntry - bearRisk * 4.0
+  const bearTp1 = nearSupport ? Math.max(nearSupport.price * 1.002, bearEntry - bearRisk * 1.5 * style.tpMult) : bearEntry - bearRisk * 1.5 * style.tpMult
+  const bearTp2 = bearEntry - bearRisk * 2.5 * style.tpMult
+  const bearTp3 = bearEntry - bearRisk * 4.0 * style.tpMult
 
   const bearConditions: string[] = []
   if (ouBull || ouExcess === 'none') bearConditions.push('OU overbought confirmation (Z > +1.0σ)')
@@ -266,7 +328,9 @@ function generateScenarios(
     : hour >= 13 && hour < 17 ? 'New York Open 🗽'
     : hour >= 0 && hour < 4 ? 'Asia Session 🌏'
     : 'Off-peak — lower liquidity'
-  const sessionAdvice = `${session} · ${ouRegime === 'trending' ? 'Trend-following favored' : ouRegime === 'breakout' ? 'Breakout mode — tight stops' : 'Range-bound — fade extremes'}`
+  const sessionWarning = style.sessionCritical && (hour < 7 || (hour >= 12 && hour < 13) || hour >= 22)
+    ? ' ⚠️ Low liquidity — avoid' : ''
+  const sessionAdvice = `${session}${sessionWarning} · ${ouRegime === 'trending' ? 'Trend-following favored' : ouRegime === 'breakout' ? 'Breakout mode — tight stops' : 'Range-bound — fade extremes'}`
 
   return {
     bull, bear, globalScore: mtfScore, bullProb, riskLevel, context,
@@ -311,11 +375,12 @@ async function enrichWithAI(
   wtStatus: string, vmcStatus: string,
   ouExcess: string, ouZ: number, ouRegime: string,
   confluenceSignal: string, isCrypto: boolean,
+  style: StyleConfig,
 ): Promise<string> {
   try {
     const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
 
-    const systemPrompt = `You are an institutional trading desk AI. Your role is to produce execution-ready, context-aware trade analysis — not generic advice.
+    const systemPrompt = `You are an institutional trading desk AI specialized in ${style.label} trading (${style.sublabel}, suggested risk ${style.riskPct}/trade). Your role is to produce execution-ready, context-aware trade analysis — not generic advice. Adapt all timing, stop logic, and position sizing to this specific trading style.
 
 STRUCTURE your response EXACTLY like this:
 
@@ -363,7 +428,8 @@ ${isCrypto ? 'On-chain / market structure context (narrative, TVL, network activ
 
 STYLE: institutional, precise, no disclaimers, actionable. If NO TRADE — be direct about why.`
 
-    const userMessage = `Asset: ${symbol} | Price: $${fmtP(price)}
+    const userMessage = `Trading Style: ${style.emoji} ${style.label} (${style.sublabel}) — Risk/trade: ${style.riskPct}
+Asset: ${symbol} | Price: $${fmtP(price)}
 MTF Signal: ${mtfSignal} | MTF Confluence: ${mtfConfluence.toFixed(0)}%
 WaveTrend: ${wtStatus} | VMC: ${vmcStatus}
 OU Z-Score: ${ouZ >= 0 ? '+' : ''}${ouZ.toFixed(2)}σ | OU Excess: ${ouExcess} | Regime: ${ouRegime}
@@ -395,6 +461,41 @@ Generate the full analysis following the structure above.`
 }
 
 // ── UI Components ──────────────────────────────────────────────────────────
+
+// ── Style Selector ─────────────────────────────────────────────────────────
+
+function StyleSelector({ selected, onChange }: { selected: TradingStyle; onChange: (s: TradingStyle) => void }) {
+  return (
+    <div style={{ display:'flex', gap:4, padding:'8px 16px 0' }}>
+      {STYLES.map(s => {
+        const isActive = s.id === selected
+        return (
+          <button
+            key={s.id}
+            onClick={() => onChange(s.id)}
+            style={{
+              flex:1, padding:'6px 4px', borderRadius:10, cursor:'pointer',
+              background: isActive ? `${s.color}18` : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${isActive ? s.color + '50' : 'rgba(255,255,255,0.07)'}`,
+              boxShadow: isActive ? `0 0 12px ${s.color}20` : 'none',
+              transition:'all 0.15s', outline:'none',
+              display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+            }}
+          >
+            <span style={{ fontSize:14, lineHeight:1 }}>{s.emoji}</span>
+            <span style={{ fontSize:9, fontWeight:700, color: isActive ? s.color : 'rgba(143,148,163,0.5)',
+              fontFamily:'JetBrains Mono,monospace', letterSpacing:'0.03em', whiteSpace:'nowrap' }}>
+              {s.label}
+            </span>
+            <span style={{ fontSize:8, color:'rgba(143,148,163,0.35)', fontFamily:'JetBrains Mono,monospace', whiteSpace:'nowrap' }}>
+              {s.sublabel.split('·')[0].trim()}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 function QualityBadge({ quality }: { quality: 'low'|'medium'|'high' }) {
   const cfg = {
@@ -611,7 +712,7 @@ function CollapsibleSection({ icon, label, color, preview, children }: { icon:st
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function TradePlanCard({
-  symbol, price: priceProp,
+  symbol, price: priceProp, chartInterval = '1h',
   mtfScore = 0, mtfSignal = 'NEUTRAL', mtfConfluence = 0,
   wtStatus = 'Neutral', vmcStatus = 'NEUTRAL',
   ouExcess = 'none', ouZ = 0, ouRegime = 'ranging',
@@ -620,13 +721,19 @@ export default function TradePlanCard({
   onPlanReady,
 }: Props) {
   const { t } = useTranslation()
-  const [plan,      setPlan]      = useState<TradePlanData|null>(null)
-  const [price,     setPrice]     = useState(0)
-  const [sections,  setSections]  = useState<GPTSections|null>(null)
-  const [aiLoading, setAiLoading] = useState(false)
-  const [expanded,  setExpanded]  = useState(true)
+  const [plan,         setPlan]         = useState<TradePlanData|null>(null)
+  const [price,        setPrice]        = useState(0)
+  const [sections,     setSections]     = useState<GPTSections|null>(null)
+  const [aiLoading,    setAiLoading]    = useState(false)
+  const [expanded,     setExpanded]     = useState(true)
+  const [selectedStyle, setSelectedStyle] = useState<TradingStyle>(() => styleFromInterval(chartInterval))
   const symbolRef = useRef('')
   const priceRef  = useRef(0)
+
+  // Sync default style when chart timeframe changes externally
+  useEffect(() => {
+    setSelectedStyle(styleFromInterval(chartInterval))
+  }, [chartInterval])
 
   // ── Price fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -659,26 +766,29 @@ export default function TradePlanCard({
   // ── Generate plan ────────────────────────────────────────────────────────
   useEffect(() => {
     if (price <= 0) return
+    const style = STYLES.find(s => s.id === selectedStyle) ?? STYLES[1]
     const newPlan = generateScenarios(
       price, mtfScore, mtfConfluence,
       wtStatus, vmcStatus,
       ouExcess, ouZ, ouRegime,
-      confluenceSignal, keyLevels, isCrypto,
+      confluenceSignal, keyLevels, isCrypto, style,
     )
     setPlan(newPlan)
+    setSections(null) // reset AI when style or context changes
     onPlanReady?.(newPlan, null)
-  }, [symbol, price, mtfScore, mtfConfluence, wtStatus, vmcStatus, ouExcess, ouZ, ouRegime, confluenceSignal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [symbol, price, mtfScore, mtfConfluence, wtStatus, vmcStatus, ouExcess, ouZ, ouRegime, confluenceSignal, selectedStyle]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── AI enrichment ────────────────────────────────────────────────────────
   const loadAI = useCallback(async () => {
     if (!plan || aiLoading || price <= 0) return
     setAiLoading(true)
+    const style = STYLES.find(s => s.id === selectedStyle) ?? STYLES[1]
     const text = await enrichWithAI(
       symbol, price, plan,
       mtfSignal, mtfConfluence,
       wtStatus, vmcStatus,
       ouExcess, ouZ, ouRegime,
-      confluenceSignal, isCrypto,
+      confluenceSignal, isCrypto, style,
     )
     if (text) {
       const parsed = parseGPTSections(text)
@@ -686,7 +796,7 @@ export default function TradePlanCard({
       if (plan) onPlanReady?.(plan, parsed)
     }
     setAiLoading(false)
-  }, [plan, symbol, price, mtfSignal, mtfConfluence, wtStatus, vmcStatus, ouExcess, ouZ, ouRegime, confluenceSignal, isCrypto, aiLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [plan, symbol, price, mtfSignal, mtfConfluence, wtStatus, vmcStatus, ouExcess, ouZ, ouRegime, confluenceSignal, isCrypto, selectedStyle, aiLoading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (price <= 0) return (
     <div style={{ background:'rgba(13,17,35,0.75)', backdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
@@ -699,6 +809,7 @@ export default function TradePlanCard({
   const biasColor = plan.primaryBias === 'bull' ? '#34C759' : plan.primaryBias === 'bear' ? '#FF3B30' : '#8E8E93'
   const riskColor = { low:'#34C759', medium:'#FF9500', high:'#FF3B30' }[plan.riskLevel]
   const riskLabel = { low: t('analyse.riskLow'), medium: t('analyse.riskMedium'), high: t('analyse.riskHigh') }[plan.riskLevel]
+  const activeStyle = STYLES.find(s => s.id === selectedStyle) ?? STYLES[1]
 
   return (
     <div style={{ background:'rgba(13,17,35,0.75)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)',
@@ -712,7 +823,16 @@ export default function TradePlanCard({
           <div style={{ width:32, height:32, borderRadius:9, background:'linear-gradient(135deg,#0A85FF,#00E5FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
           <div>
             <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('analyse.tradePlan')}</div>
-            <div style={{ fontSize:10, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>{symbol} · ${fmtP(price)}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:1 }}>
+              <span style={{ fontSize:9, color:'var(--tm-text-muted)', fontFamily:'JetBrains Mono,monospace' }}>
+                {symbol} · ${fmtP(price)}
+              </span>
+              <span style={{ fontSize:8, color:'rgba(255,255,255,0.12)' }}>|</span>
+              <span style={{ fontSize:9, fontWeight:700, color: activeStyle.color, fontFamily:'JetBrains Mono,monospace',
+                background:`${activeStyle.color}15`, padding:'1px 5px', borderRadius:4 }}>
+                {activeStyle.emoji} {activeStyle.label} · {chartInterval.toUpperCase()}
+              </span>
+            </div>
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -734,8 +854,21 @@ export default function TradePlanCard({
 
       {expanded && (
         <>
+          {/* ── Style selector ───────────────────────────────────────────── */}
+          <StyleSelector selected={selectedStyle} onChange={setSelectedStyle} />
+
           {/* ── Confluence bar ────────────────────────────────────────────── */}
           <div style={{ padding:'10px 16px 0', display:'flex', flexDirection:'column', gap:8 }}>
+            {/* Risk per trade hint */}
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:9, color:'rgba(143,148,163,0.4)', fontFamily:'JetBrains Mono,monospace', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+                Suggested risk/trade
+              </span>
+              <span style={{ fontSize:9, fontWeight:700, color: activeStyle.color, fontFamily:'JetBrains Mono,monospace',
+                background:`${activeStyle.color}12`, padding:'1px 6px', borderRadius:4, border:`1px solid ${activeStyle.color}25` }}>
+                {activeStyle.riskPct} of capital
+              </span>
+            </div>
             <ConfluenceBar score={plan.confluenceScore} />
 
             {/* Session */}
