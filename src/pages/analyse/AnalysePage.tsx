@@ -2202,8 +2202,15 @@ export default function AnalysePage() {
                 price={price || 0}
                 mtfScore={pdfMtfSnap?.globalScore ?? 0}
                 mtfSignal={pdfMtfSnap?.globalSignal ?? 'NEUTRAL'}
+                mtfConfluence={pdfMtfSnap?.confluence ?? 0}
                 wtStatus={pdfWtStatus || 'Neutral'}
                 vmcStatus={pdfVmcStatus || 'NEUTRAL'}
+                ouExcess={ouSignal.excess}
+                ouZ={ouSignal.z}
+                ouRegime={ouSignal.regime}
+                confluenceSignal={ouSignal.confluenceSignal}
+                keyLevels={pdfLevels}
+                isCrypto={isCryptoRef.current}
                 onPlanReady={(plan, gpt) => { setPdfPlan(plan); if (gpt) setPdfGpt(gpt) }}
               />
             </CollapsiblePanel>
