@@ -21,6 +21,7 @@ import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
 import OUChannelIndicator from './OUChannelIndicator'
 import DecisionAssistant from '@/components/decision/DecisionAssistant'
+import { computeDecision } from '@/services/decision/decisionEngine'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
 import app from '@/services/firebase/config'
@@ -1530,6 +1531,32 @@ export default function AnalysePage() {
         wtValues: pdfWtValues ?? undefined,
         vmcStatus: pdfVmcStatus || undefined,
         chartImageDataUrl: chartImg,
+        // Decision Assistant fields
+        ouExcess: ouSignal.excess,
+        ouZ: ouSignal.z,
+        ...(pdfMtfSnap ? (() => {
+          const dec = computeDecision({
+            mtfScore:        pdfMtfSnap.globalScore,
+            mtfConfluence:   pdfMtfSnap.confluence,
+            mtfSignal:       pdfMtfSnap.globalSignal,
+            ouExcess:        ouSignal.excess,
+            ouRegime:        ouSignal.regime,
+            ouZ:             ouSignal.z,
+            vmcStatus:       ouSignal.vmcStatus,
+            confluenceSignal: ouSignal.confluenceSignal,
+            whalePressure:   pressure?.score ?? 0,
+            liqBias:         liqLong1h - liqShort1h,
+            isCrypto,
+            recentSignals:   [],
+          })
+          return {
+            decisionScore:     dec.score,
+            decisionBias:      dec.bias,
+            decisionReadiness: dec.readiness,
+            decisionReasons:   dec.reasons,
+            decisionRisks:     dec.risks,
+          }
+        })() : {}),
       }
       generateAnalysisPDF(data)
     } catch (e) {
@@ -1537,7 +1564,7 @@ export default function AnalysePage() {
     } finally {
       setPdfGenerating(false)
     }
-  }, [symbol, pdfLevelsPrice, pdfMtfSnap, pdfLevels, pdfPlan, pdfGpt, pdfWtStatus, pdfWtValues, pdfVmcStatus, pdfGenerating])
+  }, [symbol, pdfLevelsPrice, pdfMtfSnap, pdfLevels, pdfPlan, pdfGpt, pdfWtStatus, pdfWtValues, pdfVmcStatus, pdfGenerating, ouSignal, pressure, liqLong1h, liqShort1h, isCrypto])
 
   // CVD state
   const [connected, setConnected] = useState(false)
