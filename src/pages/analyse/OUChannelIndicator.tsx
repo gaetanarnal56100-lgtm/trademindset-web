@@ -111,7 +111,7 @@ function computeConfluence(
   }
 
   // ── OU bias ────────────────────────────────────────────────────────────────
-  const exLast = ou.excess[ou.excess.length - 1]
+  const exLast = ou.excess[ou.excess.length - 1] ?? 'none'
   const zLast  = ou.zscore[ou.zscore.length - 1] ?? 0
   const ouBias: 'bull'|'bear'|'neutral' =
     (exLast === 'oversold' || exLast === 'extreme_os') ? 'bull'
@@ -216,7 +216,7 @@ function ConfluenceView({ ou, vmc, candles, isCrypto }: { ou: OUResult; vmc: VMC
   const zLast    = ou.zscore[ou.zscore.length - 1] ?? 0
   const erLast   = vmc.erSmoothed[vmc.erSmoothed.length - 1] ?? 0
   const momLast  = vmc.momentum[vmc.momentum.length - 1] ?? 0
-  const exLast   = ou.excess[ou.excess.length - 1]
+  const exLast   = ou.excess[ou.excess.length - 1] ?? 'none'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
