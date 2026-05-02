@@ -399,7 +399,11 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
         </div>
 
         {/* Threshold slider */}
-        <div style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}>
+        <div
+          style={{display:'flex',alignItems:'center',gap:10,padding:'4px 14px 8px'}}
+          draggable={false}
+          onMouseDown={e => e.stopPropagation()}
+        >
           <span style={{fontSize:10,color:'rgba(255,255,255,0.5)',whiteSpace:'nowrap'}}>
             Seuil = <span style={{color:'var(--tm-accent)',fontWeight:700}}>{threshold === 0 ? '0' : threshold.toFixed(2)}</span>
           </span>
@@ -407,6 +411,7 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
             type="range" min={0} max={0.8} step={0.01}
             value={threshold}
             onChange={e => setThreshold(parseFloat(e.target.value))}
+            onMouseDown={e => e.stopPropagation()}
             style={{flex:1,accentColor:'var(--tm-accent)',cursor:'pointer',height:4}}
           />
           {threshold > 0 && (
