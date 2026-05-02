@@ -1131,10 +1131,16 @@ const TF_OPTIONS = [
 
 interface MTFRow { tf: string; zscore: number; excess: string; erScore: number; vmcBias: string; regime: string }
 
-interface OUChannelIndicatorProps { symbol: string; syncInterval?: string; visibleRange?: { from: number; to: number } | null; crosshairFrac?: number | null }
+interface OUChannelIndicatorProps {
+  symbol: string
+  syncInterval?: string
+  visibleRange?: { from: number; to: number } | null
+  crosshairFrac?: number | null
+  onDecisionData?: (d: { excess: string; regime: string; z: number; confluenceSignal: string; vmcStatus: string }) => void
+}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function OUChannelIndicator({ symbol, syncInterval, visibleRange, crosshairFrac }: OUChannelIndicatorProps) {
+export default function OUChannelIndicator({ symbol, syncInterval, visibleRange, crosshairFrac, onDecisionData }: OUChannelIndicatorProps) {
   const [tf, setTf]               = useState('1h')
   const [candles, setCandles]     = useState<Candle[]>([])
   const [ou, setOu]               = useState<OUResult | null>(null)
@@ -1276,6 +1282,13 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
   const curPrice  = candles[n]?.c ?? 0
   const curUpper1 = ou?.upper1[n] ?? 0
   const curLower2 = ou?.lower2[n] ?? 0
+
+  // ── Notify parent (DecisionAssistant) when signals change ────────────────
+  useEffect(() => {
+    if (!ou || !vmc || !candles.length) return
+    const confSignal = computeConfluence(ou, vmc, candles, isCrypto).signal
+    onDecisionData?.({ excess: curExcess, regime: curRegime, z: curZ, confluenceSignal: confSignal, vmcStatus: vmc.status })
+  }, [curExcess, curRegime, curZ, vmc?.status, onDecisionData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const zColor = curExcess === 'extreme_ob' ? '#FF3B30' : curExcess === 'overbought' ? '#FF9500'
     : curExcess === 'extreme_os' ? '#22C759' : curExcess === 'oversold' ? '#42A5F5' : '#8E8E93'

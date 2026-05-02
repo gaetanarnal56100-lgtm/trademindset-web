@@ -20,6 +20,7 @@ import FootprintChart from './FootprintChart'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
 import OUChannelIndicator from './OUChannelIndicator'
+import DecisionAssistant from '@/components/decision/DecisionAssistant'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
 import app from '@/services/firebase/config'
@@ -1431,6 +1432,11 @@ export default function AnalysePage() {
     }, 800)
   }, [])
 
+  // ── Decision Assistant state (agrège les signaux pour DecisionAssistant) ──
+  const [ouSignal, setOuSignal] = useState({
+    excess: 'none', regime: 'ranging', z: 0, confluenceSignal: 'neutral', vmcStatus: 'NEUTRAL',
+  })
+
   // ── PDF export state ──────────────────────────────────────────────────────
   const lwChartRef   = useRef<LightweightChartHandle>(null)
   const livePriceRef = useRef(0)  // mirrors price state for use in callbacks
@@ -2008,11 +2014,25 @@ export default function AnalysePage() {
         </div>
       </div>
 
-      {/* ── Fear & Greed + Dominance strip (crypto) ── */}
-      {isCrypto && symbol && (fng || domPts.length > 0) && (
+      {/* ── Fear & Greed + Dominance + Decision Assistant strip ── */}
+      {symbol && (isCrypto ? (fng || domPts.length > 0 || pdfMtfSnap) : pdfMtfSnap) && (
         <div style={{ position:'relative', zIndex:1, display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
-          {fng && <FearGreedWidget data={fng} />}
-          {domPts.length > 0 && <DominanceBar pts={domPts} current={domCurrent} />}
+          {isCrypto && fng && <FearGreedWidget data={fng} />}
+          {isCrypto && domPts.length > 0 && <DominanceBar pts={domPts} current={domCurrent} />}
+          {pdfMtfSnap && (
+            <DecisionAssistant
+              mtfSnap={pdfMtfSnap}
+              pressure={pressure}
+              liqLong1h={liqLong1h}
+              liqShort1h={liqShort1h}
+              isCrypto={isCrypto}
+              ouExcess={ouSignal.excess}
+              ouRegime={ouSignal.regime}
+              ouZ={ouSignal.z}
+              vmcStatus={ouSignal.vmcStatus}
+              confluenceSignal={ouSignal.confluenceSignal}
+            />
+          )}
         </div>
       )}
 
@@ -2099,7 +2119,7 @@ export default function AnalysePage() {
             <CollapsiblePanel key="canal-ou" panelId="canal-ou" label="Canal OU · Excès Statistiques · Kaufman ER" icon="〜" accent="rgba(0,229,255,0.5)" defaultOpen={true}
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'canal-ou'}>
-              <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} />
+              <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} onDecisionData={setOuSignal} />
             </CollapsiblePanel>
           ),
           'wavetrend': (
