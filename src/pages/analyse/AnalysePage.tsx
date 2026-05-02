@@ -1437,6 +1437,11 @@ export default function AnalysePage() {
     excess: 'none', regime: 'ranging', z: 0, confluenceSignal: 'neutral', vmcStatus: 'NEUTRAL',
   })
 
+  // ── Refs pour accès aux valeurs crypto dans handleExportPDF (évite TDZ) ───
+  const liqBiasRef    = useRef(0)           // liqLong1h - liqShort1h courant
+  const pressureRef   = useRef<number>(0)   // pressure.score courant
+  const isCryptoRef   = useRef(false)
+
   // ── PDF export state ──────────────────────────────────────────────────────
   const lwChartRef   = useRef<LightweightChartHandle>(null)
   const livePriceRef = useRef(0)  // mirrors price state for use in callbacks
@@ -1546,9 +1551,9 @@ export default function AnalysePage() {
             ouZ:             ouSignal.z,
             vmcStatus:       ouSignal.vmcStatus,
             confluenceSignal: ouSignal.confluenceSignal,
-            whalePressure:   pressure?.score ?? 0,
-            liqBias:         liqLong1h - liqShort1h,
-            isCrypto,
+            whalePressure:   pressureRef.current,
+            liqBias:         liqBiasRef.current,
+            isCrypto:        isCryptoRef.current,
             recentSignals:   [],
           })
           return {
@@ -1566,7 +1571,8 @@ export default function AnalysePage() {
     } finally {
       setPdfGenerating(false)
     }
-  }, [symbol, pdfLevelsPrice, pdfMtfSnap, pdfLevels, pdfPlan, pdfGpt, pdfWtStatus, pdfWtValues, pdfVmcStatus, pdfGenerating, ouSignal, pressure, liqLong1h, liqShort1h, isCrypto])
+  // Note: pressure/liqLong/liqShort/isCrypto lus via refs (déclarés après ce useCallback)
+  }, [symbol, pdfLevelsPrice, pdfMtfSnap, pdfLevels, pdfPlan, pdfGpt, pdfWtStatus, pdfWtValues, pdfVmcStatus, pdfGenerating, ouSignal])
 
   // CVD state
   const [connected, setConnected] = useState(false)
@@ -1880,6 +1886,11 @@ export default function AnalysePage() {
   const biasColor=bullConf>bearConf?'var(--tm-profit)':bearConf>bullConf?'var(--tm-loss)':'var(--tm-text-secondary)'
 
   const isCrypto = isCryptoSymbol(symbol)
+
+  // ── Sync refs pour handleExportPDF (déclaré avant ces consts) ────────────
+  liqBiasRef.current  = liqLong1h - liqShort1h
+  pressureRef.current = pressure?.score ?? 0
+  isCryptoRef.current = isCrypto
 
   // ── Cmd+K pour ouvrir la recherche ────────────────────────────────────────
   useEffect(() => {
