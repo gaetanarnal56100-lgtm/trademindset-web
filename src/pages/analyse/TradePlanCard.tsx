@@ -54,17 +54,26 @@ export type { TradePlanData, GPTSections, TradeScenario }
 
 // ── Timeframe presets ──────────────────────────────────────────────────────
 
-type TradingStyle = 'scalping' | 'intraday' | 'swing' | 'position'
+type TradingStyle = 'scalping' | 'daytrading' | 'swing' | 'position'
 
 interface StyleConfig {
   id: TradingStyle
   emoji: string
   label: string
-  sublabel: string        // duration hint
-  chartTfs: string[]      // chart intervals that map here by default
-  atrMult: number         // multiplier on base ATR for stop sizing
-  tpMult: number          // multiplier on risk for TP1/2/3
-  riskPct: string         // suggested % per trade
+  sublabel: string     // "UT · durée"
+  chartTfs: string[]   // chart intervals that auto-select this style
+  //
+  // Stop = price × stopPct
+  // Entry offset = price × entryPct (distance from current price to ideal entry)
+  // TP1/2/3 = entry ± risk × tp1R / tp2R / tp3R
+  //
+  stopPct: number      // % de prix pour le stop loss (ex: 0.002 = 0.2%)
+  entryOffsetPct: number // % de prix pour l'offset d'entrée
+  tp1R: number         // TP1 en multiple du risque
+  tp2R: number
+  tp3R: number
+  riskPct: string      // suggestion capital risqué / trade
+  duration: string     // "secondes–15min" etc.
   sessionCritical: boolean
   color: string
 }
@@ -72,31 +81,43 @@ interface StyleConfig {
 const STYLES: StyleConfig[] = [
   {
     id: 'scalping',
-    emoji: '⚡', label: 'Scalping', sublabel: 'Minutes · 1–5m',
+    emoji: '⚡', label: 'Scalping', sublabel: '1m–5m · sec–15min',
     chartTfs: ['1m','3m','5m'],
-    atrMult: 0.25, tpMult: 1.0,
-    riskPct: '0.25–0.5%', sessionCritical: true, color: '#BF5AF2',
+    stopPct: 0.0015,       // 0.15% → $142 sur BTC 95k
+    entryOffsetPct: 0.0003, // 0.03% → entrée très proche
+    tp1R: 1.0, tp2R: 1.5, tp3R: 2.0,   // cibles serrées (1:1 max)
+    riskPct: '0.25–0.5%', duration: 'sec → 15min',
+    sessionCritical: true, color: '#BF5AF2',
   },
   {
-    id: 'intraday',
-    emoji: '🌅', label: 'Intraday', sublabel: 'Hours · 15m–1h',
-    chartTfs: ['15m','30m','1h'],
-    atrMult: 1.0, tpMult: 1.0,
-    riskPct: '0.5–1%', sessionCritical: true, color: '#0A85FF',
+    id: 'daytrading',
+    emoji: '🌅', label: 'Day Trading', sublabel: '5m–1h · min–heures',
+    chartTfs: ['5m','15m','30m','1h'],
+    stopPct: 0.008,        // 0.8% → $760 sur BTC 95k
+    entryOffsetPct: 0.002,
+    tp1R: 1.5, tp2R: 2.5, tp3R: 4.0,
+    riskPct: '0.5–1%', duration: 'quelques heures (intraday)',
+    sessionCritical: true, color: '#0A85FF',
   },
   {
     id: 'swing',
-    emoji: '📈', label: 'Swing', sublabel: 'Days · 4h–1d',
+    emoji: '📈', label: 'Swing', sublabel: '4h–1d · jours–semaines',
     chartTfs: ['4h','8h','12h','1d'],
-    atrMult: 2.5, tpMult: 1.5,
-    riskPct: '1–2%', sessionCritical: false, color: '#34C759',
+    stopPct: 0.03,         // 3% → $2 850 sur BTC 95k
+    entryOffsetPct: 0.006,
+    tp1R: 2.0, tp2R: 3.5, tp3R: 6.0,
+    riskPct: '1–2%', duration: 'quelques jours à 2–3 semaines',
+    sessionCritical: false, color: '#34C759',
   },
   {
     id: 'position',
-    emoji: '🏔️', label: 'Position', sublabel: 'Weeks · 1w+',
+    emoji: '🏔️', label: 'Position', sublabel: '1d–1w · semaines–mois',
     chartTfs: ['3d','1w'],
-    atrMult: 5.0, tpMult: 2.0,
-    riskPct: '2–3%', sessionCritical: false, color: '#FF9500',
+    stopPct: 0.07,         // 7% → $6 650 sur BTC 95k
+    entryOffsetPct: 0.01,
+    tp1R: 3.0, tp2R: 5.0, tp3R: 8.0,
+    riskPct: '1–3%', duration: 'semaines à plusieurs mois',
+    sessionCritical: false, color: '#FF9500',
   },
 ]
 
@@ -104,9 +125,8 @@ function styleFromInterval(interval: string): TradingStyle {
   for (const s of STYLES) {
     if (s.chartTfs.includes(interval)) return s.id
   }
-  // fallback heuristic
   if (['1m','3m','5m'].includes(interval)) return 'scalping'
-  if (['15m','30m','1h'].includes(interval)) return 'intraday'
+  if (['15m','30m','1h'].includes(interval)) return 'daytrading'
   if (['4h','8h','12h','1d'].includes(interval)) return 'swing'
   return 'position'
 }
@@ -137,11 +157,6 @@ function fmtP(p: number): string {
 
 function fmtPct(n: number): string { return `${n.toFixed(0)}%` }
 
-function calcATR(price: number, mtfScore: number): number {
-  const basePct = price > 50000 ? 0.012 : price > 1000 ? 0.018 : price > 10 ? 0.025 : 0.03
-  return price * basePct * (1 + Math.abs(mtfScore) / 200)
-}
-
 // ── Smart level finder ─────────────────────────────────────────────────────
 
 function nearestLevel(price: number, levels: KeyLevel[], direction: 'above'|'below', maxPct = 0.05): KeyLevel | null {
@@ -171,8 +186,9 @@ function generateScenarios(
   _isCrypto: boolean,
   style: StyleConfig,
 ): TradePlanData {
-  const baseAtr = calcATR(price, mtfScore)
-  const atr = baseAtr * style.atrMult
+  // Style-calibrated distances (% of price, independent per style)
+  const stopDist  = price * style.stopPct
+  const entryOff  = price * style.entryOffsetPct
 
   // ── 1. Signal alignment ──────────────────────────────────────────────────
   const wtBull = ['Bullish Reversal','Smart Bullish','Oversold'].includes(wtStatus)
@@ -225,83 +241,93 @@ function generateScenarios(
     : confluenceScore >= 40 ? 'medium'
     : 'low'
 
-  // ── 6. Bull scenario ─────────────────────────────────────────────────────
+  // ── 6. Nearest structural levels ─────────────────────────────────────────
+  // Search window: 2× stopDist (levels beyond that are irrelevant for this style)
+  const levelWindow = style.stopPct * 4
+  const nearSupport = nearestLevel(price, keyLevels, 'below', levelWindow)
+  const nearResist  = nearestLevel(price, keyLevels, 'above', levelWindow)
+
+  // ── 7. Bull scenario ─────────────────────────────────────────────────────
   const bullStrength: TradeScenario['signalStrength'] =
     bullSignals >= 4 ? 'premium'
     : bullSignals >= 3 ? 'strong'
     : bullSignals >= 2 ? 'moderate'
     : 'none'
 
-  // Find nearest support for stop, resistance for TP
-  const nearSupport  = nearestLevel(price, keyLevels, 'below')
-  const nearResist   = nearestLevel(price, keyLevels, 'above')
-
-  const bullMult = { premium:0.8, strong:1.0, moderate:1.4, none:2.0 }[bullStrength]
-  const bullEntry = nearSupport
-    ? Math.min(price + atr * 0.15, price + atr * 0.3 * bullMult)
-    : price + atr * 0.3 * bullMult
-  const bullStop = nearSupport
-    ? Math.min(nearSupport.price - atr * 0.3, price - atr * 1.2 * bullMult)
-    : price - atr * 1.5 * bullMult
-  const bullRisk = Math.max(bullEntry - bullStop, atr * 0.5)
-  const bullTp1 = nearResist ? Math.min(nearResist.price * 0.998, bullEntry + bullRisk * 1.5 * style.tpMult) : bullEntry + bullRisk * 1.5 * style.tpMult
-  const bullTp2 = bullEntry + bullRisk * 2.5 * style.tpMult
-  const bullTp3 = bullEntry + bullRisk * 4.0 * style.tpMult
+  // Entry: slightly above price (confirmation offset), capped near resistance
+  const bullEntry = Math.min(
+    price + entryOff,
+    nearResist ? nearResist.price * 0.997 : price + entryOff,
+  )
+  // Stop: style stopDist below entry, or just below nearest support
+  const bullStop = nearSupport && nearSupport.price > bullEntry - stopDist * 1.5
+    ? nearSupport.price * 0.998           // anchor on structure
+    : bullEntry - stopDist
+  const bullRisk = Math.max(bullEntry - bullStop, stopDist * 0.5)
+  const bullTp1 = Math.min(
+    bullEntry + bullRisk * style.tp1R,
+    nearResist ? nearResist.price * 0.999 : Infinity,
+  )
+  const bullTp2 = bullEntry + bullRisk * style.tp2R
+  const bullTp3 = bullEntry + bullRisk * style.tp3R
 
   const bullConditions: string[] = []
   if (ouBear || ouExcess === 'none') bullConditions.push('OU oversold confirmation (Z < −1.0σ)')
   if (!wtBull) bullConditions.push('WT bullish cross or oversold touch')
   if (!vmcBull) bullConditions.push('VMC momentum turns positive')
   if (nearResist) bullConditions.push(`Break & hold above ${fmtP(nearResist.price)}`)
-  if (!bullConditions.length) bullConditions.push('Active — conditions met')
+  if (!bullConditions.length) bullConditions.push('Active — all conditions met')
 
   const bull: TradeScenario = {
     entry: bullEntry, stop: bullStop,
-    tp1: bullTp1, tp1RR: `${((bullTp1 - bullEntry) / bullRisk).toFixed(1)}R`,
-    tp2: bullTp2, tp2RR: `${((bullTp2 - bullEntry) / bullRisk).toFixed(1)}R`,
-    tp3: bullTp3, tp3RR: `${((bullTp3 - bullEntry) / bullRisk).toFixed(1)}R`,
+    tp1: bullTp1, tp1RR: `${style.tp1R.toFixed(1)}R`,
+    tp2: bullTp2, tp2RR: `${style.tp2R.toFixed(1)}R`,
+    tp3: bullTp3, tp3RR: `${style.tp3R.toFixed(1)}R`,
     entryType: bullStrength,
     signalStrength: bullStrength,
     activationConditions: bullConditions,
-    notes: nearSupport ? `Support zone at ${fmtP(nearSupport.price)}` : undefined,
+    notes: nearSupport ? `Support: ${fmtP(nearSupport.price)}` : undefined,
     isCounterTrend: bearSignals > bullSignals,
   }
 
-  // ── 7. Bear scenario ─────────────────────────────────────────────────────
+  // ── 8. Bear scenario ─────────────────────────────────────────────────────
   const bearStrength: TradeScenario['signalStrength'] =
     bearSignals >= 4 ? 'premium'
     : bearSignals >= 3 ? 'strong'
     : bearSignals >= 2 ? 'moderate'
     : 'none'
 
-  const bearMult = { premium:0.8, strong:1.0, moderate:1.4, none:2.0 }[bearStrength]
-  const bearEntry = nearResist
-    ? Math.max(price - atr * 0.15, price - atr * 0.3 * bearMult)
-    : price - atr * 0.3 * bearMult
-  const bearStop = nearResist
-    ? Math.max(nearResist.price + atr * 0.3, price + atr * 1.2 * bearMult)
-    : price + atr * 1.5 * bearMult
-  const bearRisk = Math.max(bearStop - bearEntry, atr * 0.5)
-  const bearTp1 = nearSupport ? Math.max(nearSupport.price * 1.002, bearEntry - bearRisk * 1.5 * style.tpMult) : bearEntry - bearRisk * 1.5 * style.tpMult
-  const bearTp2 = bearEntry - bearRisk * 2.5 * style.tpMult
-  const bearTp3 = bearEntry - bearRisk * 4.0 * style.tpMult
+  const bearEntry = Math.max(
+    price - entryOff,
+    nearSupport ? nearSupport.price * 1.003 : price - entryOff,
+  )
+  const bearStop = nearResist && nearResist.price < bearEntry + stopDist * 1.5
+    ? nearResist.price * 1.002
+    : bearEntry + stopDist
+  const bearRisk = Math.max(bearStop - bearEntry, stopDist * 0.5)
+  const bearTp1 = Math.max(
+    bearEntry - bearRisk * style.tp1R,
+    nearSupport ? nearSupport.price * 1.001 : -Infinity,
+  )
+  const bearTp2 = bearEntry - bearRisk * style.tp2R
+  const bearTp3 = bearEntry - bearRisk * style.tp3R
 
   const bearConditions: string[] = []
   if (ouBull || ouExcess === 'none') bearConditions.push('OU overbought confirmation (Z > +1.0σ)')
   if (!wtBear) bearConditions.push('WT bearish cross or overbought rejection')
   if (!vmcBear) bearConditions.push('VMC momentum turns negative')
   if (nearSupport) bearConditions.push(`Break & hold below ${fmtP(nearSupport.price)}`)
-  if (!bearConditions.length) bearConditions.push('Active — conditions met')
+  if (!bearConditions.length) bearConditions.push('Active — all conditions met')
 
   const bear: TradeScenario = {
     entry: bearEntry, stop: bearStop,
-    tp1: bearTp1, tp1RR: `${((bearEntry - bearTp1) / bearRisk).toFixed(1)}R`,
-    tp2: bearTp2, tp2RR: `${((bearEntry - bearTp2) / bearRisk).toFixed(1)}R`,
-    tp3: bearTp3, tp3RR: `${((bearEntry - bearTp3) / bearRisk).toFixed(1)}R`,
+    tp1: bearTp1, tp1RR: `${style.tp1R.toFixed(1)}R`,
+    tp2: bearTp2, tp2RR: `${style.tp2R.toFixed(1)}R`,
+    tp3: bearTp3, tp3RR: `${style.tp3R.toFixed(1)}R`,
     entryType: bearStrength,
     signalStrength: bearStrength,
     activationConditions: bearConditions,
-    notes: nearResist ? `Resistance zone at ${fmtP(nearResist.price)}` : undefined,
+    notes: nearResist ? `Resistance: ${fmtP(nearResist.price)}` : undefined,
     isCounterTrend: bullSignals > bearSignals,
   }
 
@@ -380,7 +406,7 @@ async function enrichWithAI(
   try {
     const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
 
-    const systemPrompt = `You are an institutional trading desk AI specialized in ${style.label} trading (${style.sublabel}, suggested risk ${style.riskPct}/trade). Your role is to produce execution-ready, context-aware trade analysis — not generic advice. Adapt all timing, stop logic, and position sizing to this specific trading style.
+    const systemPrompt = `You are an institutional trading desk AI specialized in ${style.label} trading (UT: ${style.sublabel}, duration: ${style.duration}, stop ~${(style.stopPct * 100).toFixed(2)}% of price, TP targets ${style.tp1R}R/${style.tp2R}R/${style.tp3R}R, suggested risk ${style.riskPct}/trade). Your role is to produce execution-ready, context-aware trade analysis — not generic advice. Adapt all timing, stop logic, and position sizing to this specific trading style.
 
 STRUCTURE your response EXACTLY like this:
 
@@ -428,7 +454,7 @@ ${isCrypto ? 'On-chain / market structure context (narrative, TVL, network activ
 
 STYLE: institutional, precise, no disclaimers, actionable. If NO TRADE — be direct about why.`
 
-    const userMessage = `Trading Style: ${style.emoji} ${style.label} (${style.sublabel}) — Risk/trade: ${style.riskPct}
+    const userMessage = `Trading Style: ${style.emoji} ${style.label} | UT: ${style.sublabel} | Duration: ${style.duration} | Stop: ~${(style.stopPct*100).toFixed(2)}% | Targets: ${style.tp1R}R / ${style.tp2R}R / ${style.tp3R}R | Risk/trade: ${style.riskPct}
 Asset: ${symbol} | Price: $${fmtP(price)}
 MTF Signal: ${mtfSignal} | MTF Confluence: ${mtfConfluence.toFixed(0)}%
 WaveTrend: ${wtStatus} | VMC: ${vmcStatus}
@@ -488,7 +514,7 @@ function StyleSelector({ selected, onChange }: { selected: TradingStyle; onChang
               {s.label}
             </span>
             <span style={{ fontSize:8, color:'rgba(143,148,163,0.35)', fontFamily:'JetBrains Mono,monospace', whiteSpace:'nowrap' }}>
-              {s.sublabel.split('·')[0].trim()}
+              {s.sublabel.split('·')[0].trim().split('–')[0]}
             </span>
           </button>
         )
