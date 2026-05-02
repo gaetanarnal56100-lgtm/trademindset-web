@@ -2014,11 +2014,10 @@ export default function AnalysePage() {
         </div>
       </div>
 
-      {/* ── Fear & Greed + Dominance + Decision Assistant strip ── */}
-      {symbol && (isCrypto ? (fng || domPts.length > 0 || pdfMtfSnap) : pdfMtfSnap) && (
+      {/* ── Fear & Greed + Decision Assistant strip ── */}
+      {symbol && (isCrypto ? (fng || pdfMtfSnap) : pdfMtfSnap) && (
         <div style={{ position:'relative', zIndex:1, display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
           {isCrypto && fng && <FearGreedWidget data={fng} />}
-          {isCrypto && domPts.length > 0 && <DominanceBar pts={domPts} current={domCurrent} />}
           {pdfMtfSnap && (
             <DecisionAssistant
               mtfSnap={pdfMtfSnap}
