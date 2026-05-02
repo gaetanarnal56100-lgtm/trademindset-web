@@ -21,7 +21,6 @@ import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
 import OUChannelIndicator from './OUChannelIndicator'
 import DecisionAssistant from '@/components/decision/DecisionAssistant'
-import { computeDecision } from '@/services/decision/decisionEngine'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
 import app from '@/services/firebase/config'
@@ -1455,7 +1454,10 @@ export default function AnalysePage() {
     if (pdfGenerating || !symbol) return
     setPdfGenerating(true)
     try {
-      const { generateAnalysisPDF } = await import('./AnalysisPDFExport')
+      const [{ generateAnalysisPDF }, { computeDecision }] = await Promise.all([
+        import('./AnalysisPDFExport'),
+        import('@/services/decision/decisionEngine'),
+      ])
       // Try to get chart screenshot
       let chartImg: string | null = null
       try { chartImg = lwChartRef.current?.takeScreenshot() ?? null } catch { /* ignore */ }
