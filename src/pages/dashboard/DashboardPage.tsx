@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { subscribeTrades, subscribeSystems, subscribeMoods, tradePnL, type Trade, type TradingSystem, type MoodEntry } from '@/services/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/services/firebase/config'
+import { getAuth } from 'firebase/auth'
+import { getFirestore, doc, getDoc } from 'firebase/firestore'
 import PnLCurve from './PnLModal'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -764,18 +766,32 @@ export default function DashboardPage() {
   const [moods,   setMoods]   = useState<MoodEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [period,  setPeriod]  = useState('1M')
-  const [userCount, setUserCount] = useState<number|null>(null)
-  const [activeTab, setActiveTab] = useState<'journal' | 'modular'>('journal')
+  const [userCount,  setUserCount]  = useState<number|null>(null)
+  const [userStatus, setUserStatus] = useState<string>('')
+  const [activeTab,  setActiveTab]  = useState<'journal' | 'modular'>('journal')
 
   useEffect(()=>{
     const u1=subscribeTrades(t=>{setTrades(t);setLoading(false)})
     const u2=subscribeSystems(setSystems)
     const u3=subscribeMoods(setMoods)
-    // Fetch total user count via Cloud Function
-    const countUsers = httpsCallable<void, { count: number }>(functions, 'countUsers')
-    countUsers().then(res => setUserCount(res.data.count)).catch(()=>{})
+
+    // Fetch current user's status from Firestore users/{uid}
+    const uid = getAuth().currentUser?.uid
+    if (uid) {
+      getDoc(doc(getFirestore(), 'users', uid))
+        .then(snap => { if (snap.exists()) setUserStatus(snap.data()?.status ?? '') })
+        .catch(() => {})
+    }
+
     return()=>{u1();u2();u3()}
   },[])
+
+  // Fetch user count only for privileged roles (lazy, after status is known)
+  useEffect(()=>{
+    if (userStatus !== 'proSource' && userStatus !== 'admin') return
+    const countUsers = httpsCallable<void, { count: number }>(functions, 'countUsers')
+    countUsers().then(res => setUserCount(res.data.count)).catch(()=>{})
+  }, [userStatus])
 
   const s   = useMemo(()=>calcStats(trades),[trades])
   const emo = useMemo(()=>calcEmotions(moods,trades),[moods,trades])
@@ -827,20 +843,19 @@ export default function DashboardPage() {
             {activeTab==='modular'?'← Journal':'Widgets'}
           </button>
           <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
-          <a href="https://discord.gg/SqfMCVtEhV" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(88,101,242,0.1)',border:'1px solid rgba(88,101,242,0.25)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'#5865F2'}}>
-            Discord
-          </a>
           <a href="https://trademindsetapp.com" target="_blank" rel="noopener noreferrer" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-accent-rgb,0,229,255),0.06)',border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'var(--tm-accent)'}}>
             Site web
           </a>
           <a href="mailto:trademindsetapp@gmail.com" style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-profit-rgb,34,199,89),0.06)',border:'1px solid rgba(var(--tm-profit-rgb,34,199,89),0.2)',borderRadius:8,textDecoration:'none',fontSize:10,fontWeight:600,color:'var(--tm-profit)'}}>
             Contact
           </a>
-          <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
-          <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',borderRadius:8,fontSize:10,fontWeight:600,color:'var(--tm-warning)'}}>
-            <span style={{width:6,height:6,borderRadius:'50%',background:'var(--tm-warning)',display:'inline-block',boxShadow:'0 0 6px rgba(var(--tm-warning-rgb,255,149,0),0.4)'}}/>
-            {userCount !== null ? `${userCount} utilisateur${userCount !== 1 ? 's' : ''}` : '…'}
-          </div>
+          {(userStatus === 'proSource' || userStatus === 'admin') && <>
+            <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
+            <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(var(--tm-warning-rgb,255,149,0),0.06)',border:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',borderRadius:8,fontSize:10,fontWeight:600,color:'var(--tm-warning)'}}>
+              <span style={{width:6,height:6,borderRadius:'50%',background:'var(--tm-warning)',display:'inline-block',boxShadow:'0 0 6px rgba(var(--tm-warning-rgb,255,149,0),0.4)'}}/>
+              {userCount !== null ? `${userCount} utilisateur${userCount !== 1 ? 's' : ''}` : '…'}
+            </div>
+          </>}
           <div style={{width:1,height:16,background:'var(--tm-border)'}}/>
           <div style={{fontSize:10,color:'var(--tm-text-muted)',fontFamily:'JetBrains Mono,monospace'}}>TradeMindset v1.1</div>
         </div>
