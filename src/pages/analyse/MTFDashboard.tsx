@@ -4,6 +4,7 @@
 // Score combiné = RSI×40% + VMC×60%
 
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { signalService } from '@/services/notifications/SignalNotificationService'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
@@ -193,12 +194,12 @@ function scoreToSignal(score: number): Signal {
   return 'SELL'
 }
 
-const SIGNAL_CFG: Record<Signal, { label: string; color: string; bg: string }> = {
-  BUY:     { label: 'ACHETER', color: 'var(--tm-profit)', bg: 'rgba(var(--tm-profit-rgb,34,199,89),0.25)'    },
-  BULLISH: { label: 'BAISSIER',color: '#FFD60A', bg: 'rgba(255,214,10,0.2)'   },
-  NEUTRAL: { label: 'NEUTRE',  color: 'var(--tm-text-secondary)', bg: 'rgba(143,148,163,0.15)' },
-  BEARISH: { label: 'HAUSSIER',color: 'var(--tm-warning)', bg: 'rgba(var(--tm-warning-rgb,255,149,0),0.2)'    },
-  SELL:    { label: 'VENDRE',  color: 'var(--tm-loss)', bg: 'rgba(var(--tm-loss-rgb,255,59,48),0.25)'   },
+const SIGNAL_CFG: Record<Signal, { labelKey: string; color: string; bg: string }> = {
+  BUY:     { labelKey: 'analyse.buy',     color: 'var(--tm-profit)', bg: 'rgba(var(--tm-profit-rgb,34,199,89),0.25)'    },
+  BULLISH: { labelKey: 'analyse.bearish', color: '#FFD60A', bg: 'rgba(255,214,10,0.2)'   },
+  NEUTRAL: { labelKey: 'analyse.neutral', color: 'var(--tm-text-secondary)', bg: 'rgba(143,148,163,0.15)' },
+  BEARISH: { labelKey: 'analyse.bullish', color: 'var(--tm-warning)', bg: 'rgba(var(--tm-warning-rgb,255,149,0),0.2)'    },
+  SELL:    { labelKey: 'analyse.sell',    color: 'var(--tm-loss)', bg: 'rgba(var(--tm-loss-rgb,255,59,48),0.25)'   },
 }
 
 // ── Fetch + Compute ────────────────────────────────────────────────────────
@@ -322,28 +323,29 @@ function VMCBar({ vmc, width = 28 }: { vmc: number; width?: number }) {
 
 // ── Signal Detail Modal ────────────────────────────────────────────────────
 function SignalDetailModal({ r, onClose }: { r: MTFReading; onClose: () => void }) {
+  const { t } = useTranslation()
   const sig = SIGNAL_CFG[r.signal]
   const scoreColor = r.score < -40 ? 'var(--tm-profit)' : r.score < -10 ? '#FFD60A' : r.score > 40 ? 'var(--tm-loss)' : r.score > 10 ? 'var(--tm-warning)' : 'var(--tm-text-secondary)'
-  const rsiZone = r.rsi < 30 ? 'Survente' : r.rsi > 70 ? 'Surachat' : 'Neutre'
+  const rsiZone = r.rsi < 30 ? t('analyse.mtf.rsiOversold') : r.rsi > 70 ? t('analyse.mtf.rsiOverbought') : t('analyse.mtf.rsiNeutral')
   const rsiZoneColor = r.rsi < 30 ? '#42A5F5' : r.rsi > 70 ? '#EF5350' : 'var(--tm-text-secondary)'
-  const vmcZone = r.vmc < -25 ? 'Fort négatif' : r.vmc > 35 ? 'Fort positif' : 'Neutre'
+  const vmcZone = r.vmc < -25 ? t('analyse.mtf.vmcVeryBearish') : r.vmc > 35 ? t('analyse.mtf.vmcVeryBullish') : t('analyse.mtf.vmcNeutral')
   const vmcZoneColor = r.vmc < -25 ? 'var(--tm-profit)' : r.vmc > 35 ? '#EF5350' : 'var(--tm-text-secondary)'
   const interpretation = r.score < -40
-    ? 'Zone d\'achat forte — RSI en survente + VMC très négatif. Potentiel de rebond élevé. Attendre une confirmation de retournement avant d\'entrer.'
+    ? t('analyse.mtf.signalBullStrong')
     : r.score < -10
-    ? 'Biais haussier — Les indicateurs montrent un momentum ascendant. Le RSI remonte depuis les zones basses et le VMC confirme.'
+    ? t('analyse.mtf.signalBullMod')
     : r.score > 40
-    ? 'Zone de vente forte — RSI en surachat + VMC très positif. Risque de correction élevé. Envisager de prendre des profits ou de shorter.'
+    ? t('analyse.mtf.signalBearStrong')
     : r.score > 10
-    ? 'Biais baissier — Le momentum faiblit. Le RSI est élevé et le VMC indique une pression vendeuse croissante.'
-    : 'Zone neutre — Pas de signal directionnel clair. Les indicateurs sont équilibrés. Attendre un signal plus marqué.'
+    ? t('analyse.mtf.signalBearMod')
+    : t('analyse.mtf.signalNeutral')
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} style={{ background:'var(--tm-bg-secondary)', border:`2px solid ${sig.color}50`, borderRadius:16, padding:24, width:420, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ fontSize:14, fontWeight:800, color:sig.color, background:sig.bg, padding:'4px 14px', borderRadius:20, border:`1px solid ${sig.color}60` }}>{sig.label}</div>
+            <div style={{ fontSize:14, fontWeight:800, color:sig.color, background:sig.bg, padding:'4px 14px', borderRadius:20, border:`1px solid ${sig.color}60` }}>{t(sig.labelKey)}</div>
             <div style={{ fontSize:16, fontWeight:700, color:'var(--tm-text-primary)' }}>{r.label}</div>
           </div>
           <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--tm-text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
@@ -370,7 +372,7 @@ function SignalDetailModal({ r, onClose }: { r: MTFReading; onClose: () => void 
         </div>
         {/* Interpretation */}
         <div style={{ background:'rgba(var(--tm-purple-rgb,191,90,242),0.06)', border:'1px solid rgba(var(--tm-purple-rgb,191,90,242),0.2)', borderRadius:10, padding:'12px 16px' }}>
-          <div style={{ fontSize:10, fontWeight:700, color:'var(--tm-purple)', marginBottom:6 }}>✨ Interprétation</div>
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--tm-purple)', marginBottom:6 }}>{t('analyse.mtf.interpretation')}</div>
           <div style={{ fontSize:12, color:'#C5C8D6', lineHeight:1.7 }}>{interpretation}</div>
         </div>
       </div>
@@ -380,6 +382,7 @@ function SignalDetailModal({ r, onClose }: { r: MTFReading; onClose: () => void 
 
 // ── Column ─────────────────────────────────────────────────────────────────
 function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) => void }) {
+  const { t } = useTranslation()
   const sig = SIGNAL_CFG[r.signal]
   const scoreColor = r.score < -40 ? 'var(--tm-profit)' : r.score < -10 ? '#FFD60A' : r.score > 40 ? 'var(--tm-loss)' : r.score > 10 ? 'var(--tm-warning)' : 'var(--tm-text-secondary)'
   return (
@@ -388,7 +391,7 @@ function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) =>
       onMouseLeave={e=>(e.currentTarget.style.borderColor=sig.color+'30')}>
       {/* Signal badge */}
       <div style={{ fontSize: 9, fontWeight: 700, color: sig.color, background: sig.bg, padding: '2px 7px', borderRadius: 20, border: `1px solid ${sig.color}60`, textAlign: 'center' }}>
-        {sig.label}
+        {t(sig.labelKey)}
       </div>
       {r.divergence && (
         <div style={{ position: 'absolute', top: 4, right: 4, fontSize: 8, color: 'var(--tm-warning)' }}>⚡</div>
@@ -423,6 +426,7 @@ function TFColumn({ r, onSelect }: { r: MTFReading; onSelect: (r: MTFReading) =>
 export type { MTFSnapshot, MTFReading }
 
 export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: string; onSnapshotReady?: (snap: MTFSnapshot) => void }) {
+  const { t } = useTranslation()
   const [snap,        setSnap]        = useState<MTFSnapshot | null>(null)
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState<string | null>(null)
@@ -459,7 +463,7 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
   if (loading) return (
     <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.5)', padding: '24px', textAlign: 'center' }}>
       <div style={{ width: 24, height: 24, border: '2px solid #2A2F3E', borderTopColor: 'var(--tm-warning)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
-      <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>Calcul RSI + VMC sur {TIMEFRAMES.length} timeframes...</div>
+      <div style={{ fontSize: 12, color: 'var(--tm-text-muted)' }}>{t('analyse.mtf.calcLoading', { count: TIMEFRAMES.length })}</div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
@@ -467,7 +471,7 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
   if (error) return (
     <div style={{ background: 'rgba(13,17,35,0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.5)', padding: '16px', textAlign: 'center' }}>
       <div style={{ fontSize: 12, color: 'var(--tm-text-muted)', marginBottom: 8 }}>{error}</div>
-      <button onClick={load} style={{ fontSize: 11, color: 'var(--tm-accent)', background: 'none', border: '1px solid #00E5FF40', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}>Réessayer</button>
+      <button onClick={load} style={{ fontSize: 11, color: 'var(--tm-accent)', background: 'none', border: '1px solid #00E5FF40', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}>{t('analyse.mtf.retry')}</button>
     </div>
   )
 
@@ -485,7 +489,7 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--tm-text-muted)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Global Signal</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: gSig.color, fontFamily: 'Syne, sans-serif' }}>{gSig.label}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: gSig.color, fontFamily: 'Syne, sans-serif' }}>{t(gSig.labelKey)}</div>
         </div>
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <div style={{ textAlign: 'right' }}>
@@ -513,12 +517,12 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
       {/* Legend */}
       <div style={{ padding: '0 16px 10px', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         {[
-          { color: '#42A5F5', label: 'RSI Survente (<30)' },
-          { color: '#7E57C2', label: 'RSI Neutre' },
-          { color: '#EF5350', label: 'RSI Surachat (>70)' },
-          { color: 'var(--tm-profit)', label: 'VMC Fort négatif' },
-          { color: '#CE93D8', label: 'VMC Neutre' },
-          { color: '#EF5350', label: 'VMC Fort positif' },
+          { color: '#42A5F5', label: t('analyse.mtf.rsiOversold') },
+          { color: '#7E57C2', label: t('analyse.mtf.rsiNeutral') },
+          { color: '#EF5350', label: t('analyse.mtf.rsiOverbought') },
+          { color: 'var(--tm-profit)', label: t('analyse.mtf.vmcVeryBearish') },
+          { color: '#CE93D8', label: t('analyse.mtf.vmcNeutral') },
+          { color: '#EF5350', label: t('analyse.mtf.vmcVeryBullish') },
         ].map(({ color, label }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
@@ -541,7 +545,7 @@ export default function MTFDashboard({ symbol, onSnapshotReady }: { symbol: stri
           {/* Global column */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '8px 6px', background: '#111520', border: `2px solid ${gSig.color}50`, borderRadius: 10, minWidth: 70 }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: gSig.color, background: gSig.bg, padding: '2px 7px', borderRadius: 20, border: `1px solid ${gSig.color}60` }}>
-              {gSig.label}
+              {t(gSig.labelKey)}
             </div>
             <div style={{ display: 'flex', gap: 5, alignItems: 'flex-end' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>

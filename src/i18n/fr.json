@@ -376,6 +376,8 @@
     "zoneNeutral": "Neutre",
     "zoneWeak": "Faible",
     "zoneOversold": "Survendu",
+    "symbolNotFound": "{{symbol}} introuvable. Essayez : AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40)",
+    "cryptoNotOnBinance": "Crypto {{symbol}} introuvable sur Binance",
     "vmcBullish": "Haussier",
     "vmcBearish": "Baissier",
     "searchTokens": "Rechercher…",
@@ -459,7 +461,14 @@
     "toolLine": "Ligne",
     "toolRay": "Rayon",
     "shareChart": "Partager le graphique",
-    "shareChartShort": "Partager"
+    "shareChartShort": "Partager",
+    "decision": {
+      "title": "Analyse de décision",
+      "why": "Pourquoi",
+      "risks": "Risques",
+      "noAlert": "Pas d'alerte",
+      "noData": "Données insuffisantes"
+    }
   },
   "marches": {
     "title": "Marchés",

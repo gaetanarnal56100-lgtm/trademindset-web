@@ -2,6 +2,7 @@
 // WaveTrend + VMC Oscillator — Interactive crosshair + tooltip (TradingView-style)
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import { signalService } from '@/services/notifications/SignalNotificationService'
@@ -52,7 +53,7 @@ export async function fetchCandles(symbol: string, interval: string, limit: numb
         } catch {/**/}
       }
     }
-    throw new Error(`Crypto ${sym} introuvable sur Binance`)
+    throw new Error(`Crypto ${sym} not found on Binance`)
   }
   const TF_TO_YH_INTERVAL: Record<string,string> = {'5m':'5m','15m':'15m','30m':'30m','1h':'1h','2h':'1h','4h':'1h','12h':'1d','1d':'1d','1w':'1wk'}
   const TF_TO_YH_RANGE: Record<string,string> = {'5m':'5d','15m':'5d','30m':'1mo','1h':'1mo','2h':'3mo','4h':'3mo','12h':'1y','1d':'1y','1w':'2y'}
@@ -63,7 +64,7 @@ export async function fetchCandles(symbol: string, interval: string, limit: numb
   if (res.data.s === 'ok' && res.data.candles && res.data.candles.length > 5) {
     return res.data.candles.map(c => ({ t: c.t * 1000, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v }))
   }
-  throw new Error(`${sym} introuvable. Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA`)
+  throw new Error(`${sym} not found`)
 }
 
 // ── Math helpers ───────────────────────────────────────────────────────────
@@ -508,6 +509,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
 }
 
 export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; crosshairFrac?: number | null }) {
+  const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
   const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
@@ -600,11 +602,11 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8,flexDirection:'column'}}>
-          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
+          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>{symbol}...</span>
         </div>}
         {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
-          <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?t('analyse.cryptoNotOnBinance',{symbol}):t('analyse.symbolNotFound',{symbol})}</span>
         </div>}
         <canvas ref={canvasRef} width={800} height={180+TIME_AXIS_H}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
@@ -625,6 +627,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
 export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void; crosshairFrac?: number | null }) {
+  const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
   const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
@@ -738,11 +741,11 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
       </div>
       <div style={{padding:'0 16px 16px',position:'relative'}}>
         {status==='loading'&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'rgba(8,12,20,0.85)',borderRadius:8,zIndex:30,gap:8}}>
-          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>Chargement {symbol}...</span>
+          <div style={{width:18,height:18,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-warning)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/><span style={{fontSize:11,color:'var(--tm-text-muted)'}}>{symbol}...</span>
         </div>}
         {status==='error'&&<div style={{padding:'20px 16px',display:'flex',flexDirection:'column',alignItems:'center',gap:8,textAlign:'center'}}>
           <span style={{fontSize:22}}>📡</span><span style={{fontSize:11,fontWeight:600,color:'var(--tm-loss)'}}>{errorMsg}</span>
-          <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?"Ce symbole n'est pas disponible sur Binance Futures ni Spot.":'Essayez: AAPL · TSLA · EURUSD=X · GC=F (Or) · ^FCHI (CAC40) · MC.PA (LVMH)'}</span>
+          <span style={{fontSize:10,color:'var(--tm-text-muted)',maxWidth:320}}>{isCryptoSymbol(symbol)?t('analyse.cryptoNotOnBinance',{symbol}):t('analyse.symbolNotFound',{symbol})}</span>
         </div>}
         <canvas ref={canvasRef} width={800} height={230+TIME_AXIS_H}
           onWheel={onWheel} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
@@ -1022,6 +1025,7 @@ function drawRSIBollinger(
 
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
 export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
+  const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
   const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
@@ -1087,7 +1091,7 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
   const lastBBU = result?.upper[result.upper.length - 1] ?? 70
   const lastBBL = result?.lower[result.lower.length - 1] ?? 30
   const rsiCol  = lastRsi >= lastDu ? '#22C759' : lastRsi <= lastDd ? '#FF3B30' : '#FFEA00'
-  const rsiLbl  = lastRsi >= lastDu ? '▲ Haussier' : lastRsi <= lastDd ? '▼ Baissier' : '◆ Neutre'
+  const rsiLbl  = lastRsi >= lastDu ? `▲ ${t('analyse.bullish')}` : lastRsi <= lastDd ? `▼ ${t('analyse.bearish')}` : `◆ ${t('analyse.neutral')}`
   const activeTLs = (result?.trendlines ?? []).filter(tl => !tl.broken).length
 
   return (
@@ -1154,7 +1158,7 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
         {status === 'loading' && (
           <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'rgba(8,12,20,0.85)', borderRadius:8, zIndex:30, gap:8 }}>
             <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'#00E5FF', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
-            <span style={{ fontSize:11, color:'var(--tm-text-muted)' }}>Chargement {symbol}…</span>
+            <span style={{ fontSize:11, color:'var(--tm-text-muted)' }}>{symbol}…</span>
           </div>
         )}
         {status === 'error' && (
@@ -1309,6 +1313,7 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 
 // ── RSI Chart Component ──────────────────────────────────────────────────────
 export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
+  const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
   const tf = syncInterval && !tfOverride ? (TF_OPTIONS.find(t => t.interval === syncInterval) ?? localTf) : localTf
@@ -1358,11 +1363,11 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: 
   const rsiExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(rsiViewSize - 1, Math.round(crosshairFrac * (rsiViewSize - 1)))) : null
 
   const lastRsi = rsiData.length > 0 ? rsiData[rsiData.length - 1] : 50
-  const badge = lastRsi >= obLevel ? { label: 'Suracheté', color: 'var(--tm-loss)' }
-    : lastRsi <= osLevel ? { label: 'Survendu', color: 'var(--tm-profit)' }
-    : lastRsi >= 60 ? { label: 'Fort', color: 'var(--tm-warning)' }
-    : lastRsi <= 40 ? { label: 'Faible', color: 'var(--tm-text-secondary)' }
-    : { label: 'Neutre', color: 'var(--tm-text-secondary)' }
+  const badge = lastRsi >= obLevel ? { label: t('analyse.zoneOverbought'), color: 'var(--tm-loss)' }
+    : lastRsi <= osLevel ? { label: t('analyse.zoneOversold'), color: 'var(--tm-profit)' }
+    : lastRsi >= 60 ? { label: t('analyse.zoneFort'), color: 'var(--tm-warning)' }
+    : lastRsi <= 40 ? { label: t('analyse.zoneWeak'), color: 'var(--tm-text-secondary)' }
+    : { label: t('analyse.zoneNeutral'), color: 'var(--tm-text-secondary)' }
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
@@ -1393,7 +1398,7 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: 
       </div>
       <div style={{ padding: '0 16px 16px', position: 'relative' }}>
         {status === 'loading' && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,12,20,0.85)', borderRadius: 8, zIndex: 30, gap: 8 }}>
-          <div style={{ width: 18, height: 18, border: '2px solid #2A2F3E', borderTopColor: '#BF5AF2', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /><span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Chargement {symbol}...</span>
+          <div style={{ width: 18, height: 18, border: '2px solid #2A2F3E', borderTopColor: '#BF5AF2', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /><span style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>{symbol}...</span>
         </div>}
         {status === 'error' && <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
           <span style={{ fontSize: 22 }}>📡</span><span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-loss)' }}>{errorMsg}</span>

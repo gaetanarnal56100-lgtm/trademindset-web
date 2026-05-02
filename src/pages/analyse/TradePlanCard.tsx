@@ -3,6 +3,7 @@
 // Sections : Risk Management, Timing, Technical Analysis, Important Information, Fundamental
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
@@ -83,7 +84,7 @@ function generateScenarios(price: number, mtfScore: number, wtStatus: string, vm
     tp1: bullEntry + bullRisk * 1.5, tp1RR: '1.5R',
     tp2: bullEntry + bullRisk * 2.5, tp2RR: '2.5R',
     tp3: bullEntry + bullRisk * 4.0, tp3RR: '4.0R',
-    entryType: bullStrength === 'premium' ? 'Double Cross Extrême' : bullStrength === 'strong' ? 'Signal Confirmé' : bullStrength === 'moderate' ? 'Setup Modéré' : 'Contre-tendance',
+    entryType: bullStrength,
     signalStrength: bullStrength,
   }
   const bearEntry = price - atr * 0.3 * bearMult
@@ -94,15 +95,15 @@ function generateScenarios(price: number, mtfScore: number, wtStatus: string, vm
     tp1: bearEntry - bearRisk * 1.5, tp1RR: '1.5R',
     tp2: bearEntry - bearRisk * 2.5, tp2RR: '2.5R',
     tp3: bearEntry - bearRisk * 4.0, tp3RR: '4.0R',
-    entryType: bearStrength === 'premium' ? 'Double Cross Extrême' : bearStrength === 'strong' ? 'Signal Confirmé' : bearStrength === 'moderate' ? 'Setup Modéré' : 'Contre-tendance',
+    entryType: bearStrength,
     signalStrength: bearStrength,
   }
   const bullProb = (mtfScore + 100) / 200
-  const context = mtfScore < -40 ? 'Conditions d\'achat favorables — MTF fortement baissier (signal contrarian)'
-    : mtfScore < -10 ? 'Biais baissier modéré — surveillance des niveaux de support'
-    : mtfScore > 40 ? 'Conditions de vente favorables — MTF fortement haussier (signal contrarian)'
-    : mtfScore > 10 ? 'Biais haussier modéré — surveillance des résistances'
-    : 'Marché sans direction claire — attendre une confirmation de signal'
+  const context = mtfScore < -40 ? 'contextBullFavorable'
+    : mtfScore < -10 ? 'contextBullMod'
+    : mtfScore > 40 ? 'contextBearFavorable'
+    : mtfScore > 10 ? 'contextBearMod'
+    : 'contextNeutral'
   const riskLevel: TradePlanData['riskLevel'] =
     (bullStrength === 'premium' || bearStrength === 'premium') ? 'low' :
     (bullStrength === 'strong' || bearStrength === 'strong') ? 'medium' : 'high'
@@ -233,11 +234,23 @@ Génère l'analyse complète selon l'ordre strict défini. Sois précis et explo
 // ── ScenarioCard ───────────────────────────────────────────────────────────
 
 function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario: TradeScenario; price: number }) {
+  const { t } = useTranslation()
   const isBull = type === 'bull'
   const color  = isBull ? 'var(--tm-profit)' : 'var(--tm-loss)'
   const bgCol  = isBull ? 'rgba(var(--tm-profit-rgb,34,199,89),0.06)' : 'rgba(var(--tm-loss-rgb,255,59,48),0.06)'
   const strengthColor = { premium:'#FFD700', strong:'var(--tm-profit)', moderate:'var(--tm-warning)', none:'var(--tm-text-muted)' }[scenario.signalStrength||'none']
-  const strengthLabel = { premium:'⭐ Premium', strong:'● Signal Fort', moderate:'◎ Modéré', none:'○ Faible' }[scenario.signalStrength||'none']
+  const strengthLabel = {
+    premium: t('analyse.strengthPremium'),
+    strong:  t('analyse.strengthStrong'),
+    moderate:t('analyse.strengthModerate'),
+    none:    t('analyse.strengthWeak'),
+  }[scenario.signalStrength||'none']
+  const entryTypeLabel = {
+    premium: t('analyse.signalExtreme'),
+    strong:  t('analyse.signalConfirmed'),
+    moderate:t('analyse.signalModerate'),
+    none:    t('analyse.signalContrarian'),
+  }[scenario.signalStrength||'none']
   const rr = (entry?: number, stop?: number, tp?: number) => {
     if (!entry || !stop || !tp) return '—'
     const risk = Math.abs(entry - stop)
@@ -249,18 +262,18 @@ function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario
       <div style={{ padding:'10px 14px', borderBottom:`1px solid ${color}20`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <div style={{ width:8, height:8, borderRadius:'50%', background:color }} />
-          <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{isBull ? 'Scénario Haussier' : 'Scénario Baissier'}</span>
+          <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{isBull ? t('analyse.bullScenario') : t('analyse.bearScenario')}</span>
         </div>
         <span style={{ fontSize:10, fontWeight:700, color:strengthColor, background:`${strengthColor}15`, padding:'2px 8px', borderRadius:10, border:`1px solid ${strengthColor}30` }}>{strengthLabel}</span>
       </div>
       {scenario.entryType && (
         <div style={{ padding:'6px 14px', background:`${color}08`, borderBottom:`1px solid ${color}10` }}>
-          <span style={{ fontSize:11, color:`${color}CC` }}>🚩 {scenario.entryType}</span>
+          <span style={{ fontSize:11, color:`${color}CC` }}>🚩 {entryTypeLabel}</span>
         </div>
       )}
       <div style={{ padding:'12px 14px', display:'flex', flexDirection:'column', gap:8 }}>
         <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{ fontSize:12, color:'var(--tm-text-secondary)' }}>Entrée</span>
+          <span style={{ fontSize:12, color:'var(--tm-text-secondary)' }}>{t('analyse.entry')}</span>
           <span style={{ fontSize:13, fontWeight:700, color, fontFamily:'monospace' }}>${fmtP(scenario.entry||0)}</span>
         </div>
         <div style={{ display:'flex', justifyContent:'space-between' }}>
@@ -268,7 +281,7 @@ function ScenarioCard({ type, scenario, price }: { type: 'bull'|'bear'; scenario
           <span style={{ fontSize:13, fontWeight:700, color:'var(--tm-loss)', fontFamily:'monospace' }}>${fmtP(scenario.stop||0)}</span>
         </div>
         <div style={{ height:1, background:`${color}20`, margin:'2px 0' }} />
-        <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:2 }}>Objectifs</div>
+        <div style={{ fontSize:11, fontWeight:600, color:'var(--tm-text-secondary)', marginBottom:2 }}>{t('analyse.objectives')}</div>
         {([['TP1', scenario.tp1], ['TP2', scenario.tp2], ['TP3', scenario.tp3]] as [string, number|undefined][]).map(([label, tp]) => tp && (
           <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -363,6 +376,7 @@ function CollapsibleSection({ icon, label, color, preview, children }: { icon: s
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, mtfSignal = 'NEUTRAL', wtStatus = 'Neutral', vmcStatus = 'NEUTRAL', onPlanReady }: Props) {
+  const { t } = useTranslation()
   const [plan,      setPlan]      = useState<TradePlanData|null>(null)
   const [price,     setPrice]     = useState(0)
   const [aiRaw,     setAiRaw]     = useState('')
@@ -430,13 +444,17 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
   if (price <= 0) return (
     <div style={{ background:'rgba(13,17,35,0.75)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, boxShadow:'0 4px 24px rgba(0,0,0,0.5)', padding:'20px 16px', display:'flex', alignItems:'center', gap:10 }}>
       <div style={{ width:18, height:18, border:'2px solid #2A2F3E', borderTopColor:'var(--tm-blue)', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 }} />
-      <span style={{ fontSize:12, color:'var(--tm-text-muted)' }}>Récupération du prix {symbol}...</span>
+      <span style={{ fontSize:12, color:'var(--tm-text-muted)' }}>{t('analyse.currentPrice')} {symbol}...</span>
     </div>
   )
   if (!plan) return null
 
   const riskColor = { low:'var(--tm-profit)', medium:'var(--tm-warning)', high:'var(--tm-loss)' }[plan.riskLevel]
-  const riskLabel = { low:'Faible', medium:'Modéré', high:'Élevé' }[plan.riskLevel]
+  const riskLabel = {
+    low:    t('analyse.riskLow'),
+    medium: t('analyse.riskMedium'),
+    high:   t('analyse.riskHigh'),
+  }[plan.riskLevel]
 
   return (
     <div style={{ background:'rgba(13,17,35,0.75)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, boxShadow:'0 4px 24px rgba(0,0,0,0.5)', overflow:'hidden' }}>
@@ -446,7 +464,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div style={{ width:32, height:32, borderRadius:9, background:'linear-gradient(135deg,#0A85FF,#00E5FF)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
           <div>
-            <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>Plan de Trade</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--tm-text-primary)' }}>{t('analyse.tradePlan')}</div>
             <div style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{symbol} · {/USDT$|BTC$|ETH$|BNB$/i.test(symbol) ? '$' : ''}{fmtP(price)}</div>
           </div>
         </div>
@@ -458,7 +476,7 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
             </div>
             <span style={{ fontSize:10, fontWeight:700, color:'var(--tm-profit)', fontFamily:'monospace' }}>{(plan.bullProb*100).toFixed(0)}%</span>
           </div>
-          <span style={{ fontSize:10, fontWeight:700, color:riskColor, background:`${riskColor}15`, padding:'2px 8px', borderRadius:6 }}>Risque {riskLabel}</span>
+          <span style={{ fontSize:10, fontWeight:700, color:riskColor, background:`${riskColor}15`, padding:'2px 8px', borderRadius:6 }}>{t('analyse.riskLabel', { level: riskLabel })}</span>
           <span style={{ fontSize:10, color:'var(--tm-text-muted)' }}>{expanded ? '▲' : '▼'}</span>
         </div>
       </div>
@@ -466,8 +484,8 @@ export default function TradePlanCard({ symbol, price: priceProp, mtfScore = 0, 
       {expanded && <>
         {/* Context */}
         <div style={{ margin:'0 16px 12px', padding:'10px 12px', background:'rgba(var(--tm-blue-rgb,10,133,255),0.06)', border:'1px solid rgba(var(--tm-blue-rgb,10,133,255),0.15)', borderRadius:10 }}>
-          <span style={{ fontSize:11, fontWeight:600, color:'var(--tm-accent)' }}>Contexte : </span>
-          <span style={{ fontSize:11, color:'var(--tm-text-secondary)', lineHeight:1.6 }}>{plan.context}</span>
+          <span style={{ fontSize:11, fontWeight:600, color:'var(--tm-accent)' }}>{t('analyse.context')} : </span>
+          <span style={{ fontSize:11, color:'var(--tm-text-secondary)', lineHeight:1.6 }}>{t(`analyse.${plan.context}`)}</span>
         </div>
 
         {/* Scenarios */}

@@ -3,6 +3,7 @@
 // Pas d'API externe — utilise fetchYahooCandles pour non-crypto, Binance pour crypto
 
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 
@@ -207,6 +208,7 @@ function LevelRow({ level, currentPrice }: { level: KeyLevel; currentPrice: numb
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0, onLevelsReady }: Props) {
+  const { t } = useTranslation()
   const [levels,       setLevels]       = useState<KeyLevel[]>([])
   const [currentPrice, setCurrentPrice] = useState(0)
   const [status,       setStatus]       = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
@@ -273,7 +275,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0, onL
           <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#FF9500,#FF3B30)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🎯</div>
           <div>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>Niveaux Clés</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-text-primary)' }}>{t('analyse.keyLevels')}</span>
               <div onClick={e => { e.stopPropagation(); setShowInfo(x => !x) }} style={{ width:16, height:16, borderRadius:'50%', background:'rgba(var(--tm-accent-rgb,0,229,255),0.1)', border:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.25)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:9, color:'var(--tm-accent)', fontWeight:700, lineHeight:1 }}>i</div>
             </div>
             <div style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>{symbol} · Pivots · OB · Swing</div>
@@ -295,12 +297,11 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0, onL
 
       {showInfo && (
         <div style={{ padding:'12px 16px', background:'rgba(var(--tm-accent-rgb,0,229,255),0.04)', borderBottom:'1px solid rgba(var(--tm-accent-rgb,0,229,255),0.15)' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--tm-accent)', marginBottom:6 }}>Comment sont déterminés les niveaux ?</div>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--tm-accent)', marginBottom:6 }}>{t('analyse.howLevelsDetermined')}</div>
           <div style={{ fontSize:11, color:'var(--tm-text-secondary)', lineHeight:1.7 }}>
-            <b style={{color:'var(--tm-warning)'}}>Pivots</b> — Calculés à partir du High, Low et Close de la dernière bougie confirmée (formule standard : PP, R1, R2, S1, S2).
-            <br/><b style={{color:'var(--tm-blue)'}}>Swing High/Low</b> — Plus hauts et plus bas sur les 20 et 50 dernières bougies (4H pour crypto, 1D pour actions).
-            <br/><b style={{color:'var(--tm-profit)'}}>Order Blocks</b> — Bougies à fort body ratio (&gt;60%) suivies d'un mouvement impulsif dans la direction opposée (3 bougies de confirmation).
-            <br/><b style={{color:'var(--tm-purple)'}}>Force</b> — Nombre de touches du niveau (≥3 touches = fort). Les niveaux proches (&lt;0.5%) sont fusionnés.
+            {t('analyse.levelsDesc1')}
+            <br/>{t('analyse.levelsDesc2')}
+            <br/>{t('analyse.levelsDesc3')}
           </div>
         </div>
       )}
@@ -310,7 +311,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0, onL
           {/* Prix courant */}
           {currentPrice > 0 && (
             <div style={{ margin: '0 0 12px', padding: '8px 12px', background: 'rgba(var(--tm-blue-rgb,10,133,255),0.06)', border: '1px solid rgba(var(--tm-blue-rgb,10,133,255),0.2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: 'var(--tm-text-secondary)' }}>Prix actuel</span>
+              <span style={{ fontSize: 11, color: 'var(--tm-text-secondary)' }}>{t('analyse.currentPrice')}</span>
               <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-accent)', fontFamily: 'monospace' }}>{fmtP(currentPrice)}</span>
             </div>
           )}
@@ -324,7 +325,7 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0, onL
                 background: filter === f ? 'rgba(var(--tm-warning-rgb,255,149,0),0.15)' : 'transparent',
                 color: filter === f ? 'var(--tm-warning)' : 'var(--tm-text-muted)'
               }}>
-                {{ all: 'Tous', above: '↑ Résistances', below: '↓ Supports' }[f]}
+                {{ all: t('common.all'), above: t('analyse.resistances'), below: t('analyse.supports') }[f]}
               </button>
             ))}
           </div>
@@ -372,11 +373,11 @@ export default function KeyLevelsCard({ symbol, currentPrice: priceProp = 0, onL
               {/* Légende */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #1E2330' }}>
                 {[
-                  { icon: '⟰', color: 'var(--tm-loss)', label: 'Résistance' },
-                  { icon: '⟱', color: 'var(--tm-profit)', label: 'Support' },
-                  { icon: '◈', color: 'var(--tm-warning)', label: 'Pivot' },
+                  { icon: '⟰', color: 'var(--tm-loss)', label: t('analyse.resistance') },
+                  { icon: '⟱', color: 'var(--tm-profit)', label: t('analyse.support') },
+                  { icon: '◈', color: 'var(--tm-warning)', label: t('analyse.pivot') },
                   { icon: '▣', color: 'var(--tm-blue)', label: 'Order Block' },
-                  { icon: '▲▼', color: 'var(--tm-purple)', label: 'Swing H/L' },
+                  { icon: '▲▼', color: 'var(--tm-purple)', label: t('analyse.swingHL') },
                 ].map(({ icon, color, label }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 10, color }}>{icon}</span>

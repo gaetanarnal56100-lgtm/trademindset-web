@@ -376,6 +376,8 @@
     "zoneNeutral": "Neutral",
     "zoneWeak": "Weak",
     "zoneOversold": "Oversold",
+    "symbolNotFound": "{{symbol}} not found. Try: AAPL · TSLA · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40)",
+    "cryptoNotOnBinance": "Crypto {{symbol}} not found on Binance",
     "vmcBullish": "Bullish",
     "vmcBearish": "Bearish",
     "searchTokens": "Search…",
@@ -459,7 +461,14 @@
     "toolLine": "Line",
     "toolRay": "Ray",
     "shareChart": "Share chart",
-    "shareChartShort": "Share"
+    "shareChartShort": "Share",
+    "decision": {
+      "title": "Decision Analysis",
+      "why": "Reasons",
+      "risks": "Risks",
+      "noAlert": "No alerts",
+      "noData": "Insufficient data"
+    }
   },
   "marches": {
     "title": "Markets",

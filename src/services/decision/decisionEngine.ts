@@ -14,6 +14,7 @@ export interface DecisionInputs {
   liqBias:         number   // liqLong1h − liqShort1h (USD)
   isCrypto:        boolean
   recentSignals:   string[] // derniers types de signaux depuis SignalNotificationService
+  lang?:           string
 }
 
 export interface DecisionOutput {
@@ -34,8 +35,10 @@ export function computeDecision(inputs: DecisionInputs): DecisionOutput {
     ouExcess, ouRegime, ouZ,
     vmcStatus, confluenceSignal,
     whalePressure, liqBias,
-    isCrypto,
+    isCrypto, lang = 'fr',
   } = inputs
+
+  const isEN = lang === 'en'
 
   // ── 1. Normaliser chaque signal en 0..100 ────────────────────────────────
 
@@ -117,42 +120,48 @@ export function computeDecision(inputs: DecisionInputs): DecisionOutput {
   // MTF
   const mtfAbs = Math.abs(mtfScore)
   if (mtfAbs > 55) {
-    const dir = mtfSignal === 'BUY' || mtfSignal === 'BULLISH' ? 'haussier' : 'baissier'
+    const dir = mtfSignal === 'BUY' || mtfSignal === 'BULLISH'
+      ? (isEN ? 'bullish' : 'haussier')
+      : (isEN ? 'bearish' : 'baissier')
     cands.push({ w: 3, text: `MTF aligné ${dir} ${mtfConfluence.toFixed(0)}%` })
   } else if (mtfAbs > 25) {
-    cands.push({ w: 2, text: `MTF partiellement ${mtfScore > 0 ? 'haussier' : 'baissier'} ${mtfConfluence.toFixed(0)}%` })
+    const dir2 = mtfScore > 0 ? (isEN ? 'bullish' : 'haussier') : (isEN ? 'bearish' : 'baissier')
+    cands.push({ w: 2, text: `MTF partiellement ${dir2} ${mtfConfluence.toFixed(0)}%` })
   }
 
   // OU excess
   const ouText: Partial<Record<string, string>> = {
-    extreme_os: 'OU survente extrême 🚀',
-    oversold:   `OU survente (${ouZ.toFixed(1)}σ)`,
-    extreme_ob: 'OU surachat extrême ⚠️',
-    overbought: `OU surachat (${ouZ.toFixed(1)}σ)`,
+    extreme_os: isEN ? 'OU extreme oversold' : 'OU survente extrême 🚀',
+    oversold:   isEN ? `OU oversold (${ouZ.toFixed(1)}σ)` : `OU survente (${ouZ.toFixed(1)}σ)`,
+    extreme_ob: isEN ? 'OU extreme overbought' : 'OU surachat extrême ⚠️',
+    overbought: isEN ? `OU overbought (${ouZ.toFixed(1)}σ)` : `OU surachat (${ouZ.toFixed(1)}σ)`,
   }
   if (ouText[ouExcess]) {
     cands.push({ w: ouExcess.includes('extreme') ? 3 : 2, text: ouText[ouExcess]! })
   } else if (ouRegime !== 'ranging') {
-    cands.push({ w: 1, text: `OU régime ${ouRegime === 'trending' ? 'tendance' : 'breakout'}` })
+    const regimeText = ouRegime === 'trending'
+      ? (isEN ? 'OU trending regime' : 'OU régime tendance')
+      : (isEN ? 'OU breakout regime' : 'OU régime breakout')
+    cands.push({ w: 1, text: regimeText })
   }
 
   // VMC
   const vmcText: Partial<Record<string, { w: number; t: string }>> = {
-    BUY:        { w: 2, t: 'VMC signal achat' },
-    SELL:       { w: 2, t: 'VMC signal vente' },
-    OVERSOLD:   { w: 3, t: 'VMC en survente' },
-    OVERBOUGHT: { w: 3, t: 'VMC en surachat' },
+    BUY:        { w: 2, t: isEN ? 'VMC buy signal' : 'VMC signal achat' },
+    SELL:       { w: 2, t: isEN ? 'VMC sell signal' : 'VMC signal vente' },
+    OVERSOLD:   { w: 3, t: isEN ? 'VMC oversold' : 'VMC en survente' },
+    OVERBOUGHT: { w: 3, t: isEN ? 'VMC overbought' : 'VMC en surachat' },
   }
   if (vmcText[vmcStatus]) cands.push({ w: vmcText[vmcStatus]!.w, text: vmcText[vmcStatus]!.t })
 
   // Confluence
   const confText: Partial<Record<string, string>> = {
-    long:        'Confluence LONG confirmée',
-    short:       'Confluence SHORT confirmée',
-    setup_long:  'Setup LONG en formation',
-    setup_short: 'Setup SHORT en formation',
-    absorption:  'Absorption smart money',
-    trap:        'Piège détecté',
+    long:        isEN ? 'LONG confluence confirmed' : 'Confluence LONG confirmée',
+    short:       isEN ? 'SHORT confluence confirmed' : 'Confluence SHORT confirmée',
+    setup_long:  isEN ? 'LONG setup forming' : 'Setup LONG en formation',
+    setup_short: isEN ? 'SHORT setup forming' : 'Setup SHORT en formation',
+    absorption:  isEN ? 'Smart money absorption' : 'Absorption smart money',
+    trap:        isEN ? 'Trap detected' : 'Piège détecté',
   }
   if (confText[confluenceSignal]) {
     cands.push({ w: confluenceSignal === 'long' || confluenceSignal === 'short' ? 3 : 2, text: confText[confluenceSignal]! })
@@ -168,10 +177,10 @@ export function computeDecision(inputs: DecisionInputs): DecisionOutput {
 
   // ── 6. Risques ──────────────────────────────────────────────────────────
   const risks: string[] = []
-  if (ouRegime === 'trending' && bias !== 'NEUTRAL') risks.push('Régime tendance — contre-trend risqué')
-  if (mtfAbs < 15) risks.push('MTF faible conviction')
-  if (isCrypto && Math.abs(whalePressure) < 0.05 && mtfAbs > 30) risks.push('Activité whale nulle')
-  if (confluenceSignal === 'absorption' || confluenceSignal === 'trap') risks.push('Signal ambigu (absorption/piège possible)')
+  if (ouRegime === 'trending' && bias !== 'NEUTRAL') risks.push(isEN ? 'Trending regime — counter-trend risky' : 'Régime tendance — contre-trend risqué')
+  if (mtfAbs < 15) risks.push(isEN ? 'MTF weak conviction' : 'MTF faible conviction')
+  if (isCrypto && Math.abs(whalePressure) < 0.05 && mtfAbs > 30) risks.push(isEN ? 'Zero whale activity' : 'Activité whale nulle')
+  if (confluenceSignal === 'absorption' || confluenceSignal === 'trap') risks.push(isEN ? 'Ambiguous signal (absorption/trap)' : 'Signal ambigu (absorption/piège possible)')
 
   // ── 7. Résumé compact (3 tokens max) ────────────────────────────────────
   const summary = [

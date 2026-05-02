@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import type { MTFSnapshot } from '@/pages/analyse/MTFDashboard'
 import { computeDecision, type DecisionInputs } from '@/services/decision/decisionEngine'
 import { signalService } from '@/services/notifications/SignalNotificationService'
@@ -23,6 +24,8 @@ export default function DecisionAssistant({
   mtfSnap, pressure, liqLong1h, liqShort1h,
   isCrypto, ouExcess, ouRegime, ouZ, vmcStatus, confluenceSignal,
 }: Props) {
+  const { t } = useTranslation()
+  const { i18n } = useTranslation()
   const [expanded, setExpanded]           = useState(false)
   const [recentSignals, setRecentSignals] = useState<string[]>([])
   const [panelPos, setPanelPos]           = useState({ top: 0, left: 0 })
@@ -72,6 +75,7 @@ export default function DecisionAssistant({
     whalePressure:   pressure?.score ?? 0,
     liqBias:         liqLong1h - liqShort1h,
     isCrypto, recentSignals,
+    lang:            i18n.language,
   }
   const out = computeDecision(inputs)
   const clr = out.biasColor
@@ -101,7 +105,7 @@ export default function DecisionAssistant({
         letterSpacing: '0.1em', textTransform: 'uppercase',
         fontFamily: 'JetBrains Mono, monospace', marginBottom: 12,
       }}>
-        Analyse de décision
+        {t('analyse.decision.title')}
       </div>
 
       {/* Grille raisons / risques */}
@@ -111,7 +115,7 @@ export default function DecisionAssistant({
           <div style={{
             fontSize: 9, color: 'rgba(143,148,163,0.5)', fontFamily: 'JetBrains Mono, monospace',
             marginBottom: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-          }}>Pourquoi</div>
+          }}>{t('analyse.decision.why')}</div>
           {out.reasons.length > 0
             ? out.reasons.map((r, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 5 }}>
@@ -119,7 +123,7 @@ export default function DecisionAssistant({
                   <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.78)', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5 }}>{r}</span>
                 </div>
               ))
-            : <span style={{ fontSize: 10, color: 'rgba(143,148,163,0.4)', fontFamily: 'JetBrains Mono, monospace' }}>Données insuffisantes</span>
+            : <span style={{ fontSize: 10, color: 'rgba(143,148,163,0.4)', fontFamily: 'JetBrains Mono, monospace' }}>{t('analyse.decision.noData')}</span>
           }
         </div>
 
@@ -128,7 +132,7 @@ export default function DecisionAssistant({
           <div style={{
             fontSize: 9, color: 'rgba(143,148,163,0.5)', fontFamily: 'JetBrains Mono, monospace',
             marginBottom: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-          }}>Risques</div>
+          }}>{t('analyse.decision.risks')}</div>
           {out.risks.length > 0
             ? out.risks.map((r, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 5 }}>
@@ -136,7 +140,7 @@ export default function DecisionAssistant({
                   <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.78)', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5 }}>{r}</span>
                 </div>
               ))
-            : <span style={{ fontSize: 10, color: '#34C759', fontFamily: 'JetBrains Mono, monospace' }}>✔ Pas d'alerte</span>
+            : <span style={{ fontSize: 10, color: '#34C759', fontFamily: 'JetBrains Mono, monospace' }}>✔ {t('analyse.decision.noAlert')}</span>
           }
         </div>
       </div>
