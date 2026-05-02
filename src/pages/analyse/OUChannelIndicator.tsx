@@ -1232,7 +1232,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
 
       // Record signal history
       const n = data.length - 1
-      const excess = ouResult.excess[n]
+      const excess = ouResult.excess[n] ?? 'none'
       if (excess !== 'none') {
         const label = excess === 'extreme_ob' ? '⚠️ Surachat Extrême'
           : excess === 'overbought' ? '🔴 Surachat OU'
