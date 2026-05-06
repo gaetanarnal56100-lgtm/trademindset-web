@@ -171,22 +171,26 @@ export default function DecisionAssistant({
     document.body
   ) : null
 
-  // ── Mini arc SVG (semi-circle, curves UP like speedometer) ──────────────
-  const w = 88, h = 56                        // SVG viewport
-  const cx = w / 2, cy = h - 8                // axle near bottom
-  const r = 32
+  // ── Circular 270° gauge with gap at bottom ───────────────────────────────
+  const w = 64, h = 64
+  const cx = w / 2, cy = h / 2
+  const r = 24
   const toRad = (deg: number) => (deg * Math.PI) / 180
-  // y-flipped so 90° = TOP of arc (speedometer shape)
+  // y-flipped: 90° = TOP, 0° = RIGHT, 180° = LEFT, 270° = BOTTOM
   const pt = (deg: number) => ({ x: cx + r * Math.cos(toRad(deg)), y: cy - r * Math.sin(toRad(deg)) })
-  const arcSeg = (a1: number, a2: number) => {
+  const arcSeg = (a1: number, a2: number, large = 0) => {
     const s = pt(a1), e = pt(a2)
-    return `M ${s.x} ${s.y} A ${r} ${r} 0 0 0 ${e.x} ${e.y}`
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 0 ${e.x} ${e.y}`
   }
-  // 3 zones: red 180°→144° (40%), orange 144°→126° = (top), wait need 180→0 going through 90
-  // Actually: 180°(left) → 90°(top) → 0°(right). 40% = 180→108, 20% = 108→72, 40% = 72→0
+  // Gauge spans 270°: 225° (bottom-left) → 90° (top) → -45° (bottom-right)
+  // Score 0 → 225° (red), score 100 → -45° (green)
   const score01 = Math.max(0, Math.min(100, out.score)) / 100
-  const needleAngle = 180 - 180 * score01     // 0→180°(left), 100→0°(right)
+  const needleAngle = 225 - 270 * score01
   const np = pt(needleAngle)
+  // Zones (40/20/40): red 225→117, orange 117→63, green 63→-45
+  const z1 = arcSeg(225, 117)   // red
+  const z2 = arcSeg(117,  63)   // orange
+  const z3 = arcSeg( 63, -45)   // green
 
   return (
     <>
@@ -209,24 +213,26 @@ export default function DecisionAssistant({
           transition: 'border-color 0.3s, box-shadow 0.3s',
         }}
       >
-        {/* ── Arc gauge score ── */}
+        {/* ── 270° circular gauge ── */}
         <div style={{ position: 'relative', width: w, height: h, flexShrink: 0 }}>
           <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
-            {/* 3 colored zone tracks (180°→108° red, 108°→72° orange, 72°→0° green) */}
-            <path d={arcSeg(180, 108)} fill="none" stroke="#FF3B3055" strokeWidth={4} strokeLinecap="round" />
-            <path d={arcSeg(108,  72)} fill="none" stroke="#FF950055" strokeWidth={4} strokeLinecap="round" />
-            <path d={arcSeg( 72,   0)} fill="none" stroke="#34C75955" strokeWidth={4} strokeLinecap="round" />
-            {/* Needle line */}
-            <line x1={cx} y1={cy} x2={np.x} y2={np.y} stroke={clr} strokeWidth={2} strokeLinecap="round"
-              style={{ filter: `drop-shadow(0 0 3px ${clr}80)` }} />
-            {/* Needle tip dot */}
-            <circle cx={np.x} cy={np.y} r={3.5} fill={clr} style={{ filter: `drop-shadow(0 0 4px ${clr})` }} />
+            {/* 3 colored zones */}
+            <path d={z1} fill="none" stroke="#FF3B3070" strokeWidth={5} strokeLinecap="round" />
+            <path d={z2} fill="none" stroke="#FF950070" strokeWidth={5} strokeLinecap="round" />
+            <path d={z3} fill="none" stroke="#34C75970" strokeWidth={5} strokeLinecap="round" />
+            {/* Needle line from center */}
+            <line x1={cx} y1={cy} x2={np.x} y2={np.y} stroke={clr} strokeWidth={2.2} strokeLinecap="round"
+              style={{ filter: `drop-shadow(0 0 3px ${clr}90)` }} />
+            {/* Needle tip */}
+            <circle cx={np.x} cy={np.y} r={3} fill={clr} style={{ filter: `drop-shadow(0 0 4px ${clr})` }} />
             {/* Axle */}
-            <circle cx={cx} cy={cy} r={2.5} fill="rgba(255,255,255,0.25)" />
-            {/* Score number centered inside arc */}
-            <text x={cx} y={cy - 6} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
-              fontSize="18" fontWeight="900" fill={clr}
-              style={{ filter: `drop-shadow(0 0 6px ${clr}60)` }}>{out.score}</text>
+            <circle cx={cx} cy={cy} r={2} fill="rgba(255,255,255,0.3)" />
+            {/* Score in center (above axle) */}
+            <text x={cx} y={cy - 4} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
+              fontSize="16" fontWeight="900" fill={clr}
+              style={{ filter: `drop-shadow(0 0 5px ${clr}70)` }}>{out.score}</text>
+            <text x={cx} y={cy + 8} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
+              fontSize="7" fontWeight="600" fill="rgba(143,148,163,0.55)">/100</text>
           </svg>
         </div>
 
