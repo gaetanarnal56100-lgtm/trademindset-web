@@ -21,6 +21,7 @@ import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
 import OUChannelIndicator from './OUChannelIndicator'
 import DecisionAssistant from '@/components/decision/DecisionAssistant'
+import GlobalMarketWidget from '@/components/marketmetrics/GlobalMarketWidget'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
 import app from '@/services/firebase/config'
@@ -2058,6 +2059,7 @@ export default function AnalysePage() {
       {symbol && (isCrypto ? (fng || pdfMtfSnap) : pdfMtfSnap) && (
         <div style={{ position:'relative', zIndex:1, display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
           {isCrypto && fng && <FearGreedWidget data={fng} />}
+          {isCrypto && <GlobalMarketWidget />}
           {pdfMtfSnap && (
             <DecisionAssistant
               mtfSnap={pdfMtfSnap}
