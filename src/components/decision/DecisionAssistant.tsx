@@ -176,10 +176,10 @@ export default function DecisionAssistant({
   // Position is loose (small directional lean ok), Scalp needs strong alignment
   const strength = Math.abs(out.score - 50) * 2  // 0..100
   const styleDefs = [
-    { id: 'pos',   emoji: '🏔️', label: 'Position', threshold:  8, color: '#FF9500' },
-    { id: 'swing', emoji: '📈', label: 'Swing',    threshold: 18, color: '#34C759' },
-    { id: 'day',   emoji: '🌅', label: 'Day',      threshold: 32, color: '#0A85FF' },
-    { id: 'scalp', emoji: '⚡', label: 'Scalp',    threshold: 50, color: '#BF5AF2' },
+    { id: 'pos',   emoji: '🏔️', label: 'Position', threshold:  2, color: '#FF9500' },
+    { id: 'swing', emoji: '📈', label: 'Swing',    threshold: 14, color: '#34C759' },
+    { id: 'day',   emoji: '🌅', label: 'Day',      threshold: 28, color: '#0A85FF' },
+    { id: 'scalp', emoji: '⚡', label: 'Scalp',    threshold: 44, color: '#BF5AF2' },
   ] as const
   const tradeableStyles = styleDefs.map(s => ({ ...s, active: strength >= s.threshold }))
 
