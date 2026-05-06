@@ -172,19 +172,16 @@ export default function DecisionAssistant({
   ) : null
 
   // ── Tradeable styles (matched to TradePlanCard thresholds) ─────────────
-  // Style activates if decision score passes threshold AND bias is directional
+  // Strength = how far from neutral 50; works for both bull and bear bias
+  // Position is loose (small directional lean ok), Scalp needs strong alignment
+  const strength = Math.abs(out.score - 50) * 2  // 0..100
   const styleDefs = [
-    { id: 'scalp', emoji: '⚡', label: 'Scalp',    threshold: 70, color: '#BF5AF2' },
-    { id: 'day',   emoji: '🌅', label: 'Day',      threshold: 55, color: '#0A85FF' },
-    { id: 'swing', emoji: '📈', label: 'Swing',    threshold: 42, color: '#34C759' },
-    { id: 'pos',   emoji: '🏔️', label: 'Position', threshold: 28, color: '#FF9500' },
+    { id: 'pos',   emoji: '🏔️', label: 'Position', threshold:  8, color: '#FF9500' },
+    { id: 'swing', emoji: '📈', label: 'Swing',    threshold: 18, color: '#34C759' },
+    { id: 'day',   emoji: '🌅', label: 'Day',      threshold: 32, color: '#0A85FF' },
+    { id: 'scalp', emoji: '⚡', label: 'Scalp',    threshold: 50, color: '#BF5AF2' },
   ] as const
-  const directional = out.bias !== 'NEUTRAL'
-  const tradeableStyles = styleDefs.map(s => ({
-    ...s,
-    active: directional && out.score >= s.threshold && out.bias === 'BULLISH'
-         || directional && (100 - out.score) >= s.threshold && out.bias === 'BEARISH',
-  }))
+  const tradeableStyles = styleDefs.map(s => ({ ...s, active: strength >= s.threshold }))
 
   // ── Circular 270° gauge with gap at bottom ───────────────────────────────
   const w = 88, h = 88
