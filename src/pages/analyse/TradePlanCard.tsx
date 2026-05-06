@@ -62,9 +62,10 @@ interface StyleConfig {
   label: string
   sublabel: string     // "UT · durée"
   chartTfs: string[]   // chart intervals that auto-select this style
+  obTf: string         // timeframe used to fetch Order Blocks for this style
   //
-  // Stop = price × stopPct
-  // Entry offset = price × entryPct (distance from current price to ideal entry)
+  // Stop = price × stopPct (fallback when no OB found)
+  // Entry offset = price × entryPct (fallback distance from price to entry)
   // TP1/2/3 = entry ± risk × tp1R / tp2R / tp3R
   //
   stopPct: number      // % de prix pour le stop loss (ex: 0.002 = 0.2%)
@@ -93,7 +94,7 @@ const STYLES: StyleConfig[] = [
   {
     id: 'scalping',
     emoji: '⚡', label: 'Scalping', sublabel: '1m–5m · sec–15min',
-    chartTfs: ['1m','3m','5m'],
+    chartTfs: ['1m','3m','5m'], obTf: '5m',
     stopPct: 0.0015, entryOffsetPct: 0.0003,
     tp1R: 1.0, tp2R: 1.5, tp3R: 2.0,
     riskPct: '0.25–0.5%', duration: 'sec → 15min',
@@ -105,7 +106,7 @@ const STYLES: StyleConfig[] = [
   {
     id: 'daytrading',
     emoji: '🌅', label: 'Day Trading', sublabel: '5m–1h · min–heures',
-    chartTfs: ['5m','15m','30m','1h'],
+    chartTfs: ['5m','15m','30m','1h'], obTf: '15m',
     stopPct: 0.008, entryOffsetPct: 0.002,
     tp1R: 1.5, tp2R: 2.5, tp3R: 4.0,
     riskPct: '0.5–1%', duration: 'quelques heures (intraday)',
@@ -117,7 +118,7 @@ const STYLES: StyleConfig[] = [
   {
     id: 'swing',
     emoji: '📈', label: 'Swing', sublabel: '4h–1d · jours–semaines',
-    chartTfs: ['4h','8h','12h','1d'],
+    chartTfs: ['4h','8h','12h','1d'], obTf: '4h',
     stopPct: 0.03, entryOffsetPct: 0.006,
     tp1R: 2.0, tp2R: 3.5, tp3R: 6.0,
     riskPct: '1–2%', duration: 'quelques jours à 2–3 semaines',
@@ -129,7 +130,7 @@ const STYLES: StyleConfig[] = [
   {
     id: 'position',
     emoji: '🏔️', label: 'Position', sublabel: '1d–1w · semaines–mois',
-    chartTfs: ['3d','1w'],
+    chartTfs: ['3d','1w'], obTf: '1d',
     stopPct: 0.07, entryOffsetPct: 0.01,
     tp1R: 3.0, tp2R: 5.0, tp3R: 8.0,
     riskPct: '1–3%', duration: 'semaines à plusieurs mois',
@@ -189,6 +190,73 @@ function nearestLevel(price: number, levels: KeyLevel[], direction: 'above'|'bel
   )[0]
 }
 
+// ── Order Block detection ───────────────────────────────────────────────────
+
+interface OBCandle { o: number; h: number; l: number; c: number }
+
+interface OrderBlock {
+  type: 'bull' | 'bear'
+  entryPrice: number   // retest entry: o of bearish candle (bull OB) | o of bullish candle (bear OB)
+  slPrice: number      // invalidation: l of bull OB | h of bear OB
+  midPrice: number     // midpoint body
+  strength: 'strong' | 'medium'
+}
+
+async function fetchOrderBlocks(symbol: string, interval: string, isCrypto: boolean): Promise<OrderBlock[]> {
+  let candles: OBCandle[] = []
+  const sym = symbol.toUpperCase()
+  if (isCrypto) {
+    try {
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${interval}&limit=150`)
+      if (r.ok) {
+        const d = await r.json()
+        candles = d.map((k: number[]) => ({ o: +k[1], h: +k[2], l: +k[3], c: +k[4] }))
+      }
+    } catch { /* ignore */ }
+  }
+  // Non-crypto: skip OB fetch (Yahoo candles are daily, not useful for scalping/daytrading)
+
+  const obs: OrderBlock[] = []
+  const n = candles.length
+  for (let i = n - 60; i < n - 3; i++) {
+    if (i < 0) continue
+    const c = candles[i]
+    const body = Math.abs(c.c - c.o)
+    const range = c.h - c.l
+    if (range === 0) continue
+    const bodyRatio = body / range
+
+    // Bull OB: bearish candle (c < o) followed by bullish impulse (next 3 avg close > candle high)
+    if (c.c < c.o && bodyRatio > 0.55) {
+      const next3 = candles.slice(i + 1, i + 4)
+      if (next3.length === 3 && next3.reduce((a, b) => a + b.c, 0) / 3 > c.h) {
+        obs.push({
+          type: 'bull',
+          entryPrice: c.o,           // top of bearish body = first retest level
+          slPrice: c.l * 0.999,      // below candle low = invalidation
+          midPrice: (c.o + c.c) / 2,
+          strength: bodyRatio > 0.72 ? 'strong' : 'medium',
+        })
+      }
+    }
+
+    // Bear OB: bullish candle (c > o) followed by bearish impulse (next 3 avg close < candle low)
+    if (c.c > c.o && bodyRatio > 0.55) {
+      const next3 = candles.slice(i + 1, i + 4)
+      if (next3.length === 3 && next3.reduce((a, b) => a + b.c, 0) / 3 < c.l) {
+        obs.push({
+          type: 'bear',
+          entryPrice: c.o,           // bottom of bullish body = first retest level
+          slPrice: c.h * 1.001,      // above candle high = invalidation
+          midPrice: (c.o + c.c) / 2,
+          strength: bodyRatio > 0.72 ? 'strong' : 'medium',
+        })
+      }
+    }
+  }
+  return obs
+}
+
 // ── Core decision engine ────────────────────────────────────────────────────
 
 function generateScenarios(
@@ -204,10 +272,22 @@ function generateScenarios(
   keyLevels: KeyLevel[],
   _isCrypto: boolean,
   style: StyleConfig,
+  orderBlocks: OrderBlock[] = [],
 ): TradePlanData {
-  // Style-calibrated distances (% of price, independent per style)
+  // Style-calibrated distances (% of price, fallback when no OB found)
   const stopDist  = price * style.stopPct
   const entryOff  = price * style.entryOffsetPct
+
+  // ── OB helpers: find nearest unmitigated OB within search window ──────────
+  const obWindow = style.stopPct * 8   // search range = 8× natural stop
+  // Bull OB: below price (or at price), where price may come back to retest
+  const bullOB = orderBlocks
+    .filter(ob => ob.type === 'bull' && ob.midPrice < price * (1 + obWindow) && ob.midPrice > price * (1 - obWindow))
+    .sort((a, b) => b.midPrice - a.midPrice)[0] ?? null   // nearest below
+  // Bear OB: above price (or at price)
+  const bearOB = orderBlocks
+    .filter(ob => ob.type === 'bear' && ob.midPrice > price * (1 - obWindow) && ob.midPrice < price * (1 + obWindow))
+    .sort((a, b) => a.midPrice - b.midPrice)[0] ?? null   // nearest above
 
   // ── 1. Signal alignment ──────────────────────────────────────────────────
   const wtBull = ['Bullish Reversal','Smart Bullish','Oversold'].includes(wtStatus)
@@ -277,12 +357,14 @@ function generateScenarios(
     : bullSignals >= 2 ? 'moderate'
     : 'none'
 
-  // Entry: style-based offset from current price (no resistance cap — resistance shown as note)
-  const bullEntry = price + entryOff
-  // Stop: anchor to structure only if support is within natural stopDist; otherwise pure style stop
-  const bullStop = nearSupport && nearSupport.price > bullEntry - stopDist
-    ? nearSupport.price * 0.998           // structure inside stop → anchor
-    : bullEntry - stopDist                // style-calibrated stop
+  // ── 7b. Bull entry/SL — OB-first, fallback to % ──────────────────────────
+  // Bull OB: entry at OB top (bearish candle open = where institutions sold before impulse)
+  // SL: below OB low (invalidation = the OB is no longer valid)
+  const bullEntry = bullOB ? bullOB.entryPrice : price + entryOff
+  const bullStop  = bullOB ? bullOB.slPrice
+    : nearSupport && nearSupport.price > price + entryOff - stopDist
+      ? nearSupport.price * 0.998
+      : price + entryOff - stopDist
   const bullRisk = Math.max(bullEntry - bullStop, stopDist * 0.5)
   const bullTp1 = bullEntry + bullRisk * style.tp1R
   const bullTp2 = bullEntry + bullRisk * style.tp2R
@@ -303,7 +385,9 @@ function generateScenarios(
     entryType: bullStrength,
     signalStrength: bullStrength,
     activationConditions: bullConditions,
-    notes: nearSupport ? `Support: ${fmtP(nearSupport.price)}` : undefined,
+    notes: bullOB
+      ? `OB Bull ${bullOB.strength} (${style.obTf})${nearSupport ? ` · Support: ${fmtP(nearSupport.price)}` : ''}`
+      : nearSupport ? `Support: ${fmtP(nearSupport.price)}` : undefined,
     isCounterTrend: bearSignals > bullSignals,
   }
 
@@ -314,12 +398,13 @@ function generateScenarios(
     : bearSignals >= 2 ? 'moderate'
     : 'none'
 
-  // Entry: style-based offset below price (no support anchor on entry)
-  const bearEntry = price - entryOff
-  // Stop: anchor to resistance only if within natural stopDist
-  const bearStop = nearResist && nearResist.price < bearEntry + stopDist
-    ? nearResist.price * 1.002
-    : bearEntry + stopDist
+  // Bear OB: entry at OB bottom (bullish candle open = where institutions bought before impulse)
+  // SL: above OB high (invalidation)
+  const bearEntry = bearOB ? bearOB.entryPrice : price - entryOff
+  const bearStop  = bearOB ? bearOB.slPrice
+    : nearResist && nearResist.price < price - entryOff + stopDist
+      ? nearResist.price * 1.002
+      : price - entryOff + stopDist
   const bearRisk = Math.max(bearStop - bearEntry, stopDist * 0.5)
   const bearTp1 = bearEntry - bearRisk * style.tp1R
   const bearTp2 = bearEntry - bearRisk * style.tp2R
@@ -340,7 +425,9 @@ function generateScenarios(
     entryType: bearStrength,
     signalStrength: bearStrength,
     activationConditions: bearConditions,
-    notes: nearResist ? `Resistance: ${fmtP(nearResist.price)}` : undefined,
+    notes: bearOB
+      ? `OB Bear ${bearOB.strength} (${style.obTf})${nearResist ? ` · Resistance: ${fmtP(nearResist.price)}` : ''}`
+      : nearResist ? `Resistance: ${fmtP(nearResist.price)}` : undefined,
     isCounterTrend: bullSignals > bearSignals,
   }
 
@@ -766,6 +853,7 @@ export default function TradePlanCard({
   const [aiLoading,    setAiLoading]    = useState(false)
   const [expanded,     setExpanded]     = useState(true)
   const [selectedStyle, setSelectedStyle] = useState<TradingStyle>(() => styleFromInterval(chartInterval))
+  const [obLevels,     setObLevels]     = useState<OrderBlock[]>([])
   const symbolRef = useRef('')
   const priceRef  = useRef(0)
 
@@ -802,6 +890,15 @@ export default function TradePlanCard({
     }
   }, [symbol, priceProp])
 
+  // ── Fetch Order Blocks for selected style TF ────────────────────────────
+  useEffect(() => {
+    if (!symbol || !isCrypto) { setObLevels([]); return }
+    const style = STYLES.find(s => s.id === selectedStyle) ?? STYLES[1]
+    fetchOrderBlocks(symbol.toUpperCase(), style.obTf, isCrypto)
+      .then(obs => setObLevels(obs))
+      .catch(() => setObLevels([]))
+  }, [symbol, selectedStyle, isCrypto])
+
   // ── Generate plan ────────────────────────────────────────────────────────
   useEffect(() => {
     if (price <= 0) return
@@ -810,12 +907,12 @@ export default function TradePlanCard({
       price, mtfScore, mtfConfluence,
       wtStatus, vmcStatus,
       ouExcess, ouZ, ouRegime,
-      confluenceSignal, keyLevels, isCrypto, style,
+      confluenceSignal, keyLevels, isCrypto, style, obLevels,
     )
     setPlan(newPlan)
     setSections(null) // reset AI when style or context changes
     onPlanReady?.(newPlan, null)
-  }, [symbol, price, mtfScore, mtfConfluence, wtStatus, vmcStatus, ouExcess, ouZ, ouRegime, confluenceSignal, selectedStyle]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [symbol, price, mtfScore, mtfConfluence, wtStatus, vmcStatus, ouExcess, ouZ, ouRegime, confluenceSignal, selectedStyle, obLevels]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── AI enrichment ────────────────────────────────────────────────────────
   const loadAI = useCallback(async () => {
