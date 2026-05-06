@@ -246,8 +246,8 @@ async function fetchOrderBlocks(symbol: string, interval: string, isCrypto: bool
       if (next3.length === 3 && next3.reduce((a, b) => a + b.c, 0) / 3 < c.l) {
         obs.push({
           type: 'bear',
-          entryPrice: c.o,           // bottom of bullish body = first retest level
-          slPrice: c.h * 1.001,      // above candle high = invalidation
+          entryPrice: c.h,           // high of bullish candle = where price retests to short
+          slPrice: c.h * 1.002,      // above candle high = invalidation
           midPrice: (c.o + c.c) / 2,
           strength: bodyRatio > 0.72 ? 'strong' : 'medium',
         })
@@ -398,7 +398,7 @@ function generateScenarios(
     : bearSignals >= 2 ? 'moderate'
     : 'none'
 
-  // Bear OB: entry at OB bottom (bullish candle open = where institutions bought before impulse)
+  // Bear OB: entry at OB high (bullish candle high = where price retests to enter short)
   // SL: above OB high (invalidation)
   const bearEntry = bearOB ? bearOB.entryPrice : price - entryOff
   const bearStop  = bearOB ? bearOB.slPrice
