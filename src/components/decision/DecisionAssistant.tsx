@@ -171,6 +171,26 @@ export default function DecisionAssistant({
     document.body
   ) : null
 
+  // ── Mini arc SVG (semi-circle) ───────────────────────────────────────────
+  const arcSize = 64
+  const cx = arcSize / 2, cy = arcSize / 2 + 4
+  const r = 26
+  // Semi-circle: from 180° to 0° (left to right)
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const startAngle = 180, endAngle = 0
+  const pct = Math.max(0, Math.min(100, out.score)) / 100
+  const sweepAngle = (endAngle - startAngle) * pct  // negative sweep (goes right)
+  const needleAngle = startAngle + (endAngle - startAngle) * pct
+  const nx = cx + r * Math.cos(toRad(needleAngle))
+  const ny = cy + r * Math.sin(toRad(needleAngle))
+  // Track arc path
+  const arcPath = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`
+  // Fill arc path
+  const fillEndX = cx + r * Math.cos(toRad(startAngle + sweepAngle))
+  const fillEndY = cy + r * Math.sin(toRad(startAngle + sweepAngle))
+  const largeArc = Math.abs(sweepAngle) > 180 ? 1 : 0
+  const fillPath = `M ${cx - r} ${cy} A ${r} ${r} 0 ${largeArc} 1 ${fillEndX} ${fillEndY}`
+
   return (
     <>
       {/* ── Carte compacte ────────────────────────────────────────────────── */}
@@ -179,24 +199,54 @@ export default function DecisionAssistant({
         onClick={handleToggle}
         style={{
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '8px 14px',
+          padding: '8px 12px 8px 10px',
           background: 'rgba(13,17,35,0.7)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
-          border: `1px solid ${clr}30`,
+          border: `1px solid ${clr}35`,
           borderRadius: 14,
           boxShadow: `0 0 16px ${clr}12`,
           cursor: 'pointer',
           userSelect: 'none',
-          minWidth: 210,
+          minWidth: 220,
           transition: 'border-color 0.3s, box-shadow 0.3s',
         }}
       >
-        <div style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>🧠</div>
+        {/* ── Arc gauge score ── */}
+        <div style={{ position: 'relative', width: arcSize, height: arcSize / 2 + 12, flexShrink: 0 }}>
+          <svg width={arcSize} height={arcSize / 2 + 12} style={{ overflow: 'visible' }}>
+            {/* Track */}
+            <path d={arcPath} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={5} strokeLinecap="round" />
+            {/* Fill gradient */}
+            <defs>
+              <linearGradient id="da-arc-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#FF3B30" />
+                <stop offset="50%" stopColor="#FF9500" />
+                <stop offset="100%" stopColor="#34C759" />
+              </linearGradient>
+            </defs>
+            <path d={fillPath} fill="none" stroke="url(#da-arc-grad)" strokeWidth={5} strokeLinecap="round" />
+            {/* Needle dot */}
+            <circle cx={nx} cy={ny} r={4} fill={clr} style={{ filter: `drop-shadow(0 0 4px ${clr})` }} />
+          </svg>
+          {/* Score centré sous l'arc */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+          }}>
+            <span style={{
+              fontSize: 22, fontWeight: 900, color: clr, lineHeight: 1,
+              fontFamily: 'JetBrains Mono, monospace',
+              textShadow: `0 0 12px ${clr}60`,
+            }}>{out.score}</span>
+            <span style={{ fontSize: 8, color: 'rgba(143,148,163,0.4)', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.2 }}>/100</span>
+          </div>
+        </div>
 
+        {/* ── Infos droite ── */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Ligne 1 : biais + readiness */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+          {/* Biais + readiness */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: clr, fontFamily: 'Syne, sans-serif', letterSpacing: '0.02em' }}>
               ● {out.bias}
             </span>
@@ -204,18 +254,10 @@ export default function DecisionAssistant({
               {out.readinessEmoji} {out.readiness}
             </span>
           </div>
-
-          {/* Ligne 2 : score */}
-          <div style={{ marginBottom: 3 }}>
-            <span style={{ fontSize: 10, color: 'rgba(143,148,163,0.7)', fontFamily: 'JetBrains Mono, monospace' }}>
-              Score <span style={{ color: clr, fontWeight: 700 }}>{out.score}</span>/100
-            </span>
-          </div>
-
-          {/* Ligne 3 : résumé compact */}
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          {/* Résumé compact */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {out.summary.map((s, i) => (
-              <span key={i} style={{ fontSize: 9, color: 'rgba(143,148,163,0.6)', fontFamily: 'JetBrains Mono, monospace' }}>
+              <span key={i} style={{ fontSize: 9, color: 'rgba(143,148,163,0.55)', fontFamily: 'JetBrains Mono, monospace' }}>
                 {i > 0 ? '· ' : ''}{s}
               </span>
             ))}
@@ -226,7 +268,7 @@ export default function DecisionAssistant({
         <div style={{
           fontSize: 9, color: 'rgba(143,148,163,0.45)',
           transform: expanded ? 'rotate(180deg)' : 'none',
-          transition: 'transform 0.2s', flexShrink: 0,
+          transition: 'transform 0.2s', flexShrink: 0, marginLeft: 4,
         }}>▼</div>
       </div>
 
