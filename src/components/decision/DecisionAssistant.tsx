@@ -171,18 +171,21 @@ export default function DecisionAssistant({
     document.body
   ) : null
 
-  // ── Mini arc SVG (semi-circle, 180°→0°) ─────────────────────────────────
-  const arcSize = 64
-  const cx = arcSize / 2, cy = arcSize / 2 + 4
-  const r = 26
+  // ── Mini arc SVG (semi-circle, curves UP like speedometer) ──────────────
+  const w = 88, h = 56                        // SVG viewport
+  const cx = w / 2, cy = h - 8                // axle near bottom
+  const r = 32
   const toRad = (deg: number) => (deg * Math.PI) / 180
-  const pt = (deg: number) => ({ x: cx + r * Math.cos(toRad(deg)), y: cy + r * Math.sin(toRad(deg)) })
+  // y-flipped so 90° = TOP of arc (speedometer shape)
+  const pt = (deg: number) => ({ x: cx + r * Math.cos(toRad(deg)), y: cy - r * Math.sin(toRad(deg)) })
   const arcSeg = (a1: number, a2: number) => {
     const s = pt(a1), e = pt(a2)
-    return `M ${s.x} ${s.y} A ${r} ${r} 0 0 1 ${e.x} ${e.y}`
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 0 0 ${e.x} ${e.y}`
   }
-  // 3 color zones along the arc: red 180→108 (40%), orange 108→72 (20%), green 72→0 (40%)
-  const needleAngle = 180 + (0 - 180) * (Math.max(0, Math.min(100, out.score)) / 100)
+  // 3 zones: red 180°→144° (40%), orange 144°→126° = (top), wait need 180→0 going through 90
+  // Actually: 180°(left) → 90°(top) → 0°(right). 40% = 180→108, 20% = 108→72, 40% = 72→0
+  const score01 = Math.max(0, Math.min(100, out.score)) / 100
+  const needleAngle = 180 - 180 * score01     // 0→180°(left), 100→0°(right)
   const np = pt(needleAngle)
 
   return (
@@ -207,32 +210,24 @@ export default function DecisionAssistant({
         }}
       >
         {/* ── Arc gauge score ── */}
-        <div style={{ position: 'relative', width: arcSize, height: arcSize / 2 + 12, flexShrink: 0 }}>
-          <svg width={arcSize} height={arcSize / 2 + 12} style={{ overflow: 'visible' }}>
-            {/* 3 colored zone tracks */}
-            <path d={arcSeg(180, 108)} fill="none" stroke="#FF3B3055" strokeWidth={5} strokeLinecap="round" />
-            <path d={arcSeg(108,  72)} fill="none" stroke="#FF950055" strokeWidth={5} strokeLinecap="round" />
-            <path d={arcSeg( 72,   0)} fill="none" stroke="#34C75955" strokeWidth={5} strokeLinecap="round" />
-            {/* Needle line from center */}
+        <div style={{ position: 'relative', width: w, height: h, flexShrink: 0 }}>
+          <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+            {/* 3 colored zone tracks (180°→108° red, 108°→72° orange, 72°→0° green) */}
+            <path d={arcSeg(180, 108)} fill="none" stroke="#FF3B3055" strokeWidth={4} strokeLinecap="round" />
+            <path d={arcSeg(108,  72)} fill="none" stroke="#FF950055" strokeWidth={4} strokeLinecap="round" />
+            <path d={arcSeg( 72,   0)} fill="none" stroke="#34C75955" strokeWidth={4} strokeLinecap="round" />
+            {/* Needle line */}
             <line x1={cx} y1={cy} x2={np.x} y2={np.y} stroke={clr} strokeWidth={2} strokeLinecap="round"
               style={{ filter: `drop-shadow(0 0 3px ${clr}80)` }} />
-            {/* Needle dot */}
-            <circle cx={np.x} cy={np.y} r={4} fill={clr} style={{ filter: `drop-shadow(0 0 5px ${clr})` }} />
-            {/* Center pivot */}
-            <circle cx={cx} cy={cy} r={3} fill="rgba(255,255,255,0.15)" />
+            {/* Needle tip dot */}
+            <circle cx={np.x} cy={np.y} r={3.5} fill={clr} style={{ filter: `drop-shadow(0 0 4px ${clr})` }} />
+            {/* Axle */}
+            <circle cx={cx} cy={cy} r={2.5} fill="rgba(255,255,255,0.25)" />
+            {/* Score number centered inside arc */}
+            <text x={cx} y={cy - 6} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
+              fontSize="18" fontWeight="900" fill={clr}
+              style={{ filter: `drop-shadow(0 0 6px ${clr}60)` }}>{out.score}</text>
           </svg>
-          {/* Score centré sous l'arc */}
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-          }}>
-            <span style={{
-              fontSize: 22, fontWeight: 900, color: clr, lineHeight: 1,
-              fontFamily: 'JetBrains Mono, monospace',
-              textShadow: `0 0 12px ${clr}60`,
-            }}>{out.score}</span>
-            <span style={{ fontSize: 8, color: 'rgba(143,148,163,0.4)', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.2 }}>/100</span>
-          </div>
         </div>
 
         {/* ── Infos droite ── */}
