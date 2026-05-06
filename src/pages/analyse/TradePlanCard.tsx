@@ -277,20 +277,14 @@ function generateScenarios(
     : bullSignals >= 2 ? 'moderate'
     : 'none'
 
-  // Entry: slightly above price (confirmation offset), capped near resistance
-  const bullEntry = Math.min(
-    price + entryOff,
-    nearResist ? nearResist.price * 0.997 : price + entryOff,
-  )
-  // Stop: style stopDist below entry, or just below nearest support
-  const bullStop = nearSupport && nearSupport.price > bullEntry - stopDist * 1.5
-    ? nearSupport.price * 0.998           // anchor on structure
-    : bullEntry - stopDist
+  // Entry: style-based offset from current price (no resistance cap — resistance shown as note)
+  const bullEntry = price + entryOff
+  // Stop: anchor to structure only if support is within natural stopDist; otherwise pure style stop
+  const bullStop = nearSupport && nearSupport.price > bullEntry - stopDist
+    ? nearSupport.price * 0.998           // structure inside stop → anchor
+    : bullEntry - stopDist                // style-calibrated stop
   const bullRisk = Math.max(bullEntry - bullStop, stopDist * 0.5)
-  const bullTp1 = Math.min(
-    bullEntry + bullRisk * style.tp1R,
-    nearResist ? nearResist.price * 0.999 : Infinity,
-  )
+  const bullTp1 = bullEntry + bullRisk * style.tp1R
   const bullTp2 = bullEntry + bullRisk * style.tp2R
   const bullTp3 = bullEntry + bullRisk * style.tp3R
 
@@ -320,18 +314,14 @@ function generateScenarios(
     : bearSignals >= 2 ? 'moderate'
     : 'none'
 
-  const bearEntry = Math.max(
-    price - entryOff,
-    nearSupport ? nearSupport.price * 1.003 : price - entryOff,
-  )
-  const bearStop = nearResist && nearResist.price < bearEntry + stopDist * 1.5
+  // Entry: style-based offset below price (no support anchor on entry)
+  const bearEntry = price - entryOff
+  // Stop: anchor to resistance only if within natural stopDist
+  const bearStop = nearResist && nearResist.price < bearEntry + stopDist
     ? nearResist.price * 1.002
     : bearEntry + stopDist
   const bearRisk = Math.max(bearStop - bearEntry, stopDist * 0.5)
-  const bearTp1 = Math.max(
-    bearEntry - bearRisk * style.tp1R,
-    nearSupport ? nearSupport.price * 1.001 : -Infinity,
-  )
+  const bearTp1 = bearEntry - bearRisk * style.tp1R
   const bearTp2 = bearEntry - bearRisk * style.tp2R
   const bearTp3 = bearEntry - bearRisk * style.tp3R
 
