@@ -172,22 +172,25 @@ export default function DecisionAssistant({
   ) : null
 
   // ── Circular 270° gauge with gap at bottom ───────────────────────────────
-  const w = 64, h = 64
+  const w = 88, h = 88
   const cx = w / 2, cy = h / 2
-  const r = 24
+  const r = 36          // outer radius (zone arcs)
+  const rIn = 22        // inner radius — needle starts here so it doesn't cross score
   const toRad = (deg: number) => (deg * Math.PI) / 180
   // y-flipped: 90° = TOP, 0° = RIGHT, 180° = LEFT, 270° = BOTTOM
-  const pt = (deg: number) => ({ x: cx + r * Math.cos(toRad(deg)), y: cy - r * Math.sin(toRad(deg)) })
+  const pt = (deg: number, rad = r) => ({
+    x: cx + rad * Math.cos(toRad(deg)),
+    y: cy - rad * Math.sin(toRad(deg)),
+  })
   const arcSeg = (a1: number, a2: number) => {
     const s = pt(a1), e = pt(a2)
     return `M ${s.x} ${s.y} A ${r} ${r} 0 0 1 ${e.x} ${e.y}`
   }
   // Gauge spans 270°: 225° (bottom-left) → 90° (top) → -45° (bottom-right)
-  // Score 0 → 225° (red), score 100 → -45° (green)
   const score01 = Math.max(0, Math.min(100, out.score)) / 100
   const needleAngle = 225 - 270 * score01
-  const np = pt(needleAngle)
-  // Zones (40/20/40): red 225→117, orange 117→63, green 63→-45
+  const np  = pt(needleAngle)            // needle outer tip
+  const npI = pt(needleAngle, rIn)       // needle inner start
   const z1 = arcSeg(225, 117)   // red
   const z2 = arcSeg(117,  63)   // orange
   const z3 = arcSeg( 63, -45)   // green
@@ -217,22 +220,20 @@ export default function DecisionAssistant({
         <div style={{ position: 'relative', width: w, height: h, flexShrink: 0 }}>
           <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
             {/* 3 colored zones */}
-            <path d={z1} fill="none" stroke="#FF3B3070" strokeWidth={5} strokeLinecap="round" />
-            <path d={z2} fill="none" stroke="#FF950070" strokeWidth={5} strokeLinecap="round" />
-            <path d={z3} fill="none" stroke="#34C75970" strokeWidth={5} strokeLinecap="round" />
-            {/* Needle line from center */}
-            <line x1={cx} y1={cy} x2={np.x} y2={np.y} stroke={clr} strokeWidth={2.2} strokeLinecap="round"
-              style={{ filter: `drop-shadow(0 0 3px ${clr}90)` }} />
+            <path d={z1} fill="none" stroke="#FF3B3080" strokeWidth={6} strokeLinecap="round" />
+            <path d={z2} fill="none" stroke="#FF950080" strokeWidth={6} strokeLinecap="round" />
+            <path d={z3} fill="none" stroke="#34C75980" strokeWidth={6} strokeLinecap="round" />
+            {/* Needle line — from inner radius (no overlap with score) to outer tip */}
+            <line x1={npI.x} y1={npI.y} x2={np.x} y2={np.y} stroke={clr} strokeWidth={2.5} strokeLinecap="round"
+              style={{ filter: `drop-shadow(0 0 4px ${clr}90)` }} />
             {/* Needle tip */}
-            <circle cx={np.x} cy={np.y} r={3} fill={clr} style={{ filter: `drop-shadow(0 0 4px ${clr})` }} />
-            {/* Axle */}
-            <circle cx={cx} cy={cy} r={2} fill="rgba(255,255,255,0.3)" />
-            {/* Score in center (above axle) */}
-            <text x={cx} y={cy - 4} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
-              fontSize="16" fontWeight="900" fill={clr}
-              style={{ filter: `drop-shadow(0 0 5px ${clr}70)` }}>{out.score}</text>
-            <text x={cx} y={cy + 8} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
-              fontSize="7" fontWeight="600" fill="rgba(143,148,163,0.55)">/100</text>
+            <circle cx={np.x} cy={np.y} r={3.5} fill={clr} style={{ filter: `drop-shadow(0 0 5px ${clr})` }} />
+            {/* Score centered (no overlap now) */}
+            <text x={cx} y={cy + 2} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
+              fontSize="22" fontWeight="900" fill={clr}
+              style={{ filter: `drop-shadow(0 0 6px ${clr}70)` }}>{out.score}</text>
+            <text x={cx} y={cy + 14} textAnchor="middle" fontFamily="JetBrains Mono, monospace"
+              fontSize="8" fontWeight="600" fill="rgba(143,148,163,0.55)">/100</text>
           </svg>
         </div>
 
