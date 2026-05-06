@@ -171,25 +171,19 @@ export default function DecisionAssistant({
     document.body
   ) : null
 
-  // ── Mini arc SVG (semi-circle) ───────────────────────────────────────────
+  // ── Mini arc SVG (semi-circle, 180°→0°) ─────────────────────────────────
   const arcSize = 64
   const cx = arcSize / 2, cy = arcSize / 2 + 4
   const r = 26
-  // Semi-circle: from 180° to 0° (left to right)
   const toRad = (deg: number) => (deg * Math.PI) / 180
-  const startAngle = 180, endAngle = 0
-  const pct = Math.max(0, Math.min(100, out.score)) / 100
-  const sweepAngle = (endAngle - startAngle) * pct  // negative sweep (goes right)
-  const needleAngle = startAngle + (endAngle - startAngle) * pct
-  const nx = cx + r * Math.cos(toRad(needleAngle))
-  const ny = cy + r * Math.sin(toRad(needleAngle))
-  // Track arc path
-  const arcPath = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`
-  // Fill arc path
-  const fillEndX = cx + r * Math.cos(toRad(startAngle + sweepAngle))
-  const fillEndY = cy + r * Math.sin(toRad(startAngle + sweepAngle))
-  const largeArc = Math.abs(sweepAngle) > 180 ? 1 : 0
-  const fillPath = `M ${cx - r} ${cy} A ${r} ${r} 0 ${largeArc} 1 ${fillEndX} ${fillEndY}`
+  const pt = (deg: number) => ({ x: cx + r * Math.cos(toRad(deg)), y: cy + r * Math.sin(toRad(deg)) })
+  const arcSeg = (a1: number, a2: number) => {
+    const s = pt(a1), e = pt(a2)
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 0 1 ${e.x} ${e.y}`
+  }
+  // 3 color zones along the arc: red 180→108 (40%), orange 108→72 (20%), green 72→0 (40%)
+  const needleAngle = 180 + (0 - 180) * (Math.max(0, Math.min(100, out.score)) / 100)
+  const np = pt(needleAngle)
 
   return (
     <>
@@ -215,19 +209,17 @@ export default function DecisionAssistant({
         {/* ── Arc gauge score ── */}
         <div style={{ position: 'relative', width: arcSize, height: arcSize / 2 + 12, flexShrink: 0 }}>
           <svg width={arcSize} height={arcSize / 2 + 12} style={{ overflow: 'visible' }}>
-            {/* Track */}
-            <path d={arcPath} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={5} strokeLinecap="round" />
-            {/* Fill gradient */}
-            <defs>
-              <linearGradient id="da-arc-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#FF3B30" />
-                <stop offset="50%" stopColor="#FF9500" />
-                <stop offset="100%" stopColor="#34C759" />
-              </linearGradient>
-            </defs>
-            <path d={fillPath} fill="none" stroke="url(#da-arc-grad)" strokeWidth={5} strokeLinecap="round" />
+            {/* 3 colored zone tracks */}
+            <path d={arcSeg(180, 108)} fill="none" stroke="#FF3B3055" strokeWidth={5} strokeLinecap="round" />
+            <path d={arcSeg(108,  72)} fill="none" stroke="#FF950055" strokeWidth={5} strokeLinecap="round" />
+            <path d={arcSeg( 72,   0)} fill="none" stroke="#34C75955" strokeWidth={5} strokeLinecap="round" />
+            {/* Needle line from center */}
+            <line x1={cx} y1={cy} x2={np.x} y2={np.y} stroke={clr} strokeWidth={2} strokeLinecap="round"
+              style={{ filter: `drop-shadow(0 0 3px ${clr}80)` }} />
             {/* Needle dot */}
-            <circle cx={nx} cy={ny} r={4} fill={clr} style={{ filter: `drop-shadow(0 0 4px ${clr})` }} />
+            <circle cx={np.x} cy={np.y} r={4} fill={clr} style={{ filter: `drop-shadow(0 0 5px ${clr})` }} />
+            {/* Center pivot */}
+            <circle cx={cx} cy={cy} r={3} fill="rgba(255,255,255,0.15)" />
           </svg>
           {/* Score centré sous l'arc */}
           <div style={{
