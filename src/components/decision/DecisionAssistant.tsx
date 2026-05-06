@@ -171,6 +171,21 @@ export default function DecisionAssistant({
     document.body
   ) : null
 
+  // ── Tradeable styles (matched to TradePlanCard thresholds) ─────────────
+  // Style activates if decision score passes threshold AND bias is directional
+  const styleDefs = [
+    { id: 'scalp', emoji: '⚡', label: 'Scalp',    threshold: 70, color: '#BF5AF2' },
+    { id: 'day',   emoji: '🌅', label: 'Day',      threshold: 55, color: '#0A85FF' },
+    { id: 'swing', emoji: '📈', label: 'Swing',    threshold: 42, color: '#34C759' },
+    { id: 'pos',   emoji: '🏔️', label: 'Position', threshold: 28, color: '#FF9500' },
+  ] as const
+  const directional = out.bias !== 'NEUTRAL'
+  const tradeableStyles = styleDefs.map(s => ({
+    ...s,
+    active: directional && out.score >= s.threshold && out.bias === 'BULLISH'
+         || directional && (100 - out.score) >= s.threshold && out.bias === 'BEARISH',
+  }))
+
   // ── Circular 270° gauge with gap at bottom ───────────────────────────────
   const w = 88, h = 88
   const cx = w / 2, cy = h / 2
@@ -249,10 +264,27 @@ export default function DecisionAssistant({
             </span>
           </div>
           {/* Résumé compact */}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 5 }}>
             {out.summary.map((s, i) => (
               <span key={i} style={{ fontSize: 9, color: 'rgba(143,148,163,0.55)', fontFamily: 'JetBrains Mono, monospace' }}>
                 {i > 0 ? '· ' : ''}{s}
+              </span>
+            ))}
+          </div>
+          {/* Modes tradables */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {tradeableStyles.map(s => (
+              <span key={s.id} style={{
+                fontSize: 9, fontWeight: 700,
+                fontFamily: 'JetBrains Mono, monospace',
+                padding: '2px 6px', borderRadius: 6,
+                background: s.active ? `${s.color}20` : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${s.active ? `${s.color}50` : 'rgba(255,255,255,0.06)'}`,
+                color: s.active ? s.color : 'rgba(143,148,163,0.3)',
+                opacity: s.active ? 1 : 0.55,
+                lineHeight: 1.2, letterSpacing: '0.02em',
+              }}>
+                <span style={{ fontSize: 8 }}>{s.emoji}</span> {s.label}
               </span>
             ))}
           </div>
