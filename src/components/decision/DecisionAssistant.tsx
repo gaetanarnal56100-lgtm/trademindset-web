@@ -178,9 +178,9 @@ export default function DecisionAssistant({
   const toRad = (deg: number) => (deg * Math.PI) / 180
   // y-flipped: 90° = TOP, 0° = RIGHT, 180° = LEFT, 270° = BOTTOM
   const pt = (deg: number) => ({ x: cx + r * Math.cos(toRad(deg)), y: cy - r * Math.sin(toRad(deg)) })
-  const arcSeg = (a1: number, a2: number, large = 0) => {
+  const arcSeg = (a1: number, a2: number) => {
     const s = pt(a1), e = pt(a2)
-    return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 0 ${e.x} ${e.y}`
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 0 1 ${e.x} ${e.y}`
   }
   // Gauge spans 270°: 225° (bottom-left) → 90° (top) → -45° (bottom-right)
   // Score 0 → 225° (red), score 100 → -45° (green)
