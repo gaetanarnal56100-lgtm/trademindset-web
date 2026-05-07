@@ -170,101 +170,36 @@ function drawCascadeChain(
       const y = pToY(node.price)
       if (y < -10 || y > H + 10) return
 
-      const alpha = node.order === 1 ? 0.95 : node.order === 2 ? 0.70 : 0.45
-      const lineW  = node.order === 1 ? 2    : 1
+      const alpha = node.order === 1 ? 0.85 : node.order === 2 ? 0.55 : 0.35
+      const lineW = node.order === 1 ? 1.5 : 1
 
-      // Full-width dashed line (stronger for primary target)
+      // Thin full-width line only — no labels on chart
       ctx.strokeStyle = baseColor
       ctx.lineWidth = lineW
-      ctx.globalAlpha = alpha * 0.8
-      ctx.setLineDash(node.order === 1 ? [8, 4] : [4, 6])
+      ctx.globalAlpha = alpha
+      ctx.setLineDash(node.order === 1 ? [10, 5] : [3, 6])
       ctx.beginPath()
       ctx.moveTo(0, y)
-      ctx.lineTo(CHART_W - 102, y)
+      ctx.lineTo(CHART_W, y)
       ctx.stroke()
       ctx.setLineDash([])
 
-      // Left-side order badge
-      const badgeSize = node.order === 1 ? 18 : 14
-      const badgeX = 6
+      // Tiny T# badge on left edge only
+      const badgeSize = 14
+      const badgeX = 4
       const badgeY = y - badgeSize / 2
       ctx.globalAlpha = alpha
-      ctx.fillStyle = baseColor + (node.order === 1 ? 'CC' : '66')
+      ctx.fillStyle = baseColor
       ctx.beginPath()
-      ctx.roundRect(badgeX, badgeY, badgeSize, badgeSize, 4)
+      ctx.roundRect(badgeX, badgeY, badgeSize, badgeSize, 3)
       ctx.fill()
-      ctx.fillStyle = node.order === 1 ? '#000' : baseColor
-      ctx.font = `${node.order === 1 ? 800 : 600} ${node.order === 1 ? 10 : 8}px JetBrains Mono,monospace`
+      ctx.fillStyle = '#000'
+      ctx.font = '800 9px JetBrains Mono,monospace'
       ctx.textAlign = 'center'
-      ctx.fillText(`T${node.order}`, badgeX + badgeSize / 2, y + (node.order === 1 ? 4 : 3))
+      ctx.fillText(`T${node.order}`, badgeX + badgeSize / 2, y + 3)
       ctx.textAlign = 'left'
-
-      // Right label box
-      const boxX = CHART_W - 100
-      const boxW = 97
-      const boxH = node.order === 1 ? 34 : 26
-      const boxY = Math.max(2, Math.min(H - boxH - 2, y - boxH / 2))
-
-      ctx.fillStyle = 'rgba(6,10,20,0.92)'
-      ctx.beginPath()
-      ctx.roundRect(boxX, boxY, boxW, boxH, 5)
-      ctx.fill()
-      ctx.strokeStyle = baseColor
-      ctx.lineWidth = node.order === 1 ? 1.5 : 0.8
-      ctx.beginPath()
-      ctx.roundRect(boxX, boxY, boxW, boxH, 5)
-      ctx.stroke()
-      // Accent bar
-      ctx.fillStyle = baseColor
-      ctx.fillRect(boxX, boxY + 4, 3, boxH - 8)
-
-      // Price
-      ctx.fillStyle = baseColor
-      ctx.font = `700 ${node.order === 1 ? 10 : 9}px JetBrains Mono,monospace`
-      ctx.fillText(fmtPrice(node.price), boxX + 7, boxY + 12)
-      // Type label
-      ctx.fillStyle = 'rgba(200,205,220,0.55)'
-      ctx.font = '8px JetBrains Mono,monospace'
-      const typeLabel = node.side === 'above' ? '↑ SHORT SQUEEZE' : '↓ LONG SQUEEZE'
-      ctx.fillText(typeLabel, boxX + 7, boxY + 22)
-      if (node.order === 1) {
-        // Strength stars
-        const stars = '●'.repeat(Math.round(node.strength * 4)) + '○'.repeat(4 - Math.round(node.strength * 4))
-        ctx.fillStyle = baseColor + '99'
-        ctx.font = '8px JetBrains Mono,monospace'
-        ctx.fillText(stars, boxX + 7, boxY + 30)
-      }
       ctx.globalAlpha = 1
     })
-
-    // Cascade arrows between consecutive nodes
-    for (let i = 0; i < nodes.length - 1; i++) {
-      const y1 = pToY(nodes[i].price)
-      const y2 = pToY(nodes[i + 1].price)
-      if (y1 < 0 || y1 > H || y2 < 0 || y2 > H) continue
-      const x = 30 + i * 8
-      ctx.strokeStyle = baseColor
-      ctx.lineWidth = 1
-      ctx.globalAlpha = 0.25
-      ctx.setLineDash([3, 4])
-      ctx.beginPath()
-      ctx.moveTo(x, y1)
-      ctx.lineTo(x, y2)
-      ctx.stroke()
-      ctx.setLineDash([])
-      // Arrowhead
-      const isDown = y2 > y1
-      ctx.fillStyle = baseColor
-      ctx.globalAlpha = 0.35
-      ctx.beginPath()
-      const ay = isDown ? y2 - 6 : y2 + 6
-      ctx.moveTo(x, y2)
-      ctx.lineTo(x - 4, ay)
-      ctx.lineTo(x + 4, ay)
-      ctx.closePath()
-      ctx.fill()
-      ctx.globalAlpha = 1
-    }
   }
 
   // Short squeeze chain = orange (#FF9500), Long squeeze chain = cyan (#00C8FF)
@@ -351,101 +286,45 @@ function drawAnnotations(
     ctx.fillStyle = ann.color + '18'
     ctx.fillRect(0, y - bandPx, CHART_W, bandPx * 2)
 
-    // Dashed line
+    // Solid full-width line
     ctx.strokeStyle = ann.color
     ctx.lineWidth = 1.5
     ctx.setLineDash([6, 4])
-    ctx.globalAlpha = 0.85
+    ctx.globalAlpha = 0.7
     ctx.beginPath()
     ctx.moveTo(0, y)
-    ctx.lineTo(CHART_W - 140, y)
+    ctx.lineTo(CHART_W, y)
     ctx.stroke()
     ctx.setLineDash([])
     ctx.globalAlpha = 1
 
-    // Arrow marker
-    const arrX = 8 + idx * 2
+    // Tiny circular marker on left (offset per idx to avoid overlap)
+    const dotX = 24 + idx * 4
     ctx.fillStyle = ann.color
-    ctx.globalAlpha = 0.9
     ctx.beginPath()
-    ctx.moveTo(arrX, y - 5)
-    ctx.lineTo(arrX + 8, y)
-    ctx.lineTo(arrX, y + 5)
-    ctx.closePath()
+    ctx.arc(dotX, y, 4, 0, Math.PI * 2)
     ctx.fill()
-    ctx.globalAlpha = 1
-
-    // Label box (right side of chart, before price axis)
-    const boxX = CHART_W - 138
-    const boxW = 135
-    const boxH = 32
-    const boxY = Math.max(2, Math.min(H - boxH - 2, y - boxH / 2))
-
-    ctx.fillStyle = 'rgba(8,12,20,0.92)'
-    ctx.beginPath()
-    ctx.roundRect(boxX, boxY, boxW, boxH, 6)
-    ctx.fill()
-    ctx.strokeStyle = ann.color
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.roundRect(boxX, boxY, boxW, boxH, 6)
-    ctx.stroke()
-    // Left accent bar
-    ctx.fillStyle = ann.color
-    ctx.fillRect(boxX, boxY + 4, 3, boxH - 8)
-
-    ctx.fillStyle = ann.color
-    ctx.font = '700 10px JetBrains Mono,monospace'
-    ctx.textAlign = 'left'
-    ctx.fillText(ann.label, boxX + 8, boxY + 11)
-    ctx.fillStyle = 'rgba(200,205,220,0.75)'
-    ctx.font = '9px JetBrains Mono,monospace'
-
-    // Truncate detail to fit
-    const maxW = boxW - 12
-    let detail = ann.detail
-    ctx.font = '9px JetBrains Mono,monospace'
-    while (detail.length > 3 && ctx.measureText(detail).width > maxW)
-      detail = detail.slice(0, -4) + '…'
-    ctx.fillText(detail, boxX + 8, boxY + 25)
-
-    // Price chip
-    ctx.fillStyle = ann.color + 'CC'
-    const priceStr = fmtPrice(ann.price)
-    const pw = ctx.measureText(priceStr).width + 8
-    ctx.fillRect(CHART_W - 4 - pw, y - 8, pw, 16)
-    ctx.fillStyle = '#000'
-    ctx.font = '700 9px JetBrains Mono,monospace'
-    ctx.textAlign = 'center'
-    ctx.fillText(priceStr, CHART_W - 4 - pw/2, y + 3)
-    ctx.textAlign = 'left'
   })
 
-  // Bias banner (top-left corner)
+  // Compact bias chip top-left (no full reason text — moved to HTML panel)
   const biasColor = bias === 'HAUSSIER' ? '#34C759' : bias === 'BAISSIER' ? '#FF3B30' : '#FF9500'
   const biasIcon  = bias === 'HAUSSIER' ? '↑' : bias === 'BAISSIER' ? '↓' : '→'
-  const bannerW = 220, bannerH = 38
-  ctx.fillStyle = 'rgba(8,12,20,0.92)'
+  const chipW = 92, chipH = 22
+  ctx.fillStyle = 'rgba(8,12,20,0.85)'
   ctx.beginPath()
-  ctx.roundRect(10, 10, bannerW, bannerH, 8)
+  ctx.roundRect(8, 8, chipW, chipH, 6)
   ctx.fill()
   ctx.strokeStyle = biasColor
   ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.roundRect(10, 10, bannerW, bannerH, 8)
+  ctx.roundRect(8, 8, chipW, chipH, 6)
   ctx.stroke()
   ctx.fillStyle = biasColor
-  ctx.fillRect(10, 14, 3, bannerH - 8)
-  ctx.fillStyle = biasColor
-  ctx.font = '800 13px Syne,sans-serif'
-  ctx.fillText(`${biasIcon} ${bias}`, 18, 28)
-  ctx.fillStyle = 'rgba(200,205,220,0.65)'
-  ctx.font = '9px JetBrains Mono,monospace'
-  // Truncate biasReason
-  let reason = biasReason ?? ''
-  while (reason.length > 3 && ctx.measureText(reason).width > bannerW - 80)
-    reason = reason.slice(0, -4) + '…'
-  ctx.fillText(reason, 18, 42)
+  ctx.font = '800 11px JetBrains Mono,monospace'
+  ctx.textAlign = 'left'
+  ctx.fillText(`${biasIcon} ${bias}`, 14, 23)
+  // Suppress unused param warning
+  void biasReason
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────────────
@@ -704,6 +583,8 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
   const [analyzing,      setAnalyzing]      = useState(false)
   const [analysisErr,    setAnalysisErr]    = useState<string>('')
   const [showAnalysis,   setShowAnalysis]   = useState(false)
+  const [chainState,     setChainState]     = useState<CascadeNode[]>([])
+  const [currentPrice,   setCurrentPrice]   = useState(0)
 
   const analysisRef = useRef<AnalysisResult | null>(null)
   const redraw = useCallback((ch?: { tIdx: number; priceY: number } | null) => {
@@ -718,8 +599,11 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
       const klines = await fetchKlines(symbol, tf, limit)
       const { grid, pMin, pMax, maxVal } = buildGrid(klines)
       const zones = extractLiqZones(grid, klines, pMin, pMax)
-      const chain = computeCascadeChain(zones, klines[klines.length - 1]?.close ?? 0)
+      const cur = klines[klines.length - 1]?.close ?? 0
+      const chain = computeCascadeChain(zones, cur)
       dataRef.current = { klines, grid, pMin, pMax, maxVal, chain }
+      setChainState(chain)
+      setCurrentPrice(cur)
       setLastUpdate(Date.now())
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
@@ -838,6 +722,41 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
         <div style={{ width:120, height:8, borderRadius:4, background:'linear-gradient(to right, rgba(80,0,160,0.6),rgba(30,50,255,0.7),rgba(0,220,80,0.8),rgba(180,255,0,0.9),rgba(255,255,0,1))' }} />
         <span style={{ fontSize:9, color:'rgba(143,148,163,0.5)', fontFamily:'JetBrains Mono,monospace' }}>MAX</span>
       </div>
+
+      {/* Cascade Summary Panel */}
+      {chainState.length > 0 && (() => {
+        const aboveChain = chainState.filter(n => n.side === 'above').sort((a, b) => a.order - b.order)
+        const belowChain = chainState.filter(n => n.side === 'below').sort((a, b) => a.order - b.order)
+        const renderChain = (nodes: CascadeNode[], color: string, arrow: string, label: string) => (
+          <div style={{ flex:1, display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background:`${color}0D`, border:`1px solid ${color}30`, borderRadius:8, minWidth:0 }}>
+            <span style={{ fontSize:10, fontWeight:800, color, fontFamily:'Syne,sans-serif', flexShrink:0 }}>{arrow} {label}</span>
+            <div style={{ display:'flex', gap:4, alignItems:'center', overflow:'hidden', flex:1 }}>
+              {nodes.length === 0 ? (
+                <span style={{ fontSize:10, color:'rgba(143,148,163,0.4)', fontFamily:'JetBrains Mono,monospace' }}>aucun cluster</span>
+              ) : nodes.map((n, i) => {
+                const dist = Math.abs(((n.price - currentPrice) / currentPrice) * 100).toFixed(2)
+                return (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
+                    {i > 0 && <span style={{ fontSize:9, color:`${color}80` }}>→</span>}
+                    <div style={{ display:'flex', alignItems:'center', gap:3, padding:'3px 6px', background:n.order === 1 ? `${color}25` : 'rgba(255,255,255,0.03)', border:`1px solid ${n.order === 1 ? color + '70' : color + '20'}`, borderRadius:5 }}>
+                      <span style={{ fontSize:9, fontWeight:800, color, fontFamily:'JetBrains Mono,monospace' }}>T{n.order}</span>
+                      <span style={{ fontSize:10, fontWeight:700, color:'rgba(220,225,240,0.9)', fontFamily:'JetBrains Mono,monospace' }}>{fmtPrice(n.price)}</span>
+                      <span style={{ fontSize:8, color:'rgba(143,148,163,0.5)', fontFamily:'JetBrains Mono,monospace' }}>{dist}%</span>
+                      <span style={{ fontSize:8, color:`${color}AA` }}>{'●'.repeat(Math.max(1, Math.round(n.strength * 4)))}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+        return (
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {renderChain(aboveChain, '#FF9500', '↑', 'SHORT SQUEEZE')}
+            {renderChain(belowChain, '#00C8FF', '↓', 'LONG SQUEEZE')}
+          </div>
+        )
+      })()}
 
       {/* Canvas + tooltip */}
       <div ref={wrapRef} style={{ flex:1, position:'relative', borderRadius:12, overflow:'hidden', border:'1px solid rgba(0,229,255,0.10)', minHeight:400 }}>
