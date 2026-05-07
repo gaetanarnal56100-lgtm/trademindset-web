@@ -3,6 +3,8 @@
 // Rendu : canvas 2D (grille colorée violette→jaune) + bougies superposées + tooltip hover
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getAuth } from 'firebase/auth'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/services/firebase/config'
 import { getNotifSettings } from '@/services/firestore/customAlerts'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -68,6 +70,99 @@ function fmtUSD(v: number) {
 function fmtTime(ts: number) {
   const d = new Date(ts)
   return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+}
+
+// ── Zone extraction ────────────────────────────────────────────────────────────
+interface LiqZone {
+  price: number
+  strength: number    // 0..1 relative to global max
+  stars: string       // ★ x 1..5
+  side: 'above' | 'below'
+  type: string        // "Long Squeeze" | "Short Squeeze"
+}
+
+function extractLiqZones(
+  grid: Float32Array, klines: Kline[], pMin: number, pMax: number,
+): LiqZone[] {
+  const N = klines.length
+  const pRange = pMax - pMin
+  const currentPrice = klines[N - 1]?.close ?? 0
+
+  // Aggregate grid across time
+  const bins = new Float32Array(N_PRICE_BINS)
+  for (let t = 0; t < N; t++)
+    for (let b = 0; b < N_PRICE_BINS; b++)
+      bins[b] += grid[t * N_PRICE_BINS + b]
+
+  const binToPrice = (b: number) => pMin + ((b + 0.5) / N_PRICE_BINS) * pRange
+  const globalMax = Math.max(...Array.from(bins))
+  const threshold = globalMax * 0.15
+
+  // Find local maxima (clusters)
+  const zones: LiqZone[] = []
+  for (let b = 3; b < N_PRICE_BINS - 3; b++) {
+    const v = bins[b]
+    if (v < threshold) continue
+    const isLocalMax = v >= bins[b-1] && v >= bins[b+1] && v >= bins[b-2] && v >= bins[b+2]
+    if (!isLocalMax) continue
+    const price = binToPrice(b)
+    const strength = v / globalMax
+    const stars = '★'.repeat(Math.max(1, Math.min(5, Math.round(strength * 5))))
+    const side = price > currentPrice ? 'above' : 'below'
+    zones.push({
+      price, strength, stars, side,
+      type: side === 'above' ? 'Liquidation Longs (Short Squeeze)' : 'Liquidation Shorts (Long Squeeze)',
+    })
+  }
+
+  // Sort by strength, keep top 12
+  return zones.sort((a, b) => b.strength - a.strength).slice(0, 12)
+}
+
+function buildPrompt(symbol: string, tf: string, klines: Kline[], zones: LiqZone[]): string {
+  const last = klines[klines.length - 1]
+  const prev = klines[klines.length - 2]
+  const change24h = ((last.close - prev.close) / prev.close * 100).toFixed(2)
+  const above = zones.filter(z => z.side === 'above').sort((a, b) => a.price - b.price)
+  const below = zones.filter(z => z.side === 'below').sort((a, b) => b.price - a.price)
+
+  const fmtZone = (z: LiqZone) =>
+    `  ${fmtPrice(z.price)} ${z.stars} (force ${(z.strength * 100).toFixed(0)}%) — ${z.type}`
+
+  return `Tu es un analyste technique expert en crypto. Analyse ce liquidation heatmap.
+
+DONNÉES MARCHÉ:
+Symbole: ${symbol} | TF: ${tf} | Bougies analysées: ${klines.length}
+Prix actuel: ${fmtPrice(last.close)} | Variation: ${change24h}%
+High période: ${fmtPrice(Math.max(...klines.map(k => k.high)))}
+Low période: ${fmtPrice(Math.min(...klines.map(k => k.low)))}
+
+ZONES DE LIQUIDATION AU-DESSUS (résistances / long squeeze si price monte):
+${above.length ? above.map(fmtZone).join('\n') : '  Aucune zone significative'}
+
+ZONES DE LIQUIDATION EN DESSOUS (supports / short squeeze si price baisse):
+${below.length ? below.map(fmtZone).join('\n') : '  Aucune zone significative'}
+
+LÉGENDE ÉTOILES: ★ faible / ★★★ modéré / ★★★★★ cluster majeur
+
+Fournis une analyse structurée EN FRANÇAIS (max 220 mots) avec ces sections exactes:
+📊 BIAIS: Haussier/Baissier/Neutre + justification courte basée sur asymétrie des zones
+🎯 CIBLE PRINCIPALE: niveau le plus attractif à atteindre en premier (avec raison)
+🔥 ZONES CLÉS: liste 3-4 niveaux critiques avec ce qu'il se passera si prix les touche
+⚠️ INVALIDATION: niveau qui invaliderait le scénario principal
+💡 STRATÉGIE: conseil actionnable concret (attendre retest, éviter, surveiller, etc.)
+
+Ton analyse doit être précise, chiffrée, professionnelle.`
+}
+
+async function callGPTAnalysis(prompt: string): Promise<string> {
+  const fn = httpsCallable<unknown, { choices: { message: { content: string } }[] }>(functions, 'openaiChat')
+  const res = await fn({
+    model: 'gpt-4o',
+    temperature: 0.3,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  return res.data.choices[0]?.message?.content ?? ''
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────────────
@@ -303,6 +398,10 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
   const [crosshair,    setCrosshair]    = useState<{ tIdx: number; priceY: number } | null>(null)
   const [sending,      setSending]      = useState(false)
   const [sendStatus,   setSendStatus]   = useState<'idle'|'ok'|'error'|'nowebhook'>('idle')
+  const [analysis,     setAnalysis]     = useState<string>('')
+  const [analyzing,    setAnalyzing]    = useState(false)
+  const [analysisErr,  setAnalysisErr]  = useState<string>('')
+  const [showAnalysis, setShowAnalysis] = useState(false)
 
   const redraw = useCallback((ch?: { tIdx: number; priceY: number } | null) => {
     const c = canvasRef.current, d = dataRef.current
@@ -359,6 +458,24 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
     finally { setSending(false); setTimeout(() => setSendStatus('idle'), 3000) }
   }, [symbol, tf])
 
+  const handleAnalyze = useCallback(async () => {
+    const d = dataRef.current
+    if (!d) return
+    setAnalyzing(true)
+    setAnalysisErr('')
+    setShowAnalysis(true)
+    try {
+      const zones = extractLiqZones(d.grid, d.klines, d.pMin, d.pMax)
+      const prompt = buildPrompt(symbol, tf, d.klines, zones)
+      const text = await callGPTAnalysis(prompt)
+      setAnalysis(text)
+    } catch (e) {
+      setAnalysisErr((e as Error).message)
+    } finally {
+      setAnalyzing(false)
+    }
+  }, [symbol, tf])
+
   // ── Styles ──
   const btn = (active: boolean): React.CSSProperties => ({
     padding:'5px 10px', borderRadius:7, fontSize:11, fontWeight:700, cursor:'pointer',
@@ -384,6 +501,14 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
         <div style={{ width:1, height:16, background:'rgba(255,255,255,0.1)' }} />
         <button style={btn(showCandles)} onClick={() => setShowCandles(v => !v)}>🕯 Bougies</button>
         <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'center' }}>
+          {/* AI Analyse */}
+          <button
+            style={{ ...btn(showAnalysis), color: analyzing ? '#FF9500' : showAnalysis ? '#BF5AF2' : '#BF5AF2', borderColor: showAnalysis ? 'rgba(191,90,242,0.5)' : 'rgba(191,90,242,0.25)', background: showAnalysis ? 'rgba(191,90,242,0.12)' : 'rgba(191,90,242,0.05)' }}
+            onClick={handleAnalyze}
+            disabled={analyzing || !lastUpdate}
+            title="Analyse GPT-4o des zones de liquidation"
+          >{analyzing ? '⟳ Analyse…' : '🤖 Analyser'}</button>
+
           {/* Discord send */}
           <button
             style={{ ...btn(false), color: sendColor, borderColor:`${sendColor}50`, background:`${sendColor}12` }}
@@ -495,6 +620,99 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
           </div>
         )}
       </div>
+
+      {/* AI Analysis Panel */}
+      {showAnalysis && (
+        <div style={{
+          background:'rgba(13,17,35,0.95)',
+          border:'1px solid rgba(191,90,242,0.3)',
+          borderRadius:14,
+          padding:'16px 20px',
+          backdropFilter:'blur(12px)',
+          boxShadow:'0 0 24px rgba(191,90,242,0.08)',
+          position:'relative',
+        }}>
+          {/* Header */}
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+            <div style={{ width:32, height:32, borderRadius:10, background:'rgba(191,90,242,0.15)', border:'1px solid rgba(191,90,242,0.3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>🤖</div>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, color:'#BF5AF2', fontFamily:'Syne,sans-serif' }}>Analyse IA — Liquidation Heatmap</div>
+              <div style={{ fontSize:10, color:'rgba(191,90,242,0.6)', fontFamily:'JetBrains Mono,monospace' }}>{symbol} · {tf} · GPT-4o</div>
+            </div>
+            <button
+              onClick={() => setShowAnalysis(false)}
+              style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'rgba(143,148,163,0.5)', fontSize:16, padding:4 }}
+            >✕</button>
+          </div>
+
+          {/* Loading */}
+          {analyzing && (
+            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'20px 0' }}>
+              <div style={{ fontSize:20, animation:'spin 1s linear infinite' }}>⟳</div>
+              <span style={{ fontSize:12, color:'rgba(191,90,242,0.7)', fontFamily:'JetBrains Mono,monospace' }}>
+                Extraction des zones · Appel GPT-4o…
+              </span>
+            </div>
+          )}
+
+          {/* Error */}
+          {analysisErr && !analyzing && (
+            <div style={{ fontSize:12, color:'#FF3B30', fontFamily:'JetBrains Mono,monospace', padding:'8px 0' }}>
+              ⚠ {analysisErr}
+            </div>
+          )}
+
+          {/* Analysis text */}
+          {analysis && !analyzing && (
+            <div style={{ fontSize:13, color:'rgba(220,225,240,0.92)', lineHeight:1.75, whiteSpace:'pre-wrap', fontFamily:'system-ui,sans-serif' }}>
+              {analysis.split('\n').map((line, i) => {
+                // Highlight section headers
+                const isBias    = line.startsWith('📊')
+                const isTarget  = line.startsWith('🎯')
+                const isZones   = line.startsWith('🔥')
+                const isInval   = line.startsWith('⚠️') || line.startsWith('⚠')
+                const isStrat   = line.startsWith('💡')
+                const isHeader  = isBias || isTarget || isZones || isInval || isStrat
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      marginBottom: isHeader ? 8 : line === '' ? 10 : 2,
+                      fontWeight: isHeader ? 700 : 400,
+                      color: isBias
+                        ? (line.toLowerCase().includes('hausse') || line.toLowerCase().includes('bull') ? '#34C759' : line.toLowerCase().includes('baisse') || line.toLowerCase().includes('bear') ? '#FF3B30' : '#FF9500')
+                        : isTarget ? '#00E5FF'
+                        : isZones ? '#FF9500'
+                        : isInval ? '#FF3B30'
+                        : isStrat ? '#BF5AF2'
+                        : 'rgba(220,225,240,0.85)',
+                      fontSize: isHeader ? 13 : 12,
+                      paddingLeft: isHeader ? 0 : 4,
+                      borderLeft: isHeader ? '2px solid currentColor' : 'none',
+                      paddingTop: isHeader && i > 0 ? 6 : 0,
+                    }}
+                  >
+                    {line}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Re-analyze button */}
+          {analysis && !analyzing && (
+            <div style={{ marginTop:14, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.05)', display:'flex', gap:10 }}>
+              <button
+                onClick={handleAnalyze}
+                style={{ padding:'6px 14px', borderRadius:8, fontSize:11, fontWeight:700, cursor:'pointer', border:'1px solid rgba(191,90,242,0.3)', background:'rgba(191,90,242,0.08)', color:'#BF5AF2' }}
+              >↻ Actualiser l'analyse</button>
+              <span style={{ fontSize:10, color:'rgba(143,148,163,0.4)', fontFamily:'JetBrains Mono,monospace', alignSelf:'center' }}>
+                basé sur {dataRef.current?.klines.length ?? 0} bougies
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ fontSize:9, color:'rgba(143,148,163,0.3)', fontFamily:'JetBrains Mono,monospace', paddingLeft:4 }}>
         Estimation · volume Binance × leviers 5×→100× · pas les données réelles Coinglass · 📤 Discord = webhook configuré dans Alertes
