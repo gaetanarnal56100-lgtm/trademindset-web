@@ -78,6 +78,14 @@ interface LiqZone {
   side: 'above' | 'below'; type: string
 }
 
+interface CascadeNode {
+  price: number
+  strength: number    // 0..1
+  side: 'above' | 'below'
+  order: number       // 1 = nearest/primary target, 2 = second, etc.
+  label: string       // "T1 Short Squeeze" etc.
+}
+
 interface CanvasAnnotation {
   price: number
   type: 'target' | 'resistance' | 'support' | 'invalidation' | 'zone'
@@ -120,6 +128,150 @@ function extractLiqZones(grid: Float32Array, klines: Kline[], pMin: number, pMax
   return zones.sort((a, b) => b.strength - a.strength).slice(0, 12)
 }
 
+// ── Cascade chain builder ──────────────────────────────────────────────────────
+function computeCascadeChain(zones: LiqZone[], currentPrice: number): CascadeNode[] {
+  // above = short squeeze cascade (price rises, shorts liquidated, buy pressure pushes higher)
+  const above = zones
+    .filter(z => z.side === 'above')
+    .sort((a, b) => a.price - b.price)     // nearest first
+
+  // below = long squeeze cascade (price falls, longs liquidated, sell pressure pushes lower)
+  const below = zones
+    .filter(z => z.side === 'below')
+    .sort((a, b) => b.price - a.price)     // nearest first
+
+  const chain: CascadeNode[] = []
+  above.slice(0, 4).forEach((z, i) => chain.push({
+    price: z.price, strength: z.strength, side: 'above', order: i + 1,
+    label: `T${i+1} Short Squeeze`,
+  }))
+  below.slice(0, 4).forEach((z, i) => chain.push({
+    price: z.price, strength: z.strength, side: 'below', order: i + 1,
+    label: `T${i+1} Long Squeeze`,
+  }))
+  return chain
+}
+
+// ── Draw cascade chain on canvas ───────────────────────────────────────────────
+function drawCascadeChain(
+  ctx: CanvasRenderingContext2D,
+  chain: CascadeNode[],
+  pMin: number, pMax: number,
+  W: number, H: number, CHART_W: number,
+) {
+  const pRange = pMax - pMin
+  const pToY = (p: number) => H - ((p - pMin) / pRange) * H
+
+  const aboveNodes = chain.filter(n => n.side === 'above').sort((a, b) => a.price - b.price)
+  const belowNodes = chain.filter(n => n.side === 'below').sort((a, b) => b.price - a.price)
+
+  const drawNodes = (nodes: CascadeNode[], baseColor: string) => {
+    nodes.forEach((node) => {
+      const y = pToY(node.price)
+      if (y < -10 || y > H + 10) return
+
+      const alpha = node.order === 1 ? 0.95 : node.order === 2 ? 0.70 : 0.45
+      const lineW  = node.order === 1 ? 2    : 1
+
+      // Full-width dashed line (stronger for primary target)
+      ctx.strokeStyle = baseColor
+      ctx.lineWidth = lineW
+      ctx.globalAlpha = alpha * 0.8
+      ctx.setLineDash(node.order === 1 ? [8, 4] : [4, 6])
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(CHART_W - 102, y)
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Left-side order badge
+      const badgeSize = node.order === 1 ? 18 : 14
+      const badgeX = 6
+      const badgeY = y - badgeSize / 2
+      ctx.globalAlpha = alpha
+      ctx.fillStyle = baseColor + (node.order === 1 ? 'CC' : '66')
+      ctx.beginPath()
+      ctx.roundRect(badgeX, badgeY, badgeSize, badgeSize, 4)
+      ctx.fill()
+      ctx.fillStyle = node.order === 1 ? '#000' : baseColor
+      ctx.font = `${node.order === 1 ? 800 : 600} ${node.order === 1 ? 10 : 8}px JetBrains Mono,monospace`
+      ctx.textAlign = 'center'
+      ctx.fillText(`T${node.order}`, badgeX + badgeSize / 2, y + (node.order === 1 ? 4 : 3))
+      ctx.textAlign = 'left'
+
+      // Right label box
+      const boxX = CHART_W - 100
+      const boxW = 97
+      const boxH = node.order === 1 ? 34 : 26
+      const boxY = Math.max(2, Math.min(H - boxH - 2, y - boxH / 2))
+
+      ctx.fillStyle = 'rgba(6,10,20,0.92)'
+      ctx.beginPath()
+      ctx.roundRect(boxX, boxY, boxW, boxH, 5)
+      ctx.fill()
+      ctx.strokeStyle = baseColor
+      ctx.lineWidth = node.order === 1 ? 1.5 : 0.8
+      ctx.beginPath()
+      ctx.roundRect(boxX, boxY, boxW, boxH, 5)
+      ctx.stroke()
+      // Accent bar
+      ctx.fillStyle = baseColor
+      ctx.fillRect(boxX, boxY + 4, 3, boxH - 8)
+
+      // Price
+      ctx.fillStyle = baseColor
+      ctx.font = `700 ${node.order === 1 ? 10 : 9}px JetBrains Mono,monospace`
+      ctx.fillText(fmtPrice(node.price), boxX + 7, boxY + 12)
+      // Type label
+      ctx.fillStyle = 'rgba(200,205,220,0.55)'
+      ctx.font = '8px JetBrains Mono,monospace'
+      const typeLabel = node.side === 'above' ? '↑ SHORT SQUEEZE' : '↓ LONG SQUEEZE'
+      ctx.fillText(typeLabel, boxX + 7, boxY + 22)
+      if (node.order === 1) {
+        // Strength stars
+        const stars = '●'.repeat(Math.round(node.strength * 4)) + '○'.repeat(4 - Math.round(node.strength * 4))
+        ctx.fillStyle = baseColor + '99'
+        ctx.font = '8px JetBrains Mono,monospace'
+        ctx.fillText(stars, boxX + 7, boxY + 30)
+      }
+      ctx.globalAlpha = 1
+    })
+
+    // Cascade arrows between consecutive nodes
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const y1 = pToY(nodes[i].price)
+      const y2 = pToY(nodes[i + 1].price)
+      if (y1 < 0 || y1 > H || y2 < 0 || y2 > H) continue
+      const x = 30 + i * 8
+      ctx.strokeStyle = baseColor
+      ctx.lineWidth = 1
+      ctx.globalAlpha = 0.25
+      ctx.setLineDash([3, 4])
+      ctx.beginPath()
+      ctx.moveTo(x, y1)
+      ctx.lineTo(x, y2)
+      ctx.stroke()
+      ctx.setLineDash([])
+      // Arrowhead
+      const isDown = y2 > y1
+      ctx.fillStyle = baseColor
+      ctx.globalAlpha = 0.35
+      ctx.beginPath()
+      const ay = isDown ? y2 - 6 : y2 + 6
+      ctx.moveTo(x, y2)
+      ctx.lineTo(x - 4, ay)
+      ctx.lineTo(x + 4, ay)
+      ctx.closePath()
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+  }
+
+  // Short squeeze chain = orange (#FF9500), Long squeeze chain = cyan (#00C8FF)
+  drawNodes(aboveNodes, '#FF9500')
+  drawNodes(belowNodes, '#00C8FF')
+}
+
 // ── JSON prompt ────────────────────────────────────────────────────────────────
 function buildStructuredPrompt(symbol: string, tf: string, klines: Kline[], zones: LiqZone[]): string {
   const last = klines[klines.length - 1]
@@ -129,14 +281,20 @@ function buildStructuredPrompt(symbol: string, tf: string, klines: Kline[], zone
   const below = zones.filter(z => z.side === 'below').sort((a, b) => b.price - a.price)
   const fZ = (z: LiqZone) => `${fmtPrice(z.price)} ${z.stars} (${(z.strength*100).toFixed(0)}%) — ${z.type}`
 
-  return `Tu es un analyste technique expert crypto. Analyse ce liquidation heatmap.
+  return `Tu es un analyste expert en liquidations et market structure crypto. Analyse ce liquidation heatmap pour prévoir les cascades de liquidation.
 
 MARCHÉ: ${symbol} | TF: ${tf} | ${klines.length} bougies
 Prix actuel: ${fmtPrice(last.close)} | Variation: ${chg}%
 High: ${fmtPrice(Math.max(...klines.map(k=>k.high)))} | Low: ${fmtPrice(Math.min(...klines.map(k=>k.low)))}
 
-ZONES ABOVE (short squeeze / résistances): ${above.map(fZ).join(' | ') || 'aucune'}
-ZONES BELOW (long squeeze / supports): ${below.map(fZ).join(' | ') || 'aucune'}
+CHAÎNE DE CASCADE — SHORT SQUEEZE (prix monte, shorts liquidés, buy pressure pousse plus haut):
+${above.map((z, i) => `T${i+1}: ${fZ(z)}`).join(' | ') || 'aucune zone above'}
+
+CHAÎNE DE CASCADE — LONG SQUEEZE (prix baisse, longs liquidés, sell pressure pousse plus bas):
+${below.map((z, i) => `T${i+1}: ${fZ(z)}`).join(' | ') || 'aucune zone below'}
+
+LOGIQUE CASCADE: quand une zone (T1) est atteinte, les liquidations forcées créent du momentum qui pousse vers T2, puis T2→T3.
+Analyse: biais directionnel dominant, quelle cascade est la plus probable (SHORT ou LONG squeeze), distance au T1 most likely, force des zones.
 
 Réponds UNIQUEMENT en JSON valide (aucun texte autour), structure exacte:
 {
@@ -144,21 +302,20 @@ Réponds UNIQUEMENT en JSON valide (aucun texte autour), structure exacte:
   "biasReason": "justification courte (max 15 mots)",
   "strategy": "conseil actionnable concret (max 20 mots)",
   "annotations": [
-    { "price": 82100, "type": "target", "label": "🎯 Cible", "detail": "Short squeeze majeur ★★★★★", "color": "#00E5FF" },
-    { "price": 80600, "type": "support", "label": "🔥 Support clé", "detail": "Long squeeze — rebond attendu", "color": "#34C759" },
+    { "price": 82100, "type": "target", "label": "🎯 T1 Short Squeeze", "detail": "1er cluster — cascade probable", "color": "#FF9500" },
+    { "price": 84500, "type": "target", "label": "🔥 T2 Extension", "detail": "Si T1 touché → flush ici", "color": "#FF6B35" },
     { "price": 79800, "type": "invalidation", "label": "⚠️ Invalidation", "detail": "Cassure = scenario baissier", "color": "#FF3B30" }
   ],
   "textSections": {
     "bias": "📊 BIAIS: ...",
-    "target": "🎯 CIBLE PRINCIPALE: ...",
-    "zones": "🔥 ZONES CLÉS: ...",
+    "target": "🎯 CASCADE PROBABLE: T1 à X → si touché T2 à Y",
+    "zones": "🔥 ZONES CLÉS: force et distance des clusters",
     "invalidation": "⚠️ INVALIDATION: ...",
     "strategy": "💡 STRATÉGIE: ..."
   }
 }
-RÈGLES: max 5 annotations | prix = valeurs réelles des zones ci-dessus | bias ∈ HAUSSIER/BAISSIER/NEUTRE
-types disponibles: target(cyan), resistance(orange), support(vert), invalidation(rouge), zone(violet)
-couleurs: target=#00E5FF resistance=#FF9500 support=#34C759 invalidation=#FF3B30 zone=#BF5AF2`
+RÈGLES: max 5 annotations | prix = valeurs réelles des zones | bias ∈ HAUSSIER/BAISSIER/NEUTRE
+types: target=#FF9500(short squeeze) target=#00C8FF(long squeeze) invalidation=#FF3B30 zone=#BF5AF2`
 }
 
 async function callGPTAnalysis(prompt: string): Promise<AnalysisResult> {
@@ -326,12 +483,19 @@ function buildGrid(klines: Kline[]): {
 
   for (let i = 0; i < N; i++) {
     const k = klines[i]
+    // Recency weight: recent candles have more active OI (exponential ramp)
+    const recencyWeight = 0.25 + 0.75 * Math.pow(i / (N - 1), 0.6)
+
     for (const { lev, weight } of LEVERAGE_TIERS) {
-      const c = k.volume * weight
-      add(i, k.close * (1 - (1/lev) + MAINT_MARGIN), c * LONG_FRAC)
-      add(i, k.close * (1 + (1/lev) - MAINT_MARGIN), c * (1 - LONG_FRAC))
-      add(i, k.high  * (1 - (1/lev) + MAINT_MARGIN), c * LONG_FRAC  * 0.35)
-      add(i, k.low   * (1 + (1/lev) - MAINT_MARGIN), c * (1-LONG_FRAC) * 0.35)
+      const c = k.volume * weight * recencyWeight
+      // Long liquidations: below entry price
+      add(i, k.close * (1 - 1/lev + MAINT_MARGIN), c * LONG_FRAC)
+      add(i, k.open  * (1 - 1/lev + MAINT_MARGIN), c * LONG_FRAC * 0.35)
+      add(i, k.high  * (1 - 1/lev + MAINT_MARGIN), c * LONG_FRAC * 0.20)
+      // Short liquidations: above entry price
+      add(i, k.close * (1 + 1/lev - MAINT_MARGIN), c * (1 - LONG_FRAC))
+      add(i, k.open  * (1 + 1/lev - MAINT_MARGIN), c * (1 - LONG_FRAC) * 0.35)
+      add(i, k.low   * (1 + 1/lev - MAINT_MARGIN), c * (1 - LONG_FRAC) * 0.20)
     }
   }
 
@@ -348,6 +512,7 @@ function drawHeatmap(
   showCandles: boolean,
   crosshair?: { tIdx: number; priceY: number } | null,
   analysisResult?: AnalysisResult | null,
+  chain?: CascadeNode[] | null,
 ) {
   const dpr = window.devicePixelRatio || 1
   const W = canvas.clientWidth, H = canvas.clientHeight
@@ -428,6 +593,11 @@ function drawHeatmap(
   ctx.fillStyle = '#000'; ctx.font = '700 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
   ctx.fillText(currentPrice >= 10000 ? `$${currentPrice.toFixed(0)}` : `$${currentPrice.toFixed(2)}`, CHART_W + LABEL_W/2, cy + 3)
   ctx.textAlign = 'left'
+
+  // Cascade chain (always visible — shows liquidation cascade targets)
+  if (chain?.length) {
+    drawCascadeChain(ctx, chain, pMin, pMax, W, H, CHART_W)
+  }
 
   // Annotations overlay (drawn before time labels so labels are on top)
   if (analysisResult?.annotations?.length) {
@@ -518,7 +688,7 @@ async function sendCanvasToDiscord(
 export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const wrapRef      = useRef<HTMLDivElement>(null)
-  const dataRef      = useRef<{ klines: Kline[]; grid: Float32Array; pMin: number; pMax: number; maxVal: number } | null>(null)
+  const dataRef      = useRef<{ klines: Kline[]; grid: Float32Array; pMin: number; pMax: number; maxVal: number; chain: CascadeNode[] } | null>(null)
 
   const [tf,           setTf]           = useState<HeatTF>('1h')
   const [limit,        setLimit]        = useState(200)
@@ -539,7 +709,7 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
   const redraw = useCallback((ch?: { tIdx: number; priceY: number } | null) => {
     const c = canvasRef.current, d = dataRef.current
     if (!c || !d) return
-    drawHeatmap(c, d.klines, d.grid, d.pMin, d.pMax, d.maxVal, showCandles, ch ?? crosshair, analysisRef.current)
+    drawHeatmap(c, d.klines, d.grid, d.pMin, d.pMax, d.maxVal, showCandles, ch ?? crosshair, analysisRef.current, d.chain)
   }, [showCandles, crosshair])
 
   const fetchAndDraw = useCallback(async () => {
@@ -547,7 +717,9 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
     try {
       const klines = await fetchKlines(symbol, tf, limit)
       const { grid, pMin, pMax, maxVal } = buildGrid(klines)
-      dataRef.current = { klines, grid, pMin, pMax, maxVal }
+      const zones = extractLiqZones(grid, klines, pMin, pMax)
+      const chain = computeCascadeChain(zones, klines[klines.length - 1]?.close ?? 0)
+      dataRef.current = { klines, grid, pMin, pMax, maxVal, chain }
       setLastUpdate(Date.now())
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
