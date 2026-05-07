@@ -609,6 +609,18 @@ function buildDiscordEmbed(
     if (ts.strategy)     fields.push({ name: '💡 Stratégie',          value: ts.strategy.replace(/^[^:]+:\s*/, ''), inline: false })
   }
 
+  // Always-on legend (explains cascade colors + reading the heatmap)
+  fields.push({
+    name: '📖 Légende',
+    value: [
+      '🟧 **Orange** = cascade Short Squeeze (above price). Si prix monte → shorts liquidés → buy pressure → cascade vers T2/T3.',
+      '🟦 **Cyan** = cascade Long Squeeze (below price). Si prix descend → longs liquidés → sell pressure → cascade vers T2/T3.',
+      '**T1** = cible primaire, **T2/T3** = extensions de cascade. **●●●●** = force du cluster (volume liquidé).',
+      '**Heatmap couleurs**: violet (faible) → bleu → vert → jaune (concentration max liquidations).',
+    ].join('\n'),
+    inline: false,
+  })
+
   // Truncate any field that exceeds Discord 1024 char limit
   for (const f of fields) if (f.value.length > 1020) f.value = f.value.slice(0, 1017) + '…'
 
@@ -618,7 +630,7 @@ function buildDiscordEmbed(
     color,
     fields,
     image: { url: `attachment://liq_heatmap_${symbol}_${tf}.png` },
-    footer: { text: 'TradeMindSet · Estimation Binance' },
+    footer: { text: 'TradeMindSet · Estimation Binance · liquidations approx. via volume × leviers 5×→100×' },
     timestamp: new Date().toISOString(),
   }
 }
@@ -655,7 +667,7 @@ async function downloadComposite(
   const W = canvas.clientWidth
   const H = canvas.clientHeight
   const dpr = window.devicePixelRatio || 1
-  const sidebar = analysis || (chain && chain.length > 0) ? 360 : 0
+  const sidebar = 360
   const out = document.createElement('canvas')
   out.width = (W + sidebar) * dpr
   out.height = H * dpr
@@ -737,6 +749,26 @@ async function downloadComposite(
         const txt = s.text.replace(/^[^:]+:\s*/, '')
         y = wrapText(ctx, txt, x0, y, sidebar - 32, 13) + 8
       })
+    }
+
+    // Legend
+    if (y < H - 90) {
+      y += 4
+      ctx.fillStyle = 'rgba(143,148,163,0.6)'
+      ctx.font = '700 9px Syne,sans-serif'
+      ctx.fillText('📖 LÉGENDE', x0, y); y += 12
+      ctx.font = '9px JetBrains Mono,monospace'
+      ctx.fillStyle = '#FF9500'
+      ctx.fillText('Orange', x0, y)
+      ctx.fillStyle = 'rgba(200,205,220,0.7)'
+      ctx.fillText('= cascade Short Squeeze (above)', x0 + 40, y); y += 11
+      ctx.fillStyle = '#00C8FF'
+      ctx.fillText('Cyan', x0, y)
+      ctx.fillStyle = 'rgba(200,205,220,0.7)'
+      ctx.fillText('= cascade Long Squeeze (below)', x0 + 40, y); y += 11
+      ctx.fillStyle = 'rgba(200,205,220,0.7)'
+      y = wrapText(ctx, 'T1=cible primaire · T2/T3=extensions · ● = force cluster', x0, y, sidebar - 32, 11) + 2
+      y = wrapText(ctx, 'Heatmap: violet (faible) → bleu → vert → jaune (max)', x0, y, sidebar - 32, 11)
     }
 
     // Footer
@@ -884,11 +916,24 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
       if (!uid) throw new Error('non connecté')
       const settings = await getNotifSettings(uid)
       if (!settings.discordWebhook) { setSendStatus('nowebhook'); setTimeout(() => setSendStatus('idle'), 3000); return }
+
+      // Auto-run AI analysis if not already done — ensures Discord embed always has full text
+      if (!analysisRef.current) {
+        try {
+          const zones = extractLiqZones(d.grid, d.klines, d.pMin, d.pMax)
+          const prompt = buildStructuredPrompt(symbol, tf, d.klines, zones)
+          const result = await callGPTAnalysis(prompt)
+          analysisRef.current = result
+          setAnalysisResult(result)
+          redraw()
+        } catch (e) { console.warn('Auto-analyze failed before Discord send:', e) }
+      }
+
       await sendCanvasToDiscord(canvas, symbol, tf, settings.discordWebhook, d.chain, currentPrice, analysisRef.current)
       setSendStatus('ok')
     } catch { setSendStatus('error') }
     finally { setSending(false); setTimeout(() => setSendStatus('idle'), 3000) }
-  }, [symbol, tf, currentPrice])
+  }, [symbol, tf, currentPrice, redraw])
 
   const handleDownload = useCallback(async () => {
     const canvas = canvasRef.current
