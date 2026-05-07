@@ -566,23 +566,208 @@ function computeTooltip(
 }
 
 // ── Discord send ────────────────────────────────────────────────────────────────
+function buildDiscordEmbed(
+  symbol: string, tf: string,
+  chain: CascadeNode[] | null,
+  currentPrice: number,
+  analysis: AnalysisResult | null,
+): Record<string, unknown> {
+  const colorByBias: Record<string, number> = { HAUSSIER: 0x34C759, BAISSIER: 0xFF3B30, NEUTRE: 0xFF9500 }
+  const color = analysis ? colorByBias[analysis.bias] ?? 0xBF5AF2 : 0x00C8FF
+
+  const fields: { name: string; value: string; inline?: boolean }[] = []
+
+  // Bias
+  if (analysis) {
+    const icon = analysis.bias === 'HAUSSIER' ? '↑' : analysis.bias === 'BAISSIER' ? '↓' : '→'
+    fields.push({
+      name: `${icon} Biais — ${analysis.bias}`,
+      value: analysis.biasReason || '—',
+      inline: false,
+    })
+  }
+
+  // Cascade chains
+  if (chain && chain.length > 0) {
+    const fmtNode = (n: CascadeNode) => {
+      const dist = currentPrice ? `${(((n.price - currentPrice) / currentPrice) * 100).toFixed(2)}%` : ''
+      const stars = '●'.repeat(Math.max(1, Math.round(n.strength * 4)))
+      return `**T${n.order}** ${fmtPrice(n.price)} \`${dist}\` ${stars}`
+    }
+    const above = chain.filter(n => n.side === 'above').sort((a, b) => a.order - b.order)
+    const below = chain.filter(n => n.side === 'below').sort((a, b) => a.order - b.order)
+    if (above.length) fields.push({ name: '↑ Short Squeeze (above)', value: above.map(fmtNode).join(' → '), inline: false })
+    if (below.length) fields.push({ name: '↓ Long Squeeze (below)',  value: below.map(fmtNode).join(' → '), inline: false })
+  }
+
+  // Analysis text sections
+  if (analysis?.textSections) {
+    const ts = analysis.textSections
+    if (ts.target)       fields.push({ name: '🎯 Cascade probable', value: ts.target.replace(/^[^:]+:\s*/, ''), inline: false })
+    if (ts.zones)        fields.push({ name: '🔥 Zones clés',        value: ts.zones.replace(/^[^:]+:\s*/, ''), inline: false })
+    if (ts.invalidation) fields.push({ name: '⚠️ Invalidation',       value: ts.invalidation.replace(/^[^:]+:\s*/, ''), inline: false })
+    if (ts.strategy)     fields.push({ name: '💡 Stratégie',          value: ts.strategy.replace(/^[^:]+:\s*/, ''), inline: false })
+  }
+
+  // Truncate any field that exceeds Discord 1024 char limit
+  for (const f of fields) if (f.value.length > 1020) f.value = f.value.slice(0, 1017) + '…'
+
+  return {
+    title: `🔥 Liquidation Heatmap — ${symbol} (${tf})`,
+    description: currentPrice ? `Prix actuel: **${fmtPrice(currentPrice)}**` : undefined,
+    color,
+    fields,
+    image: { url: `attachment://liq_heatmap_${symbol}_${tf}.png` },
+    footer: { text: 'TradeMindSet · Estimation Binance' },
+    timestamp: new Date().toISOString(),
+  }
+}
+
 async function sendCanvasToDiscord(
   canvas: HTMLCanvasElement,
   symbol: string,
   tf: string,
   webhookUrl: string,
+  chain: CascadeNode[] | null,
+  currentPrice: number,
+  analysis: AnalysisResult | null,
 ): Promise<void> {
   const blob = await new Promise<Blob>((res, rej) =>
     canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png', 0.95)
   )
   const fd = new FormData()
-  const now = new Date().toLocaleString('fr-FR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })
   fd.append('files[0]', blob, `liq_heatmap_${symbol}_${tf}.png`)
   fd.append('payload_json', JSON.stringify({
-    content: `🔥 **Liquidation Heatmap** — ${symbol} (${tf})\n⏰ ${now}\n*Estimation zones de liquidation · TradeMindSet*`,
+    embeds: [buildDiscordEmbed(symbol, tf, chain, currentPrice, analysis)],
   }))
   const r = await fetch(webhookUrl, { method: 'POST', body: fd })
   if (!r.ok && r.status !== 204) throw new Error(`Discord ${r.status}`)
+}
+
+// ── Local download (composite image: canvas + analysis sidebar) ────────────────
+async function downloadComposite(
+  canvas: HTMLCanvasElement,
+  symbol: string, tf: string,
+  chain: CascadeNode[] | null,
+  currentPrice: number,
+  analysis: AnalysisResult | null,
+): Promise<void> {
+  const W = canvas.clientWidth
+  const H = canvas.clientHeight
+  const dpr = window.devicePixelRatio || 1
+  const sidebar = analysis || (chain && chain.length > 0) ? 360 : 0
+  const out = document.createElement('canvas')
+  out.width = (W + sidebar) * dpr
+  out.height = H * dpr
+  const ctx = out.getContext('2d')!
+  ctx.scale(dpr, dpr)
+  ctx.fillStyle = '#080C14'
+  ctx.fillRect(0, 0, W + sidebar, H)
+  // Copy main canvas
+  ctx.drawImage(canvas, 0, 0, W, H)
+
+  if (sidebar > 0) {
+    let y = 16
+    const x0 = W + 16
+    ctx.fillStyle = '#0E1424'
+    ctx.fillRect(W, 0, sidebar, H)
+
+    // Header
+    ctx.fillStyle = '#BF5AF2'
+    ctx.font = '800 14px Syne,sans-serif'
+    ctx.fillText(`🔥 ${symbol} · ${tf}`, x0, y); y += 18
+    ctx.fillStyle = 'rgba(143,148,163,0.7)'
+    ctx.font = '10px JetBrains Mono,monospace'
+    ctx.fillText(`Prix: ${fmtPrice(currentPrice)}`, x0, y); y += 20
+
+    // Bias
+    if (analysis) {
+      const biasColor = analysis.bias === 'HAUSSIER' ? '#34C759' : analysis.bias === 'BAISSIER' ? '#FF3B30' : '#FF9500'
+      ctx.fillStyle = biasColor
+      ctx.font = '800 13px Syne,sans-serif'
+      ctx.fillText(`${analysis.bias === 'HAUSSIER' ? '↑' : analysis.bias === 'BAISSIER' ? '↓' : '→'} ${analysis.bias}`, x0, y); y += 16
+      ctx.fillStyle = 'rgba(220,225,240,0.85)'
+      ctx.font = '10px JetBrains Mono,monospace'
+      y = wrapText(ctx, analysis.biasReason || '', x0, y, sidebar - 32, 14) + 12
+    }
+
+    // Cascade
+    if (chain && chain.length > 0) {
+      const drawSide = (label: string, color: string, nodes: CascadeNode[]) => {
+        if (!nodes.length) return
+        ctx.fillStyle = color
+        ctx.font = '700 11px Syne,sans-serif'
+        ctx.fillText(label, x0, y); y += 14
+        ctx.font = '10px JetBrains Mono,monospace'
+        nodes.forEach(n => {
+          const dist = currentPrice ? `${(((n.price - currentPrice) / currentPrice) * 100).toFixed(2)}%` : ''
+          const stars = '●'.repeat(Math.max(1, Math.round(n.strength * 4)))
+          ctx.fillStyle = color
+          ctx.fillText(`T${n.order}`, x0, y)
+          ctx.fillStyle = 'rgba(220,225,240,0.9)'
+          ctx.fillText(fmtPrice(n.price), x0 + 26, y)
+          ctx.fillStyle = 'rgba(143,148,163,0.55)'
+          ctx.fillText(`${dist} ${stars}`, x0 + 100, y)
+          y += 13
+        })
+        y += 6
+      }
+      const above = chain.filter(n => n.side === 'above').sort((a, b) => a.order - b.order)
+      const below = chain.filter(n => n.side === 'below').sort((a, b) => a.order - b.order)
+      drawSide('↑ SHORT SQUEEZE', '#FF9500', above)
+      drawSide('↓ LONG SQUEEZE',  '#00C8FF', below)
+    }
+
+    // Analysis sections
+    if (analysis?.textSections) {
+      const ts = analysis.textSections
+      const sections: { label: string; text: string; color: string }[] = [
+        { label: '🎯 CASCADE',       text: ts.target,       color: '#00E5FF' },
+        { label: '🔥 ZONES',         text: ts.zones,        color: '#FF9500' },
+        { label: '⚠️ INVALIDATION',  text: ts.invalidation, color: '#FF3B30' },
+        { label: '💡 STRATÉGIE',     text: ts.strategy,     color: '#BF5AF2' },
+      ]
+      sections.forEach(s => {
+        if (!s.text || y > H - 20) return
+        ctx.fillStyle = s.color
+        ctx.font = '700 10px Syne,sans-serif'
+        ctx.fillText(s.label, x0, y); y += 12
+        ctx.fillStyle = 'rgba(220,225,240,0.8)'
+        ctx.font = '10px JetBrains Mono,monospace'
+        const txt = s.text.replace(/^[^:]+:\s*/, '')
+        y = wrapText(ctx, txt, x0, y, sidebar - 32, 13) + 8
+      })
+    }
+
+    // Footer
+    ctx.fillStyle = 'rgba(143,148,163,0.4)'
+    ctx.font = '9px JetBrains Mono,monospace'
+    ctx.fillText(new Date().toLocaleString('fr-FR'), x0, H - 10)
+  }
+
+  const url = out.toDataURL('image/png')
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `liq_heatmap_${symbol}_${tf}_${Date.now()}.png`
+  a.click()
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lineH: number): number {
+  const words = text.split(' ')
+  let line = ''
+  let cy = y
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, x, cy)
+      cy += lineH
+      line = w
+    } else {
+      line = test
+    }
+  }
+  if (line) { ctx.fillText(line, x, cy); cy += lineH }
+  return cy
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -691,18 +876,28 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
 
   const handleSendDiscord = useCallback(async () => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    const d = dataRef.current
+    if (!canvas || !d) return
     setSending(true)
     try {
       const uid = getAuth().currentUser?.uid
       if (!uid) throw new Error('non connecté')
       const settings = await getNotifSettings(uid)
       if (!settings.discordWebhook) { setSendStatus('nowebhook'); setTimeout(() => setSendStatus('idle'), 3000); return }
-      await sendCanvasToDiscord(canvas, symbol, tf, settings.discordWebhook)
+      await sendCanvasToDiscord(canvas, symbol, tf, settings.discordWebhook, d.chain, currentPrice, analysisRef.current)
       setSendStatus('ok')
     } catch { setSendStatus('error') }
     finally { setSending(false); setTimeout(() => setSendStatus('idle'), 3000) }
-  }, [symbol, tf])
+  }, [symbol, tf, currentPrice])
+
+  const handleDownload = useCallback(async () => {
+    const canvas = canvasRef.current
+    const d = dataRef.current
+    if (!canvas || !d) return
+    try {
+      await downloadComposite(canvas, symbol, tf, d.chain, currentPrice, analysisRef.current)
+    } catch (e) { console.error(e) }
+  }, [symbol, tf, currentPrice])
 
   const handleAnalyze = useCallback(async () => {
     const d = dataRef.current
@@ -760,12 +955,19 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
             title="Analyse GPT-4o des zones de liquidation"
           >{analyzing ? '⟳ Analyse…' : '🤖 Analyser'}</button>
 
+          {/* Local download */}
+          <button
+            style={{ ...btn(false), color:'#0A85FF', borderColor:'rgba(10,133,255,0.4)', background:'rgba(10,133,255,0.08)' }}
+            onClick={handleDownload}
+            title="Télécharger image PNG avec analyse IA + cascade"
+          >💾 PNG</button>
+
           {/* Discord send */}
           <button
             style={{ ...btn(false), color: sendColor, borderColor:`${sendColor}50`, background:`${sendColor}12` }}
             onClick={handleSendDiscord}
             disabled={sending}
-            title="Envoyer screenshot au webhook Discord configuré dans les Alertes"
+            title="Envoyer image + analyse IA + cascade au webhook Discord"
           >{sendLabel}</button>
           <button style={btn(false)} onClick={fetchAndDraw} disabled={loading}>{loading ? '⟳' : '↻'}</button>
           {lastUpdate > 0 && (
