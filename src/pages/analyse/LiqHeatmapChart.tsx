@@ -113,19 +113,26 @@ function extractLiqZones(grid: Float32Array, klines: Kline[], pMin: number, pMax
       bins[b] += grid[t * N_PRICE_BINS + b]
   const binToPrice = (b: number) => pMin + ((b + 0.5) / N_PRICE_BINS) * pRange
   const globalMax = Math.max(...Array.from(bins))
-  const threshold = globalMax * 0.15
+  if (globalMax <= 0) return []
+  const threshold = globalMax * 0.06
   const zones: LiqZone[] = []
-  for (let b = 3; b < N_PRICE_BINS - 3; b++) {
+  for (let b = 1; b < N_PRICE_BINS - 1; b++) {
     const v = bins[b]
     if (v < threshold) continue
-    if (!(v >= bins[b-1] && v >= bins[b+1] && v >= bins[b-2] && v >= bins[b+2])) continue
+    if (!(v >= bins[b-1] && v >= bins[b+1])) continue
     const price = binToPrice(b)
     const strength = v / globalMax
     const side = price > currentPrice ? 'above' : 'below'
     zones.push({ price, strength, stars: '★'.repeat(Math.max(1, Math.min(5, Math.round(strength * 5)))), side,
       type: side === 'above' ? 'Liquidation Longs (Short Squeeze)' : 'Liquidation Shorts (Long Squeeze)' })
   }
-  return zones.sort((a, b) => b.strength - a.strength).slice(0, 12)
+  // Suppress duplicates within same 3-bin window — keep strongest
+  const filtered: LiqZone[] = []
+  zones.sort((a, b) => b.strength - a.strength).forEach(z => {
+    const tooClose = filtered.some(f => Math.abs(f.price - z.price) / pRange < 0.015)
+    if (!tooClose) filtered.push(z)
+  })
+  return filtered.slice(0, 20)
 }
 
 // ── Cascade chain builder ──────────────────────────────────────────────────────
@@ -392,6 +399,7 @@ function drawHeatmap(
   crosshair?: { tIdx: number; priceY: number } | null,
   analysisResult?: AnalysisResult | null,
   chain?: CascadeNode[] | null,
+  view?: { min: number; max: number } | null,
 ) {
   const dpr = window.devicePixelRatio || 1
   const W = canvas.clientWidth, H = canvas.clientHeight
@@ -405,19 +413,27 @@ function drawHeatmap(
   const N = klines.length
   const CHART_W = W - LABEL_W
   const cellW = CHART_W / N
-  const cellH = H / N_PRICE_BINS
   const pRange = pMax - pMin
-  const pToY = (p: number) => H - ((p - pMin) / pRange) * H
+  const vMin = view?.min ?? pMin
+  const vMax = view?.max ?? pMax
+  const vRange = vMax - vMin
+  const binPriceWidth = pRange / N_PRICE_BINS
+  const cellH = (H * binPriceWidth) / vRange
+  const pToY = (p: number) => H - ((p - vMin) / vRange) * H
 
-  // Heatmap cells
+  // Heatmap cells (skip bins outside viewport)
+  const binMin = Math.max(0, Math.floor(((vMin - pMin) / pRange) * N_PRICE_BINS) - 1)
+  const binMax = Math.min(N_PRICE_BINS - 1, Math.ceil(((vMax - pMin) / pRange) * N_PRICE_BINS) + 1)
   for (let t = 0; t < N; t++) {
-    for (let b = 0; b < N_PRICE_BINS; b++) {
+    for (let b = binMin; b <= binMax; b++) {
       const val = grid[t * N_PRICE_BINS + b]
       if (val <= 0) continue
       const color = intensityToColor(Math.pow(val / maxVal, 0.45))
       if (color === 'transparent') continue
+      const binPrice = pMin + ((b + 0.5) / N_PRICE_BINS) * pRange
+      const y = pToY(binPrice)
       ctx.fillStyle = color
-      ctx.fillRect(t * cellW, H - (b+1)*cellH, cellW+0.5, cellH+0.5)
+      ctx.fillRect(t * cellW, y - cellH / 2, cellW + 0.5, cellH + 0.6)
     }
   }
 
@@ -449,11 +465,11 @@ function drawHeatmap(
     ctx.fillRect(crosshair.tIdx * cellW, 0, cellW, H)
   }
 
-  // Price axis
+  // Price axis (use viewport range)
   ctx.fillStyle = '#080C14'; ctx.fillRect(CHART_W, 0, LABEL_W, H)
   const currentPrice = klines[klines.length - 1]?.close ?? 0
   for (let i = 0; i <= 8; i++) {
-    const p = pMin + (pRange * i) / 8
+    const p = vMin + (vRange * i) / 8
     const y = pToY(p)
     ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CHART_W, y); ctx.stroke()
@@ -462,25 +478,27 @@ function drawHeatmap(
     const lbl = p >= 10000 ? `$${(p/1000).toFixed(1)}k` : `$${p.toFixed(p<10?4:2)}`
     ctx.fillText(lbl, CHART_W + 4, y + 3)
   }
-  // Current price dashed line + badge
-  const cy = pToY(currentPrice)
-  ctx.strokeStyle = '#00E5FF'; ctx.lineWidth = 1; ctx.setLineDash([4,4])
-  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(CHART_W, cy); ctx.stroke()
-  ctx.setLineDash([])
-  ctx.fillStyle = '#00E5FF'
-  ctx.fillRect(CHART_W + 2, cy - 8, LABEL_W - 4, 16)
-  ctx.fillStyle = '#000'; ctx.font = '700 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
-  ctx.fillText(currentPrice >= 10000 ? `$${currentPrice.toFixed(0)}` : `$${currentPrice.toFixed(2)}`, CHART_W + LABEL_W/2, cy + 3)
-  ctx.textAlign = 'left'
-
-  // Cascade chain (always visible — shows liquidation cascade targets)
-  if (chain?.length) {
-    drawCascadeChain(ctx, chain, pMin, pMax, W, H, CHART_W)
+  // Current price dashed line + badge (only if in viewport)
+  if (currentPrice >= vMin && currentPrice <= vMax) {
+    const cy = pToY(currentPrice)
+    ctx.strokeStyle = '#00E5FF'; ctx.lineWidth = 1; ctx.setLineDash([4,4])
+    ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(CHART_W, cy); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.fillStyle = '#00E5FF'
+    ctx.fillRect(CHART_W + 2, cy - 8, LABEL_W - 4, 16)
+    ctx.fillStyle = '#000'; ctx.font = '700 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
+    ctx.fillText(currentPrice >= 10000 ? `$${currentPrice.toFixed(0)}` : `$${currentPrice.toFixed(2)}`, CHART_W + LABEL_W/2, cy + 3)
+    ctx.textAlign = 'left'
   }
 
-  // Annotations overlay (drawn before time labels so labels are on top)
+  // Cascade chain (use viewport range for pToY)
+  if (chain?.length) {
+    drawCascadeChain(ctx, chain, vMin, vMax, W, H, CHART_W)
+  }
+
+  // Annotations overlay (use viewport range)
   if (analysisResult?.annotations?.length) {
-    drawAnnotations(ctx, analysisResult.annotations, analysisResult.bias, analysisResult.biasReason, pMin, pMax, W, H, CHART_W)
+    drawAnnotations(ctx, analysisResult.annotations, analysisResult.bias, analysisResult.biasReason, vMin, vMax, W, H, CHART_W)
   }
 
   // Time labels
@@ -498,6 +516,7 @@ function computeTooltip(
   canvas: HTMLCanvasElement,
   klines: Kline[], grid: Float32Array,
   pMin: number, pMax: number, maxVal: number,
+  view?: { min: number; max: number } | null,
 ): { tooltip: TooltipData; crosshair: { tIdx: number; priceY: number } } | null {
   const rect = canvas.getBoundingClientRect()
   const mx = e.clientX - rect.left
@@ -510,7 +529,10 @@ function computeTooltip(
   const cellW = CHART_W / N
   const tIdx = Math.min(N - 1, Math.max(0, Math.floor(mx / cellW)))
   const pRange = pMax - pMin
-  const price = pMin + ((H - my) / H) * pRange
+  const vMin = view?.min ?? pMin
+  const vMax = view?.max ?? pMax
+  const vRange = vMax - vMin
+  const price = vMin + ((H - my) / H) * vRange
   const priceBin = Math.floor(((price - pMin) / pRange) * N_PRICE_BINS)
 
   // Total liq at this price bin (sum across all times, weighted by recency)
@@ -585,13 +607,14 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
   const [showAnalysis,   setShowAnalysis]   = useState(false)
   const [chainState,     setChainState]     = useState<CascadeNode[]>([])
   const [currentPrice,   setCurrentPrice]   = useState(0)
+  const [view,           setView]           = useState<{ min: number; max: number } | null>(null)
 
   const analysisRef = useRef<AnalysisResult | null>(null)
   const redraw = useCallback((ch?: { tIdx: number; priceY: number } | null) => {
     const c = canvasRef.current, d = dataRef.current
     if (!c || !d) return
-    drawHeatmap(c, d.klines, d.grid, d.pMin, d.pMax, d.maxVal, showCandles, ch ?? crosshair, analysisRef.current, d.chain)
-  }, [showCandles, crosshair])
+    drawHeatmap(c, d.klines, d.grid, d.pMin, d.pMax, d.maxVal, showCandles, ch ?? crosshair, analysisRef.current, d.chain, view)
+  }, [showCandles, crosshair, view])
 
   const fetchAndDraw = useCallback(async () => {
     setLoading(true); setError(null)
@@ -621,16 +644,50 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current, d = dataRef.current
     if (!canvas || !d) return
-    const res = computeTooltip(e, canvas, d.klines, d.grid, d.pMin, d.pMax, d.maxVal)
+    const res = computeTooltip(e, canvas, d.klines, d.grid, d.pMin, d.pMax, d.maxVal, view)
     if (!res) { setTooltip(null); setCrosshair(null); return }
     setTooltip(res.tooltip)
     setCrosshair(res.crosshair)
     redraw(res.crosshair)
-  }, [redraw])
+  }, [redraw, view])
 
   const handleMouseLeave = useCallback(() => {
     setTooltip(null); setCrosshair(null); redraw(null)
   }, [redraw])
+
+  // Native wheel listener (passive:false so we can preventDefault)
+  useEffect(() => {
+    const c = canvasRef.current
+    if (!c) return
+    const handler = (e: WheelEvent) => {
+      const d = dataRef.current; if (!d) return
+      e.preventDefault()
+      const rect = c.getBoundingClientRect()
+      const my = e.clientY - rect.top
+      const H = rect.height
+      const v = view ?? { min: d.pMin, max: d.pMax }
+      const cursorPrice = v.min + ((H - my) / H) * (v.max - v.min)
+      const factor = e.deltaY > 0 ? 1.25 : 0.8
+      const newRange = (v.max - v.min) * factor
+      const fullRange = d.pMax - d.pMin
+      if (newRange >= fullRange) { setView(null); return }
+      if (newRange < fullRange * 0.015) return
+      const ratio = (cursorPrice - v.min) / (v.max - v.min)
+      let newMin = cursorPrice - ratio * newRange
+      let newMax = newMin + newRange
+      if (newMin < d.pMin) { newMin = d.pMin; newMax = newMin + newRange }
+      if (newMax > d.pMax) { newMax = d.pMax; newMin = newMax - newRange }
+      setView({ min: newMin, max: newMax })
+    }
+    c.addEventListener('wheel', handler, { passive: false })
+    return () => c.removeEventListener('wheel', handler)
+  }, [view])
+
+  // Redraw on view change
+  useEffect(() => { redraw() }, [view, redraw])
+
+  // Reset view when data changes (new symbol/tf)
+  useEffect(() => { setView(null) }, [symbol, tf])
 
   const handleSendDiscord = useCallback(async () => {
     const canvas = canvasRef.current
@@ -691,6 +748,9 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
         {([100,200,300] as const).map(n => <button key={n} style={btn(limit===n)} onClick={() => setLimit(n)}>{n}</button>)}
         <div style={{ width:1, height:16, background:'rgba(255,255,255,0.1)' }} />
         <button style={btn(showCandles)} onClick={() => setShowCandles(v => !v)}>🕯 Bougies</button>
+        {view && (
+          <button style={{ ...btn(false), color:'#FF9500', borderColor:'rgba(255,149,0,0.4)', background:'rgba(255,149,0,0.1)' }} onClick={() => setView(null)}>🔍 Reset zoom</button>
+        )}
         <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'center' }}>
           {/* AI Analyse */}
           <button
