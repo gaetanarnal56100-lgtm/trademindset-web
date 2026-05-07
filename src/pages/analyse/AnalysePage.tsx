@@ -17,6 +17,7 @@ import KeyLevelsCard from './KeyLevelsCard'
 import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import FootprintChart from './FootprintChart'
+import LiqHeatmapChart from './LiqHeatmapChart'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
 import OUChannelIndicator from './OUChannelIndicator'
@@ -246,7 +247,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts'
+type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts' | 'liqheat'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -2258,6 +2259,7 @@ export default function AnalysePage() {
             {id:'structure', icon:'🐋',label:'Structure',  sub:'Tendance baleine',  color:'rgba(191,90,242,0.9)'},
             {id:'derivees',  icon:'📈',label:'Dérivés',    sub:'OI · Funding · L/S',color:'rgba(255,149,0,0.9)'},
             {id:'orderflow', icon:'⊞', label:'Order Flow', sub:'Footprint · Cluster',color:'rgba(255,69,58,0.9)'},
+            {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation', color:'rgba(255,149,0,0.9)'},
             {id:'charts',    icon:'📅', label:'Charts',     sub:'Rendements · On-Chain',color:'rgba(52,199,89,0.9)'},
           ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m=>{
             const active = mode === m.id
@@ -2556,6 +2558,13 @@ export default function AnalysePage() {
       {isCrypto && mode === 'orderflow' && (
         <div style={{ position:'relative', zIndex:1, height:'calc(100vh - 340px)', minHeight:500, marginBottom:16 }}>
           <FootprintChart symbol={symbol} />
+        </div>
+      )}
+
+      {/* ── LIQ HEATMAP TAB ── */}
+      {isCrypto && mode === 'liqheat' && (
+        <div style={{ position:'relative', zIndex:1, height:'calc(100vh - 320px)', minHeight:500, marginBottom:16, display:'flex', flexDirection:'column' }}>
+          <LiqHeatmapChart symbol={symbol} />
         </div>
       )}
 
