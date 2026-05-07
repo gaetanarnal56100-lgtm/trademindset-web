@@ -72,97 +72,223 @@ function fmtTime(ts: number) {
   return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
 }
 
-// ── Zone extraction ────────────────────────────────────────────────────────────
+// ── Analysis types ─────────────────────────────────────────────────────────────
 interface LiqZone {
-  price: number
-  strength: number    // 0..1 relative to global max
-  stars: string       // ★ x 1..5
-  side: 'above' | 'below'
-  type: string        // "Long Squeeze" | "Short Squeeze"
+  price: number; strength: number; stars: string
+  side: 'above' | 'below'; type: string
 }
 
-function extractLiqZones(
-  grid: Float32Array, klines: Kline[], pMin: number, pMax: number,
-): LiqZone[] {
+interface CanvasAnnotation {
+  price: number
+  type: 'target' | 'resistance' | 'support' | 'invalidation' | 'zone'
+  label: string    // e.g. "🎯 Cible"
+  detail: string   // short description drawn on chart
+  color: string
+}
+
+interface AnalysisResult {
+  bias: 'HAUSSIER' | 'BAISSIER' | 'NEUTRE'
+  biasReason: string
+  strategy: string
+  annotations: CanvasAnnotation[]
+  textSections: { bias: string; target: string; zones: string; invalidation: string; strategy: string }
+}
+
+// ── Zone extraction ────────────────────────────────────────────────────────────
+function extractLiqZones(grid: Float32Array, klines: Kline[], pMin: number, pMax: number): LiqZone[] {
   const N = klines.length
   const pRange = pMax - pMin
   const currentPrice = klines[N - 1]?.close ?? 0
-
-  // Aggregate grid across time
   const bins = new Float32Array(N_PRICE_BINS)
   for (let t = 0; t < N; t++)
     for (let b = 0; b < N_PRICE_BINS; b++)
       bins[b] += grid[t * N_PRICE_BINS + b]
-
   const binToPrice = (b: number) => pMin + ((b + 0.5) / N_PRICE_BINS) * pRange
   const globalMax = Math.max(...Array.from(bins))
   const threshold = globalMax * 0.15
-
-  // Find local maxima (clusters)
   const zones: LiqZone[] = []
   for (let b = 3; b < N_PRICE_BINS - 3; b++) {
     const v = bins[b]
     if (v < threshold) continue
-    const isLocalMax = v >= bins[b-1] && v >= bins[b+1] && v >= bins[b-2] && v >= bins[b+2]
-    if (!isLocalMax) continue
+    if (!(v >= bins[b-1] && v >= bins[b+1] && v >= bins[b-2] && v >= bins[b+2])) continue
     const price = binToPrice(b)
     const strength = v / globalMax
-    const stars = '★'.repeat(Math.max(1, Math.min(5, Math.round(strength * 5))))
     const side = price > currentPrice ? 'above' : 'below'
-    zones.push({
-      price, strength, stars, side,
-      type: side === 'above' ? 'Liquidation Longs (Short Squeeze)' : 'Liquidation Shorts (Long Squeeze)',
-    })
+    zones.push({ price, strength, stars: '★'.repeat(Math.max(1, Math.min(5, Math.round(strength * 5)))), side,
+      type: side === 'above' ? 'Liquidation Longs (Short Squeeze)' : 'Liquidation Shorts (Long Squeeze)' })
   }
-
-  // Sort by strength, keep top 12
   return zones.sort((a, b) => b.strength - a.strength).slice(0, 12)
 }
 
-function buildPrompt(symbol: string, tf: string, klines: Kline[], zones: LiqZone[]): string {
+// ── JSON prompt ────────────────────────────────────────────────────────────────
+function buildStructuredPrompt(symbol: string, tf: string, klines: Kline[], zones: LiqZone[]): string {
   const last = klines[klines.length - 1]
   const prev = klines[klines.length - 2]
-  const change24h = ((last.close - prev.close) / prev.close * 100).toFixed(2)
+  const chg = ((last.close - prev.close) / prev.close * 100).toFixed(2)
   const above = zones.filter(z => z.side === 'above').sort((a, b) => a.price - b.price)
   const below = zones.filter(z => z.side === 'below').sort((a, b) => b.price - a.price)
+  const fZ = (z: LiqZone) => `${fmtPrice(z.price)} ${z.stars} (${(z.strength*100).toFixed(0)}%) — ${z.type}`
 
-  const fmtZone = (z: LiqZone) =>
-    `  ${fmtPrice(z.price)} ${z.stars} (force ${(z.strength * 100).toFixed(0)}%) — ${z.type}`
+  return `Tu es un analyste technique expert crypto. Analyse ce liquidation heatmap.
 
-  return `Tu es un analyste technique expert en crypto. Analyse ce liquidation heatmap.
+MARCHÉ: ${symbol} | TF: ${tf} | ${klines.length} bougies
+Prix actuel: ${fmtPrice(last.close)} | Variation: ${chg}%
+High: ${fmtPrice(Math.max(...klines.map(k=>k.high)))} | Low: ${fmtPrice(Math.min(...klines.map(k=>k.low)))}
 
-DONNÉES MARCHÉ:
-Symbole: ${symbol} | TF: ${tf} | Bougies analysées: ${klines.length}
-Prix actuel: ${fmtPrice(last.close)} | Variation: ${change24h}%
-High période: ${fmtPrice(Math.max(...klines.map(k => k.high)))}
-Low période: ${fmtPrice(Math.min(...klines.map(k => k.low)))}
+ZONES ABOVE (short squeeze / résistances): ${above.map(fZ).join(' | ') || 'aucune'}
+ZONES BELOW (long squeeze / supports): ${below.map(fZ).join(' | ') || 'aucune'}
 
-ZONES DE LIQUIDATION AU-DESSUS (résistances / long squeeze si price monte):
-${above.length ? above.map(fmtZone).join('\n') : '  Aucune zone significative'}
-
-ZONES DE LIQUIDATION EN DESSOUS (supports / short squeeze si price baisse):
-${below.length ? below.map(fmtZone).join('\n') : '  Aucune zone significative'}
-
-LÉGENDE ÉTOILES: ★ faible / ★★★ modéré / ★★★★★ cluster majeur
-
-Fournis une analyse structurée EN FRANÇAIS (max 220 mots) avec ces sections exactes:
-📊 BIAIS: Haussier/Baissier/Neutre + justification courte basée sur asymétrie des zones
-🎯 CIBLE PRINCIPALE: niveau le plus attractif à atteindre en premier (avec raison)
-🔥 ZONES CLÉS: liste 3-4 niveaux critiques avec ce qu'il se passera si prix les touche
-⚠️ INVALIDATION: niveau qui invaliderait le scénario principal
-💡 STRATÉGIE: conseil actionnable concret (attendre retest, éviter, surveiller, etc.)
-
-Ton analyse doit être précise, chiffrée, professionnelle.`
+Réponds UNIQUEMENT en JSON valide (aucun texte autour), structure exacte:
+{
+  "bias": "HAUSSIER",
+  "biasReason": "justification courte (max 15 mots)",
+  "strategy": "conseil actionnable concret (max 20 mots)",
+  "annotations": [
+    { "price": 82100, "type": "target", "label": "🎯 Cible", "detail": "Short squeeze majeur ★★★★★", "color": "#00E5FF" },
+    { "price": 80600, "type": "support", "label": "🔥 Support clé", "detail": "Long squeeze — rebond attendu", "color": "#34C759" },
+    { "price": 79800, "type": "invalidation", "label": "⚠️ Invalidation", "detail": "Cassure = scenario baissier", "color": "#FF3B30" }
+  ],
+  "textSections": {
+    "bias": "📊 BIAIS: ...",
+    "target": "🎯 CIBLE PRINCIPALE: ...",
+    "zones": "🔥 ZONES CLÉS: ...",
+    "invalidation": "⚠️ INVALIDATION: ...",
+    "strategy": "💡 STRATÉGIE: ..."
+  }
+}
+RÈGLES: max 5 annotations | prix = valeurs réelles des zones ci-dessus | bias ∈ HAUSSIER/BAISSIER/NEUTRE
+types disponibles: target(cyan), resistance(orange), support(vert), invalidation(rouge), zone(violet)
+couleurs: target=#00E5FF resistance=#FF9500 support=#34C759 invalidation=#FF3B30 zone=#BF5AF2`
 }
 
-async function callGPTAnalysis(prompt: string): Promise<string> {
+async function callGPTAnalysis(prompt: string): Promise<AnalysisResult> {
   const fn = httpsCallable<unknown, { choices: { message: { content: string } }[] }>(functions, 'openaiChat')
-  const res = await fn({
-    model: 'gpt-4o',
-    temperature: 0.3,
-    messages: [{ role: 'user', content: prompt }],
+  const res = await fn({ model: 'gpt-4o', temperature: 0.2, responseFormat: 'json', messages: [{ role: 'user', content: prompt }] })
+  const raw = res.data.choices[0]?.message?.content ?? '{}'
+  const parsed = JSON.parse(raw) as AnalysisResult
+  // Validate
+  if (!parsed.annotations) parsed.annotations = []
+  if (!parsed.textSections) parsed.textSections = { bias:'', target:'', zones:'', invalidation:'', strategy:'' }
+  return parsed
+}
+
+// ── Draw annotations on canvas ─────────────────────────────────────────────────
+function drawAnnotations(
+  ctx: CanvasRenderingContext2D,
+  annotations: CanvasAnnotation[],
+  bias: 'HAUSSIER' | 'BAISSIER' | 'NEUTRE',
+  biasReason: string,
+  pMin: number, pMax: number,
+  W: number, H: number, CHART_W: number,
+) {
+  const pRange = pMax - pMin
+  const pToY = (p: number) => H - ((p - pMin) / pRange) * H
+
+  // Draw each annotation
+  annotations.forEach((ann, idx) => {
+    const y = pToY(ann.price)
+    if (y < 0 || y > H) return
+
+    // Band: semi-transparent horizontal zone ±0.3%
+    const bandPx = (0.003 * H) / (pRange / pMax) // rough pixel height for 0.3%
+    ctx.fillStyle = ann.color + '18'
+    ctx.fillRect(0, y - bandPx, CHART_W, bandPx * 2)
+
+    // Dashed line
+    ctx.strokeStyle = ann.color
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([6, 4])
+    ctx.globalAlpha = 0.85
+    ctx.beginPath()
+    ctx.moveTo(0, y)
+    ctx.lineTo(CHART_W - 140, y)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.globalAlpha = 1
+
+    // Arrow marker
+    const arrX = 8 + idx * 2
+    ctx.fillStyle = ann.color
+    ctx.globalAlpha = 0.9
+    ctx.beginPath()
+    ctx.moveTo(arrX, y - 5)
+    ctx.lineTo(arrX + 8, y)
+    ctx.lineTo(arrX, y + 5)
+    ctx.closePath()
+    ctx.fill()
+    ctx.globalAlpha = 1
+
+    // Label box (right side of chart, before price axis)
+    const boxX = CHART_W - 138
+    const boxW = 135
+    const boxH = 32
+    const boxY = Math.max(2, Math.min(H - boxH - 2, y - boxH / 2))
+
+    ctx.fillStyle = 'rgba(8,12,20,0.92)'
+    ctx.beginPath()
+    ctx.roundRect(boxX, boxY, boxW, boxH, 6)
+    ctx.fill()
+    ctx.strokeStyle = ann.color
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(boxX, boxY, boxW, boxH, 6)
+    ctx.stroke()
+    // Left accent bar
+    ctx.fillStyle = ann.color
+    ctx.fillRect(boxX, boxY + 4, 3, boxH - 8)
+
+    ctx.fillStyle = ann.color
+    ctx.font = '700 10px JetBrains Mono,monospace'
+    ctx.textAlign = 'left'
+    ctx.fillText(ann.label, boxX + 8, boxY + 11)
+    ctx.fillStyle = 'rgba(200,205,220,0.75)'
+    ctx.font = '9px JetBrains Mono,monospace'
+
+    // Truncate detail to fit
+    const maxW = boxW - 12
+    let detail = ann.detail
+    ctx.font = '9px JetBrains Mono,monospace'
+    while (detail.length > 3 && ctx.measureText(detail).width > maxW)
+      detail = detail.slice(0, -4) + '…'
+    ctx.fillText(detail, boxX + 8, boxY + 25)
+
+    // Price chip
+    ctx.fillStyle = ann.color + 'CC'
+    const priceStr = fmtPrice(ann.price)
+    const pw = ctx.measureText(priceStr).width + 8
+    ctx.fillRect(CHART_W - 4 - pw, y - 8, pw, 16)
+    ctx.fillStyle = '#000'
+    ctx.font = '700 9px JetBrains Mono,monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText(priceStr, CHART_W - 4 - pw/2, y + 3)
+    ctx.textAlign = 'left'
   })
-  return res.data.choices[0]?.message?.content ?? ''
+
+  // Bias banner (top-left corner)
+  const biasColor = bias === 'HAUSSIER' ? '#34C759' : bias === 'BAISSIER' ? '#FF3B30' : '#FF9500'
+  const biasIcon  = bias === 'HAUSSIER' ? '↑' : bias === 'BAISSIER' ? '↓' : '→'
+  const bannerW = 220, bannerH = 38
+  ctx.fillStyle = 'rgba(8,12,20,0.92)'
+  ctx.beginPath()
+  ctx.roundRect(10, 10, bannerW, bannerH, 8)
+  ctx.fill()
+  ctx.strokeStyle = biasColor
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.roundRect(10, 10, bannerW, bannerH, 8)
+  ctx.stroke()
+  ctx.fillStyle = biasColor
+  ctx.fillRect(10, 14, 3, bannerH - 8)
+  ctx.fillStyle = biasColor
+  ctx.font = '800 13px Syne,sans-serif'
+  ctx.fillText(`${biasIcon} ${bias}`, 18, 28)
+  ctx.fillStyle = 'rgba(200,205,220,0.65)'
+  ctx.font = '9px JetBrains Mono,monospace'
+  // Truncate biasReason
+  let reason = biasReason ?? ''
+  while (reason.length > 3 && ctx.measureText(reason).width > bannerW - 80)
+    reason = reason.slice(0, -4) + '…'
+  ctx.fillText(reason, 18, 42)
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────────────
@@ -221,6 +347,7 @@ function drawHeatmap(
   pMin: number, pMax: number, maxVal: number,
   showCandles: boolean,
   crosshair?: { tIdx: number; priceY: number } | null,
+  analysisResult?: AnalysisResult | null,
 ) {
   const dpr = window.devicePixelRatio || 1
   const W = canvas.clientWidth, H = canvas.clientHeight
@@ -301,6 +428,11 @@ function drawHeatmap(
   ctx.fillStyle = '#000'; ctx.font = '700 9px JetBrains Mono,monospace'; ctx.textAlign = 'center'
   ctx.fillText(currentPrice >= 10000 ? `$${currentPrice.toFixed(0)}` : `$${currentPrice.toFixed(2)}`, CHART_W + LABEL_W/2, cy + 3)
   ctx.textAlign = 'left'
+
+  // Annotations overlay (drawn before time labels so labels are on top)
+  if (analysisResult?.annotations?.length) {
+    drawAnnotations(ctx, analysisResult.annotations, analysisResult.bias, analysisResult.biasReason, pMin, pMax, W, H, CHART_W)
+  }
 
   // Time labels
   const step = Math.max(1, Math.floor(N / 8))
@@ -398,15 +530,16 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
   const [crosshair,    setCrosshair]    = useState<{ tIdx: number; priceY: number } | null>(null)
   const [sending,      setSending]      = useState(false)
   const [sendStatus,   setSendStatus]   = useState<'idle'|'ok'|'error'|'nowebhook'>('idle')
-  const [analysis,     setAnalysis]     = useState<string>('')
-  const [analyzing,    setAnalyzing]    = useState(false)
-  const [analysisErr,  setAnalysisErr]  = useState<string>('')
-  const [showAnalysis, setShowAnalysis] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
+  const [analyzing,      setAnalyzing]      = useState(false)
+  const [analysisErr,    setAnalysisErr]    = useState<string>('')
+  const [showAnalysis,   setShowAnalysis]   = useState(false)
 
+  const analysisRef = useRef<AnalysisResult | null>(null)
   const redraw = useCallback((ch?: { tIdx: number; priceY: number } | null) => {
     const c = canvasRef.current, d = dataRef.current
     if (!c || !d) return
-    drawHeatmap(c, d.klines, d.grid, d.pMin, d.pMax, d.maxVal, showCandles, ch ?? crosshair)
+    drawHeatmap(c, d.klines, d.grid, d.pMin, d.pMax, d.maxVal, showCandles, ch ?? crosshair, analysisRef.current)
   }, [showCandles, crosshair])
 
   const fetchAndDraw = useCallback(async () => {
@@ -466,15 +599,17 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
     setShowAnalysis(true)
     try {
       const zones = extractLiqZones(d.grid, d.klines, d.pMin, d.pMax)
-      const prompt = buildPrompt(symbol, tf, d.klines, zones)
-      const text = await callGPTAnalysis(prompt)
-      setAnalysis(text)
+      const prompt = buildStructuredPrompt(symbol, tf, d.klines, zones)
+      const result = await callGPTAnalysis(prompt)
+      analysisRef.current = result
+      setAnalysisResult(result)
+      redraw()
     } catch (e) {
       setAnalysisErr((e as Error).message)
     } finally {
       setAnalyzing(false)
     }
-  }, [symbol, tf])
+  }, [symbol, tf, redraw])
 
   // ── Styles ──
   const btn = (active: boolean): React.CSSProperties => ({
@@ -662,53 +797,53 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
             </div>
           )}
 
-          {/* Analysis text */}
-          {analysis && !analyzing && (
-            <div style={{ fontSize:13, color:'rgba(220,225,240,0.92)', lineHeight:1.75, whiteSpace:'pre-wrap', fontFamily:'system-ui,sans-serif' }}>
-              {analysis.split('\n').map((line, i) => {
-                // Highlight section headers
-                const isBias    = line.startsWith('📊')
-                const isTarget  = line.startsWith('🎯')
-                const isZones   = line.startsWith('🔥')
-                const isInval   = line.startsWith('⚠️') || line.startsWith('⚠')
-                const isStrat   = line.startsWith('💡')
-                const isHeader  = isBias || isTarget || isZones || isInval || isStrat
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      marginBottom: isHeader ? 8 : line === '' ? 10 : 2,
-                      fontWeight: isHeader ? 700 : 400,
-                      color: isBias
-                        ? (line.toLowerCase().includes('hausse') || line.toLowerCase().includes('bull') ? '#34C759' : line.toLowerCase().includes('baisse') || line.toLowerCase().includes('bear') ? '#FF3B30' : '#FF9500')
-                        : isTarget ? '#00E5FF'
-                        : isZones ? '#FF9500'
-                        : isInval ? '#FF3B30'
-                        : isStrat ? '#BF5AF2'
-                        : 'rgba(220,225,240,0.85)',
-                      fontSize: isHeader ? 13 : 12,
-                      paddingLeft: isHeader ? 0 : 4,
-                      borderLeft: isHeader ? '2px solid currentColor' : 'none',
-                      paddingTop: isHeader && i > 0 ? 6 : 0,
-                    }}
-                  >
-                    {line}
+          {/* Analysis sections */}
+          {analysisResult && !analyzing && (() => {
+            const ts = analysisResult.textSections
+            const biasColor = analysisResult.bias === 'HAUSSIER' ? '#34C759' : analysisResult.bias === 'BAISSIER' ? '#FF3B30' : '#FF9500'
+            return (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {/* Bias badge */}
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:`${biasColor}12`, border:`1px solid ${biasColor}40`, borderRadius:10 }}>
+                  <span style={{ fontSize:20 }}>{analysisResult.bias === 'HAUSSIER' ? '↑' : analysisResult.bias === 'BAISSIER' ? '↓' : '→'}</span>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:800, color:biasColor, fontFamily:'Syne,sans-serif' }}>{analysisResult.bias}</div>
+                    <div style={{ fontSize:11, color:'rgba(200,205,220,0.7)' }}>{analysisResult.biasReason}</div>
                   </div>
-                )
-              })}
-            </div>
-          )}
+                </div>
+                {/* Annotation list */}
+                {analysisResult.annotations.length > 0 && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {analysisResult.annotations.map((ann, i) => (
+                      <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', background:'rgba(255,255,255,0.03)', border:`1px solid ${ann.color}30`, borderRadius:8, borderLeft:`3px solid ${ann.color}` }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:ann.color, minWidth:90, fontFamily:'JetBrains Mono,monospace' }}>{fmtPrice(ann.price)}</span>
+                        <span style={{ fontSize:11, fontWeight:700, color:ann.color }}>{ann.label}</span>
+                        <span style={{ fontSize:10, color:'rgba(200,205,220,0.6)', marginLeft:'auto' }}>{ann.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Text sections */}
+                {[
+                  { key:'target', text:ts.target, color:'#00E5FF' },
+                  { key:'zones', text:ts.zones, color:'#FF9500' },
+                  { key:'invalidation', text:ts.invalidation, color:'#FF3B30' },
+                  { key:'strategy', text:ts.strategy, color:'#BF5AF2' },
+                ].map(({ key, text, color }) => text ? (
+                  <div key={key} style={{ fontSize:12, color:'rgba(220,225,240,0.85)', lineHeight:1.7, paddingLeft:10, borderLeft:`2px solid ${color}60` }}>
+                    <span style={{ fontWeight:700, color }}>{text.split(':')[0]}: </span>
+                    {text.split(':').slice(1).join(':').trim()}
+                  </div>
+                ) : null)}
+              </div>
+            )
+          })()}
 
-          {/* Re-analyze button */}
-          {analysis && !analyzing && (
+          {/* Re-analyze */}
+          {analysisResult && !analyzing && (
             <div style={{ marginTop:14, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.05)', display:'flex', gap:10 }}>
-              <button
-                onClick={handleAnalyze}
-                style={{ padding:'6px 14px', borderRadius:8, fontSize:11, fontWeight:700, cursor:'pointer', border:'1px solid rgba(191,90,242,0.3)', background:'rgba(191,90,242,0.08)', color:'#BF5AF2' }}
-              >↻ Actualiser l'analyse</button>
-              <span style={{ fontSize:10, color:'rgba(143,148,163,0.4)', fontFamily:'JetBrains Mono,monospace', alignSelf:'center' }}>
-                basé sur {dataRef.current?.klines.length ?? 0} bougies
-              </span>
+              <button onClick={handleAnalyze} style={{ padding:'6px 14px', borderRadius:8, fontSize:11, fontWeight:700, cursor:'pointer', border:'1px solid rgba(191,90,242,0.3)', background:'rgba(191,90,242,0.08)', color:'#BF5AF2' }}>↻ Actualiser</button>
+              <span style={{ fontSize:10, color:'rgba(143,148,163,0.4)', fontFamily:'JetBrains Mono,monospace', alignSelf:'center' }}>annotations visibles sur le chart</span>
             </div>
           )}
         </div>
