@@ -16,6 +16,10 @@ export interface TokenRSI {
   change24h: number
   volume: number
   price: number
+  // Optional CMC enrichment
+  cmcRank?: number
+  cmcMarketCap?: number
+  cmcCirculatingSupply?: number
 }
 
 type View = 'rsi' | 'vmc'
@@ -132,8 +136,22 @@ function TokenTile({ token, view, onClick, onHover, hovered }: {
         transition: 'all 0.12s',
         transform: hovered ? 'scale(1.06)' : 'scale(1)',
         boxShadow: hovered ? `0 4px 12px ${z.color}22` : 'none',
+        position: 'relative',
       }}
     >
+      {/* CMC rank badge */}
+      {token.cmcRank && (
+        <span style={{
+          position: 'absolute', top: 2, left: 3,
+          fontSize: 7, fontWeight: 800,
+          color: 'rgba(255,213,0,0.85)',
+          background: 'rgba(255,213,0,0.10)',
+          border: '1px solid rgba(255,213,0,0.25)',
+          borderRadius: 3, padding: '0 3px',
+          fontFamily: "'JetBrains Mono',monospace",
+          lineHeight: 1.4,
+        }}>#{token.cmcRank}</span>
+      )}
       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--tm-text-primary)', letterSpacing: 0.3, fontFamily: "'JetBrains Mono',monospace" }}>
         {token.symbol}
       </div>
@@ -223,6 +241,29 @@ function Tooltip({ token }: { token: TokenRSI | null }) {
         <span style={{ color: '#e2e8f0', fontWeight: 600, textAlign: 'right' }}>
           {token.volume ? `$${((token.volume) / 1e6).toFixed(1)}M` : '—'}
         </span>
+
+        {token.cmcRank && (
+          <>
+            <span style={{ color: 'rgba(148,163,184,0.7)' }}>Rank</span>
+            <span style={{ color: '#FFD500', fontWeight: 700, textAlign: 'right' }}>#{token.cmcRank}</span>
+          </>
+        )}
+        {token.cmcMarketCap && (
+          <>
+            <span style={{ color: 'rgba(148,163,184,0.7)' }}>MCap</span>
+            <span style={{ color: '#e2e8f0', fontWeight: 600, textAlign: 'right' }}>
+              {token.cmcMarketCap >= 1e9 ? `$${(token.cmcMarketCap/1e9).toFixed(1)}B` : `$${(token.cmcMarketCap/1e6).toFixed(0)}M`}
+            </span>
+          </>
+        )}
+        {token.cmcCirculatingSupply && (
+          <>
+            <span style={{ color: 'rgba(148,163,184,0.7)' }}>Supply</span>
+            <span style={{ color: '#e2e8f0', fontWeight: 600, textAlign: 'right' }}>
+              {token.cmcCirculatingSupply >= 1e9 ? `${(token.cmcCirculatingSupply/1e9).toFixed(1)}B` : token.cmcCirculatingSupply >= 1e6 ? `${(token.cmcCirculatingSupply/1e6).toFixed(1)}M` : `${(token.cmcCirculatingSupply/1e3).toFixed(0)}K`}
+            </span>
+          </>
+        )}
       </div>
     </div>,
     document.body

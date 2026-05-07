@@ -1142,56 +1142,109 @@ function MTFView({ tokens, onTokenClick, fetcher = fetchMTFRSI, tfLabels = ['RSI
 
 // ── Sector Rotation Panel ─────────────────────────────────────────────────────
 
-function SectorRotationPanel({ tokens, onClose }: { tokens: TokenRSIWithDiv[]; onClose: () => void }) {
-  const sectors = CRYPTO_SECTORS.map(sector => {
-    const st = tokens.filter(t => sector.symbols.includes(t.symbol))
-    const avg = avgRSI(st) ?? 50
-    const top = [...st].sort((a, b) => b.rsi - a.rsi)[0]
-    return { ...sector, avgRSI: avg, count: st.length, top }
-  }).sort((a, b) => b.avgRSI - a.avgRSI)
+// CMC category type
+interface CMCCategory {
+  id: string; name: string; numTokens: number;
+  marketCap: number; marketCapChange: number;
+  volume: number; volumeChange: number; avgPriceChange: number;
+}
+
+function fmtCapShort(n: number): string {
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`
+  if (n >= 1e9)  return `$${(n / 1e9).toFixed(1)}B`
+  if (n >= 1e6)  return `$${(n / 1e6).toFixed(0)}M`
+  return `$${n.toFixed(0)}`
+}
+
+function SectorRotationPanel({ onClose }: { onClose: () => void }) {
+  const [categories, setCategories] = useState<CMCCategory[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState(false)
+  const [sortMode,   setSortMode]   = useState<'perf'|'mcap'>('perf')
+
+  useEffect(() => {
+    const fn = httpsCallable<void, { categories: CMCCategory[] }>(fbFunctions, 'fetchCMCCategories')
+    fn().then(r => { setCategories(r.data.categories ?? []); setLoading(false) })
+      .catch(() => { setError(true); setLoading(false) })
+  }, [])
+
+  const sorted = useMemo(() => {
+    const arr = [...categories]
+    if (sortMode === 'perf') return arr.sort((a, b) => b.marketCapChange - a.marketCapChange)
+    return arr.sort((a, b) => b.marketCap - a.marketCap)
+  }, [categories, sortMode])
+
+  // Color from perf: red → orange → green
+  const perfColor = (p: number): string => {
+    if (p >= 5)   return '52,199,89'    // strong green
+    if (p >= 1)   return '100,200,100'  // light green
+    if (p >= -1)  return '143,148,163'  // grey
+    if (p >= -5)  return '255,149,0'    // orange
+    return '255,59,48'                  // red
+  }
 
   return createPortal(
     <div style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
       <motion.div initial={{ opacity:0, scale:0.95, y:20 }} animate={{ opacity:1, scale:1, y:0 }} exit={{ opacity:0, scale:0.95 }}
         onClick={e => e.stopPropagation()}
-        style={{ width:'min(520px,90vw)', background:'rgba(8,12,22,0.97)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:16, padding:'24px', position:'relative', overflow:'hidden', boxShadow:'0 0 60px rgba(0,229,255,0.08)' }}>
+        style={{ width:'min(620px,92vw)', maxHeight:'85vh', overflowY:'auto', background:'rgba(8,12,22,0.97)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:16, padding:'24px', position:'relative', boxShadow:'0 0 60px rgba(0,229,255,0.08)' }}>
         <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(0,229,255,0.5),transparent)'}}/>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <span style={{ fontSize:18 }}>🔄</span>
-            <span style={{ fontSize:16, fontWeight:800, color:'rgba(226,232,240,0.95)', fontFamily:'Syne, sans-serif' }}>Rotation Sectorielle</span>
+            <span style={{ fontSize:16, fontWeight:800, color:'rgba(226,232,240,0.95)', fontFamily:'Syne, sans-serif' }}>Sector Rotation</span>
+            <span style={{ fontSize:9, color:'rgba(0,229,255,0.5)', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,229,255,0.08)', padding:'2px 7px', borderRadius:4, border:'1px solid rgba(0,229,255,0.15)' }}>CMC · Top 30</span>
           </div>
           <button onClick={onClose} style={{ background:'none', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, color:'rgba(148,163,184,0.6)', fontSize:16, cursor:'pointer', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
         </div>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          {sectors.map((sector, i) => {
-            const pct = (sector.avgRSI / 100) * 100
-            const color = sector.color
-            return (
-              <div key={sector.label}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:5 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:14 }}>{sector.emoji}</span>
-                    <span style={{ fontSize:12, fontWeight:700, color:'rgba(226,232,240,0.9)' }}>{sector.label}</span>
-                    <span style={{ fontSize:9, color:`rgba(${color},0.5)`, background:`rgba(${color},0.08)`, padding:'1px 6px', borderRadius:99, border:`1px solid rgba(${color},0.2)` }}>{sector.count} tokens</span>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    {sector.top && <span style={{ fontSize:10, color:'rgba(148,163,184,0.5)', fontFamily:'JetBrains Mono, monospace' }}>↑ {sector.top.symbol} {sector.top.rsi}</span>}
-                    <span style={{ fontSize:13, fontWeight:800, color:`rgb(${color})`, fontFamily:'JetBrains Mono, monospace' }}>{sector.avgRSI}</span>
-                  </div>
-                </div>
-                <div style={{ height:6, background:'rgba(255,255,255,0.04)', borderRadius:3, overflow:'hidden' }}>
-                  <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.8, delay:i*0.07, ease:'easeOut' }}
-                    style={{ height:'100%', background:`linear-gradient(90deg, rgba(${color},0.6), rgba(${color},0.9))`, borderRadius:3, boxShadow:`0 0 8px rgba(${color},0.4)` }} />
-                </div>
-              </div>
-            )
-          })}
+        {/* Sort toggles */}
+        <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+          {(['perf','mcap'] as const).map(m => (
+            <button key={m} onClick={() => setSortMode(m)} style={{
+              padding:'4px 12px', borderRadius:6, fontSize:10, fontWeight:700, cursor:'pointer',
+              border:`1px solid ${sortMode===m ? 'rgba(0,229,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
+              background: sortMode===m ? 'rgba(0,229,255,0.12)' : 'rgba(255,255,255,0.02)',
+              color: sortMode===m ? '#00E5FF' : 'rgba(148,163,184,0.5)',
+            }}>{m === 'perf' ? '🔥 Perf 24h' : '💰 Market Cap'}</button>
+          ))}
         </div>
 
-        <p style={{ fontSize:10, color:'rgba(148,163,184,0.3)', textAlign:'center', marginTop:16, marginBottom:0 }}>
-          RSI moyen par secteur · données Binance 1D
+        {loading && <p style={{ color:'rgba(148,163,184,0.5)', fontSize:11, textAlign:'center', padding:'24px 0' }}>Chargement des catégories CMC…</p>}
+        {error && <p style={{ color:'rgba(255,59,48,0.7)', fontSize:11, textAlign:'center', padding:'24px 0' }}>Erreur lors du chargement</p>}
+
+        {!loading && !error && (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {sorted.map((cat, i) => {
+              const color = perfColor(cat.marketCapChange)
+              const maxMcap = Math.max(...sorted.map(c => c.marketCap))
+              const mcapPct = (cat.marketCap / maxMcap) * 100
+              return (
+                <div key={cat.id} style={{ padding:'8px 12px', borderRadius:10, background:'rgba(8,12,22,0.5)', border:`1px solid rgba(${color},0.15)` }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:5 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flex:1, minWidth:0 }}>
+                      <span style={{ fontSize:11, fontWeight:700, color:'rgba(226,232,240,0.9)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:240 }}>{cat.name}</span>
+                      <span style={{ fontSize:8, color:'rgba(148,163,184,0.4)', background:'rgba(255,255,255,0.04)', padding:'1px 5px', borderRadius:99 }}>{cat.numTokens} tokens</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      <span style={{ fontSize:10, color:'rgba(148,163,184,0.5)', fontFamily:'JetBrains Mono, monospace' }}>{fmtCapShort(cat.marketCap)}</span>
+                      <span style={{ fontSize:13, fontWeight:800, color:`rgb(${color})`, fontFamily:'JetBrains Mono, monospace', minWidth:60, textAlign:'right' }}>
+                        {cat.marketCapChange >= 0 ? '+' : ''}{cat.marketCapChange.toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ height:4, background:'rgba(255,255,255,0.04)', borderRadius:2, overflow:'hidden' }}>
+                    <motion.div initial={{ width:0 }} animate={{ width:`${mcapPct}%` }} transition={{ duration:0.6, delay:i*0.03, ease:'easeOut' }}
+                      style={{ height:'100%', background:`linear-gradient(90deg, rgba(${color},0.5), rgba(${color},0.9))`, borderRadius:2, boxShadow:`0 0 6px rgba(${color},0.3)` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <p style={{ fontSize:9, color:'rgba(148,163,184,0.3)', textAlign:'center', marginTop:14, marginBottom:0 }}>
+          Catégories CoinMarketCap · Refresh 30 min
         </p>
       </motion.div>
     </div>,
@@ -2783,6 +2836,7 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 
   // New feature state
   const [fundingRates, setFundingRates]   = useState<Record<string, number>>({})
+  const [cmcData,      setCmcData]        = useState<Record<string, { rank: number; marketCap: number; circulatingSupply: number }>>({})
   const [screenerOpen, setScreenerOpen]   = useState(false)
   const [screener,     setScreener]       = useState<ScreenerState>(DEFAULT_SCREENER)
   const [mtfMode,      setMtfMode]        = useState(false)
@@ -2791,6 +2845,23 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 
   useEffect(() => {
     fetchFundingRates().then(setFundingRates)
+  }, [])
+
+  // Fetch CMC top 100 (rank + supply enrichment)
+  useEffect(() => {
+    const fetchCMC = () => {
+      const fn = httpsCallable<void, { tokens: Array<{ symbol: string; rank: number; marketCap: number; circulatingSupply: number }> }>(fbFunctions, 'fetchCMCTopCryptos')
+      fn().then(r => {
+        const map: Record<string, { rank: number; marketCap: number; circulatingSupply: number }> = {}
+        for (const t of r.data.tokens) {
+          map[t.symbol.toUpperCase()] = { rank: t.rank, marketCap: t.marketCap, circulatingSupply: t.circulatingSupply }
+        }
+        setCmcData(map)
+      }).catch(() => {})
+    }
+    fetchCMC()
+    const id = setInterval(fetchCMC, 5 * 60 * 1000)
+    return () => clearInterval(id)
   }, [])
 
   useEffect(() => {
@@ -2832,7 +2903,14 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
     return subsetTokens.filter(t => (t.rsi ?? 50) < refRSI)
   }, [subsetTokens, refKey, refRSI, strength])
 
-  const screenerTokens = useMemo(() => applyScreener(finalTokens, screener), [finalTokens, screener])
+  const screenerTokens = useMemo(() => {
+    const filtered = applyScreener(finalTokens, screener)
+    // Merge CMC enrichment: rank, mcap, circulating supply
+    return filtered.map(tok => {
+      const cmc = cmcData[tok.symbol.toUpperCase()]
+      return cmc ? { ...tok, cmcRank: cmc.rank, cmcMarketCap: cmc.marketCap, cmcCirculatingSupply: cmc.circulatingSupply } : tok
+    })
+  }, [finalTokens, screener, cmcData])
 
   const screenerActive = screener.rsiPreset !== 'all' || screener.vmcZone !== 'all' || screener.volumeFilter !== 'all' || screener.divOnly
 
@@ -2952,7 +3030,7 @@ function CryptoTab({ onTokenClick, shareRef }: { onTokenClick: (sym: string) => 
 
       {/* Modals via portal (escape backdrop-filter stacking context) */}
       <AnimatePresence>
-        {showSector && <SectorRotationPanel tokens={tokens} onClose={() => setShowSector(false)} />}
+        {showSector && <SectorRotationPanel onClose={() => setShowSector(false)} />}
       </AnimatePresence>
       <AnimatePresence>
         {showCorr && <CorrelationMatrix tokens={tokens} onClose={() => setShowCorr(false)} />}
