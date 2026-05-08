@@ -1903,6 +1903,20 @@ export default function AnalysePage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // ── Raccourcis clavier 1-6 pour changer de tab ────────────────────────────
+  useEffect(() => {
+    const MODES: Mode[] = ['micro', 'structure', 'derivees', 'orderflow', 'liqheat', 'charts']
+    function onTabKey(e: KeyboardEvent) {
+      const tag = (document.activeElement as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const idx = parseInt(e.key) - 1
+      if (idx >= 0 && idx < MODES.length) setMode(MODES[idx])
+    }
+    window.addEventListener('keydown', onTabKey)
+    return () => window.removeEventListener('keydown', onTabKey)
+  }, [])
+
   // ── Mode recherche : remplace TOUTE la page (aucun overlay) ───────────────
   if (searching) {
     return (
