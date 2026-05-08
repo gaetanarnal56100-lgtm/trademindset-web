@@ -938,6 +938,212 @@ function MarketNewsSection({ topTokens }: { topTokens: string[] }) {
   )
 }
 
+// ── Whale Intelligence — AI Summary ───────────────────────────────────────────
+type AIBias = 'HAUSSIER' | 'BAISSIER' | 'NEUTRE'
+interface WhaleAIAnalysis {
+  bias: AIBias
+  confidence: number
+  summary: string
+  bullets: string[]
+  risk: string | null
+}
+
+function WhaleAISummary({ alerts }: { alerts: WhaleAlert[] }) {
+  const [analysis, setAnalysis] = useState<WhaleAIAnalysis | null>(null)
+  const [loading,  setLoading]  = useState(false)
+  const [lastRun,  setLastRun]  = useState<number | null>(null)
+  const [error,    setError]    = useState(false)
+
+  const analyze = async () => {
+    if (alerts.length === 0) return
+    setLoading(true)
+    setError(false)
+    try {
+      // Aggregate stats from alerts
+      const bySignal: Record<Signal, number> = { buy: 0, sell: 0, exchange: 0, p2p: 0, spoofing: 0 }
+      const byToken:    Record<string, number> = {}
+      const byExchange: Record<string, { inn: number; out: number }> = {}
+      let megaCount = 0
+
+      for (const a of alerts) {
+        const sig = getSignal(a)
+        bySignal[sig] += a.usdValue
+        byToken[a.tokenSymbol] = (byToken[a.tokenSymbol] ?? 0) + a.usdValue
+        if (a.scoreCategory === 'MEGA_WHALE') megaCount++
+        if (a.fromLabel && a.fromLabel !== a.from) {
+          if (!byExchange[a.fromLabel]) byExchange[a.fromLabel] = { inn: 0, out: 0 }
+          byExchange[a.fromLabel].out += a.usdValue
+        }
+        if (a.toLabel && a.toLabel !== a.to) {
+          if (!byExchange[a.toLabel]) byExchange[a.toLabel] = { inn: 0, out: 0 }
+          byExchange[a.toLabel].inn += a.usdValue
+        }
+      }
+
+      const netFlow    = bySignal.buy - bySignal.sell
+      const topTokens  = Object.entries(byToken).sort((a, b) => b[1] - a[1]).slice(0, 5)
+      const topEx      = Object.entries(byExchange)
+        .map(([name, { inn, out }]) => ({ name, net: out - inn }))
+        .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+        .slice(0, 3)
+
+      const prompt = `Tu es un analyste on-chain spécialisé en flux de baleines crypto.
+
+Données whale (${alerts.length} transactions > $500K) :
+- Flux NET : ${netFlow >= 0 ? '+' : ''}${fmt(netFlow)} (accumulation - distribution)
+- Accumulation (retraits exchanges) : ${fmt(bySignal.buy)}
+- Distribution (dépôts exchanges) : ${fmt(bySignal.sell)}
+- Inter-exchanges : ${fmt(bySignal.exchange)}
+- OTC/P2P : ${fmt(bySignal.p2p)}
+- Méga Baleines (score ≥ 80) : ${megaCount} transaction${megaCount > 1 ? 's' : ''}
+- Tokens dominants : ${topTokens.map(([s, v]) => `${s} (${fmt(v)})`).join(', ')}
+- Flux exchanges : ${topEx.length ? topEx.map(e => `${e.name} net ${e.net >= 0 ? '+' : ''}${fmt(e.net)}`).join(', ') : 'données insuffisantes'}
+
+Retourne UNIQUEMENT ce JSON strict :
+{
+  "bias": "HAUSSIER" ou "BAISSIER" ou "NEUTRE",
+  "confidence": entier 0-100,
+  "summary": "2-3 phrases d'analyse narrative directe et factuelle",
+  "bullets": ["observation clé 1", "observation clé 2", "observation clé 3"],
+  "risk": "risque principal à surveiller, ou null si aucun signal d'alerte"
+}`
+
+      const fn = httpsCallable<Record<string, unknown>, { choices?: { message: { content: string } }[] }>(fbFn, 'openaiChat')
+      const res = await fn({
+        messages: [{ role: 'user', content: prompt }],
+        model: 'gpt-4o-mini',
+        temperature: 0.1,
+        responseFormat: 'json',
+      })
+      const raw = res.data.choices?.[0]?.message?.content ?? '{}'
+      const parsed: WhaleAIAnalysis = JSON.parse(raw)
+      setAnalysis(parsed)
+      setLastRun(Date.now())
+    } catch (e) {
+      console.error('[WhaleAI]', e)
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const biasColor = analysis?.bias === 'HAUSSIER' ? '#34C759' : analysis?.bias === 'BAISSIER' ? '#FF3B30' : '#FF9500'
+  const biasIcon  = analysis?.bias === 'HAUSSIER' ? '▲' : analysis?.bias === 'BAISSIER' ? '▼' : '→'
+
+  return (
+    <div className="px-6 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* Section header */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--tm-text-muted)' }}>
+          🧠 WHALE INTELLIGENCE
+        </span>
+        <button
+          onClick={analyze}
+          disabled={loading || alerts.length === 0}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+          style={{
+            background: loading ? 'rgba(0,229,255,0.04)' : 'rgba(0,229,255,0.12)',
+            border: '1px solid rgba(0,229,255,0.25)',
+            color: loading ? 'var(--tm-text-muted)' : 'var(--tm-accent)',
+            cursor: (loading || alerts.length === 0) ? 'not-allowed' : 'pointer',
+            opacity: alerts.length === 0 ? 0.4 : 1,
+          }}
+        >
+          {loading
+            ? <span className="flex items-center gap-1.5">
+                <span style={{ display:'inline-block', width:10, height:10, borderRadius:'50%', border:'1.5px solid currentColor', borderTopColor:'transparent', animation:'spin 0.7s linear infinite' }}/>
+                Analyse...
+              </span>
+            : '🔍 Analyser'}
+        </button>
+        {lastRun && (
+          <span className="text-[10px]" style={{ color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
+            {ago(lastRun)}
+          </span>
+        )}
+      </div>
+
+      {/* Empty / idle state */}
+      {!analysis && !loading && !error && (
+        <div className="flex items-center gap-3 py-3 px-4 rounded-xl"
+          style={{ background: 'rgba(0,229,255,0.04)', border: '1px dashed rgba(0,229,255,0.15)' }}>
+          <span className="text-2xl flex-shrink-0">🧠</span>
+          <div>
+            <div className="text-sm font-semibold" style={{ color: 'var(--tm-text-secondary)' }}>
+              Interprétation IA disponible
+            </div>
+            <div className="text-xs" style={{ color: 'var(--tm-text-muted)', marginTop: 2 }}>
+              GPT-4o analyse les flux baleines et explique ce que les données signifient pour le marché
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="text-xs text-center py-3 rounded-xl"
+          style={{ background: 'rgba(255,59,48,0.06)', border: '1px solid rgba(255,59,48,0.2)', color: '#FF3B30' }}>
+          Erreur lors de l'analyse — réessayez dans un instant
+        </div>
+      )}
+
+      {/* Analysis result */}
+      {analysis && !loading && (
+        <div className="rounded-xl p-4"
+          style={{ background: `${biasColor}08`, border: `1px solid ${biasColor}28`, animation: 'fadeIn 0.3s ease-out' }}>
+
+          {/* Bias + confidence */}
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+              style={{ background: `${biasColor}18`, border: `1px solid ${biasColor}45` }}>
+              <span className="text-xs font-black" style={{ color: biasColor }}>{biasIcon}</span>
+              <span className="text-xs font-bold tracking-wide" style={{ color: biasColor }}>{analysis.bias}</span>
+            </div>
+            <span className="text-xs" style={{ color: 'var(--tm-text-muted)' }}>
+              Confiance{' '}
+              <span className="font-bold" style={{ color: biasColor }}>{analysis.confidence}%</span>
+            </span>
+          </div>
+
+          {/* Narrative summary */}
+          <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--tm-text-secondary)', lineHeight: 1.65 }}>
+            {analysis.summary}
+          </p>
+
+          {/* Key observations */}
+          {analysis.bullets?.length > 0 && (
+            <div className="flex flex-col gap-1.5 mb-3">
+              {analysis.bullets.map((b, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs"
+                  style={{ color: 'var(--tm-text-secondary)' }}>
+                  <span style={{ color: biasColor, flexShrink: 0, marginTop: 1, fontSize: 10 }}>▶</span>
+                  <span style={{ lineHeight: 1.5 }}>{b}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Risk alert */}
+          {analysis.risk && (
+            <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg"
+              style={{ background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.22)', color: '#FF6B6B' }}>
+              <span className="flex-shrink-0" style={{ marginTop: 1 }}>⚠</span>
+              <span style={{ lineHeight: 1.5 }}>{analysis.risk}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stale data hint */}
+      {lastRun && Date.now() - lastRun > 120_000 && (
+        <div className="mt-2 text-[10px] text-center" style={{ color: 'var(--tm-text-muted)' }}>
+          Nouvelles données disponibles — relancez pour actualiser l'analyse
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page principale ────────────────────────────────────────────────────────────
 export default function WhaleAlertsPage() {
   const user   = useUser()
@@ -1008,6 +1214,9 @@ export default function WhaleAlertsPage() {
 
         {/* Verdict */}
         {!loading && alerts.length > 0 && <VerdictBanner alerts={alerts}/>}
+
+        {/* AI Whale Intelligence */}
+        {!loading && <WhaleAISummary alerts={alerts}/>}
 
         {/* Timeline */}
         {!loading && alerts.length > 0 && <TimelineChart alerts={alerts}/>}
