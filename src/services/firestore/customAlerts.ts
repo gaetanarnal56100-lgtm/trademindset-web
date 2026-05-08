@@ -7,7 +7,12 @@ import { db } from '@/services/firebase/config'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type ConditionType = 'rsi_lt' | 'rsi_gt' | 'price_lt' | 'price_gt'
+export type ConditionType =
+  | 'rsi_lt' | 'rsi_gt'
+  | 'price_lt' | 'price_gt'
+  | 'change_pct_gt' | 'change_pct_lt'
+  | 'volume_gt' | 'volume_lt'
+  | 'funding_gt' | 'funding_lt'
 export type AlertTF = '1m' | '5m' | '15m' | '1h' | '4h' | '1d'
 
 export interface AlertCondition {

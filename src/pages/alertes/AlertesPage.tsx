@@ -94,18 +94,36 @@ function SignalCard({ signal, expanded, onToggle }: { signal: TradingSignal; exp
 
 // ── Custom Alerts Section ──────────────────────────────────────────────────
 const CONDITION_LABELS: Record<ConditionType, string> = {
-  rsi_lt: 'RSI <',
-  rsi_gt: 'RSI >',
-  price_lt: 'Prix <',
-  price_gt: 'Prix >',
+  rsi_lt:         'RSI <',
+  rsi_gt:         'RSI >',
+  price_lt:       'Prix <',
+  price_gt:       'Prix >',
+  change_pct_gt:  'Variation 24h > %',
+  change_pct_lt:  'Variation 24h < %',
+  volume_gt:      'Volume 24h > $',
+  volume_lt:      'Volume 24h < $',
+  funding_gt:     'Funding Rate >',
+  funding_lt:     'Funding Rate <',
+}
+
+// Conditions qui nécessitent un timeframe
+const NEEDS_TF = new Set<ConditionType>(['rsi_lt', 'rsi_gt'])
+
+// Placeholder de valeur par type
+const VALUE_PLACEHOLDER: Partial<Record<ConditionType, string>> = {
+  rsi_lt: '30', rsi_gt: '70',
+  price_lt: '60000', price_gt: '60000',
+  change_pct_gt: '5', change_pct_lt: '-5',
+  volume_gt: '1000000000', volume_lt: '1000000000',
+  funding_gt: '0.0003', funding_lt: '-0.0001',
 }
 
 const TF_OPTIONS: AlertTF[] = ['1m','5m','15m','1h','4h','1d']
 
 function conditionSummary(c: AlertCondition): string {
   const label = CONDITION_LABELS[c.type]
-  if (c.type.startsWith('price_')) return `${label} ${c.value}`
-  return `${label} ${c.value} (${c.timeframe})`
+  if (NEEDS_TF.has(c.type)) return `${label} ${c.value} (${c.timeframe})`
+  return `${label} ${c.value}`
 }
 
 function CustomAlertsSection({ uid }: { uid: string }) {
@@ -123,6 +141,7 @@ function CustomAlertsSection({ uid }: { uid: string }) {
   const [newConds,   setNewConds]   = useState<AlertCondition[]>([{ type:'rsi_lt', timeframe:'1h', value:30 }])
   const [newCooldown,setNewCooldown]= useState(30)
   const [building,   setBuilding]   = useState(false)
+  const [createError,setCreateError]= useState<string|null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -181,22 +200,28 @@ function CustomAlertsSection({ uid }: { uid: string }) {
   const handleCreateAlert = async () => {
     if (!newName.trim() || !newSymbol.trim()) return
     setBuilding(true)
-    const alert: CustomAlert = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
-      name: newName.trim(),
-      symbol: newSymbol.trim().toUpperCase(),
-      enabled: true,
-      conditions: newConds,
-      cooldownMinutes: newCooldown,
-      createdAt: Date.now(),
+    setCreateError(null)
+    try {
+      const alert: CustomAlert = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+        name: newName.trim(),
+        symbol: newSymbol.trim().toUpperCase(),
+        enabled: true,
+        conditions: newConds,
+        cooldownMinutes: newCooldown,
+        createdAt: Date.now(),
+      }
+      await saveCustomAlert(uid, alert)
+      setAlerts(prev => [alert, ...prev])
+      setNewName('')
+      setNewSymbol('BTCUSDT')
+      setNewConds([{ type:'rsi_lt', timeframe:'1h', value:30 }])
+      setNewCooldown(30)
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde')
+    } finally {
+      setBuilding(false)
     }
-    await saveCustomAlert(uid, alert)
-    setAlerts(prev => [alert, ...prev])
-    setNewName('')
-    setNewSymbol('BTCUSDT')
-    setNewConds([{ type:'rsi_lt', timeframe:'1h', value:30 }])
-    setNewCooldown(30)
-    setBuilding(false)
   }
 
   const btnStyle = (color: string, active = true): React.CSSProperties => ({
@@ -314,15 +339,32 @@ function CustomAlertsSection({ uid }: { uid: string }) {
                 {i === 0 ? 'SI' : 'ET'}
               </span>
               <select
-                style={{ ...inputStyle, cursor:'pointer' }}
+                style={{ ...inputStyle, cursor:'pointer', minWidth:160 }}
                 value={c.type}
                 onChange={e => handleCondChange(i, 'type', e.target.value as ConditionType)}
               >
-                {(Object.entries(CONDITION_LABELS) as [ConditionType, string][]).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
+                <optgroup label="RSI">
+                  <option value="rsi_lt">RSI &lt; (sous-vendu)</option>
+                  <option value="rsi_gt">RSI &gt; (sur-acheté)</option>
+                </optgroup>
+                <optgroup label="Prix">
+                  <option value="price_lt">Prix &lt;</option>
+                  <option value="price_gt">Prix &gt;</option>
+                </optgroup>
+                <optgroup label="Variation 24h">
+                  <option value="change_pct_gt">Hausse 24h &gt; %</option>
+                  <option value="change_pct_lt">Baisse 24h &lt; %</option>
+                </optgroup>
+                <optgroup label="Volume">
+                  <option value="volume_gt">Volume 24h &gt; $</option>
+                  <option value="volume_lt">Volume 24h &lt; $</option>
+                </optgroup>
+                <optgroup label="Funding Rate (Futures)">
+                  <option value="funding_gt">Funding Rate &gt;</option>
+                  <option value="funding_lt">Funding Rate &lt;</option>
+                </optgroup>
               </select>
-              {!c.type.startsWith('price_') && (
+              {NEEDS_TF.has(c.type) && (
                 <select
                   style={{ ...inputStyle, cursor:'pointer' }}
                   value={c.timeframe}
@@ -333,7 +375,8 @@ function CustomAlertsSection({ uid }: { uid: string }) {
               )}
               <input
                 type="number"
-                style={{ ...inputStyle, width:90 }}
+                style={{ ...inputStyle, width:110 }}
+                placeholder={VALUE_PLACEHOLDER[c.type] ?? '0'}
                 value={c.value}
                 onChange={e => handleCondChange(i, 'value', parseFloat(e.target.value)||0)}
               />
@@ -348,7 +391,7 @@ function CustomAlertsSection({ uid }: { uid: string }) {
         </div>
 
         <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
-          {newConds.length < 4 && (
+          {newConds.length < 6 && (
             <button style={btnStyle('var(--tm-text-muted)')} onClick={handleAddCondition}>
               + Condition
             </button>
@@ -358,9 +401,14 @@ function CustomAlertsSection({ uid }: { uid: string }) {
             onClick={handleCreateAlert}
             disabled={building || !newName.trim() || !newSymbol.trim()}
           >
-            {building ? 'Création...' : '✓ Créer l\'alerte'}
+            {building ? '⟳ Création...' : '✓ Créer l\'alerte'}
           </button>
         </div>
+        {createError && (
+          <div style={{ marginTop:8, padding:'8px 12px', background:'rgba(255,59,48,0.08)', border:'1px solid rgba(255,59,48,0.3)', borderRadius:8, fontSize:11, color:'#FF3B30' }}>
+            ✗ Erreur : {createError}
+          </div>
+        )}
       </div>
 
       {/* ── Alert list ── */}
