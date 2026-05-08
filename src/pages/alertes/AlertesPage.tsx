@@ -1,7 +1,7 @@
 // AlertesPage.tsx — Alertes WaveTrend / VMC / MTF + Custom Alertes (Discord webhook)
 import { useState, useEffect, useCallback } from 'react'
 import { signalService, type TradingSignal, type SignalType } from '@/services/notifications/SignalNotificationService'
-import { getAuth } from 'firebase/auth'
+import { useUser } from '@/hooks/useAuth'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/services/firebase/config'
 import {
@@ -144,17 +144,23 @@ function CustomAlertsSection({ uid }: { uid: string }) {
   const [createError,setCreateError]= useState<string|null>(null)
 
   const load = useCallback(async () => {
+    if (!uid) return
     setLoading(true)
-    const [alts, hist, settings] = await Promise.all([
-      getCustomAlerts(uid),
-      getAlertHistory(uid),
-      getNotifSettings(uid),
-    ])
-    setAlerts(alts)
-    setHistory(hist)
-    setWebhook(settings.discordWebhook ?? '')
-    setWebhookInput(settings.discordWebhook ?? '')
-    setLoading(false)
+    try {
+      const [alts, hist, settings] = await Promise.all([
+        getCustomAlerts(uid),
+        getAlertHistory(uid).catch(() => [] as import('@/services/firestore/customAlerts').AlertHistoryEntry[]),
+        getNotifSettings(uid),
+      ])
+      setAlerts(alts)
+      setHistory(hist)
+      setWebhook(settings.discordWebhook ?? '')
+      setWebhookInput(settings.discordWebhook ?? '')
+    } catch (e) {
+      console.error('load alerts failed', e)
+    } finally {
+      setLoading(false)
+    }
   }, [uid])
 
   useEffect(() => { load() }, [load])
@@ -514,7 +520,8 @@ export default function AlertesPage() {
   const [expandedId, setExpandedId] = useState<string|null>(null)
   const [pageTab, setPageTab] = useState<PageTab>('signaux')
 
-  const uid = getAuth().currentUser?.uid ?? ''
+  const authUser = useUser()
+  const uid = authUser?.uid ?? ''
 
   useEffect(() => {
     const unsub = signalService.subscribe(() => {
