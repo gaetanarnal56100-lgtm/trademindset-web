@@ -204,7 +204,22 @@ function CustomAlertsSection({ uid }: { uid: string }) {
   }
 
   const handleCreateAlert = async () => {
-    if (!newName.trim() || !newSymbol.trim()) return
+    console.log('[AlertCreate] clicked — uid:', uid, 'name:', newName, 'symbol:', newSymbol)
+    if (!uid) {
+      setCreateError('Non connecté — rechargez la page')
+      console.log('[AlertCreate] no uid')
+      return
+    }
+    if (!newName.trim()) {
+      setCreateError('Le nom est requis')
+      console.log('[AlertCreate] empty name')
+      return
+    }
+    if (!newSymbol.trim()) {
+      setCreateError('Le symbole est requis')
+      console.log('[AlertCreate] empty symbol')
+      return
+    }
     setBuilding(true)
     setCreateError(null)
     try {
@@ -217,13 +232,16 @@ function CustomAlertsSection({ uid }: { uid: string }) {
         cooldownMinutes: newCooldown,
         createdAt: Date.now(),
       }
+      console.log('[AlertCreate] saving to Firestore path: users/' + uid + '/customAlerts/' + alert.id)
       await saveCustomAlert(uid, alert)
+      console.log('[AlertCreate] Firestore write OK')
       setAlerts(prev => [alert, ...prev])
       setNewName('')
       setNewSymbol('BTCUSDT')
       setNewConds([{ type:'rsi_lt', timeframe:'1h', value:30 }])
       setNewCooldown(30)
     } catch (err) {
+      console.error('[AlertCreate] error:', err)
       setCreateError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde')
     } finally {
       setBuilding(false)
@@ -313,6 +331,7 @@ function CustomAlertsSection({ uid }: { uid: string }) {
             <input
               style={{ ...inputStyle, width:180 }}
               placeholder="BTC RSI oversold"
+              autoComplete="off"
               value={newName}
               onChange={e => setNewName(e.target.value)}
             />
@@ -403,9 +422,10 @@ function CustomAlertsSection({ uid }: { uid: string }) {
             </button>
           )}
           <button
-            style={{ ...btnStyle('var(--tm-warning)', !!newName && !!newSymbol), marginLeft:'auto' }}
-            onClick={handleCreateAlert}
-            disabled={building || !newName.trim() || !newSymbol.trim()}
+            type="button"
+            style={{ ...btnStyle('var(--tm-warning)', !building), marginLeft:'auto', opacity: building ? 0.6 : 1 }}
+            onClick={() => { console.log('[AlertCreate] DOM click fired'); handleCreateAlert() }}
+            disabled={building}
           >
             {building ? '⟳ Création...' : '✓ Créer l\'alerte'}
           </button>
