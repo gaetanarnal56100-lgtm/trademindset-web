@@ -100,7 +100,7 @@
   /* ── Nav link ── */
   .nav-link {
     @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm
-           text-text-secondary transition-all duration-150 group relative;
+           text-text-secondary transition-all duration-150 relative;
   }
   .nav-link:hover { @apply bg-bg-tertiary text-text-primary; }
   .nav-link.active {
