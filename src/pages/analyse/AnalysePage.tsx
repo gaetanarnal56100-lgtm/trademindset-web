@@ -22,6 +22,7 @@ import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
 import OUChannelIndicator from './OUChannelIndicator'
 import DecisionAssistant from '@/components/decision/DecisionAssistant'
+import EdgeEstimator from '@/components/decision/EdgeEstimator'
 import GlobalMarketWidget from '@/components/marketmetrics/GlobalMarketWidget'
 import { getAuth } from 'firebase/auth'
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
@@ -2087,6 +2088,22 @@ export default function AnalysePage() {
               ouZ={ouSignal.z}
               vmcStatus={ouSignal.vmcStatus}
               confluenceSignal={ouSignal.confluenceSignal}
+            />
+          )}
+          {pdfMtfSnap && isCrypto && (
+            <EdgeEstimator
+              symbol={symbol}
+              mtfSnap={pdfMtfSnap}
+              pressure={pressure}
+              liqLong1h={liqLong1h}
+              liqShort1h={liqShort1h}
+              isCrypto={isCrypto}
+              ouExcess={ouSignal.excess}
+              ouRegime={ouSignal.regime}
+              ouZ={ouSignal.z}
+              vmcStatus={ouSignal.vmcStatus}
+              confluenceSignal={ouSignal.confluenceSignal}
+              fng={fng}
             />
           )}
         </div>
