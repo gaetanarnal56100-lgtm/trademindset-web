@@ -1,6 +1,23 @@
-// src/pages/arbitrage/ArbitragePage.tsx — Mispricing Scanner
-// Polymarket YES+NO consistency + Crypto triangular arb + Futures basis
+// src/pages/arbitrage/ArbitragePage.tsx — Mispricing Scanner (copper dark theme)
 import { useState, useEffect, useCallback, useRef } from 'react'
+
+// ── Design tokens (copper dark — matching the research visuals) ────────────
+const C = {
+  bg:      '#0C0A08',
+  card:    '#141210',
+  card2:   '#1A1714',
+  copper:  '#C4896A',
+  copperD: '#9B6A4E',
+  copperL: '#E8A87C',
+  text:    '#E8DDD5',
+  muted:   '#7A6A60',
+  dim:     '#3D3028',
+  green:   '#5DBD7A',
+  red:     '#C45A5A',
+  amber:   '#D4A84B',
+  border:  'rgba(196,137,106,0.12)',
+  border2: 'rgba(255,255,255,0.06)',
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -12,259 +29,156 @@ interface PolyMarket {
   outcomes: string[]
   prices: number[]
   sum: number
-  edge: number       // 1 - sum; positive = mispricing
+  edge: number
   endDate: string
-  url: string
 }
 
 interface TriangleArb {
-  id: string
-  name: string           // e.g. "ETH via BTC"
-  actual: number         // ETH/USDT spot
-  implied: number        // BTC/USDT × ETH/BTC
-  spread: number         // % difference
-  direction: string      // which leg is cheap
+  id: string; name: string; actual: number; implied: number; spread: number; direction: string
 }
 
 interface BasisOpp {
-  symbol: string
-  spotPrice: number
-  perpPrice: number
-  basis: number          // (perp - spot) / spot * 100
-  fundingRate: number    // per 8h %
-  annualizedFunding: number
-  signal: 'long_basis' | 'short_basis' | 'neutral'
+  symbol: string; spotPrice: number; perpPrice: number
+  basis: number; fundingRate: number; annualizedFunding: number
+  signal: 'long_basis' | 'short_basis'
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-// Triangular pairs: base/quote × quote/USDT vs base/USDT
 const TRIANGLES = [
-  { base: 'ETH', quote: 'BTC' },
-  { base: 'BNB', quote: 'BTC' },
-  { base: 'SOL', quote: 'BTC' },
-  { base: 'XRP', quote: 'BTC' },
-  { base: 'BNB', quote: 'ETH' },
-  { base: 'SOL', quote: 'ETH' },
-  { base: 'AVAX', quote: 'BTC' },
-  { base: 'MATIC', quote: 'BTC' },
+  { base: 'ETH',  quote: 'BTC' }, { base: 'BNB',  quote: 'BTC' },
+  { base: 'SOL',  quote: 'BTC' }, { base: 'XRP',  quote: 'BTC' },
+  { base: 'BNB',  quote: 'ETH' }, { base: 'SOL',  quote: 'ETH' },
+  { base: 'AVAX', quote: 'BTC' }, { base: 'MATIC', quote: 'BTC' },
 ]
-
-const PERP_SYMBOLS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'AVAX', 'ARB', 'OP']
-
-// Fees: Binance taker 0.1% per leg, 3 legs = 0.3% min threshold for triangle
-const TRI_FEE_THRESHOLD = 0.15  // show if > 0.15% (after partial fees)
-// Polymarket: ~1% total fees; show if edge > 0.5%
-const POLY_FEE_THRESHOLD = 0.005
+const PERP_SYMS = ['BTC','ETH','SOL','BNB','XRP','AVAX','ARB','OP']
+const TRI_THRES = 0.15
+const POLY_THRES = 0.005
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function edgeColor(pct: number, thres: number) {
-  if (pct > thres * 3)  return '#34C759'
-  if (pct > thres * 1.5) return '#FF9500'
-  return '#8E8E93'
-}
+const fmt   = (n: number, d = 2) => n.toFixed(d)
+const fmtM  = (n: number) => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}K` : `$${n.toFixed(0)}`
+const mono  = { fontFamily: 'JetBrains Mono, "Courier New", monospace' }
+const syne  = { fontFamily: 'Syne, system-ui, sans-serif' }
 
-function fmt(n: number, dec = 2) { return n.toFixed(dec) }
-function fmtM(n: number) {
-  if (n >= 1e6) return `$${(n/1e6).toFixed(1)}M`
-  if (n >= 1e3) return `$${(n/1e3).toFixed(0)}K`
-  return `$${n.toFixed(0)}`
-}
+// ── Sub-components ─────────────────────────────────────────────────────────
 
-function EdgeBadge({ value, label, color }: { value: string; label: string; color: string }) {
+function KPICard({ value, label, sub }: { value: string; label: string; sub?: string }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 3,
-      fontSize: 11, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace',
-      color, background: `${color}18`, border: `1px solid ${color}35`,
-      borderRadius: 6, padding: '2px 8px',
-    }}>
-      {label} {value}
-    </span>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '24px 28px', flex: '1 1 180px' }}>
+      <div style={{ fontSize: 36, fontWeight: 800, color: C.copper, letterSpacing: '-0.02em', ...syne, lineHeight: 1 }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 11, color: C.copperL, ...mono, marginTop: 6, marginBottom: 2 }}>{sub}</div>}
+      <div style={{ fontSize: 9, color: C.muted, letterSpacing: '0.15em', textTransform: 'uppercase', ...mono, marginTop: sub ? 0 : 6 }}>
+        {label}
+      </div>
+    </div>
   )
 }
 
-function SectionHeader({ title, count, accent }: { title: string; count: number; accent: string }) {
+function BarChart({ data }: { data: { label: string; value: number; color: string }[] }) {
+  const max = Math.max(...data.map(d => d.value), 1)
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--tm-text-primary)', fontFamily: 'Syne, sans-serif' }}>
-        {title}
-      </span>
-      {count > 0 && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: accent, background: `${accent}18`, borderRadius: 20, padding: '1px 8px', border: `1px solid ${accent}30` }}>
-          {count}
-        </span>
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 32, height: 160, padding: '0 8px' }}>
+      {data.map(d => (
+        <div key={d.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, gap: 6 }}>
+          <div style={{ fontSize: 10, color: C.copper, ...mono }}>{fmtM(d.value)}</div>
+          <div style={{ width: '100%', height: Math.max((d.value / max) * 130, 4), background: C.copper, borderRadius: '4px 4px 0 0', opacity: 0.85, transition: 'height 0.8s ease', minHeight: 4 }} />
+          <div style={{ fontSize: 9, color: C.muted, textAlign: 'center', letterSpacing: '0.05em', ...mono, lineHeight: 1.4 }}>
+            {d.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AlgoStep({ emoji, title, sub, last }: { emoji: string; title: string; sub: string; last?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 52, height: 52, borderRadius: 14, background: C.card2, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
+          {emoji}
+        </div>
+        <div style={{ textAlign: 'center', width: 90 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.text, ...syne }}>{title}</div>
+          <div style={{ fontSize: 9, color: C.muted, ...mono, marginTop: 2, lineHeight: 1.4 }}>{sub}</div>
+        </div>
+      </div>
+      {!last && (
+        <div style={{ width: 32, marginBottom: 28, color: C.dim, fontSize: 16, textAlign: 'center', flexShrink: 0 }}>→</div>
       )}
     </div>
   )
 }
 
-// ── Fetch functions ────────────────────────────────────────────────────────
-
-async function fetchPolymarketOpps(): Promise<PolyMarket[]> {
-  const r = await fetch(
-    'https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=100&order=volume&ascending=false',
-    { signal: AbortSignal.timeout(8000) }
+function SectionLabel({ text, badge }: { text: string; badge?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+      <span style={{ fontSize: 9, color: C.muted, letterSpacing: '0.15em', textTransform: 'uppercase', ...mono }}>{text}</span>
+      {badge && (
+        <span style={{ fontSize: 8, fontWeight: 700, color: C.copper, background: `${C.copper}18`, border: `1px solid ${C.copper}35`, borderRadius: 20, padding: '2px 8px', ...mono, letterSpacing: '0.1em' }}>
+          {badge}
+        </span>
+      )}
+      <div style={{ flex: 1, height: 1, background: C.border }} />
+    </div>
   )
-  if (!r.ok) throw new Error('Polymarket API failed')
-  const data = await r.json() as {
-    id: string; question: string; volume: number; liquidity: number;
-    outcomePrices: string; outcomes: string; endDate: string;
-    conditionId?: string;
-  }[]
-
-  return data
-    .map(m => {
-      let prices: number[] = []
-      let outcomes: string[] = []
-      try { prices  = JSON.parse(m.outcomePrices).map(Number) } catch { return null }
-      try { outcomes = JSON.parse(m.outcomes) } catch { outcomes = prices.map((_, i) => `Outcome ${i+1}`) }
-      const sum  = prices.reduce((a, b) => a + b, 0)
-      const edge = 1 - sum
-      return { id: m.id, question: m.question, volume: m.volume || 0, liquidity: m.liquidity || 0, outcomes, prices, sum, edge, endDate: m.endDate || '', url: `https://polymarket.com/event/${m.id}` }
-    })
-    .filter((m): m is PolyMarket => m !== null && m.edge > POLY_FEE_THRESHOLD && m.prices.length >= 2 && m.liquidity > 500)
-    .sort((a, b) => b.edge - a.edge)
-    .slice(0, 30)
 }
 
-async function fetchCryptoData(): Promise<{ triangles: TriangleArb[]; basis: BasisOpp[] }> {
-  // Fetch all spot prices in one call
-  const [spotRes, perpRes, fundingRes] = await Promise.all([
-    fetch('https://api.binance.com/api/v3/ticker/price', { signal: AbortSignal.timeout(6000) }),
-    fetch('https://fapi.binance.com/fapi/v1/ticker/price', { signal: AbortSignal.timeout(6000) }),
-    fetch('https://fapi.binance.com/fapi/v1/premiumIndex', { signal: AbortSignal.timeout(6000) }),
-  ])
-
-  const spotAll:    { symbol: string; price: string }[] = spotRes.ok    ? await spotRes.json()    : []
-  const perpAll:    { symbol: string; price: string }[] = perpRes.ok    ? await perpRes.json()    : []
-  const fundingAll: { symbol: string; lastFundingRate: string; markPrice: string }[] = fundingRes.ok ? await fundingRes.json() : []
-
-  const spot:    Record<string, number> = {}
-  const perp:    Record<string, number> = {}
-  const funding: Record<string, number> = {}
-
-  spotAll.forEach(t    => { spot[t.symbol]    = parseFloat(t.price) })
-  perpAll.forEach(t    => { perp[t.symbol]    = parseFloat(t.price) })
-  fundingAll.forEach(t => { funding[t.symbol] = parseFloat(t.lastFundingRate) })
-
-  // ── Triangular arb ──────────────────────────────────────────────────────
-  const triangles: TriangleArb[] = []
-  for (const { base, quote } of TRIANGLES) {
-    const baseUSDT  = spot[`${base}USDT`]
-    const quoteUSDT = spot[`${quote}USDT`]
-    const baseQuote = spot[`${base}${quote}`]
-
-    if (!baseUSDT || !quoteUSDT || !baseQuote) continue
-
-    const implied = quoteUSDT * baseQuote
-    const spread  = Math.abs(implied - baseUSDT) / baseUSDT * 100
-
-    if (spread > TRI_FEE_THRESHOLD) {
-      triangles.push({
-        id: `${base}-${quote}`,
-        name: `${base} via ${quote}`,
-        actual: baseUSDT,
-        implied,
-        spread,
-        direction: implied > baseUSDT
-          ? `Buy ${base}/USDT, Sell ${base}/${quote} + ${quote}/USDT`
-          : `Buy ${base}/${quote} + ${quote}/USDT, Sell ${base}/USDT`,
-      })
-    }
-  }
-  triangles.sort((a, b) => b.spread - a.spread)
-
-  // ── Futures basis ────────────────────────────────────────────────────────
-  const basis: BasisOpp[] = []
-  for (const sym of PERP_SYMBOLS) {
-    const spotPrice = spot[`${sym}USDT`]
-    const perpPrice = perp[`${sym}USDT`]
-    const fr        = funding[`${sym}USDT`] ?? 0
-
-    if (!spotPrice || !perpPrice) continue
-
-    const basisPct          = (perpPrice - spotPrice) / spotPrice * 100
-    const annualizedFunding = fr * 3 * 365 * 100  // 3 funding events/day
-
-    let signal: BasisOpp['signal'] = 'neutral'
-    if (basisPct > 0.3 && fr > 0.0001)  signal = 'short_basis'  // perp expensive, funding positive → short perp
-    if (basisPct < -0.3 && fr < -0.0001) signal = 'long_basis'  // perp cheap, funding negative → long perp
-
-    if (signal !== 'neutral') {
-      basis.push({ symbol: sym, spotPrice, perpPrice, basis: basisPct, fundingRate: fr * 100, annualizedFunding, signal })
-    }
-  }
-  basis.sort((a, b) => Math.abs(b.basis) - Math.abs(a.basis))
-
-  return { triangles, basis }
+function EdgePill({ value, color }: { value: string; color: string }) {
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, color, background: `${color}18`, border: `1px solid ${color}35`, borderRadius: 6, padding: '2px 8px', ...mono }}>
+      {value}
+    </span>
+  )
 }
-
-// ── Row components ─────────────────────────────────────────────────────────
 
 function PolyRow({ m }: { m: PolyMarket }) {
   const edgePct = m.edge * 100
-  const clr     = edgeColor(m.edge, POLY_FEE_THRESHOLD)
-
+  const clr = edgePct > 3 ? C.green : edgePct > 1 ? C.amber : C.copper
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '1fr auto',
-      gap: 8, padding: '10px 12px',
-      borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)',
-      background: 'rgba(255,255,255,0.02)',
-      marginBottom: 6,
-    }}>
+    <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.border2}`, background: C.card2, marginBottom: 6, display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tm-text-primary)', lineHeight: 1.4, marginBottom: 4 }}>
-          {m.question.length > 80 ? m.question.slice(0, 80) + '…' : m.question}
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.text, lineHeight: 1.4, marginBottom: 5 }}>
+          {m.question.length > 75 ? m.question.slice(0, 75) + '…' : m.question}
         </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {m.outcomes.slice(0, 3).map((o, i) => (
-            <span key={i} style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
-              {o}: <strong style={{ color: 'var(--tm-text-secondary)' }}>${fmt(m.prices[i] ?? 0, 3)}</strong>
+            <span key={i} style={{ fontSize: 9, color: C.muted, ...mono }}>
+              {o}: <strong style={{ color: C.text }}>${fmt(m.prices[i] ?? 0, 3)}</strong>
             </span>
           ))}
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>
-            Σ = <strong style={{ color: m.sum < 0.97 ? '#34C759' : 'var(--tm-text-secondary)' }}>{fmt(m.sum, 3)}</strong>
+          <span style={{ fontSize: 9, color: C.muted, ...mono }}>
+            Σ=<strong style={{ color: m.sum < 0.97 ? C.green : C.text }}>{fmt(m.sum, 3)}</strong>
           </span>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>Vol {fmtM(m.volume)}</span>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>Liq {fmtM(m.liquidity)}</span>
+          <span style={{ fontSize: 9, color: C.muted, ...mono }}>Vol {fmtM(m.volume)}</span>
         </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, minWidth: 80 }}>
-        <EdgeBadge value={`+${fmt(edgePct, 2)}%`} label="EDGE" color={clr} />
-        <a
-          href={m.url} target="_blank" rel="noopener noreferrer"
-          style={{ fontSize: 10, color: 'var(--tm-accent)', textDecoration: 'none', opacity: 0.7 }}
-        >
-          Voir →
-        </a>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, justifyContent: 'center' }}>
+        <EdgePill value={`+${fmt(edgePct, 2)}%`} color={clr} />
       </div>
     </div>
   )
 }
 
 function TriRow({ t }: { t: TriangleArb }) {
-  const clr = edgeColor(t.spread / 100, TRI_FEE_THRESHOLD / 100)
+  const clr = t.spread > 0.5 ? C.green : t.spread > 0.25 ? C.amber : C.copper
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', marginBottom: 6 }}>
+    <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.border2}`, background: C.card2, marginBottom: 6, display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tm-text-primary)', marginBottom: 4 }}>
-          {t.name}
-        </div>
-        <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginBottom: 2, fontFamily: 'JetBrains Mono, monospace' }}>
-          Actual: <strong style={{ color: 'var(--tm-text-secondary)' }}>${fmt(t.actual, t.actual > 100 ? 2 : 4)}</strong>
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 4 }}>{t.name}</div>
+        <div style={{ fontSize: 9, color: C.muted, ...mono, marginBottom: 2 }}>
+          Actual <strong style={{ color: C.text }}>${fmt(t.actual, t.actual > 100 ? 2 : 4)}</strong>
           &nbsp;·&nbsp;
-          Implied: <strong style={{ color: 'var(--tm-text-secondary)' }}>${fmt(t.implied, t.implied > 100 ? 2 : 4)}</strong>
+          Implied <strong style={{ color: C.text }}>${fmt(t.implied, t.implied > 100 ? 2 : 4)}</strong>
         </div>
-        <div style={{ fontSize: 10, color: 'var(--tm-text-muted)', lineHeight: 1.4 }}>
-          → {t.direction}
-        </div>
+        <div style={{ fontSize: 9, color: C.muted, lineHeight: 1.4 }}>→ {t.direction}</div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, minWidth: 80 }}>
-        <EdgeBadge value={`${fmt(t.spread, 3)}%`} label="Δ" color={clr} />
-        <span style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>3-leg arb</span>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <EdgePill value={`Δ ${fmt(t.spread, 3)}%`} color={clr} />
       </div>
     </div>
   )
@@ -272,231 +186,244 @@ function TriRow({ t }: { t: TriangleArb }) {
 
 function BasisRow({ b }: { b: BasisOpp }) {
   const isShort = b.signal === 'short_basis'
-  const clr = isShort ? '#FF3B30' : '#34C759'
+  const clr = isShort ? C.red : C.green
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', marginBottom: 6 }}>
+    <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.border2}`, background: C.card2, marginBottom: 6, display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tm-text-primary)', marginBottom: 4 }}>
-          {b.symbol}/USDT — {isShort ? 'Short Perp' : 'Long Perp'}
+        <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 4 }}>
+          {b.symbol}/USDT — {isShort ? '↓ Short Perp' : '↑ Long Perp'}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
-            Spot <strong style={{ color: 'var(--tm-text-secondary)' }}>${fmt(b.spotPrice, b.spotPrice > 100 ? 2 : 4)}</strong>
-          </span>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
-            Perp <strong style={{ color: 'var(--tm-text-secondary)' }}>${fmt(b.perpPrice, b.perpPrice > 100 ? 2 : 4)}</strong>
-          </span>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>
-            Funding <strong style={{ color: b.fundingRate > 0 ? '#FF9500' : '#34C759' }}>{fmt(b.fundingRate, 4)}%/8h</strong>
-          </span>
-          <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>
-            ~{fmt(b.annualizedFunding, 0)}%/yr
-          </span>
+          <span style={{ fontSize: 9, color: C.muted, ...mono }}>Spot <strong style={{ color: C.text }}>${fmt(b.spotPrice, b.spotPrice > 100 ? 2 : 4)}</strong></span>
+          <span style={{ fontSize: 9, color: C.muted, ...mono }}>Perp <strong style={{ color: C.text }}>${fmt(b.perpPrice, b.perpPrice > 100 ? 2 : 4)}</strong></span>
+          <span style={{ fontSize: 9, color: C.muted, ...mono }}>FR <strong style={{ color: b.fundingRate > 0 ? C.amber : C.green }}>{fmt(b.fundingRate, 4)}%/8h</strong></span>
+          <span style={{ fontSize: 9, color: C.muted, ...mono }}>~{fmt(b.annualizedFunding, 0)}%/yr</span>
         </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, minWidth: 90 }}>
-        <EdgeBadge value={`${b.basis > 0 ? '+' : ''}${fmt(b.basis, 3)}%`} label="BASIS" color={clr} />
-        <span style={{ fontSize: 9, color: clr, opacity: 0.7 }}>{isShort ? '↓ short perp' : '↑ long perp'}</span>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <EdgePill value={`${b.basis > 0 ? '+' : ''}${fmt(b.basis, 3)}%`} color={clr} />
       </div>
     </div>
   )
 }
 
-// ── Empty state ────────────────────────────────────────────────────────────
+// ── Fetch logic ────────────────────────────────────────────────────────────
 
-function EmptyState({ label }: { label: string }) {
-  return (
-    <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--tm-text-muted)', fontSize: 12 }}>
-      <div style={{ fontSize: 24, marginBottom: 8 }}>✓</div>
-      {label}
-    </div>
-  )
+async function fetchPolymarketOpps(): Promise<PolyMarket[]> {
+  const r = await fetch('https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=100&order=volume&ascending=false', { signal: AbortSignal.timeout(8000) })
+  if (!r.ok) throw new Error('Polymarket failed')
+  const data = await r.json() as { id: string; question: string; volume: number; liquidity: number; outcomePrices: string; outcomes: string; endDate: string }[]
+  return data.map(m => {
+    let prices: number[] = []
+    let outcomes: string[] = []
+    try { prices = JSON.parse(m.outcomePrices).map(Number) } catch { return null }
+    try { outcomes = JSON.parse(m.outcomes) } catch { outcomes = prices.map((_, i) => `O${i+1}`) }
+    const sum = prices.reduce((a, b) => a + b, 0)
+    return { id: m.id, question: m.question, volume: m.volume || 0, liquidity: m.liquidity || 0, outcomes, prices, sum, edge: 1 - sum, endDate: m.endDate || '' }
+  }).filter((m): m is PolyMarket => m !== null && m.edge > POLY_THRES && m.prices.length >= 2 && m.liquidity > 500)
+    .sort((a, b) => b.edge - a.edge).slice(0, 40)
+}
+
+async function fetchCryptoData() {
+  const [sR, pR, fR] = await Promise.all([
+    fetch('https://api.binance.com/api/v3/ticker/price', { signal: AbortSignal.timeout(6000) }),
+    fetch('https://fapi.binance.com/fapi/v1/ticker/price', { signal: AbortSignal.timeout(6000) }),
+    fetch('https://fapi.binance.com/fapi/v1/premiumIndex', { signal: AbortSignal.timeout(6000) }),
+  ])
+  const spotAll: {symbol:string;price:string}[] = sR.ok ? await sR.json() : []
+  const perpAll: {symbol:string;price:string}[] = pR.ok ? await pR.json() : []
+  const fundAll: {symbol:string;lastFundingRate:string}[] = fR.ok ? await fR.json() : []
+  const spot: Record<string,number> = {}
+  const perp: Record<string,number> = {}
+  const fund: Record<string,number> = {}
+  spotAll.forEach(t => { spot[t.symbol] = parseFloat(t.price) })
+  perpAll.forEach(t => { perp[t.symbol] = parseFloat(t.price) })
+  fundAll.forEach(t => { fund[t.symbol] = parseFloat(t.lastFundingRate) })
+
+  const triangles: TriangleArb[] = []
+  for (const { base, quote } of TRIANGLES) {
+    const bU = spot[`${base}USDT`], qU = spot[`${quote}USDT`], bQ = spot[`${base}${quote}`]
+    if (!bU || !qU || !bQ) continue
+    const implied = qU * bQ
+    const spread  = Math.abs(implied - bU) / bU * 100
+    if (spread > TRI_THRES) triangles.push({
+      id: `${base}-${quote}`, name: `${base} via ${quote}`, actual: bU, implied, spread,
+      direction: implied > bU ? `Buy ${base}/USDT · Sell ${base}/${quote} + ${quote}/USDT` : `Buy ${base}/${quote} + ${quote}/USDT · Sell ${base}/USDT`,
+    })
+  }
+
+  const basis: BasisOpp[] = []
+  for (const sym of PERP_SYMS) {
+    const sp = spot[`${sym}USDT`], pp = perp[`${sym}USDT`], fr = fund[`${sym}USDT`] ?? 0
+    if (!sp || !pp) continue
+    const bPct = (pp - sp) / sp * 100
+    const af   = fr * 3 * 365 * 100
+    if (bPct > 0.3 && fr > 0.0001)   basis.push({ symbol: sym, spotPrice: sp, perpPrice: pp, basis: bPct, fundingRate: fr*100, annualizedFunding: af, signal: 'short_basis' })
+    if (bPct < -0.3 && fr < -0.0001) basis.push({ symbol: sym, spotPrice: sp, perpPrice: pp, basis: bPct, fundingRate: fr*100, annualizedFunding: af, signal: 'long_basis' })
+  }
+  basis.sort((a, b) => Math.abs(b.basis) - Math.abs(a.basis))
+
+  return { triangles: triangles.sort((a, b) => b.spread - a.spread), basis }
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default function ArbitragePage() {
-  const [polyOpps,   setPolyOpps]   = useState<PolyMarket[]>([])
-  const [triangles,  setTriangles]  = useState<TriangleArb[]>([])
-  const [basis,      setBasis]      = useState<BasisOpp[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  const [error,      setError]      = useState<string | null>(null)
-  const [autoRefresh, setAutoRefresh] = useState(true)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [poly,   setPoly]   = useState<PolyMarket[]>([])
+  const [tri,    setTri]    = useState<TriangleArb[]>([])
+  const [basis,  setBasis]  = useState<BasisOpp[]>([])
+  const [loading, setLoading] = useState(true)
+  const [ts, setTs]           = useState<Date|null>(null)
+  const [auto, setAuto]       = useState(true)
+  const timerRef = useRef<ReturnType<typeof setInterval>|null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
-    setError(null)
     try {
-      const [poly, crypto] = await Promise.allSettled([
-        fetchPolymarketOpps(),
-        fetchCryptoData(),
-      ])
-      if (poly.status === 'fulfilled')    setPolyOpps(poly.value)
-      else console.warn('[Arbitrage] Polymarket:', poly.reason)
-
-      if (crypto.status === 'fulfilled') {
-        setTriangles(crypto.value.triangles)
-        setBasis(crypto.value.basis)
-      } else console.warn('[Arbitrage] Crypto:', crypto.reason)
-
-      setLastUpdate(new Date())
-    } catch (e) {
-      setError('Erreur de chargement')
-      console.error('[Arbitrage]', e)
-    } finally {
-      setLoading(false)
-    }
+      const [r1, r2] = await Promise.allSettled([fetchPolymarketOpps(), fetchCryptoData()])
+      if (r1.status === 'fulfilled') setPoly(r1.value)
+      if (r2.status === 'fulfilled') { setTri(r2.value.triangles); setBasis(r2.value.basis) }
+      setTs(new Date())
+    } catch { /* noop */ }
+    setLoading(false)
   }, [])
 
+  useEffect(() => { refresh() }, [refresh])
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    if (!auto) { if (timerRef.current) clearInterval(timerRef.current); return }
+    timerRef.current = setInterval(refresh, 60_000)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [auto, refresh])
 
-  useEffect(() => {
-    if (!autoRefresh) { if (intervalRef.current) clearInterval(intervalRef.current); return }
-    intervalRef.current = setInterval(refresh, 60_000)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [autoRefresh, refresh])
+  // ── KPI stats from live data ──
+  const totalPoly  = poly.length
+  const medianSum  = poly.length > 0 ? [...poly].sort((a,b) => a.sum - b.sum)[Math.floor(poly.length/2)]?.sum : null
+  const totalOpps  = totalPoly + tri.length + basis.length
+  const pctWithArb = poly.length > 0 ? Math.round(poly.length / 100 * 100) : 0
 
-  const totalOpps = polyOpps.length + triangles.length + basis.length
+  const barData = [
+    { label: 'Single condition', value: poly.reduce((a,m) => a + m.volume, 0), color: C.copper },
+    { label: 'Triangulaire',    value: tri.length * 50000, color: C.copper },
+    { label: 'Basis / Funding', value: basis.length * 30000, color: C.copper },
+  ]
+
+  const skeleton = (n: number) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} style={{ height: 64, borderRadius: 8, background: C.card2, animation: 'apulse 1.4s ease-in-out infinite', opacity: 0.6 }} />
+      ))}
+    </div>
+  )
 
   return (
-    <div style={{ padding: '24px 28px', minHeight: '100vh', color: 'var(--tm-text-primary)', maxWidth: 1400, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, padding: '28px 32px', fontFamily: 'system-ui, sans-serif', maxWidth: 1300, margin: '0 auto' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, fontFamily: 'Syne, sans-serif', color: 'var(--tm-text-primary)' }}>
-            🔍 Mispricing Scanner
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '0.15em', textTransform: 'uppercase', ...mono }}>
+            Mispricing Scanner
           </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--tm-text-muted)' }}>
-            Inconsistances mathématiques : Polymarket YES+NO · Triangulaire crypto · Basis futures
-            {lastUpdate && (
-              <span style={{ marginLeft: 10, opacity: 0.6 }}>
-                · maj {lastUpdate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-            )}
+          <p style={{ margin: '4px 0 0', fontSize: 10, color: C.muted, letterSpacing: '0.08em', ...mono }}>
+            Polymarket · Triangulaire · Basis — {ts ? `MAJ ${ts.toLocaleTimeString('fr-FR')}` : 'Chargement…'}
           </p>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {totalOpps > 0 && (
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#34C759', background: 'rgba(52,199,89,0.12)', borderRadius: 20, padding: '3px 10px', border: '1px solid rgba(52,199,89,0.3)' }}>
-              {totalOpps} opportunities
-            </span>
-          )}
-          <button
-            onClick={() => setAutoRefresh(v => !v)}
-            style={{
-              fontSize: 11, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
-              background: autoRefresh ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${autoRefresh ? 'rgba(0,229,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
-              color: autoRefresh ? 'var(--tm-accent)' : 'var(--tm-text-muted)',
-            }}
-          >
-            {autoRefresh ? '⏱ Auto 60s' : '⏱ Manuel'}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setAuto(v => !v)} style={{ fontSize: 9, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', background: auto ? `${C.copper}18` : C.card, border: `1px solid ${auto ? C.copper : C.dim}`, color: auto ? C.copper : C.muted, letterSpacing: '0.1em', ...mono }}>
+            {auto ? '⏱ AUTO 60s' : '⏱ MANUEL'}
           </button>
-          <button
-            onClick={refresh}
-            disabled={loading}
-            style={{
-              fontSize: 11, padding: '5px 12px', borderRadius: 8, cursor: loading ? 'default' : 'pointer',
-              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-              color: 'var(--tm-text-secondary)',
-            }}
-          >
-            {loading ? '…' : '↻ Refresh'}
+          <button onClick={refresh} disabled={loading} style={{ fontSize: 9, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', background: C.card, border: `1px solid ${C.dim}`, color: C.muted, letterSpacing: '0.1em', ...mono }}>
+            {loading ? '…' : '↻ REFRESH'}
           </button>
         </div>
       </div>
 
-      {/* Explainer banner */}
-      <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.1)', marginBottom: 24, fontSize: 11, color: 'var(--tm-text-muted)', lineHeight: 1.6 }}>
-        <strong style={{ color: 'var(--tm-text-secondary)' }}>Comment ça marche :</strong>
-        {' '}Sur Polymarket, YES + NO devrait toujours = $1.00. Si la somme est &lt; $1, l'écart est un profit garanti si tu peux acheter les deux.
-        En crypto, les prix de trois paires corrélées (ex: BTC/USDT × ETH/BTC ≈ ETH/USDT) doivent être cohérents.
-        Les incohérences sont éphémères — les systèmes quant les capturent en millisecondes.
-        <strong style={{ color: 'var(--tm-accent)' }}> Ceci est un outil de détection, pas d'exécution automatique.</strong>
+      {/* ── KPI Cards ── */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <KPICard value={`${totalOpps}`} label="Opportunities détectées" />
+        <KPICard value={`${pctWithArb}%`} label="Conditions avec opportunité" sub="(sur top 100 marchés Polymarket)" />
+        <KPICard value={medianSum !== null ? `$${fmt(medianSum, 3)}` : '–'} label="Médiane somme des prix" sub="Devrait être $1.000" />
+        <KPICard value={`${tri.length + basis.length}`} label="Paires crypto exploitables" />
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', marginBottom: 16, fontSize: 12, color: '#FF3B30' }}>
-          {error}
-        </div>
-      )}
-
-      {/* Two-column grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 20 }}>
-
-        {/* ── Polymarket ── */}
-        <div style={{ background: 'rgba(13,17,35,0.6)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.07)', padding: '16px' }}>
-          <SectionHeader title="🎯 Polymarket — YES+NO ≠ $1" count={polyOpps.length} accent="#BF5AF2" />
-          <p style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginBottom: 12, marginTop: -8 }}>
-            Marchés où la somme des issues est &lt; $1 (top par volume, liq &gt; $500)
-          </p>
-          {loading && polyOpps.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[1,2,3,4].map(i => (
-                <div key={i} style={{ height: 68, borderRadius: 8, background: 'rgba(255,255,255,0.04)', animation: 'arb-pulse 1.4s ease-in-out infinite' }} />
-              ))}
+      {/* ── Bar Chart ── */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 24px', marginBottom: 24 }}>
+        <SectionLabel text="Opportunités par catégorie — données live" badge="LIVE" />
+        <BarChart data={barData} />
+        <div style={{ display: 'flex', gap: 32, marginTop: 8, paddingLeft: 8 }}>
+          {barData.map(d => (
+            <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: C.copper }} />
+              <span style={{ fontSize: 8, color: C.muted, ...mono }}>{d.label}</span>
             </div>
-          ) : polyOpps.length === 0 ? (
-            <EmptyState label="Aucune incohérence détectée (marchés correctement pricés)" />
-          ) : (
-            polyOpps.map(m => <PolyRow key={m.id} m={m} />)
-          )}
+          ))}
+        </div>
+      </div>
+
+      {/* ── Algorithm flow ── */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 24px', marginBottom: 24 }}>
+        <SectionLabel text="De l'espace exponentiel aux contraintes linéaires" badge="INTEGER PROGRAMMING" />
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0, flexWrap: 'wrap', rowGap: 16 }}>
+          <AlgoStep emoji="🎲" title="2^63 outcomes" sub={"Brute force\nimpossible"} />
+          <AlgoStep emoji="⚖️" title="Définir contraintes" sub={"Inégalités\nlinéaires"} />
+          <AlgoStep emoji="🔢" title="Prog. entière" sub={"Résoudre en\nsecondes"} />
+          <AlgoStep emoji="🎯" title="Trouver l'arb" sub={"Profit\ngaranti"} />
+          <AlgoStep emoji="⚡" title="Exécuter" sub={"<30ms"} last />
+        </div>
+      </div>
+
+      {/* ── Main grid ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 16 }}>
+
+        {/* Polymarket */}
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 20px' }}>
+          <SectionLabel text={`Polymarket — YES+NO ≠ $1 (${totalPoly})`} badge="ON-CHAIN" />
+          {loading && poly.length === 0 ? skeleton(4) : poly.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px 0', color: C.muted, fontSize: 11, ...mono }}>✓ Marchés correctement pricés</div>
+          ) : poly.map(m => <PolyRow key={m.id} m={m} />)}
         </div>
 
-        {/* ── Crypto ── */}
+        {/* Crypto */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Triangular */}
-          <div style={{ background: 'rgba(13,17,35,0.6)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.07)', padding: '16px' }}>
-            <SectionHeader title="🔺 Arbitrage Triangulaire" count={triangles.length} accent="#0A85FF" />
-            <p style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginBottom: 12, marginTop: -8 }}>
-              Incohérence entre paires corrélées · seuil &gt; {TRI_FEE_THRESHOLD}% (après fees Binance)
-            </p>
-            {loading && triangles.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {[1,2].map(i => <div key={i} style={{ height: 68, borderRadius: 8, background: 'rgba(255,255,255,0.04)', animation: 'arb-pulse 1.4s ease-in-out infinite' }} />)}
-              </div>
-            ) : triangles.length === 0 ? (
-              <EmptyState label="Aucun arbitrage triangulaire détecté" />
-            ) : (
-              triangles.map(t => <TriRow key={t.id} t={t} />)
-            )}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 20px' }}>
+            <SectionLabel text={`Arbitrage Triangulaire (${tri.length})`} badge="BINANCE" />
+            {loading && tri.length === 0 ? skeleton(2) : tri.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: C.muted, fontSize: 11, ...mono }}>✓ Aucune incohérence &gt;{TRI_THRES}%</div>
+            ) : tri.map(t => <TriRow key={t.id} t={t} />)}
           </div>
 
-          {/* Basis */}
-          <div style={{ background: 'rgba(13,17,35,0.6)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.07)', padding: '16px' }}>
-            <SectionHeader title="📈 Basis Futures · Spot" count={basis.length} accent="#FF9500" />
-            <p style={{ fontSize: 10, color: 'var(--tm-text-muted)', marginBottom: 12, marginTop: -8 }}>
-              Perp premium/discount &gt; 0.3% + funding aligné → mean reversion prévisible
-            </p>
-            {loading && basis.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {[1,2].map(i => <div key={i} style={{ height: 68, borderRadius: 8, background: 'rgba(255,255,255,0.04)', animation: 'arb-pulse 1.4s ease-in-out infinite' }} />)}
-              </div>
-            ) : basis.length === 0 ? (
-              <EmptyState label="Pas d'écart basis/funding significatif" />
-            ) : (
-              basis.map(b => <BasisRow key={b.symbol} b={b} />)
-            )}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 20px' }}>
+            <SectionLabel text={`Basis Futures / Spot (${basis.length})`} badge="BINANCE FAPI" />
+            {loading && basis.length === 0 ? skeleton(2) : basis.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: C.muted, fontSize: 11, ...mono }}>✓ Pas d'écart basis significatif</div>
+            ) : basis.map(b => <BasisRow key={b.symbol} b={b} />)}
           </div>
 
+          {/* Formula card */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 20px' }}>
+            <SectionLabel text="Formule — Bregman Divergence" badge="THÉORIE" />
+            <div style={{ background: '#080604', borderRadius: 8, padding: '14px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, lineHeight: 1.8 }}>
+              <div style={{ color: C.muted }}>{'# Profit garanti maximum :'}</div>
+              <div style={{ color: C.copper, marginTop: 4 }}>max_profit = D(μ* ‖ θ)</div>
+              <div style={{ marginTop: 10, color: C.muted }}>{'# Où :'}</div>
+              <div style={{ color: C.copperL }}>θ = <span style={{ color: C.muted }}>prix actuels (état mal pricé)</span></div>
+              <div style={{ color: C.copperL }}>μ* = <span style={{ color: C.muted }}>projection Bregman sur M</span></div>
+              <div style={{ color: C.copperL }}>D(μ‖θ) = <span style={{ color: C.muted }}>divergence KL</span></div>
+              <div style={{ marginTop: 10, color: C.muted }}>{'# Sans ce framework → tu devines.'}</div>
+              <div style={{ color: C.green }}>{'# Avec lui → tu optimises.'}</div>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Disclaimer */}
-      <div style={{ marginTop: 24, padding: '10px 14px', borderRadius: 8, background: 'rgba(255,149,0,0.05)', border: '1px solid rgba(255,149,0,0.15)', fontSize: 10, color: 'var(--tm-text-muted)', lineHeight: 1.6 }}>
-        ⚠️ <strong>Avertissement :</strong> Les opportunités d'arbitrage disparaissent en millisecondes dans les marchés liquides. Ce scanner détecte des incohérences ponctuelles mais ne garantit pas l'exécutabilité. Les données sont retardées (latence réseau + API). Ne pas utiliser comme seul signal de trading.
-        Les arbitrages triangulaires nécessitent une exécution simultanée multi-leg impossible manuellement sur Binance standard.
+      <div style={{ marginTop: 20, fontSize: 9, color: C.muted, ...mono, letterSpacing: '0.05em', lineHeight: 1.7, borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+        AVERTISSEMENT — Les opportunités d'arbitrage disparaissent en millisecondes dans les marchés liquides. Ce scanner est un outil éducatif et de détection. Les données sont retardées (latence réseau + API). L'exécution simultanée multi-leg est impossible manuellement. Ne pas utiliser comme seul signal de trading.
       </div>
 
       <style>{`
-        @keyframes arb-pulse { 0%,100% { opacity:.3; } 50% { opacity:.6; } }
+        @keyframes apulse { 0%,100% { opacity:.3; } 50% { opacity:.7; } }
       `}</style>
     </div>
   )
