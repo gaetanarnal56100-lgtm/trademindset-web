@@ -49,7 +49,8 @@ const TRIANGLES = [
   { base: 'ETH',  quote: 'BTC' }, { base: 'BNB',  quote: 'BTC' },
   { base: 'SOL',  quote: 'BTC' }, { base: 'XRP',  quote: 'BTC' },
   { base: 'BNB',  quote: 'ETH' }, { base: 'SOL',  quote: 'ETH' },
-  { base: 'AVAX', quote: 'BTC' }, { base: 'MATIC', quote: 'BTC' },
+  { base: 'AVAX', quote: 'BTC' }, { base: 'LINK',  quote: 'BTC' },
+  // MATIC→POL rebranded: paires Binance incohérentes, exclu
 ]
 const PERP_SYMS = ['BTC','ETH','SOL','BNB','XRP','AVAX','ARB','OP']
 const TRI_THRES = 0.15
@@ -209,19 +210,14 @@ function BasisRow({ b }: { b: BasisOpp }) {
 
 // ── Fetch logic ────────────────────────────────────────────────────────────
 
+import { httpsCallable } from 'firebase/functions'
+import { functions as fbFn } from '@/services/firebase/config'
+
 async function fetchPolymarketOpps(): Promise<PolyMarket[]> {
-  const r = await fetch('https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=100&order=volume&ascending=false', { signal: AbortSignal.timeout(8000) })
-  if (!r.ok) throw new Error('Polymarket failed')
-  const data = await r.json() as { id: string; question: string; volume: number; liquidity: number; outcomePrices: string; outcomes: string; endDate: string }[]
-  return data.map(m => {
-    let prices: number[] = []
-    let outcomes: string[] = []
-    try { prices = JSON.parse(m.outcomePrices).map(Number) } catch { return null }
-    try { outcomes = JSON.parse(m.outcomes) } catch { outcomes = prices.map((_, i) => `O${i+1}`) }
-    const sum = prices.reduce((a, b) => a + b, 0)
-    return { id: m.id, question: m.question, volume: m.volume || 0, liquidity: m.liquidity || 0, outcomes, prices, sum, edge: 1 - sum, endDate: m.endDate || '' }
-  }).filter((m): m is PolyMarket => m !== null && m.edge > POLY_THRES && m.prices.length >= 2 && m.liquidity > 500)
-    .sort((a, b) => b.edge - a.edge).slice(0, 40)
+  // Via CF proxy to bypass browser CORS restrictions on gamma-api.polymarket.com
+  const fn = httpsCallable<Record<string,unknown>, { markets: PolyMarket[] }>(fbFn, 'fetchPolymarketOpps')
+  const res = await fn({})
+  return res.data.markets ?? []
 }
 
 async function fetchCryptoData() {
