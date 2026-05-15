@@ -372,6 +372,87 @@ export default function ArbitragePage() {
         </div>
       </div>
 
+      {/* ── Research KPIs (from arXiv:2508.03474) ── */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <KPICard value="87%" label="Single-condition execution success" sub="Source : arXiv:2508.03474" />
+        <KPICard value="45%" label="Combinatorial execution success" />
+        <KPICard value="$496" label="Avg profit per trade (top wallet)" sub="4 049 trades sur 1 an" />
+        <KPICard value="$0.05" label="Minimum profit threshold utilisé" />
+      </div>
+
+      {/* ── Two tables side by side ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16, marginBottom: 24 }}>
+
+        {/* Execution Latency Table */}
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 9, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono }}>
+              Exécution — Retail vs Systèmes sophistiqués
+            </span>
+            <span style={{ fontSize: 8, fontWeight: 700, color: C.copper, background: `${C.copper}18`, border: `1px solid ${C.copper}35`, borderRadius: 20, padding: '2px 8px', ...mono, letterSpacing: '0.08em' }}>
+              REAL MEASURED TIMES
+            </span>
+          </div>
+          {/* Header row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '10px 20px', borderBottom: `1px solid ${C.border2}` }}>
+            <span style={{ fontSize: 8, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono }}>STEP</span>
+            <span style={{ fontSize: 8, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono }}>RETAIL TRADER</span>
+            <span style={{ fontSize: 8, color: C.green, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono, fontWeight: 700 }}>ARBITRAGE SYSTEM</span>
+          </div>
+          {[
+            { step: 'Price feed',       retail: '~30s polling',      arb: '<5ms WebSocket push' },
+            { step: 'Decision',         retail: 'Manual analysis',   arb: '<10ms pre-calculated' },
+            { step: 'Submission',       retail: '~50ms API call',    arb: '~15ms direct RPC' },
+            { step: 'Execution',        retail: 'Sequential legs',   arb: 'Parallel, same block' },
+            { step: 'Block inclusion',  retail: '~2,000ms',          arb: '~2,000ms (unavoidable)' },
+          ].map((r, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '12px 20px', borderBottom: `1px solid ${C.border2}`, background: i % 2 === 0 ? 'transparent' : `${C.card2}` }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{r.step}</span>
+              <span style={{ fontSize: 11, color: C.muted, ...mono }}>{r.retail}</span>
+              <span style={{ fontSize: 11, color: C.green, ...mono }}>{r.arb}</span>
+            </div>
+          ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '14px 20px' }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>Total</span>
+            <span style={{ fontSize: 12, color: C.muted, ...mono, textDecoration: 'line-through' }}>~32 secondes</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.green, ...mono }}>~2,040ms</span>
+          </div>
+        </div>
+
+        {/* Arbitrage by Type Table */}
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 9, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono }}>
+              Arbitrage par type — Avril 2024 → Avril 2025
+            </span>
+            <span style={{ fontSize: 8, fontWeight: 700, color: C.copper, background: `${C.copper}18`, border: `1px solid ${C.copper}35`, borderRadius: 20, padding: '2px 8px', ...mono, letterSpacing: '0.08em' }}>
+              ON-CHAIN VERIFIED
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr auto', padding: '10px 20px', borderBottom: `1px solid ${C.border2}` }}>
+            <span style={{ fontSize: 8, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono }}>STRATÉGIE</span>
+            <span style={{ fontSize: 8, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono }}>MÉCANISME</span>
+            <span style={{ fontSize: 8, color: C.muted, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono, textAlign: 'right' }}>EXTRAIT</span>
+          </div>
+          {[
+            { strat: 'Single condition',    mech: 'YES + NO < $1.00 ou > $1.00',           value: '$10,581,362' },
+            { strat: 'Market rebalancing',  mech: 'Buy all YES/NO sur marchés corrélés',    value: '$29,011,589' },
+            { strat: 'Combinatorial',       mech: 'Dépendance logique cross-market',        value: '$95,634' },
+          ].map((r, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr auto', padding: '14px 20px', borderBottom: `1px solid ${C.border2}`, background: i % 2 === 0 ? 'transparent' : C.card2, alignItems: 'start' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{r.strat}</span>
+              <span style={{ fontSize: 10, color: C.muted, lineHeight: 1.4 }}>{r.mech}</span>
+              <span style={{ fontSize: 11, color: C.green, ...mono, fontWeight: 700, textAlign: 'right' }}>{r.value}</span>
+            </div>
+          ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr auto', padding: '14px 20px' }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>Total</span>
+            <span />
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.copper, ...mono }}>$39,688,585</span>
+          </div>
+        </div>
+      </div>
+
       {/* ── Main grid ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 16 }}>
 
