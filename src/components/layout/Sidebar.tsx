@@ -10,7 +10,7 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/config'
 import {
   IconDashboard, IconTrades, IconAnalyse, IconJournal,
-  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconMarches, IconWhale,
+  IconAlertes, IconSystemes, IconProfil, IconSettings, IconLogout, IconCalendrier, IconStar, IconMarches, IconWhale, IconArbitrage,
 } from '@/components/ui/Icons'
 
 export default function Sidebar() {
@@ -37,6 +37,7 @@ export default function Sidebar() {
     { to: '/app/analyse',     label: t('nav.analyse'),     Icon: IconAnalyse },
     { to: '/app/marches',     label: t('nav.marches'),     Icon: IconMarches },
     { to: '/app/whales',      label: 'Whale Alerts',        Icon: IconWhale },
+    { to: '/app/arbitrage',   label: 'Arbitrage',           Icon: IconArbitrage },
     { to: '/app/journal',     label: t('nav.journal'),     Icon: IconJournal },
     { to: '/app/alertes',     label: t('nav.alertes'),     Icon: IconAlertes },
   ]

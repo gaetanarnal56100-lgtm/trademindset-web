@@ -22,6 +22,7 @@ import CoachIAPage    from '@/pages/coach/CoachIAPage'
 import BadgesPage    from '@/pages/badges/BadgesPage'
 import PredictPage   from '@/pages/predict/PredictPage'
 import WhaleAlertsPage from '@/pages/whales/WhaleAlertsPage'
+import ArbitragePage   from '@/pages/arbitrage/ArbitragePage'
 import ChartsPage     from '@/pages/charts/ChartsPage'
 import ChartDetailPage from '@/pages/charts/ChartDetailPage'
 import LoadingScreen  from '@/components/ui/LoadingScreen'
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="badges"           element={<BadgesPage />} />
         <Route path="predict"          element={<PredictPage />} />
         <Route path="whales"           element={<WhaleAlertsPage />} />
+        <Route path="arbitrage"        element={<ArbitragePage />} />
         <Route path="charts"           element={<ChartsPage />} />
         <Route path="charts/:id"       element={<ChartDetailPage />} />
         {/* multi-asset & systemes : fusionnés dans marchés et trades */}
