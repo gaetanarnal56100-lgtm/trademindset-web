@@ -1,5 +1,6 @@
-// src/pages/arbitrage/ArbitragePage.tsx — Mispricing Scanner (copper dark theme)
+// src/pages/arbitrage/ArbitragePage.tsx — BOT (Scanner + Polymarket Bot)
 import { useState, useEffect, useCallback, useRef } from 'react'
+import BotTab from './BotTab'
 
 // ── Design tokens (copper dark — matching the research visuals) ────────────
 const C = {
@@ -53,13 +54,15 @@ const TRIANGLES = [
   // MATIC→POL rebranded: paires Binance incohérentes, exclu
 ]
 const PERP_SYMS = ['BTC','ETH','SOL','BNB','XRP','AVAX','ARB','OP']
-const TRI_THRES = 0.15
-const POLY_THRES = 0.005
+const TRI_THRES  = 0.04   // 0.04% — seuil min pour afficher (couleur varie)
+const BASIS_THRES = 0.05  // 0.05%
+const POLY_THRES  = 0.001 // 0.1% — afficher même petits edges
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const fmt   = (n: number, d = 2) => n.toFixed(d)
-const fmtM  = (n: number) => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}K` : `$${n.toFixed(0)}`
+const toNum = (v: unknown): number => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? 0)); return isFinite(n) ? n : 0 }
+const fmt   = (n: unknown, d = 2) => toNum(n).toFixed(d)
+const fmtM  = (n: unknown) => { const v = toNum(n); return v >= 1e6 ? `$${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v/1e3).toFixed(0)}K` : `$${v.toFixed(0)}` }
 const mono  = { fontFamily: 'JetBrains Mono, "Courier New", monospace' }
 const syne  = { fontFamily: 'Syne, system-ui, sans-serif' }
 
@@ -139,7 +142,7 @@ function EdgePill({ value, color }: { value: string; color: string }) {
 
 function PolyRow({ m }: { m: PolyMarket }) {
   const edgePct = m.edge * 100
-  const clr = edgePct > 3 ? C.green : edgePct > 1 ? C.amber : C.copper
+  const clr = edgePct > 1 ? C.green : edgePct > 0.3 ? C.amber : edgePct > 0 ? C.copper : C.muted
   return (
     <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.border2}`, background: C.card2, marginBottom: 6, display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
       <div>
@@ -166,7 +169,7 @@ function PolyRow({ m }: { m: PolyMarket }) {
 }
 
 function TriRow({ t }: { t: TriangleArb }) {
-  const clr = t.spread > 0.5 ? C.green : t.spread > 0.25 ? C.amber : C.copper
+  const clr = t.spread > 0.2 ? C.green : t.spread > 0.08 ? C.amber : C.muted
   return (
     <div style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${C.border2}`, background: C.card2, marginBottom: 6, display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
       <div>
@@ -212,6 +215,8 @@ function BasisRow({ b }: { b: BasisOpp }) {
 
 import { httpsCallable } from 'firebase/functions'
 import { functions as fbFn } from '@/services/firebase/config'
+import { useUser } from '@/hooks/useAuth'
+import { getNotifSettings, saveNotifSettings } from '@/services/firestore/customAlerts'
 
 async function fetchPolymarketOpps(): Promise<PolyMarket[]> {
   // Via CF proxy to bypass browser CORS restrictions on gamma-api.polymarket.com
@@ -221,14 +226,18 @@ async function fetchPolymarketOpps(): Promise<PolyMarket[]> {
 }
 
 async function fetchCryptoData() {
-  const [sR, pR, fR] = await Promise.all([
-    fetch('https://api.binance.com/api/v3/ticker/price', { signal: AbortSignal.timeout(6000) }),
-    fetch('https://fapi.binance.com/fapi/v1/ticker/price', { signal: AbortSignal.timeout(6000) }),
-    fetch('https://fapi.binance.com/fapi/v1/premiumIndex', { signal: AbortSignal.timeout(6000) }),
-  ])
-  const spotAll: {symbol:string;price:string}[] = sR.ok ? await sR.json() : []
-  const perpAll: {symbol:string;price:string}[] = pR.ok ? await pR.json() : []
-  const fundAll: {symbol:string;lastFundingRate:string}[] = fR.ok ? await fR.json() : []
+  const safeJson = async (url: string) => {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) })
+      return r.ok ? r.json() : []
+    } catch { return [] }
+  }
+  const [spotAll, perpAll, fundAll]: [{symbol:string;price:string}[], {symbol:string;price:string}[], {symbol:string;lastFundingRate:string}[]] =
+    await Promise.all([
+      safeJson('https://api.binance.com/api/v3/ticker/price'),
+      safeJson('https://fapi.binance.com/fapi/v1/ticker/price'),
+      safeJson('https://fapi.binance.com/fapi/v1/premiumIndex'),
+    ])
   const spot: Record<string,number> = {}
   const perp: Record<string,number> = {}
   const fund: Record<string,number> = {}
@@ -242,7 +251,7 @@ async function fetchCryptoData() {
     if (!bU || !qU || !bQ) continue
     const implied = qU * bQ
     const spread  = Math.abs(implied - bU) / bU * 100
-    if (spread > TRI_THRES) triangles.push({
+    triangles.push({
       id: `${base}-${quote}`, name: `${base} via ${quote}`, actual: bU, implied, spread,
       direction: implied > bU ? `Buy ${base}/USDT · Sell ${base}/${quote} + ${quote}/USDT` : `Buy ${base}/${quote} + ${quote}/USDT · Sell ${base}/USDT`,
     })
@@ -254,17 +263,22 @@ async function fetchCryptoData() {
     if (!sp || !pp) continue
     const bPct = (pp - sp) / sp * 100
     const af   = fr * 3 * 365 * 100
-    if (bPct > 0.3 && fr > 0.0001)   basis.push({ symbol: sym, spotPrice: sp, perpPrice: pp, basis: bPct, fundingRate: fr*100, annualizedFunding: af, signal: 'short_basis' })
-    if (bPct < -0.3 && fr < -0.0001) basis.push({ symbol: sym, spotPrice: sp, perpPrice: pp, basis: bPct, fundingRate: fr*100, annualizedFunding: af, signal: 'long_basis' })
+    if (bPct > BASIS_THRES)  basis.push({ symbol: sym, spotPrice: sp, perpPrice: pp, basis: bPct, fundingRate: fr*100, annualizedFunding: af, signal: 'short_basis' })
+    if (bPct < -BASIS_THRES) basis.push({ symbol: sym, spotPrice: sp, perpPrice: pp, basis: bPct, fundingRate: fr*100, annualizedFunding: af, signal: 'long_basis' })
   }
   basis.sort((a, b) => Math.abs(b.basis) - Math.abs(a.basis))
 
-  return { triangles: triangles.sort((a, b) => b.spread - a.spread), basis }
+  // Toujours retourner top 8 paires triées, même petits spreads
+  return { triangles: triangles.sort((a, b) => b.spread - a.spread).slice(0, 8), basis }
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────
 
+type Tab = 'scanner' | 'bot'
+
 export default function ArbitragePage() {
+  const user = useUser()
+  const [activeTab, setActiveTab] = useState<Tab>('scanner')
   const [poly,   setPoly]   = useState<PolyMarket[]>([])
   const [tri,    setTri]    = useState<TriangleArb[]>([])
   const [basis,  setBasis]  = useState<BasisOpp[]>([])
@@ -272,6 +286,27 @@ export default function ArbitragePage() {
   const [ts, setTs]           = useState<Date|null>(null)
   const [auto, setAuto]       = useState(true)
   const timerRef = useRef<ReturnType<typeof setInterval>|null>(null)
+  const [arbMonitoring, setArbMonitoring] = useState(false)
+  const [hasWebhook,    setHasWebhook]    = useState(false)
+  const [savingMonitor, setSavingMonitor] = useState(false)
+
+  useEffect(() => {
+    if (!user?.uid) return
+    getNotifSettings(user.uid).then(s => {
+      setArbMonitoring(s.arbMonitoring ?? false)
+      setHasWebhook(!!s.discordWebhook)
+    }).catch(() => {})
+  }, [user?.uid])
+
+  const toggleArbMonitoring = async () => {
+    if (!user?.uid) return
+    if (!hasWebhook) { window.alert('Configure ton webhook Discord dans la page Alertes d\'abord.'); return }
+    setSavingMonitor(true)
+    const next = !arbMonitoring
+    await saveNotifSettings(user.uid, { arbMonitoring: next }).catch(() => {})
+    setArbMonitoring(next)
+    setSavingMonitor(false)
+  }
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -292,10 +327,11 @@ export default function ArbitragePage() {
   }, [auto, refresh])
 
   // ── KPI stats from live data ──
-  const totalPoly  = poly.length
-  const medianSum  = poly.length > 0 ? [...poly].sort((a,b) => a.sum - b.sum)[Math.floor(poly.length/2)]?.sum : null
-  const totalOpps  = totalPoly + tri.length + basis.length
-  const pctWithArb = poly.length > 0 ? Math.round(poly.length / 100 * 100) : 0
+  const polySignif  = poly.filter(m => m.edge > POLY_THRES)
+  const triSignif   = tri.filter(t => t.spread > TRI_THRES)
+  const medianSum   = poly.length > 0 ? [...poly].sort((a,b) => a.sum - b.sum)[Math.floor(poly.length/2)]?.sum : null
+  const totalOpps   = polySignif.length + triSignif.length + basis.length
+  const pctWithArb  = poly.length > 0 ? Math.round(polySignif.length / poly.length * 100) : 0
 
   const barData = [
     { label: 'Single condition', value: poly.reduce((a,m) => a + m.volume, 0), color: C.copper },
@@ -311,20 +347,71 @@ export default function ArbitragePage() {
     </div>
   )
 
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'scanner', label: '🔍 SCANNER' },
+    { id: 'bot',     label: '🤖 BOT' },
+  ]
+
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, padding: '28px 32px', fontFamily: 'system-ui, sans-serif', maxWidth: 1300, margin: '0 auto' }}>
 
-      {/* ── Header ── */}
+      {/* ── Page header ── */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '0.15em', textTransform: 'uppercase', ...mono }}>
+          BOT
+        </h1>
+        <p style={{ margin: '4px 0 0', fontSize: 10, color: C.muted, letterSpacing: '0.08em', ...mono }}>
+          Mispricing Scanner · Polymarket Latency Arb
+        </p>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 28, borderBottom: `1px solid ${C.border}`, paddingBottom: 0 }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              fontSize: 10, padding: '8px 20px', cursor: 'pointer',
+              background: activeTab === tab.id ? `${C.copper}18` : 'transparent',
+              color: activeTab === tab.id ? C.copperL : C.muted,
+              border: 'none',
+              borderBottom: activeTab === tab.id ? `2px solid ${C.copper}` : '2px solid transparent',
+              letterSpacing: '0.12em', ...mono,
+              marginBottom: -1,
+              transition: 'all 0.15s',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Bot tab ── */}
+      {activeTab === 'bot' && <BotTab />}
+
+      {/* ── Scanner tab ── */}
+      {activeTab === 'scanner' && <>
+
+      {/* ── Scanner Header ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '0.15em', textTransform: 'uppercase', ...mono }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text, letterSpacing: '0.12em', textTransform: 'uppercase', ...mono }}>
             Mispricing Scanner
-          </h1>
+          </h2>
           <p style={{ margin: '4px 0 0', fontSize: 10, color: C.muted, letterSpacing: '0.08em', ...mono }}>
             Polymarket · Triangulaire · Basis — {ts ? `MAJ ${ts.toLocaleTimeString('fr-FR')}` : 'Chargement…'}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={toggleArbMonitoring}
+            disabled={savingMonitor}
+            title={!hasWebhook ? 'Configure ton webhook Discord dans la page Alertes' : arbMonitoring ? 'Alertes Discord actives — clic pour désactiver' : 'Activer alertes Discord (toutes les 5 min)'}
+            style={{ fontSize: 9, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', background: arbMonitoring ? `${C.green}18` : C.card, border: `1px solid ${arbMonitoring ? C.green : C.dim}`, color: arbMonitoring ? C.green : C.muted, letterSpacing: '0.1em', ...mono }}
+          >
+            {savingMonitor ? '…' : arbMonitoring ? '🔔 ALERTES ON' : '🔔 ALERTES OFF'}
+          </button>
           <button onClick={() => setAuto(v => !v)} style={{ fontSize: 9, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', background: auto ? `${C.copper}18` : C.card, border: `1px solid ${auto ? C.copper : C.dim}`, color: auto ? C.copper : C.muted, letterSpacing: '0.1em', ...mono }}>
             {auto ? '⏱ AUTO 60s' : '⏱ MANUEL'}
           </button>
@@ -454,9 +541,9 @@ export default function ArbitragePage() {
 
         {/* Polymarket */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 20px' }}>
-          <SectionLabel text={`Polymarket — YES+NO ≠ $1 (${totalPoly})`} badge="ON-CHAIN" />
+          <SectionLabel text={`Polymarket — YES+NO ≠ $1 (${polySignif.length} actives · ${poly.length} scannées)`} badge="ON-CHAIN" />
           {loading && poly.length === 0 ? skeleton(4) : poly.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '20px 0', color: C.muted, fontSize: 11, ...mono }}>✓ Marchés correctement pricés</div>
+            <div style={{ textAlign: 'center', padding: '20px 0', color: C.muted, fontSize: 11, ...mono }}>Chargement via CF proxy…</div>
           ) : poly.map(m => <PolyRow key={m.id} m={m} />)}
         </div>
 
@@ -464,10 +551,8 @@ export default function ArbitragePage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 20px' }}>
-            <SectionLabel text={`Arbitrage Triangulaire (${tri.length})`} badge="BINANCE" />
-            {loading && tri.length === 0 ? skeleton(2) : tri.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '16px 0', color: C.muted, fontSize: 11, ...mono }}>✓ Aucune incohérence &gt;{TRI_THRES}%</div>
-            ) : tri.map(t => <TriRow key={t.id} t={t} />)}
+            <SectionLabel text={`Arbitrage Triangulaire (${triSignif.length} actives · ${tri.length} paires)`} badge="BINANCE" />
+            {loading && tri.length === 0 ? skeleton(2) : tri.map(t => <TriRow key={t.id} t={t} />)}
           </div>
 
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '20px 20px' }}>
@@ -502,6 +587,8 @@ export default function ArbitragePage() {
       <style>{`
         @keyframes apulse { 0%,100% { opacity:.3; } 50% { opacity:.7; } }
       `}</style>
+
+      </> /* end scanner tab */}
     </div>
   )
 }

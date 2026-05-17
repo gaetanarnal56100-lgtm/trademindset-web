@@ -37,7 +37,7 @@ export default function Sidebar() {
     { to: '/app/analyse',     label: t('nav.analyse'),     Icon: IconAnalyse },
     { to: '/app/marches',     label: t('nav.marches'),     Icon: IconMarches },
     { to: '/app/whales',      label: 'Whale Alerts',        Icon: IconWhale },
-    { to: '/app/arbitrage',   label: 'Arbitrage',           Icon: IconArbitrage },
+    { to: '/app/arbitrage',   label: 'BOT',                 Icon: IconArbitrage },
     { to: '/app/journal',     label: t('nav.journal'),     Icon: IconJournal },
     { to: '/app/alertes',     label: t('nav.alertes'),     Icon: IconAlertes },
   ]
