@@ -309,6 +309,10 @@ const CRYPTO_POPULAR: SearchResult[] = [
   {symbol:'ADAUSDT', name:'Cardano',   type:'crypto', exchange:'Binance', icon:'A'},
   {symbol:'LTCUSDT', name:'Litecoin',  type:'crypto', exchange:'Binance', icon:'Ł'},
   {symbol:'LINKUSDT',name:'Chainlink', type:'crypto', exchange:'Binance', icon:'⬡'},
+  {symbol:'HYPEUSDT',name:'Hyperliquid',type:'crypto', exchange:'Binance', icon:'H'},
+  {symbol:'SUIUSDT', name:'Sui',       type:'crypto', exchange:'Binance', icon:'💧'},
+  {symbol:'PEPEUSDT',name:'Pepe',      type:'crypto', exchange:'Binance', icon:'🐸'},
+  {symbol:'WIFUSDT', name:'dogwifhat', type:'crypto', exchange:'Binance', icon:'🐕'},
 ]
 
 // Binance public — recherche crypto sans token
