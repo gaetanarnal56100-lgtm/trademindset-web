@@ -249,7 +249,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'oscillateurs' | 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion'
+type Mode = 'oscillateurs' | 'micro' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -2095,9 +2095,8 @@ export default function AnalysePage() {
           }}>
             {([
               {id:'oscillateurs',icon:'🎛️',label:'Oscillateurs',sub:'WT · VMC · OU · RSI',       color:'rgba(255,214,10,0.9)'},
-              {id:'micro',     icon:'📊',label:'Micro',       sub:'CVD · Flux temps réel',      color:'rgba(0,229,255,0.9)'},
-              {id:'structure', icon:'🐋',label:'Structure',   sub:'Tendance baleine',           color:'rgba(191,90,242,0.9)'},
-              {id:'derivees',  icon:'📈',label:'Dérivés',     sub:'OI · Funding · L/S',         color:'rgba(255,149,0,0.9)'},
+              {id:'micro',     icon:'📊',label:'Micro',       sub:'CVD · Structure · Baleines',  color:'rgba(0,229,255,0.9)'},
+              {id:'derivees',  icon:'📈',label:'Dérivés',     sub:'OI · Funding · L/S',          color:'rgba(255,149,0,0.9)'},
               {id:'orderflow', icon:'⊞', label:'Order Flow',  sub:'Footprint · Cluster',        color:'rgba(255,69,58,0.9)'},
               {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,69,58,0.9)'},
               {id:'charts',    icon:'📅', label:'Charts',      sub:'Rendements · On-Chain',      color:'rgba(52,199,89,0.9)'},
@@ -2489,8 +2488,8 @@ export default function AnalysePage() {
         </div>
       </div>}
 
-      {/* ── STRUCTURE ── */}
-      {isCrypto&&mode==='structure'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
+      {/* ── STRUCTURE (fusionné dans Micro) ── */}
+      {isCrypto&&mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
         <div style={C.card} className="analyse-card-hover"><div style={C.top}/>
           <div style={{padding:C.p}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
