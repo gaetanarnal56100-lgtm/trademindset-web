@@ -267,19 +267,19 @@ function ScatterPlot({
 
 export default function DispersionDashboard() {
   const [basketId, setBasketId] = useState('crypto')
-  const [interval, setInterval] = useState('1h')
+  const [tf, setTf] = useState('1h')
   const [result, setResult] = useState<DispersionResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [activeView, setActiveView] = useState<'overview' | 'correlation' | 'components' | 'scatter'>('overview')
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timerRef = useRef<ReturnType<typeof window.setInterval> | null>(null)
 
   const currentBasket = BASKETS.find(b => b.id === basketId)?.configs ?? CRYPTO_BASKET
 
-  const load = useCallback(async (configs: AssetConfig[], tf: string) => {
+  const load = useCallback(async (configs: AssetConfig[], interval: string) => {
     setLoading(true); setError('')
     try {
-      const res = await fetchAndCompute(configs, tf, 150)
+      const res = await fetchAndCompute(configs, interval, 150)
       if (res) setResult(res)
       else setError('Données insuffisantes pour le panier sélectionné')
     } catch (e) {
@@ -289,13 +289,13 @@ export default function DispersionDashboard() {
     }
   }, [])
 
-  // Initial load + interval
+  // Initial load + auto-refresh every 60s
   useEffect(() => {
-    load(currentBasket, interval)
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(() => load(currentBasket, interval), 60_000)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [basketId, interval, load, currentBasket])
+    load(currentBasket, tf)
+    if (timerRef.current) window.clearInterval(timerRef.current)
+    timerRef.current = window.setInterval(() => load(currentBasket, tf), 60_000)
+    return () => { if (timerRef.current) window.clearInterval(timerRef.current) }
+  }, [basketId, tf, load, currentBasket])
 
   const regime = result ? REGIME_META[result.regime] : null
 
@@ -335,16 +335,16 @@ export default function DispersionDashboard() {
         {/* Interval selector */}
         <div style={{ display: 'flex', gap: 4 }}>
           {INTERVALS.map(iv => (
-            <button key={iv.id} onClick={() => setInterval(iv.id)} style={{
+            <button key={iv.id} onClick={() => setTf(iv.id)} style={{
               padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer',
-              background: interval === iv.id ? 'rgba(191,90,242,0.15)' : 'rgba(255,255,255,0.04)',
-              color: interval === iv.id ? '#BF5AF2' : 'rgba(255,255,255,0.5)',
-              border: `1px solid ${interval === iv.id ? 'rgba(191,90,242,0.3)' : 'transparent'}`,
+              background: tf === iv.id ? 'rgba(191,90,242,0.15)' : 'rgba(255,255,255,0.04)',
+              color: tf === iv.id ? '#BF5AF2' : 'rgba(255,255,255,0.5)',
+              border: `1px solid ${tf === iv.id ? 'rgba(191,90,242,0.3)' : 'transparent'}`,
             }}>{iv.label}</button>
           ))}
         </div>
 
-        <button onClick={() => load(currentBasket, interval)} style={{
+        <button onClick={() => load(currentBasket, tf)} style={{
           padding: '4px 10px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
           background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)',
           border: '1px solid rgba(255,255,255,0.1)',
@@ -607,7 +607,7 @@ export default function DispersionDashboard() {
               { label: 'Panier', value: fmtPct(result.basketReturn * 100), color: result.basketReturn >= 0 ? '#34C759' : '#FF3B30' },
               { label: 'Biais global', value: result.overallBias.toUpperCase(), color: result.overallBias === 'bullish' ? '#34C759' : result.overallBias === 'bearish' ? '#FF3B30' : '#8E8E93' },
               { label: 'Actifs analysés', value: `${result.components.length}` },
-              { label: 'Intervalle', value: interval },
+              { label: 'Intervalle', value: tf },
               { label: 'Mis à jour', value: new Date(result.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) },
             ].map(s => (
               <div key={s.label} style={{
