@@ -1986,94 +1986,148 @@ export default function AnalysePage() {
       `}</style>
       <div className="analyse-grid-bg" style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0}}/>
 
-      {/* Header */}
-      <div style={{position:'relative',zIndex:1,display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:24,flexWrap:'wrap',gap:14}}>
-        {/* Left — Title HUD */}
-        <div style={{display:'flex',alignItems:'center',gap:14}}>
-          <div style={{
-            width:44,height:44,borderRadius:14,flexShrink:0,
-            background:'linear-gradient(135deg,rgba(0,229,255,0.15),rgba(191,90,242,0.15))',
-            border:'1px solid rgba(0,229,255,0.25)',
-            display:'flex',alignItems:'center',justifyContent:'center',
-            boxShadow:'0 0 20px rgba(0,229,255,0.1)',
-          }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tm-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-            </svg>
+      {/* ─── TOP NAV ─── */}
+      <div style={{position:'relative',zIndex:1,marginBottom:20}}>
+
+        {/* Row 1 — title · search · actions */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap',marginBottom: symbol && isCrypto ? 10 : 0}}>
+
+          {/* Left: icon + title */}
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <div style={{
+              width:40,height:40,borderRadius:12,flexShrink:0,
+              background:'linear-gradient(135deg,rgba(0,229,255,0.15),rgba(191,90,242,0.15))',
+              border:'1px solid rgba(0,229,255,0.25)',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              boxShadow:'0 0 20px rgba(0,229,255,0.1)',
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--tm-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+            </div>
+            <div>
+              <h1 style={{fontSize:20,fontWeight:800,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em',
+                background:'linear-gradient(135deg,#fff 40%,rgba(0,229,255,0.8))',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>
+                Analyse
+              </h1>
+              <p style={{fontSize:11,color:'var(--tm-text-muted)',margin:'1px 0 0',fontFamily:'JetBrains Mono,monospace',letterSpacing:'0.04em'}}>
+                {!symbol ? '// rechercher un actif' : isCrypto ? 'CVD · Dérivés · Structure' : 'MTF · WaveTrend · VMC'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 style={{fontSize:22,fontWeight:800,color:'var(--tm-text-primary)',margin:0,fontFamily:'Syne,sans-serif',letterSpacing:'-0.02em',
-              background:'linear-gradient(135deg,#fff 40%,rgba(0,229,255,0.8))',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>
-              Analyse
-            </h1>
-            <p style={{fontSize:12,color:'var(--tm-text-muted)',margin:'2px 0 0',fontFamily:'JetBrains Mono,monospace',letterSpacing:'0.04em'}}>
-              {!symbol ? '// rechercher un actif pour commencer' : isCrypto ? 'Heatmap · CVD · Structure · Dérivés' : 'MTF · WaveTrend · VMC · Trade Plan'}
-            </p>
-          </div>
-        </div>
-        {/* Right — actions */}
-        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-          {/* Heatmap Contexte button — crypto only */}
-          {isCrypto && symbol && (
-            <button onClick={() => setHeatmapOpen(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 13px', borderRadius:10, background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', color:'var(--tm-accent)', cursor:'pointer', fontSize:11, fontWeight:600, backdropFilter:'blur(8px)', transition:'all 0.15s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,255,0.12)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,229,255,0.4)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,255,0.06)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,229,255,0.2)' }}>
-              🌡️ Contexte
-            </button>
-          )}
-          {/* Bouton recherche — ouvre pleine page (0 problème de superposition) */}
-          <button
-            onClick={() => setSearching(true)}
-            style={{
-              display:'flex', alignItems:'center', gap:8,
-              background:'rgba(0,217,255,0.06)',
-              border:`1px solid ${symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)'}`,
-              borderRadius:12, padding:'8px 14px', cursor:'pointer',
-              minWidth:200, transition:'all 0.15s',
-            }}
-            onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor='rgba(0,217,255,0.5)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.1)'}}
-            onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor=symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.06)'}}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <span style={{fontSize:13,fontWeight:700,color:symbol?'#fff':'#8E8E93',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
-              {symbol || 'Rechercher un actif…'}
-            </span>
-            <span style={{fontSize:9,color:'#3A3F4B',border:'1px solid #2A2F3E',borderRadius:4,padding:'1px 5px',flexShrink:0}}>⌘K</span>
-          </button>
-          {symbol && <MarketStateEngine symbol={symbol} />}
-          {symbol && (
+
+          {/* Right: search + Contexte + MarketState + PDF */}
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            {/* Search */}
             <button
-              onClick={handleExportPDF}
-              disabled={pdfGenerating}
-              title="Exporter le rapport d'analyse complet en PDF"
+              onClick={() => setSearching(true)}
               style={{
-                display:'flex',alignItems:'center',gap:7,
-                padding:'8px 16px',borderRadius:10,
-                background: pdfGenerating ? 'rgba(13,17,23,0.8)' : 'linear-gradient(135deg,rgba(0,229,255,0.12),rgba(191,90,242,0.12))',
-                border:'1px solid rgba(0,229,255,0.35)',
-                color:'var(--tm-accent)',cursor: pdfGenerating ? 'wait' : 'pointer',
-                fontSize:12,fontWeight:600,
-                transition:'all 0.15s',flexShrink:0,
-                opacity: pdfGenerating ? 0.7 : 1,
-                boxShadow: pdfGenerating ? 'none' : '0 0 12px rgba(0,229,255,0.1)',
+                display:'flex', alignItems:'center', gap:8,
+                background:'rgba(0,217,255,0.06)',
+                border:`1px solid ${symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)'}`,
+                borderRadius:11, padding:'7px 12px', cursor:'pointer',
+                minWidth:190, transition:'all 0.15s',
               }}
+              onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor='rgba(0,217,255,0.5)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.1)'}}
+              onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor=symbol?'rgba(0,217,255,0.3)':'rgba(0,217,255,0.15)';(e.currentTarget as HTMLElement).style.background='rgba(0,217,255,0.06)'}}
             >
-              {pdfGenerating ? (
-                <>
-                  <div style={{width:14,height:14,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}} />
-                  Génération…
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-                  </svg>
-                  Exporter PDF
-                </>
-              )}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8E8E93" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span style={{fontSize:12,fontWeight:700,color:symbol?'#fff':'#8E8E93',flex:1,textAlign:'left',fontFamily:'JetBrains Mono,monospace'}}>
+                {symbol || 'Rechercher…'}
+              </span>
+              <span style={{fontSize:9,color:'#3A3F4B',border:'1px solid #2A2F3E',borderRadius:4,padding:'1px 5px',flexShrink:0}}>⌘K</span>
             </button>
-          )}
+            {/* Heatmap Contexte — crypto only */}
+            {isCrypto && symbol && (
+              <button onClick={() => setHeatmapOpen(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 12px', borderRadius:10, background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', color:'var(--tm-accent)', cursor:'pointer', fontSize:11, fontWeight:600, backdropFilter:'blur(8px)', transition:'all 0.15s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,255,0.12)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,229,255,0.4)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,255,0.06)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,229,255,0.2)' }}>
+                🌡️ Contexte
+              </button>
+            )}
+            {symbol && <MarketStateEngine symbol={symbol} />}
+            {symbol && (
+              <button
+                onClick={handleExportPDF}
+                disabled={pdfGenerating}
+                title="Exporter le rapport d'analyse complet en PDF"
+                style={{
+                  display:'flex',alignItems:'center',gap:6,
+                  padding:'7px 14px',borderRadius:10,
+                  background: pdfGenerating ? 'rgba(13,17,23,0.8)' : 'linear-gradient(135deg,rgba(0,229,255,0.12),rgba(191,90,242,0.12))',
+                  border:'1px solid rgba(0,229,255,0.35)',
+                  color:'var(--tm-accent)',cursor: pdfGenerating ? 'wait' : 'pointer',
+                  fontSize:12,fontWeight:600,
+                  transition:'all 0.15s',flexShrink:0,
+                  opacity: pdfGenerating ? 0.7 : 1,
+                  boxShadow: pdfGenerating ? 'none' : '0 0 12px rgba(0,229,255,0.1)',
+                }}
+              >
+                {pdfGenerating ? (
+                  <>
+                    <div style={{width:13,height:13,border:'2px solid #2A2F3E',borderTopColor:'var(--tm-accent)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}} />
+                    Génération…
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                    PDF
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Row 2 — Mode tabs (crypto + symbol only) */}
+        {symbol && isCrypto && (
+          <div style={{
+            display:'flex',gap:4,flexWrap:'wrap',
+            padding:'8px 12px',
+            background:'rgba(13,17,35,0.7)',
+            backdropFilter:'blur(12px)',
+            WebkitBackdropFilter:'blur(12px)',
+            border:'1px solid rgba(255,255,255,0.06)',
+            borderRadius:14,
+            boxShadow:'0 4px 20px rgba(0,0,0,0.3)',
+          }}>
+            {([
+              {id:'micro',     icon:'📊',label:'Micro',       sub:'Flux temps réel',            color:'rgba(0,229,255,0.9)'},
+              {id:'structure', icon:'🐋',label:'Structure',   sub:'Tendance baleine',           color:'rgba(191,90,242,0.9)'},
+              {id:'derivees',  icon:'📈',label:'Dérivés',     sub:'OI · Funding · L/S',         color:'rgba(255,149,0,0.9)'},
+              {id:'orderflow', icon:'⊞', label:'Order Flow',  sub:'Footprint · Cluster',        color:'rgba(255,69,58,0.9)'},
+              {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,149,0,0.9)'},
+              {id:'charts',    icon:'📅', label:'Charts',      sub:'Rendements · On-Chain',      color:'rgba(52,199,89,0.9)'},
+              {id:'dispersion',icon:'🔬', label:'Dispersion',  sub:'Internals institutionnels',  color:'rgba(0,229,255,0.9)'},
+            ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m => {
+              const active = mode === m.id
+              return (
+                <button key={m.id} className="mode-tab" onClick={() => setMode(m.id)} style={{
+                  display:'flex',alignItems:'center',gap:7,
+                  padding:'7px 14px',borderRadius:10,
+                  cursor:'pointer',
+                  background: active
+                    ? `linear-gradient(135deg,${m.color.replace('0.9','0.14')},rgba(13,17,35,0.7))`
+                    : 'transparent',
+                  border: active
+                    ? `1px solid ${m.color.replace('0.9','0.45')}`
+                    : '1px solid transparent',
+                  boxShadow: active ? `0 0 14px ${m.color.replace('0.9','0.18')}` : 'none',
+                  transition:'all 0.18s',
+                }}>
+                  <span style={{fontSize:13}}>{m.icon}</span>
+                  <div style={{textAlign:'left'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:active?m.color:'var(--tm-text-secondary)',fontFamily:'Syne,sans-serif',lineHeight:1.2}}>{m.label}</div>
+                    <div style={{fontSize:9,color:active?m.color.replace('0.9','0.55'):'var(--tm-text-muted)',fontFamily:'JetBrains Mono,monospace',lineHeight:1.2}}>{m.sub}</div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
       </div>
 
       {/* ── Fear & Greed + Decision Assistant strip ── */}
@@ -2285,46 +2339,6 @@ export default function AnalysePage() {
 
         return panelOrder.map(id => panelDefs[id] ?? null)
       })()}
-
-      {/* ══ CRYPTO ONLY ══ Mode tabs + CVD/Structure/Dérivés */}
-      {isCrypto && <div style={{position:'relative',zIndex:1}}>
-        {/* Mode tabs — neon cyberpunk */}
-        <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
-          {([
-            {id:'micro',     icon:'📊',label:'Micro',      sub:'Flux temps réel',   color:'rgba(0,229,255,0.9)'},
-            {id:'structure', icon:'🐋',label:'Structure',  sub:'Tendance baleine',  color:'rgba(191,90,242,0.9)'},
-            {id:'derivees',  icon:'📈',label:'Dérivés',    sub:'OI · Funding · L/S',color:'rgba(255,149,0,0.9)'},
-            {id:'orderflow', icon:'⊞', label:'Order Flow', sub:'Footprint · Cluster',color:'rgba(255,69,58,0.9)'},
-            {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation', color:'rgba(255,149,0,0.9)'},
-            {id:'charts',    icon:'📅', label:'Charts',     sub:'Rendements · On-Chain',color:'rgba(52,199,89,0.9)'},
-            {id:'dispersion',icon:'📊', label:'Dispersion', sub:'Internals institutionnels',color:'rgba(0,229,255,0.9)'},
-          ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m=>{
-            const active = mode === m.id
-            return (
-              <button key={m.id} className="mode-tab" onClick={()=>setMode(m.id)} style={{
-                display:'flex',alignItems:'center',gap:8,
-                padding:'9px 18px',borderRadius:12,
-                cursor:'pointer',
-                background: active
-                  ? `linear-gradient(135deg,${m.color.replace('0.9','0.12')},rgba(13,17,35,0.6))`
-                  : 'rgba(13,17,35,0.5)',
-                border: active
-                  ? `1px solid ${m.color.replace('0.9','0.5')}`
-                  : '1px solid rgba(255,255,255,0.06)',
-                boxShadow: active ? `0 0 16px ${m.color.replace('0.9','0.15')}` : 'none',
-                backdropFilter:'blur(8px)',
-                transition:'all 0.2s',
-              }}>
-                <span style={{fontSize:14}}>{m.icon}</span>
-                <div style={{textAlign:'left'}}>
-                  <div style={{fontSize:12,fontWeight:700,color:active?m.color:'var(--tm-text-secondary)',fontFamily:'Syne,sans-serif'}}>{m.label}</div>
-                  <div style={{fontSize:9,color:active?m.color.replace('0.9','0.6'):'var(--tm-text-muted)',fontFamily:'JetBrains Mono,monospace'}}>{m.sub}</div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </div>}
 
       {/* ── MICRO — crypto only ── */}
       {isCrypto&&mode==='micro'&&<div style={{display:'flex',flexDirection:'column',gap:12,position:'relative',zIndex:1}}>
