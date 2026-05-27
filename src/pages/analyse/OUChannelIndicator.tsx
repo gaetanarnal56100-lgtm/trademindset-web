@@ -669,11 +669,13 @@ function fmtAxisLabel(ts: number, interval: string): string {
 /** Draws static time labels in the 14px bottom strip already reserved by each chart */
 function drawOUTimeAxis(
   ctx: CanvasRenderingContext2D, W: number, H: number,
-  candles: Candle[], interval: string
+  candles: Candle[], interval: string,
+  drawW?: number   // bar area width (defaults to W if not supplied)
 ) {
   if (candles.length < 2) return
+  const bW = drawW ?? W   // bars are drawn within bW pixels
   const STRIP = 14
-  // Dark background strip
+  // Dark background strip (full width for visual cleanliness)
   ctx.fillStyle = 'rgba(8,12,20,0.95)'
   ctx.fillRect(0, H - STRIP, W, STRIP)
   // Separator line
@@ -681,25 +683,25 @@ function drawOUTimeAxis(
   ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.setLineDash([])
   ctx.beginPath(); ctx.moveTo(0, H - STRIP); ctx.lineTo(W, H - STRIP); ctx.stroke()
 
-  const maxLabels = Math.max(2, Math.floor(W / 72))
+  const maxLabels = Math.max(2, Math.floor(bW / 72))
   const step = Math.max(1, Math.floor(candles.length / maxLabels))
   ctx.font = '8px JetBrains Mono, monospace'
 
   for (let i = 0; i < candles.length; i += step) {
-    const x = (i / (candles.length - 1)) * W
+    const x = (i / (candles.length - 1)) * bW
     const label = fmtAxisLabel(candles[i].t, interval)
     // Tick mark
     ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(x, H - STRIP); ctx.lineTo(x, H - STRIP + 3); ctx.stroke()
     // Label text
     ctx.fillStyle = 'rgba(143,148,163,0.65)'; ctx.textAlign = 'center'
-    ctx.fillText(label, Math.min(Math.max(x, 20), W - 20), H - 3)
+    ctx.fillText(label, Math.min(Math.max(x, 20), bW - 20), H - 3)
   }
   ctx.restore()
 }
 
-interface OUChannelChartProps { candles: Candle[]; ou: OUResult; height?: number; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string }
-function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover, interval = '1h' }: OUChannelChartProps) {
+interface OUChannelChartProps { candles: Candle[]; ou: OUResult; height?: number; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string; areaRatio?: number }
+function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover, interval = '1h', areaRatio = 1 }: OUChannelChartProps) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -722,8 +724,9 @@ function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover, interval
     const yRange = yMax - yMin || 1
     // Reserve 14px bottom for time label
     const drawH = H - 14
+    const drawW = W * areaRatio   // bars drawn within this width (mirrors LW chart + other oscillators)
     const toY = (v: number) => drawH - ((v - yMin) / yRange) * drawH
-    const toX = (i: number) => (i / (candles.length - 1)) * W
+    const toX = (i: number) => (i / (candles.length - 1)) * drawW
 
     ctx.fillStyle = '#080C14'
     ctx.fillRect(0, 0, W, H)
@@ -788,7 +791,7 @@ function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover, interval
     })
 
     // Time axis (static labels)
-    drawOUTimeAxis(ctx, W, H, candles, interval)
+    drawOUTimeAxis(ctx, W, H, candles, interval, drawW)
 
     // Crosshair
     if (hoverIdx != null && candles[hoverIdx]) {
@@ -816,10 +819,10 @@ function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover, interval
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || candles.length < 2) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const xRatio = (e.clientX - rect.left) / rect.width
+    const xRatio = Math.min(1, (e.clientX - rect.left) / (rect.width * areaRatio))
     const idx = Math.min(candles.length - 1, Math.max(0, Math.round(xRatio * (candles.length - 1))))
     onHover({ x: e.clientX - rect.left, idx, z: ou.zscore[idx] ?? 0, excess: ou.excess[idx] ?? 'none', price: candles[idx]?.c ?? 0 })
-  }, [candles, ou, onHover])
+  }, [candles, ou, onHover, areaRatio])
 
   if (candles.length < 20) return (
     <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
@@ -837,7 +840,7 @@ function OUChannelChart({ candles, ou, height = 200, hoverIdx, onHover, interval
 }
 
 // ─── Z-Score Oscillator Chart ─────────────────────────────────────────────────
-function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover, interval = '1h' }: { zscore: number[]; excess: OUResult['excess']; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string }) {
+function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover, interval = '1h', areaRatio = 1 }: { zscore: number[]; excess: OUResult['excess']; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string; areaRatio?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -853,8 +856,9 @@ function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover,
 
     const yMin = -4, yMax = 4, yRange = yMax - yMin
     const drawH = H - 14 // reserve 14px for time label
+    const drawW = W * areaRatio
     const toY = (v: number) => drawH - ((v - yMin) / yRange) * drawH
-    const toX = (i: number) => (i / (zscore.length - 1)) * W
+    const toX = (i: number) => (i / (zscore.length - 1)) * drawW
 
     const lines: [number, string, string][] = [
       [2.5, 'rgba(255,59,48,0.4)',  '>+2.5σ Extrême'],
@@ -897,7 +901,7 @@ function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover,
     ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 1; ctx.stroke()
 
     // Time axis (static labels)
-    if (candles && candles.length > 1) drawOUTimeAxis(ctx, W, H, candles, interval)
+    if (candles && candles.length > 1) drawOUTimeAxis(ctx, W, H, candles, interval, drawW)
 
     // Crosshair
     if (hoverIdx != null && zscore[hoverIdx] != null) {
@@ -928,10 +932,10 @@ function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover,
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || zscore.length < 2) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const xRatio = (e.clientX - rect.left) / rect.width
+    const xRatio = Math.min(1, (e.clientX - rect.left) / (rect.width * areaRatio))
     const idx = Math.min(zscore.length - 1, Math.max(0, Math.round(xRatio * (zscore.length - 1))))
     onHover({ x: e.clientX - rect.left, idx, z: zscore[idx] ?? 0, excess: excess[idx] ?? 'none', price: 0 })
-  }, [zscore, excess, onHover])
+  }, [zscore, excess, onHover, areaRatio])
 
   return (
     <canvas ref={ref}
@@ -943,7 +947,7 @@ function ZScoreChart({ zscore, excess, height = 100, candles, hoverIdx, onHover,
 }
 
 // ─── VMC+ER Chart ─────────────────────────────────────────────────────────────
-function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover, interval = '1h' }: { vmc: VMCEnhancedResult; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string }) {
+function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover, interval = '1h', areaRatio = 1 }: { vmc: VMCEnhancedResult; height?: number; candles?: Candle[]; hoverIdx?: number | null; onHover?: (d: HoverData | null) => void; interval?: string; areaRatio?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -959,9 +963,10 @@ function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover, inter
     const n = vmc.sig.length
     const yMin = -80, yMax = 80, yRange = yMax - yMin
     const drawH = H - 14 // reserve 14px for time label
+    const drawW = W * areaRatio
     const erPanelTop = drawH * 0.88, erPanelH = drawH * 0.10
     const toY  = (v: number) => erPanelTop * (1 - (v - yMin) / yRange)
-    const toX  = (i: number) => (i / (n - 1)) * W
+    const toX  = (i: number) => (i / (n - 1)) * drawW
     const toYER = (v: number) => erPanelTop + erPanelH - v * erPanelH
 
     ctx.setLineDash([3, 3])
@@ -1008,7 +1013,7 @@ function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover, inter
     ctx.fillText('ER', 4, erPanelTop + 10)
 
     // Time axis (static labels)
-    if (candles && candles.length > 1) drawOUTimeAxis(ctx, W, H, candles, interval)
+    if (candles && candles.length > 1) drawOUTimeAxis(ctx, W, H, candles, interval, drawW)
 
     // Crosshair
     if (hoverIdx != null && vmc.sig[hoverIdx] != null) {
@@ -1033,15 +1038,15 @@ function VMCEnhancedChart({ vmc, height = 130, candles, hoverIdx, onHover, inter
       ctx.textAlign = 'right'; ctx.fillText(vmcv, W - 4, cy + 4)
     }
 
-  }, [vmc, height, hoverIdx, candles, interval])
+  }, [vmc, height, hoverIdx, candles, interval, areaRatio])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onHover || vmc.sig.length < 2) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const xRatio = (e.clientX - rect.left) / rect.width
+    const xRatio = Math.min(1, (e.clientX - rect.left) / (rect.width * areaRatio))
     const idx = Math.min(vmc.sig.length - 1, Math.max(0, Math.round(xRatio * (vmc.sig.length - 1))))
     onHover({ x: e.clientX - rect.left, idx, z: 0, excess: 'none', price: candles?.[idx]?.c ?? 0 })
-  }, [vmc, candles, onHover])
+  }, [vmc, candles, onHover, areaRatio])
 
   if (vmc.sig.length < 10) return (
     <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tm-text-muted)', fontSize: 12, background: '#080C14', borderRadius: 8 }}>
@@ -1200,18 +1205,15 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
   } : null
 
   // Sync crosshair from main LW chart when not directly hovering
-  // Canal OU draws bars over full canvas width, others use W*areaRatio.
-  // Scale frac by areaRatio so cursor lands at same pixel position as in other oscillators.
   const areaRatio = visibleRange?.areaRatio ?? 1
   useEffect(() => {
     if (isDirectHover.current) return  // local hover takes priority
     if (crosshairFrac == null || !viewCandles.length) { setHoverData(null); return }
-    const scaledFrac = crosshairFrac * areaRatio  // convert drawW-fraction → full-canvas-fraction
-    const idx = Math.max(0, Math.min(viewSize - 1, Math.round(scaledFrac * (viewSize - 1))))
+    const idx = Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1))))
     const c = viewCandles[idx]
     if (!c) return
     setHoverData({ x: 0, idx, z: viewOu?.zscore[idx] ?? 0, excess: viewOu?.excess[idx] ?? 'none', price: c.c })
-  }, [crosshairFrac, areaRatio, viewCandles, viewOu, viewSize])
+  }, [crosshairFrac, viewCandles, viewOu, viewSize])
 
   useEffect(() => {
     if (syncInterval) {
@@ -1738,7 +1740,8 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
             {activeView === 'channel' && viewOu && (
               <>
                 <OUChannelChart candles={viewCandles} ou={viewOu} height={220} interval={tf}
-                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? Math.min(1, (d.idx / (viewSize - 1)) / areaRatio) : null) }}
+                  areaRatio={areaRatio}
+                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? d.idx / (viewSize - 1) : null) }}
                   hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && <HoverTooltip hover={hoverData} candles={viewCandles} ou={viewOu} />}
               </>
@@ -1746,7 +1749,8 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
             {activeView === 'zscore' && viewOu && (
               <>
                 <ZScoreChart zscore={viewOu.zscore} excess={viewOu.excess} height={130} interval={tf}
-                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? Math.min(1, (d.idx / (viewSize - 1)) / areaRatio) : null) }}
+                  areaRatio={areaRatio}
+                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? d.idx / (viewSize - 1) : null) }}
                   candles={viewCandles} hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && viewOu && (
                   <div style={{ position: 'absolute', top: 8, left: Math.min(hoverData.x + 8, 240), background: 'rgba(8,12,20,0.97)', border: `1px solid rgba(0,229,255,0.2)`, borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 50, minWidth: 200, backdropFilter: 'blur(12px)' }}>
@@ -1759,7 +1763,8 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
             )}
             {activeView === 'vmc' && viewVmc && (
               <VMCEnhancedChart vmc={viewVmc} height={150} interval={tf} candles={viewCandles} hoverIdx={hoverData?.idx ?? null}
-                onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? Math.min(1, (d.idx / (viewSize - 1)) / areaRatio) : null) }} />
+                areaRatio={areaRatio}
+                onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? d.idx / (viewSize - 1) : null) }} />
             )}
             {activeView === 'confluence' && viewOu && viewVmc && (
               <div style={{ padding: '14px 16px', overflowY: 'auto', maxHeight: 420 }}>
