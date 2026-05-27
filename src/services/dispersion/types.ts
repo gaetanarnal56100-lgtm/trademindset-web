@@ -4,99 +4,150 @@
 export interface AssetConfig {
   symbol: string
   label: string
-  weight?: number      // default: equal weight
+  weight?: number
   sector?: string
 }
 
 export interface RawCandle {
-  t: number   // timestamp ms
-  o: number
-  h: number
-  l: number
-  c: number
-  v: number
+  t: number; o: number; h: number; l: number; c: number; v: number
 }
 
 // ─── Per-component snapshot ──────────────────────────────────────────────────
 export interface ComponentSnapshot {
   symbol: string
   label: string
-  return1d: number          // 1-bar return
-  return5d: number          // 5-bar return
-  realizedVol: number       // annualized realized vol (20-bar)
+  return1d: number
+  return5d: number
+  realizedVol: number          // annualized realized vol (20-bar)
   rsi14: number
   aboveEma20: boolean
   aboveEma50: boolean
   aboveVwap: boolean
-  zScore: number            // return z-score vs own history
-  momentum: number          // EMA(return, 5) — trend bias
+  zScore: number               // return z-score vs own history
+  momentum: number             // EMA(return, 5)
   divergenceFromBasket: number // component return - basket return
+  // ── New institutional fields ──
+  hurstExponent: number        // H: 0.5=random, >0.5=trend, <0.5=mean-rev
+  autocorr: number             // lag-1 autocorrelation of returns
+  meanReversionScore: number   // 0–100: how overextended vs basket mean
+  contributionPct: number      // weight * return1d (contribution to basket)
+  sharpeLike: number           // return1d / realizedVol (daily Sharpe proxy)
+  rank: number                 // 1 = best return in basket
 }
 
 // ─── Core result ─────────────────────────────────────────────────────────────
 export type DispersionRegime =
-  | 'compression'   // Low dispersion, high correlation — macro-driven
-  | 'expansion'     // High dispersion, low correlation — stock-picking
-  | 'panic'         // High dispersion + high vol + low breadth
-  | 'trending'      // Low dispersion, directional move, high breadth
-  | 'rotating'      // Medium dispersion, sector rotation signal
+  | 'compression'  // Low dispersion, high correlation — macro-driven
+  | 'expansion'    // High dispersion, low correlation — stock-picking
+  | 'panic'        // High dispersion + high vol + low breadth
+  | 'trending'     // Low dispersion, directional, high breadth
+  | 'rotating'     // Medium dispersion, sector rotation
   | 'unknown'
+
+export interface TradeSignal {
+  action: 'dispersion' | 'momentum' | 'neutral'
+  direction: 'buy_laggards' | 'buy_leaders' | 'neutral'
+  score: number        // 0–100
+  confidence: number   // 0–100
+  reasoning: string[]
+  topLongs: string[]   // asset labels
+  topShorts: string[]
+}
+
+export interface InlineHistory {
+  timestamps: number[]
+  dispersion: number[]
+  avgCorrelation: number[]
+  pctUp: number[]
+  volSpread: number[]
+  regimes: DispersionRegime[]
+}
+
+export interface TrendArrows {
+  dispersion: '↑' | '↓' | '→'
+  correlation: '↑' | '↓' | '→'
+  breadth: '↑' | '↓' | '→'
+  volSpread: '↑' | '↓' | '→'
+}
 
 export interface DispersionResult {
   timestamp: number
-
-  // ── Components ──
   components: ComponentSnapshot[]
 
   // ── Cross-sectional dispersion ──
-  dispersionRaw: number         // std dev of component returns
-  dispersionMA: number          // rolling mean (historical reference)
-  dispersionStd: number         // rolling std of dispersion
-  dispersionZScore: number      // (current - mean) / std
-  dispersionPercentile: number  // 0–100 rank vs lookback history
+  dispersionRaw: number
+  dispersionMA: number
+  dispersionStd: number
+  dispersionZScore: number
+  dispersionPercentile: number
 
   // ── Correlation ──
-  correlationMatrix: number[][] // NxN pairwise Pearson (returns)
-  avgCorrelation: number        // mean of upper triangle
-  correlationZScore: number     // vs historical avg correlation
-  correlationPercentile: number // 0–100
+  correlationMatrix: number[][]
+  avgCorrelation: number
+  correlationZScore: number
+  correlationPercentile: number
 
   // ── Volatility regime ──
-  avgComponentVol: number       // mean of component realized vols
-  impliedIndexVol: number       // theoretical index vol (covariance model)
-  realizedIndexVol: number      // actual basket realized vol
-  volSpread: number             // avgComponentVol - realizedIndexVol → realized dispersion premium
+  avgComponentVol: number
+  impliedIndexVol: number
+  realizedIndexVol: number
+  volSpread: number
   volRegime: 'squeeze' | 'normal' | 'expansion'
-  volZScore: number             // volSpread z-score
+  volZScore: number
 
-  // ── Breadth & participation ──
-  pctUp: number                 // % components with positive 1d return
-  pctAboveEma20: number         // % above 20-bar EMA
-  pctAboveEma50: number         // % above 50-bar EMA
-  advanceDeclineRatio: number   // advances / declines
-  participationScore: number    // 0–100 composite
+  // ── Breadth ──
+  pctUp: number
+  pctAboveEma20: number
+  pctAboveEma50: number
+  advanceDeclineRatio: number
+  participationScore: number
 
   // ── Regime ──
   regime: DispersionRegime
-  regimeConfidence: number      // 0–100
+  regimeConfidence: number
 
-  // ── Smart money / institutional ──
-  basketReturn: number          // equal-weight basket return
-  medianReturn: number          // median component return
-  indexVsMedianDivergence: number  // basket - median (hidden leader/lagger)
-  hiddenStrength: boolean       // breadth rising while basket flat/down
-  hiddenWeakness: boolean       // breadth falling while basket up
+  // ── Smart money ──
+  basketReturn: number
+  medianReturn: number
+  indexVsMedianDivergence: number
+  hiddenStrength: boolean
+  hiddenWeakness: boolean
   smartMoneyBias: 'accumulation' | 'distribution' | 'neutral'
-  distributionScore: number     // 0–100 (high = institutional distribution)
-  accumulationScore: number     // 0–100
+  distributionScore: number
+  accumulationScore: number
 
-  // ── Summary scores ──
-  riskOnScore: number           // 0–100 (100 = strong risk-on)
+  // ── New: Basket-level quant metrics ──
+  basketHurst: number          // H exponent on basket return series
+  basketAutocorr: number       // lag-1 autocorrelation on basket
+  crossSectionalMomentum: number // top quartile return - bottom quartile return
+  returnKurtosis: number       // excess kurtosis of component returns
+  returnSkew: number           // skewness of component returns
+
+  // ── New: Synthesized trade signal ──
+  tradeSignal: TradeSignal
+
+  // ── New: Rolling history (computed inline from candle slices) ──
+  history: InlineHistory
+
+  // ── New: Trend arrows (direction of change vs recent history) ──
+  trendArrows: TrendArrows
+
+  // ── Summary ──
+  riskOnScore: number
   overallBias: 'bullish' | 'bearish' | 'neutral'
-  overallScore: number          // -100 to +100
+  overallScore: number
 }
 
-// ─── Historical series for charts ────────────────────────────────────────────
+// ─── Alert thresholds ────────────────────────────────────────────────────────
+export interface DispersionAlertConfig {
+  dispersionExpansion: number
+  correlationCollapse: number
+  participationFailure: number
+  hiddenWeaknessConfirm: boolean
+  regimeShift: boolean
+}
+
+// ─── Historical series (external) ────────────────────────────────────────────
 export interface DispersionHistory {
   timestamps: number[]
   dispersion: number[]
@@ -104,15 +155,6 @@ export interface DispersionHistory {
   pctUp: number[]
   volSpread: number[]
   riskOnScore: number[]
-}
-
-// ─── Alert thresholds ────────────────────────────────────────────────────────
-export interface DispersionAlertConfig {
-  dispersionExpansion: number    // z-score threshold
-  correlationCollapse: number    // avgCorrelation drop threshold
-  participationFailure: number   // pctUp below this
-  hiddenWeaknessConfirm: boolean
-  regimeShift: boolean
 }
 
 // ─── Preset baskets ──────────────────────────────────────────────────────────
