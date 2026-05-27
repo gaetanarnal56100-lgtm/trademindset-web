@@ -439,7 +439,8 @@ function useInteractiveCanvas(
   draw: (ctx:CanvasRenderingContext2D, W:number, H:number, hoverIdx:number|null) => void,
   deps: unknown[], viewSize: number,
   viewport: Viewport, setViewport: (vp:Viewport) => void,
-  externalHoverIdx?: number | null  // from LW chart crosshair sync
+  externalHoverIdx?: number | null,  // from LW chart crosshair sync
+  onCrosshairChange?: (frac: number | null) => void  // emit crosshair back to parent
 ) {
   const ref    = useRef<HTMLCanvasElement>(null)
   const [hoverIdx, setHoverIdx] = useState<number|null>(null)
@@ -494,11 +495,12 @@ function useInteractiveCanvas(
       const x = e.clientX - rect.left
       const idx = Math.round((x / rect.width) * (viewSize - 1))
       setHoverIdx(Math.max(0, Math.min(viewSize - 1, idx)))
+      onCrosshairChange?.(x / rect.width)
     }
-  }, [setViewport, viewSize])
+  }, [setViewport, viewSize, onCrosshairChange])
 
   const onMouseUp  = useCallback(() => { dragRef.current = null }, [])
-  const onLeave    = useCallback(() => { dragRef.current = null; setHoverIdx(null) }, [])
+  const onLeave    = useCallback(() => { dragRef.current = null; setHoverIdx(null); onCrosshairChange?.(null) }, [onCrosshairChange])
   return { ref, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave }
 }
 
@@ -508,7 +510,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; crosshairFrac?: number | null }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -570,7 +572,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
       if(!result||result.wt1.length<2) return
       drawOscillator(ctx,W,H-TIME_AXIS_H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd,undefined,undefined,rightMarginFrac)
       drawTimeAxis(ctx,W,H,candles,viewStart,viewEnd,rightMarginFrac,tf.interval)
-    }, [result, viewStart, viewEnd, rightMarginFrac, tf.interval, candles], viewSize, viewport, setViewport, wtExternalIdx
+    }, [result, viewStart, viewEnd, rightMarginFrac, tf.interval, candles], viewSize, viewport, setViewport, wtExternalIdx, onCrosshairChange
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -626,7 +628,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void; crosshairFrac?: number | null }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -705,7 +707,7 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
       if(!result||result.sig.length<2) return
       drawOscillator(ctx,W,H-TIME_AXIS_H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr,vmcRightMargin)
       drawTimeAxis(ctx,W,H,candles,vmcViewStart,vmcViewEnd,vmcRightMargin,tf.interval)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin, tf.interval, candles], vmcViewSize, viewport, setViewport, vmcExternalIdx
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin, tf.interval, candles], vmcViewSize, viewport, setViewport, vmcExternalIdx, onCrosshairChange
   )
 
   return (
@@ -1024,7 +1026,7 @@ function drawRSIBollinger(
 }
 
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
-export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
+export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -1082,7 +1084,7 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
       if (result) drawRSIBollinger(ctx, W, H - TIME_AXIS_H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin)
       drawTimeAxis(ctx, W, H, candles, viewStart, viewEnd, rsbRightMargin, tf.interval)
     },
-    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin, tf.interval, candles], viewSize, viewport, setViewport, rsbExternalIdx
+    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin, tf.interval, candles], viewSize, viewport, setViewport, rsbExternalIdx, onCrosshairChange
   )
 
   const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
@@ -1312,7 +1314,7 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 }
 
 // ── RSI Chart Component ──────────────────────────────────────────────────────
-export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null }) {
+export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -1374,7 +1376,7 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac }: 
       drawRSI(ctx, W, H - TIME_AXIS_H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd, rsiRightMargin)
       drawTimeAxis(ctx, W, H, candles, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval)
     },
-    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval, candles], rsiViewSize, viewport, setViewport, rsiExternalIdx
+    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval, candles], rsiViewSize, viewport, setViewport, rsiExternalIdx, onCrosshairChange
   )
 
   return (

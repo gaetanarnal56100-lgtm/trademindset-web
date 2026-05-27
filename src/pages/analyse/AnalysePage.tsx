@@ -946,7 +946,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, externalCrosshairFrac, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; externalCrosshairFrac?: number | null; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
   type LayoutMode = 'lw' | 'tv'
   const [mode, setMode] = useState<LayoutMode>('lw')
 
@@ -985,7 +985,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
 
       {/* Graphique */}
       {mode === 'lw'
-        ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} onCrosshairChange={onCrosshairChange} />
+        ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} onCrosshairChange={onCrosshairChange} externalCrosshairFrac={externalCrosshairFrac} />
         : <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
       }
     </div>
@@ -2187,7 +2187,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} lwChartRef={lwChartRef} /></div>}
+      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} /></div>}
 
       {/* Canal OU + Excès Statistiques + VMC Kaufman */}
       {symbol && (() => {
@@ -2205,7 +2205,7 @@ export default function AnalysePage() {
               isDragging={dragItemRef.current === 'wavetrend'}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 <WaveTrendChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-                  onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} crosshairFrac={crosshairFrac} />
+                  onStatusReady={(status,wt1,wt2)=>{setPdfWtStatus(status);setPdfWtValues({wt1,wt2})}} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} />
               </div>
             </CollapsiblePanel>
           ),
@@ -2214,21 +2214,21 @@ export default function AnalysePage() {
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'vmc'}>
               <VMCOscillatorChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange}
-                onStatusReady={(status)=>setPdfVmcStatus(status)} crosshairFrac={crosshairFrac} />
+                onStatusReady={(status)=>setPdfVmcStatus(status)} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} />
             </CollapsiblePanel>
           ),
           'rsi': (
             <CollapsiblePanel key="rsi" panelId="rsi" label="RSI" icon="📈" accent="rgba(52,199,89,0.5)" defaultOpen={false}
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'rsi'}>
-              <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} />
+              <RSIChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} />
             </CollapsiblePanel>
           ),
           'rsi-bollinger': (
             <CollapsiblePanel key="rsi-bollinger" panelId="rsi-bollinger" label="RSI Bollinger" icon="📉" accent="rgba(255,69,58,0.5)" defaultOpen={false}
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'rsi-bollinger'}>
-              <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} />
+              <RSIBollingerChart symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} />
             </CollapsiblePanel>
           ),
           'trade-plan': (

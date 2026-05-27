@@ -19,6 +19,7 @@ interface Props {
   onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void
   syncRangeIn?: {from: number; to: number} | null
   onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
+  externalCrosshairFrac?: number | null  // crosshair driven from oscillators
   chartHeight?: number  // override default 430px (used in fullscreen)
   autoHeight?: boolean  // fill flex parent instead of fixed height
 }
@@ -549,7 +550,7 @@ const LW_MIN_TO_OSC: Record<number, string> = {
   1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 120:'2h', 240:'4h', 360:'4h', 720:'12h', 1440:'1d', 4320:'1d', 10080:'1w', 43200:'1w',
 }
 
-const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,chartHeight=430,autoHeight=false},forwardedRef) {
+const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,externalCrosshairFrac,chartHeight=430,autoHeight=false},forwardedRef) {
   const { t } = useTranslation()
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
@@ -579,6 +580,7 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   const onRangeRef         = useRef(onVisibleRangeChange)
   const onCrosshairRef     = useRef(onCrosshairChange)
   useEffect(() => { onCrosshairRef.current = onCrosshairChange }, [onCrosshairChange])
+  const isExternalRef      = useRef(false)   // anti-loop: suppress re-emit when crosshair set from oscillator
   const autoHeightRef      = useRef(autoHeight)
   useEffect(() => { autoHeightRef.current = autoHeight }, [autoHeight])
   // Anti-loop: store the logical range we last set programmatically.
@@ -595,6 +597,24 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
     lastSetLogical.current = target
     chartApi.current.timeScale().setVisibleLogicalRange(target)
   }, [syncRangeIn])
+
+  // Oscillateurs → LW : déplacer le curseur crosshair
+  useEffect(() => {
+    if (!chartApi.current || !seriesR.current || !candlesRef.current.length) return
+    if (externalCrosshairFrac == null) {
+      try { (chartApi.current as any).clearCrosshairPosition?.() } catch {}
+      return
+    }
+    const ts = chartApi.current.timeScale()
+    const range = ts.getVisibleLogicalRange()
+    if (!range) return
+    const logIdx = range.from + externalCrosshairFrac * (range.to - range.from)
+    const clampedIdx = Math.max(0, Math.min(candlesRef.current.length - 1, Math.round(logIdx)))
+    const time = candlesRef.current[clampedIdx]?.time
+    if (!time) return
+    isExternalRef.current = true
+    chartApi.current.setCrosshairPosition(NaN, time as Time, seriesR.current)
+  }, [externalCrosshairFrac])
 
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
   const [tool,     setTool]     = useState<ToolId>('cursor')
@@ -779,6 +799,8 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
 
     let lastCrosshairMs = 0
     c.subscribeCrosshairMove((param) => {
+      // Ignore if we triggered this crosshair move ourselves (anti-loop)
+      if (isExternalRef.current) { isExternalRef.current = false; return }
       const now = performance.now()
       if (now - lastCrosshairMs < 16) return  // ~60fps
       lastCrosshairMs = now
