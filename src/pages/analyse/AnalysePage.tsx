@@ -2196,7 +2196,7 @@ export default function AnalysePage() {
             <CollapsiblePanel key="canal-ou" panelId="canal-ou" label="Canal OU · Excès Statistiques · Kaufman ER" icon="〜" accent="rgba(0,229,255,0.5)" defaultOpen={true}
               onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
               isDragging={dragItemRef.current === 'canal-ou'}>
-              <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} onDecisionData={setOuSignal} />
+              <OUChannelIndicator symbol={symbol} syncInterval={syncInterval} visibleRange={syncRange} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} onDecisionData={setOuSignal} />
             </CollapsiblePanel>
           ),
           'wavetrend': (
