@@ -2614,8 +2614,11 @@ export default function AnalysePage() {
 
       {/* ── LIQ HEATMAP TAB ── */}
       {isCrypto && mode === 'liqheat' && (
-        <div style={{ position:'relative', zIndex:1, height:'calc(100vh - 320px)', minHeight:500, marginBottom:16, display:'flex', flexDirection:'column' }}>
-          <LiqHeatmapChart symbol={symbol} />
+        <div style={{ position:'relative', zIndex:1, display:'flex', flexDirection:'column', gap:16, marginBottom:16 }}>
+          <LiquidationHeatmap symbol={symbol} />
+          <div style={{ height:'calc(100vh - 320px)', minHeight:500, display:'flex', flexDirection:'column' }}>
+            <LiqHeatmapChart symbol={symbol} />
+          </div>
         </div>
       )}
 
