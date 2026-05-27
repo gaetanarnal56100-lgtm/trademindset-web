@@ -913,6 +913,8 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
 
   useEffect(()=>{load()},[load])
   useEffect(()=>()=>{wsRef.current?.close()},[])
+  // Emit initial TF so parent (AnalysePage) can sync syncInterval on mount
+  useEffect(()=>{onTimeframeChange?.(LW_MIN_TO_OSC[tf.min]??'1h')},[]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{dbLoad(symbol,tf.label).then(setDrawings)},[symbol,tf.label])
 
   // ── MP price lines ────────────────────────────────────────────────────

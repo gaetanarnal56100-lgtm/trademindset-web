@@ -44,6 +44,9 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
   const buildWidgetRef = useRef<()=>void>(()=>{})
   const tvSymbol = toTVSymbol(symbol, isCrypto)
 
+  // Emit initial TF so parent (AnalysePage) can sync syncInterval on mount
+  useEffect(() => { onTimeframeChange?.(TV_TO_OSC[tf.tv] ?? '1h') }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Charge le script TradingView une seule fois globalement
   useEffect(() => {
     if (document.getElementById('tv-widget-script')) return
