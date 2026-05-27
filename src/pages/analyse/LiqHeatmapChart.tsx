@@ -803,12 +803,20 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
+function mapSyncToHeatTF(interval: string): HeatTF {
+  const m: Record<string, HeatTF> = {
+    '1m':'5m','3m':'5m','5m':'5m','15m':'15m','30m':'30m',
+    '1h':'1h','2h':'2h','4h':'4h','6h':'4h','12h':'4h','1d':'1d','3d':'1d','1w':'1d','1M':'1d',
+  }
+  return m[interval] ?? '1h'
+}
+
+export default function LiqHeatmapChart({ symbol, syncInterval }: { symbol: string; syncInterval?: string }) {
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const wrapRef      = useRef<HTMLDivElement>(null)
   const dataRef      = useRef<{ klines: Kline[]; grid: Float32Array; pMin: number; pMax: number; maxVal: number; chain: CascadeNode[] } | null>(null)
 
-  const [tf,           setTf]           = useState<HeatTF>('1h')
+  const [tf,           setTf]           = useState<HeatTF>(() => syncInterval ? mapSyncToHeatTF(syncInterval) : '1h')
   const [limit,        setLimit]        = useState(200)
   const [showCandles,  setShowCandles]  = useState(true)
   const [loading,      setLoading]      = useState(false)
@@ -849,6 +857,9 @@ export default function LiqHeatmapChart({ symbol }: { symbol: string }) {
     finally { setLoading(false) }
   }, [symbol, tf, limit])
 
+  useEffect(() => {
+    if (syncInterval) setTf(mapSyncToHeatTF(syncInterval))
+  }, [syncInterval])
   useEffect(() => { fetchAndDraw() }, [fetchAndDraw])
   useEffect(() => { const id = setInterval(fetchAndDraw, 2*60*1000); return () => clearInterval(id) }, [fetchAndDraw])
   useEffect(() => { redraw() }, [lastUpdate, redraw])

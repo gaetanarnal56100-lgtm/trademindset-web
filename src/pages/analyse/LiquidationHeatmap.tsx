@@ -285,10 +285,19 @@ const fmtTS=(d:Date)=>d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',ye
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
+function mapSyncToPeriod(interval: string) {
+  const m: Record<string,string> = {
+    '1m':'M15','3m':'M15','5m':'H1','15m':'H4','30m':'12h',
+    '1h':'24h','2h':'24h','4h':'3j','6h':'3j','12h':'1sem',
+    '1d':'2sem','3d':'1m','1w':'3m','1M':'6m',
+  }
+  return PERIODS.find(p=>p.v===(m[interval]??'24h'))??PERIODS[4]
+}
+
+export default function LiquidationHeatmap({symbol='BTCUSDT',syncInterval}:{symbol?:string;syncInterval?:string}){
   const [tab, setTab] = useState<'heatmap'|'map'>('heatmap')
 
-  const [period,  setPeriod]  = useState(PERIODS[4])   // 24h
+  const [period,  setPeriod]  = useState(()=>syncInterval?mapSyncToPeriod(syncInterval):PERIODS[4])   // 24h
   const [data,    setData]    = useState<HeatmapData|null>(null)
   const [price,   setPrice]   = useState(0)
   const [loading, setLoading] = useState(false)
@@ -313,7 +322,8 @@ export default function LiquidationHeatmap({symbol='BTCUSDT'}:{symbol?:string}){
     finally{setLoading(false)}
   },[])
 
-  useEffect(()=>{load(symbol,period)},[symbol,period,load])
+  useEffect(()=>{ if(syncInterval) setPeriod(mapSyncToPeriod(syncInterval)) },[syncInterval])
+useEffect(()=>{load(symbol,period)},[symbol,period,load])
   // Auto-refresh every 30s for live feel
   useEffect(()=>{
     const t=setInterval(()=>load(symbol,period),30000)
