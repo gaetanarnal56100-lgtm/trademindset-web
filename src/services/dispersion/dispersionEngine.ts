@@ -166,8 +166,7 @@ export interface ComputeInput {
 
 export function computeDispersion(input: ComputeInput): DispersionResult | null {
   const { configs, candleMap, lookback = 50, returnWindow = 1 } = input
-  const N = configs.length
-  if (N < 2) return null
+  if (configs.length < 2) return null
 
   const validConfigs = configs.filter(c => {
     const d = candleMap.get(c.symbol)
@@ -175,7 +174,9 @@ export function computeDispersion(input: ComputeInput): DispersionResult | null 
   })
   if (validConfigs.length < 2) return null
 
-  const weights = validConfigs.map(c => c.weight ?? 1 / validConfigs.length)
+  // N = valid (fetched) configs only — NOT original configs.length
+  const N = validConfigs.length
+  const weights = validConfigs.map(c => c.weight ?? 1 / N)
   const wSum = weights.reduce((a, b) => a + b, 0)
   const w = weights.map(wi => wi / wSum)
 

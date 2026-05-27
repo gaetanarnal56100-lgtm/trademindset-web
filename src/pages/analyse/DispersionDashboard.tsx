@@ -256,10 +256,12 @@ function HurstBarsChart({ components }: { components: DispersionResult['componen
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const N = components.length
-    const bW = (W - 20) / N - 4, startX = 10
+    const bW = (W - 20) / N - 4
+    const startX = 10
 
-    // Threshold lines
-    [0.4, 0.5, 0.6].forEach(v => {
+    // Threshold lines — semicolon-safe (avoid ASI issue: `10[...]` after no-semicolon const)
+    const HURST_THRESHOLDS = [0.4, 0.5, 0.6]
+    HURST_THRESHOLDS.forEach(v => {
       const y = H - 14 - v * (H - 22)
       ctx.strokeStyle = v === 0.5 ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.12)'
       ctx.lineWidth = v === 0.5 ? 1 : 0.5; ctx.setLineDash(v === 0.5 ? [] : [2,2])
