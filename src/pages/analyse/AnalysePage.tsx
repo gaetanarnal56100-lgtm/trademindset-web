@@ -3237,8 +3237,8 @@ function AltcoinSeasonGauge({ symbol }: { symbol: string }) {
               {/* Needle dot */}
               {asi!==null&&(()=>{const sp=Math.max(0.5,Math.min(99.5,asi));const a=((sp/100)*180-180)*Math.PI/180;return<circle cx={CX+R*Math.cos(a)} cy={CY+R*Math.sin(a)} r={6} fill={color} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>})()}
               {/* Center text */}
-              <text x={CX} y={CY-6} textAnchor="middle" fill={color} fontSize={26} fontWeight="900" fontFamily="Syne,sans-serif">{asi!==null?Math.round(asi):'–'}</text>
-              <text x={CX} y={CY+10} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={9}>/ 100</text>
+              <text x={CX} y={CY-4} textAnchor="middle" fill={color} fontSize={28} fontWeight="700" fontFamily="'JetBrains Mono',monospace">{asi!==null?Math.round(asi):'–'}</text>
+              <text x={CX} y={CY+12} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={9} fontFamily="'JetBrains Mono',monospace">/ 100</text>
               {/* Labels */}
               <text x={CX-R-4} y={CY+14} textAnchor="middle" fill="#F7931A" fontSize={8}>BTC</text>
               <text x={CX+R+4} y={CY+14} textAnchor="middle" fill="#BF5AF2" fontSize={8}>ALT</text>
@@ -3258,7 +3258,7 @@ function AltcoinSeasonGauge({ symbol }: { symbol: string }) {
                 return (
                   <div key={sym} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 8px',borderRadius:8,background:isBtc?'rgba(247,147,26,0.08)':b?.beatsBtc?'rgba(52,199,89,0.06)':'rgba(255,59,48,0.06)'}}>
                     <div style={{fontSize:10,fontWeight:700,color:isBtc?'#F7931A':b?.beatsBtc?'#34C759':'#FF3B30',width:40,fontFamily:'JetBrains Mono,monospace'}}>
-                      {isBtc?'₿ BTC':b?.sym}
+                      {isBtc?'B BTC':b?.sym}
                     </div>
                     {!isBtc&&b&&(
                       <>
