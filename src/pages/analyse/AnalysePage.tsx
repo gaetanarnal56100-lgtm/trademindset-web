@@ -18,6 +18,7 @@ import type { KeyLevel } from './KeyLevelsCard'
 import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import FootprintChart from './FootprintChart'
 import LiqHeatmapChart from './LiqHeatmapChart'
+import DispersionDashboard from './DispersionDashboard'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
 import OUChannelIndicator from './OUChannelIndicator'
@@ -248,7 +249,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts' | 'liqheat'
+type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -2296,6 +2297,7 @@ export default function AnalysePage() {
             {id:'orderflow', icon:'⊞', label:'Order Flow', sub:'Footprint · Cluster',color:'rgba(255,69,58,0.9)'},
             {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation', color:'rgba(255,149,0,0.9)'},
             {id:'charts',    icon:'📅', label:'Charts',     sub:'Rendements · On-Chain',color:'rgba(52,199,89,0.9)'},
+            {id:'dispersion',icon:'📊', label:'Dispersion', sub:'Internals institutionnels',color:'rgba(0,229,255,0.9)'},
           ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m=>{
             const active = mode === m.id
             return (
@@ -2605,6 +2607,9 @@ export default function AnalysePage() {
 
       {/* ── CHARTS TAB ── */}
       {mode === 'charts' && <ChartsTab symbol={symbol} isCrypto={isCrypto}/>}
+
+      {/* ── DISPERSION TAB ── */}
+      {mode === 'dispersion' && <DispersionDashboard />}
 
     </div>
   )
