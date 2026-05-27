@@ -249,7 +249,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion'
+type Mode = 'oscillateurs' | 'micro' | 'structure' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -1384,7 +1384,7 @@ export default function AnalysePage() {
     if (stored) { localStorage.removeItem('tm_analyse_symbol'); return stored }
     return ''
   })
-  const [mode,   setMode]   = useState<Mode>('micro')
+  const [mode,   setMode]   = useState<Mode>('oscillateurs')
   const [syncInterval, setSyncInterval] = useState<string>('1h')
   const [syncRange,    setSyncRange]    = useState<{from:number;to:number;areaRatio?:number}|null>(null)
   const [crosshairFrac, setCrosshairFrac] = useState<number | null>(null)
@@ -2094,11 +2094,12 @@ export default function AnalysePage() {
             boxShadow:'0 4px 20px rgba(0,0,0,0.3)',
           }}>
             {([
-              {id:'micro',     icon:'📊',label:'Micro',       sub:'Flux temps réel',            color:'rgba(0,229,255,0.9)'},
+              {id:'oscillateurs',icon:'🎛️',label:'Oscillateurs',sub:'WT · VMC · OU · RSI',       color:'rgba(255,214,10,0.9)'},
+              {id:'micro',     icon:'📊',label:'Micro',       sub:'CVD · Flux temps réel',      color:'rgba(0,229,255,0.9)'},
               {id:'structure', icon:'🐋',label:'Structure',   sub:'Tendance baleine',           color:'rgba(191,90,242,0.9)'},
               {id:'derivees',  icon:'📈',label:'Dérivés',     sub:'OI · Funding · L/S',         color:'rgba(255,149,0,0.9)'},
               {id:'orderflow', icon:'⊞', label:'Order Flow',  sub:'Footprint · Cluster',        color:'rgba(255,69,58,0.9)'},
-              {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,149,0,0.9)'},
+              {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,69,58,0.9)'},
               {id:'charts',    icon:'📅', label:'Charts',      sub:'Rendements · On-Chain',      color:'rgba(52,199,89,0.9)'},
               {id:'dispersion',icon:'🔬', label:'Dispersion',  sub:'Internals institutionnels',  color:'rgba(0,229,255,0.9)'},
             ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m => {
@@ -2244,8 +2245,8 @@ export default function AnalysePage() {
       {/* Graphique — layout selector */}
       {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} /></div>}
 
-      {/* Canal OU + Excès Statistiques + VMC Kaufman */}
-      {symbol && (() => {
+      {/* Canal OU + Excès Statistiques + VMC Kaufman — visible uniquement en mode Oscillateurs (ou non-crypto) */}
+      {symbol && (!isCrypto || mode === 'oscillateurs') && (() => {
         const panelDefs: Record<string, React.ReactNode> = {
           'canal-ou': (
             <CollapsiblePanel key="canal-ou" panelId="canal-ou" label="Canal OU · Excès Statistiques · Kaufman ER" icon="〜" accent="rgba(0,229,255,0.5)" defaultOpen={true}
