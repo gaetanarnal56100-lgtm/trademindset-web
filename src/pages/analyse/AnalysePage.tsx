@@ -32,7 +32,7 @@ import app from '@/services/firebase/config'
 const db = getFirestore(app)
 
 // ── Firestore panel order persistence ────────────────────────────────────────
-const DEFAULT_PANEL_ORDER = ['canal-ou', 'wavetrend', 'vmc', 'rsi', 'rsi-bollinger', 'trade-plan', 'mtf', 'levels', 'heatmap']
+const DEFAULT_PANEL_ORDER = ['canal-ou', 'wavetrend', 'vmc', 'rsi', 'rsi-bollinger', 'trade-plan', 'mtf', 'levels']
 const DEFAULT_PANEL_OPEN: Record<string, boolean> = {
   'canal-ou': true, 'wavetrend': true, 'vmc': true, 'rsi': false,
   'rsi-bollinger': false, 'trade-plan': true, 'mtf': true, 'levels': true, 'heatmap': true,
