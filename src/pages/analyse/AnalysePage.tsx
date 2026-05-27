@@ -3187,16 +3187,17 @@ function AltcoinSeasonGauge({ symbol }: { symbol: string }) {
     load()
   }, [symbol])
 
-  const label = asi===null?'':asi>=75?'🌙 Alt Season':(asi>=55?'🔵 Tendance Alt':asi>=45?'⚪ Neutre':asi>=25?'🟠 Tendance BTC':'₿ Bitcoin Season')
+  const label = asi===null?'':asi>=75?'🌙 Alt Season':(asi>=55?'🔵 Tendance Alt':asi>=45?'⚪ Neutre':asi>=25?'🟠 Tendance BTC':'🟠 Bitcoin Season')
   const color = asi===null?'#8E8E93':(asi>=55?'#BF5AF2':asi>=45?'#8E8E93':asi>=25?'#FF9500':'#F7931A')
 
   // Semicircle gauge via SVG arc
   const R=80, CX=120, CY=100
-  function arc(pct:number, color:string) {
-    const angle = (pct/100)*180 - 180
+  function arc(pct:number) {
+    const safePct = Math.max(0.5, Math.min(99.5, pct)) // avoid degenerate path at 0/100
+    const angle = (safePct/100)*180 - 180
     const rad   = angle * Math.PI/180
     const x = CX + R*Math.cos(rad), y = CY + R*Math.sin(rad)
-    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${pct>50?1:0} 1 ${x.toFixed(1)} ${y.toFixed(1)}`
+    return `M ${CX-R} ${CY} A ${R} ${R} 0 ${safePct>50?1:0} 1 ${x.toFixed(1)} ${y.toFixed(1)}`
   }
 
   const cardStyle: React.CSSProperties = {
@@ -3232,9 +3233,9 @@ function AltcoinSeasonGauge({ symbol }: { symbol: string }) {
                   fill="none" stroke={c} strokeWidth={5} opacity={0.25} strokeLinecap="butt"/>
               ))}
               {/* Progress arc */}
-              {asi!==null&&<path d={arc(asi,color)} fill="none" stroke={color} strokeWidth={14} strokeLinecap="round"/>}
+              {asi!==null&&<path d={arc(asi)} fill="none" stroke={color} strokeWidth={14} strokeLinecap="round"/>}
               {/* Needle dot */}
-              {asi!==null&&<circle cx={CX+R*Math.cos(((asi/100)*180-180)*Math.PI/180)} cy={CY+R*Math.sin(((asi/100)*180-180)*Math.PI/180)} r={6} fill={color} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>}
+              {asi!==null&&(()=>{const sp=Math.max(0.5,Math.min(99.5,asi));const a=((sp/100)*180-180)*Math.PI/180;return<circle cx={CX+R*Math.cos(a)} cy={CY+R*Math.sin(a)} r={6} fill={color} stroke="rgba(13,17,35,0.8)" strokeWidth={2}/>})()}
               {/* Center text */}
               <text x={CX} y={CY-6} textAnchor="middle" fill={color} fontSize={26} fontWeight="900" fontFamily="Syne,sans-serif">{asi!==null?Math.round(asi):'–'}</text>
               <text x={CX} y={CY+10} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize={9}>/ 100</text>
