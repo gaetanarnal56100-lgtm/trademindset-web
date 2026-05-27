@@ -2132,11 +2132,10 @@ export default function AnalysePage() {
 
       {/* ── Fear & Greed + Decision Assistant strip ── */}
       {symbol && (isCrypto ? (fng || pdfMtfSnap) : pdfMtfSnap) && (
-        <div style={{ position:'relative', zIndex:1, display:'flex', gap:10, flexWrap:'nowrap', marginBottom:16, overflowX:'auto', alignItems:'stretch' }}>
-          {isCrypto && fng && <div style={{flexShrink:0}}><FearGreedWidget data={fng} /></div>}
-          {isCrypto && <div style={{flexShrink:0}}><GlobalMarketWidget /></div>}
+        <div style={{ position:'relative', zIndex:1, display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
+          {isCrypto && fng && <FearGreedWidget data={fng} />}
+          {isCrypto && <GlobalMarketWidget />}
           {pdfMtfSnap && (
-            <div style={{flexShrink:0}}>
             <DecisionAssistant
               mtfSnap={pdfMtfSnap}
               pressure={pressure}
@@ -2149,10 +2148,8 @@ export default function AnalysePage() {
               vmcStatus={ouSignal.vmcStatus}
               confluenceSignal={ouSignal.confluenceSignal}
             />
-            </div>
           )}
           {pdfMtfSnap && isCrypto && (
-            <div style={{flexShrink:0}}>
             <EdgeEstimator
               symbol={symbol}
               mtfSnap={pdfMtfSnap}
@@ -2167,7 +2164,6 @@ export default function AnalysePage() {
               confluenceSignal={ouSignal.confluenceSignal}
               fng={fng}
             />
-            </div>
           )}
         </div>
       )}
