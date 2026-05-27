@@ -1134,7 +1134,7 @@ interface MTFRow { tf: string; zscore: number; excess: string; erScore: number; 
 interface OUChannelIndicatorProps {
   symbol: string
   syncInterval?: string
-  visibleRange?: { from: number; to: number } | null
+  visibleRange?: { from: number; to: number; areaRatio?: number } | null
   crosshairFrac?: number | null
   onCrosshairChange?: (frac: number | null) => void
   onDecisionData?: (d: { excess: string; regime: string; z: number; confluenceSignal: string; vmcStatus: string }) => void
@@ -1200,14 +1200,18 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
   } : null
 
   // Sync crosshair from main LW chart when not directly hovering
+  // Canal OU draws bars over full canvas width, others use W*areaRatio.
+  // Scale frac by areaRatio so cursor lands at same pixel position as in other oscillators.
+  const areaRatio = visibleRange?.areaRatio ?? 1
   useEffect(() => {
     if (isDirectHover.current) return  // local hover takes priority
     if (crosshairFrac == null || !viewCandles.length) { setHoverData(null); return }
-    const idx = Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1))))
+    const scaledFrac = crosshairFrac * areaRatio  // convert drawW-fraction → full-canvas-fraction
+    const idx = Math.max(0, Math.min(viewSize - 1, Math.round(scaledFrac * (viewSize - 1))))
     const c = viewCandles[idx]
     if (!c) return
     setHoverData({ x: 0, idx, z: viewOu?.zscore[idx] ?? 0, excess: viewOu?.excess[idx] ?? 'none', price: c.c })
-  }, [crosshairFrac, viewCandles, viewOu, viewSize])
+  }, [crosshairFrac, areaRatio, viewCandles, viewOu, viewSize])
 
   useEffect(() => {
     if (syncInterval) {
@@ -1734,7 +1738,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
             {activeView === 'channel' && viewOu && (
               <>
                 <OUChannelChart candles={viewCandles} ou={viewOu} height={220} interval={tf}
-                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? d.idx / (viewSize - 1) : null) }}
+                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? Math.min(1, (d.idx / (viewSize - 1)) / areaRatio) : null) }}
                   hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && <HoverTooltip hover={hoverData} candles={viewCandles} ou={viewOu} />}
               </>
@@ -1742,7 +1746,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
             {activeView === 'zscore' && viewOu && (
               <>
                 <ZScoreChart zscore={viewOu.zscore} excess={viewOu.excess} height={130} interval={tf}
-                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? d.idx / (viewSize - 1) : null) }}
+                  onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? Math.min(1, (d.idx / (viewSize - 1)) / areaRatio) : null) }}
                   candles={viewCandles} hoverIdx={hoverData?.idx ?? null} />
                 {hoverData && viewOu && (
                   <div style={{ position: 'absolute', top: 8, left: Math.min(hoverData.x + 8, 240), background: 'rgba(8,12,20,0.97)', border: `1px solid rgba(0,229,255,0.2)`, borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 50, minWidth: 200, backdropFilter: 'blur(12px)' }}>
@@ -1755,7 +1759,7 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
             )}
             {activeView === 'vmc' && viewVmc && (
               <VMCEnhancedChart vmc={viewVmc} height={150} interval={tf} candles={viewCandles} hoverIdx={hoverData?.idx ?? null}
-                onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? d.idx / (viewSize - 1) : null) }} />
+                onHover={d => { isDirectHover.current = d !== null; setHoverData(d); onCrosshairChange?.(d !== null && viewSize > 1 ? Math.min(1, (d.idx / (viewSize - 1)) / areaRatio) : null) }} />
             )}
             {activeView === 'confluence' && viewOu && viewVmc && (
               <div style={{ padding: '14px 16px', overflowY: 'auto', maxHeight: 420 }}>
