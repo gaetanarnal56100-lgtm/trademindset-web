@@ -95,31 +95,12 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     const ctx = canvas.getContext('2d')!; ctx.scale(dpr, dpr)
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
-    const totalN = data.length
-    let startIdx = 0
-    let endIdx   = totalN
-    let hasOverlap = false
-
-    if (visibleRange && timestamps && timestamps.length >= 2) {
-      const fromMs = visibleRange.fromMs
-      const toMs   = visibleRange.toMs
-      if (fromMs != null && toMs != null) {
-        // Binary-search: first idx where timestamp >= fromMs
-        let lo = 0, hi = timestamps.length
-        while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] < fromMs) lo = mid + 1; else hi = mid }
-        startIdx = Math.max(0, lo - 1)
-        // Binary-search: first idx where timestamp > toMs
-        lo = 0; hi = timestamps.length
-        while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] <= toMs) lo = mid + 1; else hi = mid }
-        endIdx = Math.min(totalN, lo + 1)
-        hasOverlap = endIdx - startIdx >= 2
-        // No overlap (LW panned far left of all dispersion data) → show full history
-        if (!hasOverlap) { startIdx = 0; endIdx = totalN }
-      }
-    }
-    const visData    = data.slice(startIdx, endIdx)
-    const visTimes   = timestamps?.slice(startIdx, endIdx)
-    const visRegimes = regimes?.slice(startIdx, endIdx)
+    // Always show full history — no visible-range slicing.
+    // Charts fill the canvas from left to right using their own timestamps.
+    // Crosshair sync (crosshairFrac) still works independently.
+    const visData    = data
+    const visTimes   = timestamps
+    const visRegimes = regimes
 
     if (visData.length < 2) return
 
@@ -128,12 +109,9 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     const padL = 4, padR = 60, padV = 6, padBottom = 16
     const drawW = W - padL - padR, drawH = H - padV - padBottom
 
-    // When overlap with LW visible range: use LW fromMs/toMs for x-axis
-    //   → data positioned at correct x, crosshair aligned, chart scrolls with main chart
-    // When no overlap (LW panned before all dispersion data): use own timestamps
-    //   → data fills canvas (not "stuck to right"), crosshair approximately aligned
-    const visFrom = (hasOverlap && visibleRange?.fromMs != null) ? visibleRange.fromMs : (visTimes?.[0] ?? 0)
-    const visTo   = (hasOverlap && visibleRange?.toMs   != null) ? visibleRange.toMs   : (visTimes?.[visTimes!.length - 1] ?? 1)
+    // x-axis spans actual data timestamps — data always fills canvas
+    const visFrom = visTimes?.[0] ?? 0
+    const visTo   = visTimes?.[visTimes!.length - 1] ?? 1
     const tSpan   = visTo - visFrom || 1
     const toX = (i: number) =>
       visTimes
@@ -235,7 +213,7 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
       ctx.fillText(txt, tx, cy + 1)
       ctx.restore()
     }
-  }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac, visibleRange])
+  }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac])
   return <canvas ref={ref} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} style={{ width: '100%', height: 80, display: 'block', borderRadius: 6, cursor: 'crosshair' }} />
 }
 
