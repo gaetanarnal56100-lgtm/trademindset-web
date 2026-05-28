@@ -947,7 +947,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, externalCrosshairFrac, lwChartRef, requiresSync }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; externalCrosshairFrac?: number | null; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle>; requiresSync?: boolean }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, externalCrosshairFrac, lwChartRef, requiresSync }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number, fromMs?: number, toMs?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; externalCrosshairFrac?: number | null; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle>; requiresSync?: boolean }) {
   type LayoutMode = 'lw' | 'tv'
   const [mode, setMode] = useState<LayoutMode>('lw')
 
