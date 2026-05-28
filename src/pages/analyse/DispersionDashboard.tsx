@@ -95,26 +95,36 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     const ctx = canvas.getContext('2d')!; ctx.scale(dpr, dpr)
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
-    // Show full history — no slicing based on visible range.
-    // x-axis anchored to LW visible range timestamps → data slides left/right
-    // as user pans the main chart. Canvas clip handles out-of-range points.
-    const visData    = data
-    const visTimes   = timestamps
-    const visRegimes = regimes
+    if (data.length < 2) return
+
+    // Full dataset min/max so Y scale stays stable while scrolling
+    const mn = Math.min(...data), mx = Math.max(...data), range = mx - mn || 0.001
+    const padL = 4, padR = 60, padV = 6, padBottom = 16
+    const drawW = W - padL - padR, drawH = H - padV - padBottom
+
+    // x-axis = LW visible range; data slides left/right with the main chart
+    const visFrom = visibleRange?.fromMs ?? (timestamps?.[0] ?? 0)
+    const visTo   = visibleRange?.toMs   ?? (timestamps?.[timestamps!.length - 1] ?? 1)
+    const tSpan   = visTo - visFrom || 1
+
+    // Binary-search: only draw points within [visFrom, visTo]
+    // No canvas overflow → no "stuck-to-right" clip artifact
+    let si = 0, ei = data.length
+    if (timestamps && timestamps.length >= 2) {
+      let lo = 0, hi = timestamps.length
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] < visFrom) lo = mid + 1; else hi = mid }
+      si = Math.max(0, lo - 1)
+      lo = 0; hi = timestamps.length
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] <= visTo) lo = mid + 1; else hi = mid }
+      ei = Math.min(data.length, lo + 1)
+    }
+    const visData    = data.slice(si, ei)
+    const visTimes   = timestamps?.slice(si, ei)
+    const visRegimes = regimes?.slice(si, ei)
 
     if (visData.length < 2) return
 
     const n = visData.length
-    // Min/max from full dataset so scale doesn't jump while scrolling
-    const mn = Math.min(...visData), mx = Math.max(...visData), range = mx - mn || 0.001
-    const padL = 4, padR = 60, padV = 6, padBottom = 16
-    const drawW = W - padL - padR, drawH = H - padV - padBottom
-
-    // Anchor x to LW visible range → charts scroll with main chart
-    // Fallback to own timestamps when visibleRange not yet available
-    const visFrom = visibleRange?.fromMs ?? (visTimes?.[0] ?? 0)
-    const visTo   = visibleRange?.toMs   ?? (visTimes?.[visTimes!.length - 1] ?? 1)
-    const tSpan   = visTo - visFrom || 1
     const toX = (i: number) =>
       visTimes
         ? padL + ((visTimes[i] - visFrom) / tSpan) * drawW
