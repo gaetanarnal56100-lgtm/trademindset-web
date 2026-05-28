@@ -2626,7 +2626,7 @@ export default function AnalysePage() {
       {mode === 'charts' && <ChartsTab symbol={symbol} isCrypto={isCrypto}/>}
 
       {/* ── DISPERSION TAB ── */}
-      {mode === 'dispersion' && <DispersionDashboard />}
+      {mode === 'dispersion' && <DispersionDashboard syncInterval={syncInterval} />}
 
     </div>
   )

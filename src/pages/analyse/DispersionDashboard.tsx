@@ -67,23 +67,23 @@ function Gauge({ value, label, color, size = 80 }: { value: number; label: strin
 
 // ─── History Line Chart ───────────────────────────────────────────────────────
 
-function HistoryLineChart({ data, label, color, regimes, valueFormat = (v: number) => v.toFixed(3) }: {
-  data: number[]; label: string; color: string
+function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat = (v: number) => v.toFixed(3) }: {
+  data: number[]; timestamps?: number[]; label: string; color: string
   regimes?: DispersionRegime[]; valueFormat?: (v: number) => string
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = ref.current; if (!canvas || data.length < 2) return
     const dpr = window.devicePixelRatio || 1
-    const W = canvas.offsetWidth || 500, H = 70
+    const W = canvas.offsetWidth || 500, H = 80
     canvas.width = W * dpr; canvas.height = H * dpr
     const ctx = canvas.getContext('2d')!; ctx.scale(dpr, dpr)
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const n = data.length
     const mn = Math.min(...data), mx = Math.max(...data), range = mx - mn || 0.001
-    const padL = 4, padR = 60, padV = 6
-    const drawW = W - padL - padR, drawH = H - padV * 2
+    const padL = 4, padR = 60, padV = 6, padBottom = 16
+    const drawW = W - padL - padR, drawH = H - padV - padBottom
 
     const toX = (i: number) => padL + (i / (n - 1)) * drawW
     const toY = (v: number) => padV + (1 - (v - mn) / range) * drawH
@@ -140,8 +140,31 @@ function HistoryLineChart({ data, label, color, regimes, valueFormat = (v: numbe
     ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '7px JetBrains Mono'
     ctx.fillText(`↑${valueFormat(mx)}`, W - padR + 6, padV + 34)
     ctx.fillText(`↓${valueFormat(mn)}`, W - padR + 6, padV + 44)
-  }, [data, label, color, regimes, valueFormat])
-  return <canvas ref={ref} style={{ width: '100%', height: 70, display: 'block', borderRadius: 6 }} />
+
+    // X-axis timestamps (first, middle, last)
+    if (timestamps && timestamps.length >= 2) {
+      const fmtTs = (ts: number) => {
+        const d = new Date(ts)
+        const h = d.getHours().toString().padStart(2, '0')
+        const m = d.getMinutes().toString().padStart(2, '0')
+        const day = d.getDate().toString().padStart(2, '0')
+        const mon = (d.getMonth() + 1).toString().padStart(2, '0')
+        // Show date if span > 24h
+        const span = (timestamps[timestamps.length - 1] - timestamps[0]) / 3_600_000
+        return span > 24 ? `${day}/${mon}` : `${h}:${m}`
+      }
+      ctx.font = '7px JetBrains Mono, monospace'; ctx.fillStyle = 'rgba(255,255,255,0.3)'
+      const indices = [0, Math.floor(n / 2), n - 1]
+      const aligns: CanvasTextAlign[] = ['left', 'center', 'left']
+      indices.forEach((idx, k) => {
+        if (timestamps[idx] == null) return
+        const x = toX(idx)
+        ctx.textAlign = aligns[k]
+        ctx.fillText(fmtTs(timestamps[idx]), x, H - 3)
+      })
+    }
+  }, [data, timestamps, label, color, regimes, valueFormat])
+  return <canvas ref={ref} style={{ width: '100%', height: 80, display: 'block', borderRadius: 6 }} />
 }
 
 // ─── Correlation Heatmap ──────────────────────────────────────────────────────
@@ -429,15 +452,31 @@ function ComponentTable({ components }: { components: DispersionResult['componen
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
-export default function DispersionDashboard() {
+// Map main chart syncInterval → Binance kline interval for dispersion fetch
+function mapChartToDispTF(interval: string): string {
+  const m: Record<string, string> = {
+    '5m':'5m', '15m':'15m', '30m':'30m',
+    '1h':'1h', '2h':'2h', '4h':'4h',
+    '12h':'12h', '1d':'1d', '1w':'1d',
+  }
+  return m[interval] ?? '1h'
+}
+
+export default function DispersionDashboard({ syncInterval }: { syncInterval?: string }) {
   const [basketId, setBasketId] = useState('crypto')
-  const [tf, setTf] = useState('1h')
+  const [tf, setTf] = useState(() => syncInterval ? mapChartToDispTF(syncInterval) : '1h')
   const [result, setResult] = useState<DispersionResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [activeView, setActiveView] = useState<'overview' | 'signal' | 'history' | 'leaders' | 'correlation' | 'components'>('overview')
   const timerRef = useRef<ReturnType<typeof window.setInterval> | null>(null)
   const currentBasket = BASKETS.find(b => b.id === basketId)?.configs ?? CRYPTO_BASKET
+
+  // Sync TF when chart interval changes (unless user manually changed)
+  const [userOverrideTf, setUserOverrideTf] = useState(false)
+  useEffect(() => {
+    if (syncInterval && !userOverrideTf) setTf(mapChartToDispTF(syncInterval))
+  }, [syncInterval, userOverrideTf])
 
   const load = useCallback(async (configs: AssetConfig[], interval: string) => {
     setLoading(true); setError('')
@@ -483,10 +522,20 @@ export default function DispersionDashboard() {
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {INTERVALS.map(iv => (
-            <button key={iv.id} onClick={() => setTf(iv.id)} style={{ padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', background: tf===iv.id?'rgba(191,90,242,0.15)':'rgba(255,255,255,0.04)', color: tf===iv.id?'#BF5AF2':'rgba(255,255,255,0.5)', border: `1px solid ${tf===iv.id?'rgba(191,90,242,0.3)':'transparent'}` }}>{iv.label}</button>
+            <button key={iv.id} onClick={() => { setTf(iv.id); setUserOverrideTf(true) }} style={{ padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', background: tf===iv.id?'rgba(191,90,242,0.15)':'rgba(255,255,255,0.04)', color: tf===iv.id?'#BF5AF2':'rgba(255,255,255,0.5)', border: `1px solid ${tf===iv.id?'rgba(191,90,242,0.3)':'transparent'}` }}>{iv.label}</button>
           ))}
         </div>
         <button onClick={() => load(currentBasket, tf)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 10, cursor: 'pointer', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}>{loading ? '⏳' : '↻'}</button>
+        {syncInterval && !userOverrideTf && (
+          <span style={{ fontSize: 9, color: 'rgba(0,229,255,0.6)', fontFamily: 'JetBrains Mono,monospace', border: '1px solid rgba(0,229,255,0.2)', borderRadius: 4, padding: '2px 6px' }}>
+            ⚡ synced {syncInterval}
+          </span>
+        )}
+        {userOverrideTf && (
+          <button onClick={() => setUserOverrideTf(false)} style={{ fontSize: 9, color: 'rgba(255,149,0,0.7)', background: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' }}>
+            🔗 resync
+          </button>
+        )}
       </div>
 
       {error && <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.2)', fontSize: 11, color: '#FF3B30' }}>{error}</div>}
@@ -703,10 +752,10 @@ export default function DispersionDashboard() {
           <div style={{ ...card(), display:'flex', flexDirection:'column', gap: 14 }}>
             <div style={secTitle()}>📈 Évolution des métriques clés — {result.history.dispersion.length} points</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <HistoryLineChart data={result.history.dispersion} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} />
-              <HistoryLineChart data={result.history.avgCorrelation} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} />
-              <HistoryLineChart data={result.history.pctUp} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} />
-              <HistoryLineChart data={result.history.volSpread} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} />
+              <HistoryLineChart data={result.history.dispersion} timestamps={result.history.timestamps} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} />
+              <HistoryLineChart data={result.history.avgCorrelation} timestamps={result.history.timestamps} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} />
+              <HistoryLineChart data={result.history.pctUp} timestamps={result.history.timestamps} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} />
+              <HistoryLineChart data={result.history.volSpread} timestamps={result.history.timestamps} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} />
             </div>
             {/* Regime legend */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>

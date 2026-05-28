@@ -355,7 +355,10 @@ export function computeDispersion(input: ComputeInput): DispersionResult | null 
   const { regime, regimeConfidence } = classifyRegime({ dispersionZScore: dispZScore, dispersionPercentile: dispPercentile, avgCorrelation, corrZScore, pctUp, participationScore, volRegime, vsZScore })
 
   // ── Inline history (30 points from same candle data) ──
-  const history = computeInlineHistory(aligned, w, lookback)
+  // Thread real timestamps from first valid asset
+  const refCandles = candleMap.get(validConfigs[0].symbol)!
+  const allTimes = refCandles.map(c => c.t).slice(-minLen)
+  const history = computeInlineHistory(aligned, w, lookback, allTimes)
 
   // ── Trend arrows (compare current vs 3 most recent history points) ──
   const trendArrows = computeTrendArrows(history, dispersionRaw, avgCorrelation, pctUp, volSpread)
@@ -386,7 +389,7 @@ export function computeDispersion(input: ComputeInput): DispersionResult | null 
 
 // ─── Inline history (lightweight, no re-fetch) ───────────────────────────────
 
-function computeInlineHistory(aligned: number[][], w: number[], lookback: number, points = 30): InlineHistory {
+function computeInlineHistory(aligned: number[][], w: number[], lookback: number, times: number[], points = 30): InlineHistory {
   const N = aligned.length
   const T = aligned[0].length
   const step = Math.max(1, Math.floor((T - lookback) / points))
@@ -425,7 +428,7 @@ function computeInlineHistory(aligned: number[][], w: number[], lookback: number
       up > 70 && d < dMean * 1.1 ? 'trending' :
       'rotating'
     result.regimes.push(regime)
-    result.timestamps.push(t) // use bar index, convert to approx time in UI
+    result.timestamps.push(times[t] ?? t) // real unix ms timestamp
   }
 
   return result
