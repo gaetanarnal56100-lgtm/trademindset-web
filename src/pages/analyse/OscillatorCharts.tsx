@@ -10,8 +10,8 @@ import { signalService } from '@/services/notifications/SignalNotificationServic
 const fbFn = getFunctions(app, 'europe-west1')
 
 const TF_REFRESH_MS: Record<string, number> = {
-  '5m':300000,'15m':900000,'30m':1800000,'1h':3600000,
-  '2h':7200000,'4h':14400000,'12h':43200000,'1d':86400000,'1w':604800000,
+  '5m':30000,'15m':30000,'30m':30000,'1h':30000,
+  '2h':30000,'4h':30000,'12h':30000,'1d':30000,'1w':30000,
 }
 
 interface Candle { o: number; h: number; l: number; c: number; v: number; t: number; bv?: number }
@@ -392,13 +392,26 @@ interface Viewport { from: number; to: number; rawTo?: number }  // fractions 0-
 // This ensures scroll/zoom sync is pixel-perfect regardless of candle count mismatch.
 function msToBarFrac(candles: Candle[], ms: number): number {
   if (candles.length === 0) return 0
-  let lo = 0, hi = candles.length - 1
+  const n = candles.length
+  // Extrapolate left: ms before first candle (returns negative fraction)
+  if (ms <= candles[0].t) {
+    if (n < 2) return 0
+    const iv = candles[1].t - candles[0].t
+    return (ms - candles[0].t) / iv / n
+  }
+  // Extrapolate right: ms after last candle (returns fraction > 1)
+  if (ms >= candles[n - 1].t) {
+    if (n < 2) return 1
+    const iv = candles[n - 1].t - candles[n - 2].t
+    return (n - 1 + (ms - candles[n - 1].t) / iv) / n
+  }
+  let lo = 0, hi = n - 1
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1
     if (candles[mid].t <= ms) lo = mid
     else hi = mid - 1
   }
-  return lo / candles.length  // same formula as viewStart = frac * total
+  return lo / n
 }
 
 // Shared visibleRange type used by all oscillator components

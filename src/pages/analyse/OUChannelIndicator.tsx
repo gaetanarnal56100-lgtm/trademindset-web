@@ -1257,6 +1257,11 @@ export default function OUChannelIndicator({ symbol, syncInterval, visibleRange,
   }, [symbol])
 
   useEffect(() => { loadData(tf) }, [tf, loadData])
+  // Live refresh every 30s
+  useEffect(() => {
+    const t = setInterval(() => loadData(tf), 30_000)
+    return () => clearInterval(t)
+  }, [tf, loadData])
 
   const loadMTF = useCallback(async () => {
     if (!symbol) return
