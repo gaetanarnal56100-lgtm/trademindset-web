@@ -95,9 +95,9 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     const ctx = canvas.getContext('2d')!; ctx.scale(dpr, dpr)
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
-    // Always show full history — no visible-range slicing.
-    // Charts fill the canvas from left to right using their own timestamps.
-    // Crosshair sync (crosshairFrac) still works independently.
+    // Show full history — no slicing based on visible range.
+    // x-axis anchored to LW visible range timestamps → data slides left/right
+    // as user pans the main chart. Canvas clip handles out-of-range points.
     const visData    = data
     const visTimes   = timestamps
     const visRegimes = regimes
@@ -105,13 +105,15 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     if (visData.length < 2) return
 
     const n = visData.length
+    // Min/max from full dataset so scale doesn't jump while scrolling
     const mn = Math.min(...visData), mx = Math.max(...visData), range = mx - mn || 0.001
     const padL = 4, padR = 60, padV = 6, padBottom = 16
     const drawW = W - padL - padR, drawH = H - padV - padBottom
 
-    // x-axis spans actual data timestamps — data always fills canvas
-    const visFrom = visTimes?.[0] ?? 0
-    const visTo   = visTimes?.[visTimes!.length - 1] ?? 1
+    // Anchor x to LW visible range → charts scroll with main chart
+    // Fallback to own timestamps when visibleRange not yet available
+    const visFrom = visibleRange?.fromMs ?? (visTimes?.[0] ?? 0)
+    const visTo   = visibleRange?.toMs   ?? (visTimes?.[visTimes!.length - 1] ?? 1)
     const tSpan   = visTo - visFrom || 1
     const toX = (i: number) =>
       visTimes
@@ -213,7 +215,7 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
       ctx.fillText(txt, tx, cy + 1)
       ctx.restore()
     }
-  }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac])
+  }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac, visibleRange])
   return <canvas ref={ref} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} style={{ width: '100%', height: 80, display: 'block', borderRadius: 6, cursor: 'crosshair' }} />
 }
 
