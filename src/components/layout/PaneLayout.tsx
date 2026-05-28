@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useCallback } from 'react'
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import LightweightChart from '@/pages/analyse/LightweightChart'
 import type { LightweightChartHandle } from '@/pages/analyse/LightweightChart'
 import { WaveTrendChart, VMCOscillatorChart, RSIChart, RSIBollingerChart } from '@/pages/analyse/OscillatorCharts'

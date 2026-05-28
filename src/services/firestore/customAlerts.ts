@@ -43,6 +43,8 @@ export interface AlertHistoryEntry {
 
 export interface NotifSettings {
   discordWebhook?: string
+  arbMonitoring?: boolean  // opt-in arb scanner Discord alerts
+  lastArbAlert?: number    // timestamp ms — anti-spam cooldown (écrit par CF)
 }
 
 // ── CRUD ───────────────────────────────────────────────────────────────────

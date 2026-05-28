@@ -2764,7 +2764,7 @@ function InstitIndicatorsWrapper({ tokens, mode, benchmarkLabel }: { tokens: Tok
         onClick={() => setOpen(o => !o)}
         whileHover={{ y: -1 }}
         style={{
-          padding: '6px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+          padding: '6px 16px', borderRadius: 8, cursor: 'pointer',
           fontSize: 11, fontWeight: 700, transition: 'all 0.15s',
           background: open ? 'rgba(255,149,0,0.12)' : 'rgba(255,255,255,0.04)',
           color: open ? '#FF9500' : 'rgba(143,148,163,0.6)',

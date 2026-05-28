@@ -547,7 +547,7 @@ export default function MultiAssetAnalytics() {
             <button key={tab.id} onClick={() => setActiveClass(tab.id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                padding: '8px 16px', borderRadius: 10, cursor: 'pointer',
                 fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', transition: 'all 0.2s',
                 background: active ? `rgba(${tab.color === '#00E5FF' ? '0,229,255' : tab.color === '#34C759' ? '52,199,89' : tab.color === '#BF5AF2' ? '191,90,242' : tab.color === '#FF9500' ? '255,149,0' : '10,133,255'},0.15)` : 'rgba(255,255,255,0.04)',
                 color: active ? tab.color : 'rgba(143,148,163,0.7)',
@@ -876,7 +876,7 @@ export default function MultiAssetAnalytics() {
                       {(['1D','1W','1M'] as const).map(tf => (
                         <button key={tf} onClick={() => setSectorTimeframe(tf)}
                           style={{
-                            padding: '3px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                            padding: '3px 10px', borderRadius: 6, cursor: 'pointer',
                             fontSize: 10, fontWeight: 700,
                             background: sectorTimeframe === tf ? 'rgba(255,149,0,0.15)' : 'transparent',
                             color: sectorTimeframe === tf ? '#FF9500' : 'rgba(143,148,163,0.5)',
