@@ -67,11 +67,25 @@ function Gauge({ value, label, color, size = 80 }: { value: number; label: strin
 
 // ─── History Line Chart ───────────────────────────────────────────────────────
 
-function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat = (v: number) => v.toFixed(3), crosshairFrac }: {
+function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat = (v: number) => v.toFixed(3), crosshairFrac, onCrosshairChange }: {
   data: number[]; timestamps?: number[]; label: string; color: string
-  regimes?: DispersionRegime[]; valueFormat?: (v: number) => string; crosshairFrac?: number | null
+  regimes?: DispersionRegime[]; valueFormat?: (v: number) => string
+  crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
+
+  // Mouse handlers — emit frac to parent (same pattern as oscillator canvases)
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = ref.current; if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const padL = 4, padR = 60
+    const drawW = rect.width - padL - padR
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left - padL) / drawW))
+    onCrosshairChange?.(frac)
+  }, [onCrosshairChange])
+
+  const handleMouseLeave = useCallback(() => { onCrosshairChange?.(null) }, [onCrosshairChange])
+
   useEffect(() => {
     const canvas = ref.current; if (!canvas || data.length < 2) return
     const dpr = window.devicePixelRatio || 1
@@ -105,17 +119,6 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
       ctx.beginPath(); ctx.moveTo(padL, y0); ctx.lineTo(W - padR, y0); ctx.stroke()
       ctx.setLineDash([])
     }
-
-    // MA (5-bar)
-    const maData: number[] = []
-    for (let i = 0; i < n; i++) {
-      const s = data.slice(Math.max(0, i - 4), i + 1)
-      maData.push(s.reduce((a, b) => a + b, 0) / s.length)
-    }
-    ctx.beginPath()
-    maData.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke()
-    ctx.setLineDash([])
 
     // Area
     ctx.beginPath()
@@ -198,7 +201,7 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
       }
     }
   }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac])
-  return <canvas ref={ref} style={{ width: '100%', height: 80, display: 'block', borderRadius: 6 }} />
+  return <canvas ref={ref} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} style={{ width: '100%', height: 80, display: 'block', borderRadius: 6, cursor: 'crosshair' }} />
 }
 
 // ─── Correlation Heatmap ──────────────────────────────────────────────────────
@@ -496,7 +499,7 @@ function mapChartToDispTF(interval: string): string {
   return m[interval] ?? '1h'
 }
 
-export default function DispersionDashboard({ syncInterval, crosshairFrac }: { syncInterval?: string; crosshairFrac?: number | null }) {
+export default function DispersionDashboard({ syncInterval, crosshairFrac, onCrosshairChange }: { syncInterval?: string; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const [basketId, setBasketId] = useState('crypto')
   const [tf, setTf] = useState(() => syncInterval ? mapChartToDispTF(syncInterval) : '1h')
   const [result, setResult] = useState<DispersionResult | null>(null)
@@ -786,10 +789,10 @@ export default function DispersionDashboard({ syncInterval, crosshairFrac }: { s
           <div style={{ ...card(), display:'flex', flexDirection:'column', gap: 14 }}>
             <div style={secTitle()}>📈 Évolution des métriques clés — {result.history.dispersion.length} points</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <HistoryLineChart data={result.history.dispersion} timestamps={result.history.timestamps} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} crosshairFrac={crosshairFrac} />
-              <HistoryLineChart data={result.history.avgCorrelation} timestamps={result.history.timestamps} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} crosshairFrac={crosshairFrac} />
-              <HistoryLineChart data={result.history.pctUp} timestamps={result.history.timestamps} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} crosshairFrac={crosshairFrac} />
-              <HistoryLineChart data={result.history.volSpread} timestamps={result.history.timestamps} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} crosshairFrac={crosshairFrac} />
+              <HistoryLineChart data={result.history.dispersion} timestamps={result.history.timestamps} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
+              <HistoryLineChart data={result.history.avgCorrelation} timestamps={result.history.timestamps} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
+              <HistoryLineChart data={result.history.pctUp} timestamps={result.history.timestamps} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
+              <HistoryLineChart data={result.history.volSpread} timestamps={result.history.timestamps} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
             </div>
             {/* Regime legend */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
