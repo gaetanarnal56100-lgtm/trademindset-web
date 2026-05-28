@@ -804,14 +804,23 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
         lastSetLogical.current = null
         if (eq) return
       }
-      const total = candlesRef.current.length
-      // rawTo non-clampé : > 1 si LW a de l'espace vide à droite de la dernière bougie
+      const candles = candlesRef.current
+      const total   = candles.length
       const { areaRatio } = getAreaRatio()
-      // Emit unix timestamps using candlesRef (avoids NaN from Time cast)
-      const fromIdx = Math.max(0, Math.floor(range.from))
-      const toIdx   = Math.min(candlesRef.current.length - 1, Math.ceil(range.to))
-      const fromMs  = candlesRef.current[fromIdx]?.time != null ? (candlesRef.current[fromIdx].time as number) * 1000 : undefined
-      const toMs    = candlesRef.current[toIdx]?.time   != null ? (candlesRef.current[toIdx].time   as number) * 1000 : undefined
+      // Candle interval (ms) — used to extrapolate beyond data boundaries
+      const interval = total >= 2
+        ? ((candles[total-1].time as number) - (candles[total-2].time as number)) * 1000
+        : 3_600_000
+      // fromMs: extrapolate left when range.from < 0 (panned before first candle)
+      const fromFloor = Math.floor(range.from)
+      const fromMs = fromFloor >= 0
+        ? (candles[Math.min(fromFloor, total-1)].time as number) * 1000
+        : (candles[0].time as number) * 1000 + fromFloor * interval
+      // toMs: extrapolate right when range.to >= total (empty space right of last candle)
+      const toCeil = Math.ceil(range.to)
+      const toMs = toCeil < total
+        ? (candles[toCeil].time as number) * 1000
+        : (candles[total-1].time as number) * 1000 + (toCeil - (total-1)) * interval
       onRangeRef.current?.(Math.max(0, range.from / total), range.to / total, areaRatio, fromMs, toMs)
     })
 
