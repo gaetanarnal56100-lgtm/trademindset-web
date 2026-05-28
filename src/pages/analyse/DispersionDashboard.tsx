@@ -96,17 +96,18 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const totalN = data.length
-    // History data covers candles [lookback=50, limit-1=149] of limit=150 total candles.
-    // visibleRange fractions are relative to those 150 total candles.
-    // Remap chart fractions → history fractions before slicing.
-    const HIST_FIRST = 50 / 150  // fraction of first history point in full dataset
-    const HIST_SPAN  = 99 / 150  // fraction span covered by history (candles 50–149)
-
+    // LightweightChart loads N_LW=500 candles; dispersionEngine loads N_DISP=150.
+    // Both are aligned at the END (most recent candle). visibleRange fractions are
+    // relative to the 500 LW candles. History spans disp candles [lookback=50, 149].
+    //
+    // Mapping: LW candle = f * 500
+    //          DISP candle = f * 500 - (500 - 150) = f * 500 - 350
+    //          History fraction = (DISP_candle - 50) / (150 - 50) = (f*500 - 400) / 100
+    //          => hFrac = 5f - 4
     const vFrom = visibleRange ? Math.max(0, visibleRange.from) : 0
     const vTo   = visibleRange ? Math.min(1, visibleRange.to)   : 1
-    // Map chart [0,1] fraction → history [0,1] fraction
-    const hFrom = visibleRange ? Math.max(0, (vFrom - HIST_FIRST) / HIST_SPAN) : 0
-    const hTo   = visibleRange ? Math.min(1, (vTo   - HIST_FIRST) / HIST_SPAN) : 1
+    const hFrom = visibleRange ? Math.max(0, 5 * vFrom - 4) : 0
+    const hTo   = visibleRange ? Math.min(1, 5 * vTo   - 4) : 1
     const startIdx = Math.max(0, Math.floor(hFrom * totalN))
     const endIdx   = Math.min(totalN, Math.ceil(hTo * totalN))
     const visData   = data.slice(startIdx, endIdx)
