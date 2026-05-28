@@ -67,9 +67,9 @@ function Gauge({ value, label, color, size = 80 }: { value: number; label: strin
 
 // ─── History Line Chart ───────────────────────────────────────────────────────
 
-function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat = (v: number) => v.toFixed(3) }: {
+function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat = (v: number) => v.toFixed(3), crosshairFrac }: {
   data: number[]; timestamps?: number[]; label: string; color: string
-  regimes?: DispersionRegime[]; valueFormat?: (v: number) => string
+  regimes?: DispersionRegime[]; valueFormat?: (v: number) => string; crosshairFrac?: number | null
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
@@ -149,7 +149,6 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
         const m = d.getMinutes().toString().padStart(2, '0')
         const day = d.getDate().toString().padStart(2, '0')
         const mon = (d.getMonth() + 1).toString().padStart(2, '0')
-        // Show date if span > 24h
         const span = (timestamps[timestamps.length - 1] - timestamps[0]) / 3_600_000
         return span > 24 ? `${day}/${mon}` : `${h}:${m}`
       }
@@ -163,7 +162,42 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
         ctx.fillText(fmtTs(timestamps[idx]), x, H - 3)
       })
     }
-  }, [data, timestamps, label, color, regimes, valueFormat])
+
+    // Crosshair from main chart
+    if (crosshairFrac != null && crosshairFrac >= 0 && crosshairFrac <= 1) {
+      const cx = padL + crosshairFrac * drawW
+      // Clamp to data area
+      if (cx >= padL && cx <= padL + drawW) {
+        // Nearest data index
+        const idx = Math.round(crosshairFrac * (n - 1))
+        const clampedIdx = Math.max(0, Math.min(n - 1, idx))
+        const cy = toY(data[clampedIdx])
+
+        // Vertical line
+        ctx.save()
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([2, 2])
+        ctx.beginPath(); ctx.moveTo(cx, padV); ctx.lineTo(cx, H - padBottom); ctx.stroke()
+        ctx.setLineDash([])
+
+        // Dot on line
+        ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2)
+        ctx.fillStyle = color; ctx.fill()
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke()
+
+        // Value tooltip
+        const val = data[clampedIdx]
+        const txt = valueFormat(val)
+        ctx.font = 'bold 9px JetBrains Mono, monospace'
+        const tw = ctx.measureText(txt).width
+        const tx = Math.min(cx + 4, W - padR - tw - 2)
+        ctx.fillStyle = color + 'CC'
+        ctx.fillRect(tx - 2, cy - 8, tw + 4, 12)
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'
+        ctx.fillText(txt, tx, cy + 1)
+        ctx.restore()
+      }
+    }
+  }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac])
   return <canvas ref={ref} style={{ width: '100%', height: 80, display: 'block', borderRadius: 6 }} />
 }
 
@@ -462,7 +496,7 @@ function mapChartToDispTF(interval: string): string {
   return m[interval] ?? '1h'
 }
 
-export default function DispersionDashboard({ syncInterval }: { syncInterval?: string }) {
+export default function DispersionDashboard({ syncInterval, crosshairFrac }: { syncInterval?: string; crosshairFrac?: number | null }) {
   const [basketId, setBasketId] = useState('crypto')
   const [tf, setTf] = useState(() => syncInterval ? mapChartToDispTF(syncInterval) : '1h')
   const [result, setResult] = useState<DispersionResult | null>(null)
@@ -752,10 +786,10 @@ export default function DispersionDashboard({ syncInterval }: { syncInterval?: s
           <div style={{ ...card(), display:'flex', flexDirection:'column', gap: 14 }}>
             <div style={secTitle()}>📈 Évolution des métriques clés — {result.history.dispersion.length} points</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <HistoryLineChart data={result.history.dispersion} timestamps={result.history.timestamps} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} />
-              <HistoryLineChart data={result.history.avgCorrelation} timestamps={result.history.timestamps} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} />
-              <HistoryLineChart data={result.history.pctUp} timestamps={result.history.timestamps} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} />
-              <HistoryLineChart data={result.history.volSpread} timestamps={result.history.timestamps} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} />
+              <HistoryLineChart data={result.history.dispersion} timestamps={result.history.timestamps} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} crosshairFrac={crosshairFrac} />
+              <HistoryLineChart data={result.history.avgCorrelation} timestamps={result.history.timestamps} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} crosshairFrac={crosshairFrac} />
+              <HistoryLineChart data={result.history.pctUp} timestamps={result.history.timestamps} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} crosshairFrac={crosshairFrac} />
+              <HistoryLineChart data={result.history.volSpread} timestamps={result.history.timestamps} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} crosshairFrac={crosshairFrac} />
             </div>
             {/* Regime legend */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
