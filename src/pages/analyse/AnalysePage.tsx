@@ -1390,7 +1390,7 @@ export default function AnalysePage() {
     if (stored) { localStorage.removeItem('tm_analyse_symbol'); return stored }
     return ''
   })
-  const [mode,   setMode]   = useState<Mode>('oscillateurs')
+  const [mode,   setMode]   = useState<Mode>('layout')
   const [syncInterval, setSyncInterval] = useState<string>('1h')
   const [syncRange,    setSyncRange]    = useState<{from:number;to:number;areaRatio?:number;fromMs?:number;toMs?:number}|null>(null)
   const [crosshairFrac, setCrosshairFrac] = useState<number | null>(null)
@@ -2100,6 +2100,7 @@ export default function AnalysePage() {
             boxShadow:'0 4px 20px rgba(0,0,0,0.3)',
           }}>
             {([
+              {id:'layout',    icon:'📺',  label:'TradingView',  sub:'Chart · WT · VMC · RSI · OU', color:'rgba(191,90,242,0.9)'},
               {id:'oscillateurs',icon:'🎛️',label:'Oscillateurs',sub:'WT · VMC · OU · RSI',       color:'rgba(255,214,10,0.9)'},
               {id:'micro',     icon:'📊',label:'Micro',       sub:'CVD · Structure · Baleines',  color:'rgba(0,229,255,0.9)'},
               {id:'derivees',  icon:'📈',label:'Dérivés',     sub:'OI · Funding · L/S',          color:'rgba(255,149,0,0.9)'},
@@ -2107,7 +2108,6 @@ export default function AnalysePage() {
               {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,69,58,0.9)'},
               {id:'charts',    icon:'📅', label:'Charts',      sub:'Rendements · On-Chain',      color:'rgba(52,199,89,0.9)'},
               {id:'dispersion',icon:'🔬', label:'Dispersion',  sub:'Internals institutionnels',  color:'rgba(0,229,255,0.9)'},
-              {id:'layout',    icon:'⊞',  label:'Layout',      sub:'Multi-panneaux redimensionnable', color:'rgba(191,90,242,0.9)'},
             ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m => {
               const active = mode === m.id
               return (
