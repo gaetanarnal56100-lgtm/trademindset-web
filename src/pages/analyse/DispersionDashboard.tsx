@@ -131,13 +131,25 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     const padL = 4, padR = 60, padV = 6, padBottom = 16
     const drawW = W - padL - padR, drawH = H - padV - padBottom
 
-    const toX = (i: number) => padL + (n > 1 ? (i / (n - 1)) * drawW : drawW / 2)
+    // Time-based x: each point placed at its actual timestamp within [fromMs..toMs]
+    // → right edge of oscillator aligns with right edge of LW chart
+    const visFrom = visibleRange?.fromMs ?? (visTimes?.[0] ?? 0)
+    const visTo   = visibleRange?.toMs   ?? (visTimes?.[visTimes ? visTimes.length - 1 : 0] ?? 1)
+    const tSpan   = visTo - visFrom || 1
+    const toX = (i: number) =>
+      visTimes
+        ? padL + ((visTimes[i] - visFrom) / tSpan) * drawW
+        : padL + (n > 1 ? (i / (n - 1)) * drawW : drawW / 2)
     const toY = (v: number) => padV + (1 - (v - mn) / range) * drawH
+
+    // Clip draw area to [padL .. padL+drawW] — prevents time-positioned points bleeding out
+    ctx.save()
+    ctx.beginPath(); ctx.rect(padL, 0, drawW, H); ctx.clip()
 
     // Regime background
     if (visRegimes) {
       visRegimes.forEach((r, i) => {
-        const x1 = toX(i), x2 = i < n - 1 ? toX(i + 1) : W - padR
+        const x1 = toX(i), x2 = i < n - 1 ? toX(i + 1) : toX(n - 1)
         const c = r === 'expansion' ? 'rgba(191,90,242,0.07)' : r === 'compression' ? 'rgba(0,229,255,0.07)' :
           r === 'panic' ? 'rgba(255,59,48,0.09)' : r === 'trending' ? 'rgba(52,199,89,0.05)' : 'transparent'
         ctx.fillStyle = c; ctx.fillRect(x1, 0, x2 - x1, H)
@@ -155,7 +167,7 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     // Area fill
     ctx.beginPath()
     visData.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-    ctx.lineTo(toX(n-1), H); ctx.lineTo(padL, H); ctx.closePath()
+    ctx.lineTo(toX(n-1), H); ctx.lineTo(toX(0), H); ctx.closePath()
     ctx.fillStyle = color + '18'; ctx.fill()
 
     // Line
@@ -166,6 +178,8 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     // Current dot (last visible point)
     const lx = toX(n-1), ly = toY(visData[n-1])
     ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI*2); ctx.fillStyle = color; ctx.fill()
+
+    ctx.restore() // End clip
 
     // Right-side labels (show value of last VISIBLE point)
     ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'left'
