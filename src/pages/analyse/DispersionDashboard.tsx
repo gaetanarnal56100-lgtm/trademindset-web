@@ -67,14 +67,15 @@ function Gauge({ value, label, color, size = 80 }: { value: number; label: strin
 
 // ─── History Line Chart ───────────────────────────────────────────────────────
 
-function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat = (v: number) => v.toFixed(3), crosshairFrac, onCrosshairChange }: {
+function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat = (v: number) => v.toFixed(3), crosshairFrac, onCrosshairChange, visibleRange }: {
   data: number[]; timestamps?: number[]; label: string; color: string
   regimes?: DispersionRegime[]; valueFormat?: (v: number) => string
   crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void
+  visibleRange?: { from: number; to: number; areaRatio?: number }
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
-  // Mouse handlers — emit frac to parent (same pattern as oscillator canvases)
+  // Mouse handlers — emit frac relative to visible window
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = ref.current; if (!canvas) return
     const rect = canvas.getBoundingClientRect()
@@ -94,17 +95,29 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     const ctx = canvas.getContext('2d')!; ctx.scale(dpr, dpr)
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
-    const n = data.length
-    const mn = Math.min(...data), mx = Math.max(...data), range = mx - mn || 0.001
+    const totalN = data.length
+    // Clip to visible range (same pattern as oscillator canvases)
+    const vFrom = visibleRange ? Math.max(0, visibleRange.from) : 0
+    const vTo   = visibleRange ? Math.min(1, visibleRange.to)   : 1
+    const startIdx = Math.max(0, Math.floor(vFrom * totalN))
+    const endIdx   = Math.min(totalN, Math.ceil(vTo * totalN))
+    const visData   = data.slice(startIdx, endIdx)
+    const visTimes  = timestamps?.slice(startIdx, endIdx)
+    const visRegimes = regimes?.slice(startIdx, endIdx)
+
+    if (visData.length < 2) return
+
+    const n = visData.length
+    const mn = Math.min(...visData), mx = Math.max(...visData), range = mx - mn || 0.001
     const padL = 4, padR = 60, padV = 6, padBottom = 16
     const drawW = W - padL - padR, drawH = H - padV - padBottom
 
-    const toX = (i: number) => padL + (i / (n - 1)) * drawW
+    const toX = (i: number) => padL + (n > 1 ? (i / (n - 1)) * drawW : drawW / 2)
     const toY = (v: number) => padV + (1 - (v - mn) / range) * drawH
 
     // Regime background
-    if (regimes) {
-      regimes.forEach((r, i) => {
+    if (visRegimes) {
+      visRegimes.forEach((r, i) => {
         const x1 = toX(i), x2 = i < n - 1 ? toX(i + 1) : W - padR
         const c = r === 'expansion' ? 'rgba(191,90,242,0.07)' : r === 'compression' ? 'rgba(0,229,255,0.07)' :
           r === 'panic' ? 'rgba(255,59,48,0.09)' : r === 'trending' ? 'rgba(52,199,89,0.05)' : 'transparent'
@@ -120,87 +133,77 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
       ctx.setLineDash([])
     }
 
-    // Area
+    // Area fill
     ctx.beginPath()
-    data.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    visData.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
     ctx.lineTo(toX(n-1), H); ctx.lineTo(padL, H); ctx.closePath()
     ctx.fillStyle = color + '18'; ctx.fill()
 
     // Line
     ctx.beginPath()
-    data.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+    visData.forEach((v, i) => { const x = toX(i), y = toY(v); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
     ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.stroke()
 
-    // Current dot
-    const lx = toX(n-1), ly = toY(data[n-1])
+    // Current dot (last visible point)
+    const lx = toX(n-1), ly = toY(visData[n-1])
     ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI*2); ctx.fillStyle = color; ctx.fill()
 
-    // Right-side labels
+    // Right-side labels (show value of last VISIBLE point)
     ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'left'
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillText(label, W - padR + 6, padV + 10)
     ctx.fillStyle = color; ctx.font = 'bold 9px JetBrains Mono, monospace'
-    ctx.fillText(valueFormat(data[n-1]), W - padR + 6, padV + 22)
+    ctx.fillText(valueFormat(visData[n-1]), W - padR + 6, padV + 22)
     ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '7px JetBrains Mono'
     ctx.fillText(`↑${valueFormat(mx)}`, W - padR + 6, padV + 34)
     ctx.fillText(`↓${valueFormat(mn)}`, W - padR + 6, padV + 44)
 
-    // X-axis timestamps (first, middle, last)
-    if (timestamps && timestamps.length >= 2) {
+    // X-axis timestamps from visible slice
+    if (visTimes && visTimes.length >= 2) {
       const fmtTs = (ts: number) => {
         const d = new Date(ts)
         const h = d.getHours().toString().padStart(2, '0')
         const m = d.getMinutes().toString().padStart(2, '0')
         const day = d.getDate().toString().padStart(2, '0')
         const mon = (d.getMonth() + 1).toString().padStart(2, '0')
-        const span = (timestamps[timestamps.length - 1] - timestamps[0]) / 3_600_000
+        const span = (visTimes[visTimes.length - 1] - visTimes[0]) / 3_600_000
         return span > 24 ? `${day}/${mon}` : `${h}:${m}`
       }
       ctx.font = '7px JetBrains Mono, monospace'; ctx.fillStyle = 'rgba(255,255,255,0.3)'
       const indices = [0, Math.floor(n / 2), n - 1]
       const aligns: CanvasTextAlign[] = ['left', 'center', 'left']
       indices.forEach((idx, k) => {
-        if (timestamps[idx] == null) return
-        const x = toX(idx)
+        if (!visTimes[idx]) return
         ctx.textAlign = aligns[k]
-        ctx.fillText(fmtTs(timestamps[idx]), x, H - 3)
+        ctx.fillText(fmtTs(visTimes[idx]), toX(idx), H - 3)
       })
     }
 
-    // Crosshair from main chart
+    // Crosshair — frac is relative to visible window
     if (crosshairFrac != null && crosshairFrac >= 0 && crosshairFrac <= 1) {
       const cx = padL + crosshairFrac * drawW
-      // Clamp to data area
-      if (cx >= padL && cx <= padL + drawW) {
-        // Nearest data index
-        const idx = Math.round(crosshairFrac * (n - 1))
-        const clampedIdx = Math.max(0, Math.min(n - 1, idx))
-        const cy = toY(data[clampedIdx])
+      const idx = Math.max(0, Math.min(n - 1, Math.round(crosshairFrac * (n - 1))))
+      const cy = toY(visData[idx])
 
-        // Vertical line
-        ctx.save()
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([2, 2])
-        ctx.beginPath(); ctx.moveTo(cx, padV); ctx.lineTo(cx, H - padBottom); ctx.stroke()
-        ctx.setLineDash([])
+      ctx.save()
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([2, 2])
+      ctx.beginPath(); ctx.moveTo(cx, padV); ctx.lineTo(cx, H - padBottom); ctx.stroke()
+      ctx.setLineDash([])
 
-        // Dot on line
-        ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2)
-        ctx.fillStyle = color; ctx.fill()
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke()
+      ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2)
+      ctx.fillStyle = color; ctx.fill()
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke()
 
-        // Value tooltip
-        const val = data[clampedIdx]
-        const txt = valueFormat(val)
-        ctx.font = 'bold 9px JetBrains Mono, monospace'
-        const tw = ctx.measureText(txt).width
-        const tx = Math.min(cx + 4, W - padR - tw - 2)
-        ctx.fillStyle = color + 'CC'
-        ctx.fillRect(tx - 2, cy - 8, tw + 4, 12)
-        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'
-        ctx.fillText(txt, tx, cy + 1)
-        ctx.restore()
-      }
+      const txt = valueFormat(visData[idx])
+      ctx.font = 'bold 9px JetBrains Mono, monospace'
+      const tw = ctx.measureText(txt).width
+      const tx = Math.min(cx + 4, W - padR - tw - 2)
+      ctx.fillStyle = color + 'CC'
+      ctx.fillRect(tx - 2, cy - 8, tw + 4, 12)
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'left'
+      ctx.fillText(txt, tx, cy + 1)
+      ctx.restore()
     }
-  }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac])
+  }, [data, timestamps, label, color, regimes, valueFormat, crosshairFrac, visibleRange])
   return <canvas ref={ref} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} style={{ width: '100%', height: 80, display: 'block', borderRadius: 6, cursor: 'crosshair' }} />
 }
 
@@ -499,7 +502,7 @@ function mapChartToDispTF(interval: string): string {
   return m[interval] ?? '1h'
 }
 
-export default function DispersionDashboard({ syncInterval, crosshairFrac, onCrosshairChange }: { syncInterval?: string; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
+export default function DispersionDashboard({ syncInterval, crosshairFrac, onCrosshairChange, visibleRange }: { syncInterval?: string; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void; visibleRange?: { from: number; to: number; areaRatio?: number } }) {
   const [basketId, setBasketId] = useState('crypto')
   const [tf, setTf] = useState(() => syncInterval ? mapChartToDispTF(syncInterval) : '1h')
   const [result, setResult] = useState<DispersionResult | null>(null)
@@ -789,10 +792,10 @@ export default function DispersionDashboard({ syncInterval, crosshairFrac, onCro
           <div style={{ ...card(), display:'flex', flexDirection:'column', gap: 14 }}>
             <div style={secTitle()}>📈 Évolution des métriques clés — {result.history.dispersion.length} points</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <HistoryLineChart data={result.history.dispersion} timestamps={result.history.timestamps} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
-              <HistoryLineChart data={result.history.avgCorrelation} timestamps={result.history.timestamps} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
-              <HistoryLineChart data={result.history.pctUp} timestamps={result.history.timestamps} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
-              <HistoryLineChart data={result.history.volSpread} timestamps={result.history.timestamps} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} />
+              <HistoryLineChart data={result.history.dispersion} timestamps={result.history.timestamps} label="DISPERSION" color="#BF5AF2" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(3)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} visibleRange={visibleRange} />
+              <HistoryLineChart data={result.history.avgCorrelation} timestamps={result.history.timestamps} label="CORRÉLATION MOY" color="#FF9500" regimes={result.history.regimes} valueFormat={v => v.toFixed(3)} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} visibleRange={visibleRange} />
+              <HistoryLineChart data={result.history.pctUp} timestamps={result.history.timestamps} label="BREADTH %" color="#34C759" regimes={result.history.regimes} valueFormat={v => `${v.toFixed(0)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} visibleRange={visibleRange} />
+              <HistoryLineChart data={result.history.volSpread} timestamps={result.history.timestamps} label="VOL SPREAD (RDP)" color="#00E5FF" regimes={result.history.regimes} valueFormat={v => `${(v*100).toFixed(1)}%`} crosshairFrac={crosshairFrac} onCrosshairChange={onCrosshairChange} visibleRange={visibleRange} />
             </div>
             {/* Regime legend */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
