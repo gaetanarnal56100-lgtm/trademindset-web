@@ -38,7 +38,7 @@ const OSC_DEFS: Record<OscType, { icon: string; label: string; color: string }> 
 }
 
 const OSC_ORDER: OscType[] = ['wavetrend', 'vmc', 'rsi', 'rsibollinger', 'ou']
-const LS_PANES = 'tm_tv_panes'
+const LS_PANES = 'tm_tv_panes_v2'
 
 // ── Drag handle ───────────────────────────────────────────────────────────────
 
@@ -210,7 +210,11 @@ export default function PaneLayout({
       const saved = localStorage.getItem(LS_PANES)
       if (saved) return JSON.parse(saved)
     } catch {}
-    return [{ id: uid(), type: 'wavetrend' as OscType }]
+    return [
+      { id: uid(), type: 'wavetrend' as OscType },
+      { id: uid(), type: 'vmc'       as OscType },
+      { id: uid(), type: 'rsi'       as OscType },
+    ]
   })
 
   const save = useCallback((next: OscPane[]) => {
@@ -234,7 +238,7 @@ export default function PaneLayout({
   }, [save])
 
   const n = oscPanes.length
-  const chartSize = n === 0 ? 100 : Math.max(38, Math.round(100 - n * 22))
+  const chartSize = n === 0 ? 100 : Math.max(45, Math.round(100 - n * 16))
   const oscSize   = n === 0 ? 0   : Math.round((100 - chartSize) / n)
 
   // Escape the 28px page padding on all sides
