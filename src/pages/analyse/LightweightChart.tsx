@@ -22,6 +22,10 @@ interface Props {
   externalCrosshairFrac?: number | null  // crosshair driven from oscillators
   chartHeight?: number  // override default 430px (used in fullscreen)
   autoHeight?: boolean  // fill flex parent instead of fixed height
+  /** Flat mode: no card border/radius — flush layout like TradingView desktop */
+  flat?: boolean
+  /** Extra buttons injected into the right side of the top bar */
+  topBarExtra?: React.ReactNode
 }
 
 export interface LightweightChartHandle {
@@ -550,7 +554,7 @@ const LW_MIN_TO_OSC: Record<number, string> = {
   1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 120:'2h', 240:'4h', 360:'4h', 720:'12h', 1440:'1d', 4320:'1d', 10080:'1w', 43200:'1w',
 }
 
-const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,externalCrosshairFrac,chartHeight=430,autoHeight=false},forwardedRef) {
+const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,externalCrosshairFrac,chartHeight=430,autoHeight=false,flat=false,topBarExtra},forwardedRef) {
   const { t } = useTranslation()
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
@@ -1542,10 +1546,16 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   const activeIndCount = Object.values(indOn).filter(Boolean).length
 
   return(
-    <div ref={chartContainerRef} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative',display:'flex',flexDirection:'column',...(autoHeight&&{height:'100%'})}}>
+    <div ref={chartContainerRef} style={{
+      background: flat ? 'var(--tm-bg)' : 'var(--tm-bg-secondary)',
+      border: flat ? 'none' : '1px solid #1E2330',
+      borderRadius: flat ? 0 : 16,
+      overflow:'hidden',marginBottom:0,position:'relative',display:'flex',flexDirection:'column',
+      ...(autoHeight&&{height:'100%'}),
+    }}>
 
       {/* ── Top bar (single row, TradingView-style) ── */}
-      <div style={{padding:'7px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',flexShrink:0,minHeight:38}}>
+      <div style={{padding:'6px 10px',borderBottom:`1px solid ${flat?'#1A1F2E':'#1E2330'}`,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',flexShrink:0,minHeight:36,background:flat?'rgba(13,17,35,0.98)':'var(--tm-bg-secondary)'}}>
 
         {/* Icon + symbol */}
         <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
@@ -1586,6 +1596,9 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
 
         <div style={{flex:1}}/>
 
+        {/* Injected extra buttons (e.g. Add Indicator from PaneLayout) */}
+        {topBarExtra}
+
         {/* Drawings counter */}
         <button onClick={()=>setShowHist(x=>!x)} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?`rgba(34,199,89,0.1)`:'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
           💾 {drawings.length>0?t('analyse.drawingCount', {count: drawings.length}):'Dessins'}
@@ -1601,7 +1614,7 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       <div style={{display:'flex',flex:1,minHeight:0,overflow:'hidden'}}>
 
         {/* Left drawing toolbar (TradingView-style vertical) */}
-        <div style={{width:38,background:'rgba(8,12,20,0.97)',borderRight:'1px solid #1E2330',display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 0',gap:2,flexShrink:0,overflowY:'auto'}}>
+        <div style={{width:38,background:'rgba(8,12,20,0.98)',borderRight:`1px solid ${flat?'#1A1F2E':'#1E2330'}`,display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 0',gap:2,flexShrink:0,overflowY:'auto'}}>
           {TOOLS.map(tool_=>(
             <button key={tool_.id} onClick={()=>{setTool(tool_.id as ToolId);phase.current='idle';firstPt.current=null;setSelectedId(null)}} title={tool_.label} style={{width:28,height:28,borderRadius:6,fontSize:14,cursor:'pointer',border:`1px solid ${tool===tool_.id?'var(--tm-warning)':'transparent'}`,background:tool===tool_.id?'rgba(255,149,0,0.15)':'transparent',color:tool===tool_.id?'var(--tm-warning)':'rgba(255,255,255,0.38)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.1s',flexShrink:0}}>
               {tool_.icon}
