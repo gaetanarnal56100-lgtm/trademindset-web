@@ -540,7 +540,7 @@ export default function DispersionDashboard({ syncInterval, crosshairFrac, onCro
   const load = useCallback(async (configs: AssetConfig[], interval: string) => {
     setLoading(true); setError('')
     try {
-      const res = await fetchAndCompute(configs, interval, 150)
+      const res = await fetchAndCompute(configs, interval) // uses defaults: limit=500, historyPoints=100
       if (res) setResult(res)
       else setError('Données insuffisantes pour le panier sélectionné')
     } catch (e) { setError(e instanceof Error ? e.message : 'Erreur') }

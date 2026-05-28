@@ -162,10 +162,11 @@ export interface ComputeInput {
   candleMap: Map<string, RawCandle[]>
   lookback?: number
   returnWindow?: number
+  historyPoints?: number
 }
 
 export function computeDispersion(input: ComputeInput): DispersionResult | null {
-  const { configs, candleMap, lookback = 50, returnWindow = 1 } = input
+  const { configs, candleMap, lookback = 50, returnWindow = 1, historyPoints = 30 } = input
   if (configs.length < 2) return null
 
   const validConfigs = configs.filter(c => {
@@ -354,11 +355,11 @@ export function computeDispersion(input: ComputeInput): DispersionResult | null 
   // ── Regime ──
   const { regime, regimeConfidence } = classifyRegime({ dispersionZScore: dispZScore, dispersionPercentile: dispPercentile, avgCorrelation, corrZScore, pctUp, participationScore, volRegime, vsZScore })
 
-  // ── Inline history (30 points from same candle data) ──
+  // ── Inline history (historyPoints from same candle data) ──
   // Thread real timestamps from first valid asset
   const refCandles = candleMap.get(validConfigs[0].symbol)!
   const allTimes = refCandles.map(c => c.t).slice(-minLen)
-  const history = computeInlineHistory(aligned, w, lookback, allTimes)
+  const history = computeInlineHistory(aligned, w, lookback, allTimes, historyPoints)
 
   // ── Trend arrows (compare current vs 3 most recent history points) ──
   const trendArrows = computeTrendArrows(history, dispersionRaw, avgCorrelation, pctUp, volSpread)
@@ -572,7 +573,7 @@ function classifyRegime(inp: RegimeInput): { regime: DispersionRegime; regimeCon
 // ─── Fetch + compute pipeline ─────────────────────────────────────────────────
 
 export async function fetchAndCompute(
-  configs: AssetConfig[], interval = '1h', limit = 150, lookback = 50,
+  configs: AssetConfig[], interval = '1h', limit = 500, lookback = 50, historyPoints = 100,
 ): Promise<DispersionResult | null> {
   const candleMap = new Map<string, RawCandle[]>()
   await Promise.all(configs.map(async cfg => {
@@ -587,5 +588,5 @@ export async function fetchAndCompute(
       })))
     } catch { /* skip */ }
   }))
-  return computeDispersion({ configs, candleMap, lookback })
+  return computeDispersion({ configs, candleMap, lookback, historyPoints })
 }
