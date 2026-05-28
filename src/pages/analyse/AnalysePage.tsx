@@ -1391,7 +1391,7 @@ export default function AnalysePage() {
   })
   const [mode,   setMode]   = useState<Mode>('oscillateurs')
   const [syncInterval, setSyncInterval] = useState<string>('1h')
-  const [syncRange,    setSyncRange]    = useState<{from:number;to:number;areaRatio?:number}|null>(null)
+  const [syncRange,    setSyncRange]    = useState<{from:number;to:number;areaRatio?:number;fromMs?:number;toMs?:number}|null>(null)
   const [crosshairFrac, setCrosshairFrac] = useState<number | null>(null)
 
   // ── Panel drag & drop state ───────────────────────────────────────────────
@@ -2247,7 +2247,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} requiresSync={mode === 'oscillateurs' || mode === 'dispersion'} /></div>}
+      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio,fromMs,toMs)=>setSyncRange({from,to,areaRatio,fromMs,toMs})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} requiresSync={mode === 'oscillateurs' || mode === 'dispersion'} /></div>}
 
       {/* Canal OU + Excès Statistiques + VMC Kaufman — visible uniquement en mode Oscillateurs (ou non-crypto) */}
       {symbol && (!isCrypto || mode === 'oscillateurs') && (() => {

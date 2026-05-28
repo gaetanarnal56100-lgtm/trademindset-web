@@ -16,7 +16,7 @@ interface Props {
   symbol: string
   isCrypto: boolean
   onTimeframeChange?: (interval: string) => void
-  onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void
+  onVisibleRangeChange?: (from: number, to: number, areaRatio?: number, fromMs?: number, toMs?: number) => void
   syncRangeIn?: {from: number; to: number} | null
   onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void
   externalCrosshairFrac?: number | null  // crosshair driven from oscillators
@@ -784,7 +784,11 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       const total = candlesRef.current.length
       // rawTo non-clampé : > 1 si LW a de l'espace vide à droite de la dernière bougie
       const { areaRatio } = getAreaRatio()
-      onRangeRef.current?.(Math.max(0, range.from / total), range.to / total, areaRatio)
+      // Also emit actual unix timestamps for pixel-perfect alignment with history charts
+      const timeRange = c.timeScale().getVisibleRange()
+      const fromMs = timeRange ? (timeRange.from as number) * 1000 : undefined
+      const toMs   = timeRange ? (timeRange.to   as number) * 1000 : undefined
+      onRangeRef.current?.(Math.max(0, range.from / total), range.to / total, areaRatio, fromMs, toMs)
     })
 
     // Helper : calcule tsW, psW et émet areaRatio + frac crosshair

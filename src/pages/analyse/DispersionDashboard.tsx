@@ -71,7 +71,7 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
   data: number[]; timestamps?: number[]; label: string; color: string
   regimes?: DispersionRegime[]; valueFormat?: (v: number) => string
   crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void
-  visibleRange?: { from: number; to: number; areaRatio?: number }
+  visibleRange?: { from: number; to: number; areaRatio?: number; fromMs?: number; toMs?: number }
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
 
@@ -96,20 +96,30 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const totalN = data.length
-    // LightweightChart loads N_LW=500 candles; dispersionEngine loads N_DISP=150.
-    // Both are aligned at the END (most recent candle). visibleRange fractions are
-    // relative to the 500 LW candles. History spans disp candles [lookback=50, 149].
-    //
-    // Mapping: LW candle = f * 500
-    //          DISP candle = f * 500 - (500 - 150) = f * 500 - 350
-    //          History fraction = (DISP_candle - 50) / (150 - 50) = (f*500 - 400) / 100
-    //          => hFrac = 5f - 4
-    const vFrom = visibleRange ? Math.max(0, visibleRange.from) : 0
-    const vTo   = visibleRange ? Math.min(1, visibleRange.to)   : 1
-    const hFrom = visibleRange ? Math.max(0, 5 * vFrom - 4) : 0
-    const hTo   = visibleRange ? Math.min(1, 5 * vTo   - 4) : 1
-    const startIdx = Math.max(0, Math.floor(hFrom * totalN))
-    const endIdx   = Math.min(totalN, Math.ceil(hTo * totalN))
+    let startIdx = 0
+    let endIdx   = totalN
+
+    if (visibleRange && timestamps && timestamps.length >= 2) {
+      // Timestamp-based slicing: exact alignment regardless of candle count differences
+      const fromMs = visibleRange.fromMs
+      const toMs   = visibleRange.toMs
+      if (fromMs != null && toMs != null) {
+        // Binary-search first timestamp >= fromMs
+        let lo = 0, hi = timestamps.length
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] < fromMs) lo = mid + 1; else hi = mid }
+        startIdx = Math.max(0, lo - 1) // include one point before visible range for smooth edge
+        // Binary-search first timestamp > toMs
+        lo = 0; hi = timestamps.length
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] <= toMs) lo = mid + 1; else hi = mid }
+        endIdx = Math.min(totalN, lo + 1) // include one point after visible range for smooth edge
+      }
+    } else if (visibleRange) {
+      // Fallback fraction-based (LW=500 candles, disp=150, lookback=50 → hFrac = 5f-4)
+      const hFrom = Math.max(0, 5 * visibleRange.from - 4)
+      const hTo   = Math.min(1, 5 * visibleRange.to   - 4)
+      startIdx = Math.max(0, Math.floor(hFrom * totalN))
+      endIdx   = Math.min(totalN, Math.ceil(hTo * totalN))
+    }
     const visData   = data.slice(startIdx, endIdx)
     const visTimes  = timestamps?.slice(startIdx, endIdx)
     const visRegimes = regimes?.slice(startIdx, endIdx)
@@ -511,7 +521,7 @@ function mapChartToDispTF(interval: string): string {
   return m[interval] ?? '1h'
 }
 
-export default function DispersionDashboard({ syncInterval, crosshairFrac, onCrosshairChange, visibleRange }: { syncInterval?: string; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void; visibleRange?: { from: number; to: number; areaRatio?: number } }) {
+export default function DispersionDashboard({ syncInterval, crosshairFrac, onCrosshairChange, visibleRange }: { syncInterval?: string; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void; visibleRange?: { from: number; to: number; areaRatio?: number; fromMs?: number; toMs?: number } }) {
   const [basketId, setBasketId] = useState('crypto')
   const [tf, setTf] = useState(() => syncInterval ? mapChartToDispTF(syncInterval) : '1h')
   const [result, setResult] = useState<DispersionResult | null>(null)
