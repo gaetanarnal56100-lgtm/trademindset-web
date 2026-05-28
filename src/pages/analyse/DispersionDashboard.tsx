@@ -96,11 +96,19 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     ctx.fillStyle = '#080C14'; ctx.fillRect(0, 0, W, H)
 
     const totalN = data.length
-    // Clip to visible range (same pattern as oscillator canvases)
+    // History data covers candles [lookback=50, limit-1=149] of limit=150 total candles.
+    // visibleRange fractions are relative to those 150 total candles.
+    // Remap chart fractions → history fractions before slicing.
+    const HIST_FIRST = 50 / 150  // fraction of first history point in full dataset
+    const HIST_SPAN  = 99 / 150  // fraction span covered by history (candles 50–149)
+
     const vFrom = visibleRange ? Math.max(0, visibleRange.from) : 0
     const vTo   = visibleRange ? Math.min(1, visibleRange.to)   : 1
-    const startIdx = Math.max(0, Math.floor(vFrom * totalN))
-    const endIdx   = Math.min(totalN, Math.ceil(vTo * totalN))
+    // Map chart [0,1] fraction → history [0,1] fraction
+    const hFrom = visibleRange ? Math.max(0, (vFrom - HIST_FIRST) / HIST_SPAN) : 0
+    const hTo   = visibleRange ? Math.min(1, (vTo   - HIST_FIRST) / HIST_SPAN) : 1
+    const startIdx = Math.max(0, Math.floor(hFrom * totalN))
+    const endIdx   = Math.min(totalN, Math.ceil(hTo * totalN))
     const visData   = data.slice(startIdx, endIdx)
     const visTimes  = timestamps?.slice(startIdx, endIdx)
     const visRegimes = regimes?.slice(startIdx, endIdx)
