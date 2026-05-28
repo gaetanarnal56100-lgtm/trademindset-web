@@ -63,12 +63,13 @@ interface OscShellProps {
   syncRange: SyncRange | null
   crosshairFrac: number | null
   onCrosshairChange: (f: number | null) => void
+  onRangeChange: (r: SyncRange) => void
   onRemove: (id: string) => void
 }
 
-function OscShell({ pane, symbol, syncInterval, syncRange, crosshairFrac, onCrosshairChange, onRemove }: OscShellProps) {
+function OscShell({ pane, symbol, syncInterval, syncRange, crosshairFrac, onCrosshairChange, onRangeChange, onRemove }: OscShellProps) {
   const def = OSC_DEFS[pane.type]
-  const shared = { symbol, syncInterval, visibleRange: syncRange, crosshairFrac, onCrosshairChange }
+  const shared = { symbol, syncInterval, visibleRange: syncRange, crosshairFrac, onCrosshairChange, onRangeChange }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0D1117' }}>
@@ -293,6 +294,7 @@ export default function PaneLayout({
                   syncRange={syncRange}
                   crosshairFrac={crosshairFrac}
                   onCrosshairChange={onCrosshairChange}
+                  onRangeChange={onRangeChange}
                   onRemove={removePane}
                 />
               </Panel>

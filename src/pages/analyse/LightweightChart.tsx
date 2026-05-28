@@ -594,10 +594,28 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   useEffect(() => { onRangeRef.current = onVisibleRangeChange }, [onVisibleRangeChange])
 
   // Oscillateurs → LW : appliquer la plage envoyée par un oscillateur
+  // Priorité timestamp : si fromMs/toMs disponibles, binary-search pour trouver les indices logiques exacts.
+  // Fallback fraction-based si pas de timestamps (même candle count requis).
   useEffect(() => {
     if (!syncRangeIn || !chartApi.current || !candlesRef.current.length) return
-    const total = candlesRef.current.length
-    const target = { from: syncRangeIn.from * total, to: syncRangeIn.to * total }
+    const candles = candlesRef.current
+    let target: { from: number; to: number }
+    if (syncRangeIn.fromMs != null && syncRangeIn.toMs != null) {
+      // Binary search: find bar indices from Unix-ms timestamps (candles[i].time in seconds)
+      const findIdx = (ms: number): number => {
+        let lo = 0, hi = candles.length - 1
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1
+          if ((candles[mid].time as number) * 1000 <= ms) lo = mid
+          else hi = mid - 1
+        }
+        return lo
+      }
+      target = { from: findIdx(syncRangeIn.fromMs), to: findIdx(syncRangeIn.toMs) }
+    } else {
+      const total = candles.length
+      target = { from: syncRangeIn.from * total, to: syncRangeIn.to * total }
+    }
     lastSetLogical.current = target
     chartApi.current.timeScale().setVisibleLogicalRange(target)
   }, [syncRangeIn])
