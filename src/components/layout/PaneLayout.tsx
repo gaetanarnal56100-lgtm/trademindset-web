@@ -4,9 +4,9 @@
  * react-resizable-panels v4 for drag-to-resize.
  */
 
-import React, { useState, useCallback, useId } from 'react'
+import React, { useState, useCallback } from 'react'
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
-import LightweightChart from '@/pages/analyse/LightweightChart'
+import LiveChart from '@/pages/analyse/LiveChart'
 import { WaveTrendChart, VMCOscillatorChart, RSIChart, RSIBollingerChart } from '@/pages/analyse/OscillatorCharts'
 import OUChannelIndicator from '@/pages/analyse/OUChannelIndicator'
 
@@ -278,30 +278,22 @@ export default function PaneLayout({
       {n === 0 ? (
         // No oscillators — chart fills all space
         <div style={{ height: totalH }}>
-          <LightweightChart
+          <LiveChart
             symbol={symbol}
             isCrypto={isCrypto}
             onTimeframeChange={onIntervalChange}
-            onVisibleRangeChange={(from, to, areaRatio, fromMs, toMs) => onRangeChange({ from, to, areaRatio, fromMs, toMs })}
-            onCrosshairChange={d => onCrosshairChange(d ? d.frac : null)}
-            externalCrosshairFrac={crosshairFrac}
-            syncRangeIn={syncRange}
             autoHeight
           />
         </div>
       ) : (
         <PanelGroup direction="vertical" style={{ height: totalH }}>
 
-          {/* Chart pane */}
+          {/* Chart pane — full TradingView widget */}
           <Panel defaultSize={chartSize} minSize={25}>
-            <LightweightChart
+            <LiveChart
               symbol={symbol}
               isCrypto={isCrypto}
               onTimeframeChange={onIntervalChange}
-              onVisibleRangeChange={(from, to, areaRatio, fromMs, toMs) => onRangeChange({ from, to, areaRatio, fromMs, toMs })}
-              onCrosshairChange={d => onCrosshairChange(d ? d.frac : null)}
-              externalCrosshairFrac={crosshairFrac}
-              syncRangeIn={syncRange}
               autoHeight
             />
           </Panel>

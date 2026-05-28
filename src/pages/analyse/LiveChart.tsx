@@ -5,6 +5,10 @@ interface Props {
   symbol: string
   isCrypto: boolean
   onTimeframeChange?: (interval: string) => void
+  /** Fill parent height (flex container) instead of fixed height */
+  autoHeight?: boolean
+  /** Hide the custom header/toolbar — only render the TV widget */
+  headless?: boolean
 }
 
 function toTVSymbol(symbol: string, isCrypto: boolean): string {
@@ -34,7 +38,7 @@ const TV_TO_OSC: Record<string, string> = {
   '60':'1h', '120':'2h', '240':'4h', 'D':'1d', 'W':'1w',
 }
 
-export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props) {
+export default function LiveChart({ symbol, isCrypto, onTimeframeChange, autoHeight, headless }: Props) {
   const [tf,       setTf]       = useState(TIMEFRAMES[2])
   const [chartType,setChartType]= useState<1|2|3>(1) // 1=bougies, 2=ligne, 3=aire
   const [expanded, setExpanded] = useState(false)
@@ -42,6 +46,8 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
   const containerRef  = useRef<HTMLDivElement>(null)
   const widgetRef     = useRef<any>(null)
   const buildWidgetRef = useRef<()=>void>(()=>{})
+  // Unique container ID per instance (avoids conflicts when multiple LiveChart are mounted)
+  const containerId = useRef(`tv-chart-${Math.random().toString(36).slice(2)}`)
   const tvSymbol = toTVSymbol(symbol, isCrypto)
 
   // Emit initial TF so parent (AnalysePage) can sync syncInterval on mount
@@ -65,7 +71,7 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
     el.innerHTML = ''
 
     widgetRef.current = new (window as any).TradingView.widget({
-      container_id:        'tv-chart-container',
+      container_id:        containerId.current,
       symbol:              tvSymbol,
       interval:            tf.tv,
       theme:               'dark',
@@ -73,7 +79,7 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
       locale:              'fr',
       toolbar_bg:          resolveCSSColor('--tm-bg-secondary','#161B22'),
       width:               '100%',
-      height:              expanded ? 620 : 440,
+      height:              (autoHeight || headless) ? '100%' : (expanded ? 620 : 440),
       autosize:            true,
 
       // Tout afficher
@@ -175,6 +181,30 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
 
   const chartH = expanded ? 620 : 440
 
+  // ── Headless mode: just the widget, no custom chrome ──────────────────────
+  if (headless || autoHeight) {
+    return (
+      <div style={{
+        position: 'relative',
+        width: '100%',
+        height: autoHeight ? '100%' : chartH,
+        background: resolveCSSColor('--tm-bg','#0D1117'),
+        overflow: 'hidden',
+      }}>
+        {loading && (
+          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center',
+            justifyContent:'center', background:resolveCSSColor('--tm-bg','#0D1117'), zIndex:2, gap:12 }}>
+            <div style={{ width:32, height:32, border:'3px solid #1E2330', borderTopColor:resolveCSSColor('--tm-profit','#22C759'),
+              borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+            <div style={{ fontSize:11, color:resolveCSSColor('--tm-text-muted','#555C70') }}>Chargement TradingView…</div>
+          </div>
+        )}
+        <div id={containerId.current} ref={containerRef} style={{ width:'100%', height:'100%' }}/>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    )
+  }
+
   return (
     <div style={{ background:resolveCSSColor('--tm-bg-secondary','#161B22'), border:'1px solid #1E2330', borderRadius:16, overflow:'hidden', marginBottom:0 }}>
 
@@ -252,7 +282,7 @@ export default function LiveChart({ symbol, isCrypto, onTimeframeChange }: Props
             <div style={{ fontSize:12, color:resolveCSSColor('--tm-text-muted','#555C70') }}>Chargement du graphique…</div>
           </div>
         )}
-        <div id="tv-chart-container" ref={containerRef} style={{ width:'100%', height:'100%' }}/>
+        <div id={containerId.current} ref={containerRef} style={{ width:'100%', height:'100%' }}/>
       </div>
 
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
