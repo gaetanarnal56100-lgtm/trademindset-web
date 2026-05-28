@@ -636,6 +636,7 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   const [confirm,  setConfirm]  = useState<{type:ToolId;p1:DrawingPoint;p2?:DrawingPoint}|null>(null)
   const [labelInput, setLabelInput] = useState('')
   const [settingsOpen, setSettingsOpen] = useState<string|null>(null)
+  const [showIndPanel, setShowIndPanel] = useState(false)
 
   // Indicator toggles
   const [indOn, setIndOn] = useState<Record<string,boolean>>({smc:false,msd:false,vmc:false,mp:false,rsiDiv:false,bb:false,vol:false,cvd:false,vegas:false})
@@ -1538,119 +1539,136 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
     {id:'note',icon:'✎',label:'Note'},
   ]
 
-  return(
-    <div ref={chartContainerRef} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative',...(autoHeight&&{height:'100%',display:'flex',flexDirection:'column'})}}>
+  const activeIndCount = Object.values(indOn).filter(Boolean).length
 
-      {/* Header */}
-      <div style={{padding:'10px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',...(autoHeight&&{flexShrink:0})}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-          <div style={{width:26,height:26,borderRadius:7,background:'linear-gradient(135deg,#22C759,#00E5FF)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>⚡</div>
-          <div><div style={{fontSize:11,fontWeight:700,color:'var(--tm-text-primary)'}}>Lightweight Charts</div><div style={{fontSize:9,color:'var(--tm-text-muted)'}}>{`${t('analyse.firestoreSave')} · ${symbol}`}</div></div>
+  return(
+    <div ref={chartContainerRef} style={{background:'var(--tm-bg-secondary)',border:'1px solid #1E2330',borderRadius:16,overflow:'hidden',marginBottom:0,position:'relative',display:'flex',flexDirection:'column',...(autoHeight&&{height:'100%'})}}>
+
+      {/* ── Top bar (single row, TradingView-style) ── */}
+      <div style={{padding:'7px 12px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',flexShrink:0,minHeight:38}}>
+
+        {/* Icon + symbol */}
+        <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+          <div style={{width:22,height:22,borderRadius:6,background:'linear-gradient(135deg,#22C759,#00E5FF)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11}}>⚡</div>
+          <span style={{fontSize:10,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{symbol}</span>
         </div>
-        {liveP&&<div style={{display:'flex',alignItems:'baseline',gap:5,marginLeft:4}}>
-          <span style={{fontSize:15,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono, monospace'}}>{fmtP(liveP)}</span>
-          <span style={{fontSize:10,fontWeight:700,color:change>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{change>=0?'+':''}{change.toFixed(2)}%</span>
-          <span style={{fontSize:8,color:'#22C75990'}}>● LIVE</span>
+
+        {/* Live price */}
+        {liveP&&<div style={{display:'flex',alignItems:'baseline',gap:4,flexShrink:0}}>
+          <span style={{fontSize:13,fontWeight:700,color:'var(--tm-text-primary)',fontFamily:'JetBrains Mono,monospace'}}>{fmtP(liveP)}</span>
+          <span style={{fontSize:9,fontWeight:700,color:change>=0?'var(--tm-profit)':'var(--tm-loss)'}}>{change>=0?'+':''}{change.toFixed(2)}%</span>
+          <span style={{fontSize:7,color:'#22C75990',marginLeft:1}}>● LIVE</span>
         </div>}
-        <div style={{display:'flex',gap:3,marginLeft:4,flexWrap:'wrap'}}>
-          {TIMEFRAMES.map(t=><button key={t.label} onClick={()=>{setTf(t);onTimeframeChange?.(LW_MIN_TO_OSC[t.min]??'1h')}} style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===t.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===t.label?`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.12)`:'transparent',color:tf.label===t.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{t.label}</button>)}
+
+        {/* Timeframes */}
+        <div style={{display:'flex',gap:2,flexWrap:'wrap'}}>
+          {TIMEFRAMES.map(tf_=><button key={tf_.label} onClick={()=>{setTf(tf_);onTimeframeChange?.(LW_MIN_TO_OSC[tf_.min]??'1h')}} style={{padding:'2px 7px',borderRadius:5,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tf.label===tf_.label?'var(--tm-accent)':'var(--tm-border)'}`,background:tf.label===tf_.label?`rgba(0,229,255,0.12)`:'transparent',color:tf.label===tf_.label?'var(--tm-accent)':'var(--tm-text-muted)'}}>{tf_.label}</button>)}
         </div>
-        <button onClick={()=>setShowHist(x=>!x)} style={{marginLeft:'auto',padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
-          💾 {drawings.length>0?t('analyse.drawingCount', {count: drawings.length}):' Dessins'}
+
+        {/* Indicators dropdown */}
+        <div style={{position:'relative',flexShrink:0}}>
+          <button onClick={()=>setShowIndPanel(x=>!x)} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showIndPanel?'var(--tm-accent)':'var(--tm-border)'}`,background:showIndPanel?'rgba(0,229,255,0.1)':'transparent',color:showIndPanel?'var(--tm-accent)':'var(--tm-text-muted)'}}>
+            📊 {t('analyse.indicators')}
+            {activeIndCount>0&&<span style={{background:'var(--tm-accent)',color:'#000',borderRadius:8,padding:'0 5px',fontSize:8,fontWeight:800,lineHeight:'14px'}}>{activeIndCount}</span>}
+          </button>
+          {showIndPanel&&<div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:30,background:'rgba(8,12,20,0.97)',border:'1px solid #2A2F3E',borderRadius:10,padding:'8px',display:'flex',flexDirection:'column',gap:3,minWidth:210,boxShadow:'0 8px 32px rgba(0,0,0,0.7)',backdropFilter:'blur(12px)'}}>
+            {INDS.map(ind=>(
+              <div key={ind.id} style={{display:'flex',alignItems:'center',gap:3}}>
+                <button onClick={()=>toggleInd(ind.id)} style={{flex:1,display:'flex',alignItems:'center',gap:6,padding:'5px 8px',borderRadius:ind.noSettings?6:'6px 0 0 6px',fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,borderRight:ind.noSettings?undefined:'none',background:indOn[ind.id]?`${ind.color}18`:'transparent',color:indOn[ind.id]?ind.color:'var(--tm-text-muted)',textAlign:'left'}}>
+                  {ind.icon} {ind.label}
+                  {indOn[ind.id]&&<span style={{width:5,height:5,borderRadius:'50%',background:ind.color,marginLeft:'auto',flexShrink:0}}/>}
+                </button>
+                {!ind.noSettings&&<button onClick={()=>setSettingsOpen(settingsOpen===ind.id?null:ind.id)} style={{padding:'5px 7px',borderRadius:'0 6px 6px 0',fontSize:10,cursor:'pointer',border:`1px solid ${settingsOpen===ind.id?ind.color:indOn[ind.id]?ind.color:'var(--tm-border)'}`,background:settingsOpen===ind.id?`${ind.color}28`:'transparent',color:settingsOpen===ind.id?ind.color:'var(--tm-text-muted)'}}>⚙</button>}
+              </div>
+            ))}
+          </div>}
+        </div>
+
+        <div style={{flex:1}}/>
+
+        {/* Drawings counter */}
+        <button onClick={()=>setShowHist(x=>!x)} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${showHist?'var(--tm-profit)':'var(--tm-border)'}`,background:showHist?`rgba(34,199,89,0.1)`:'transparent',color:showHist?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0}}>
+          💾 {drawings.length>0?t('analyse.drawingCount', {count: drawings.length}):'Dessins'}
         </button>
-        {/* Share chart */}
-        <button
-          data-share-btn="1"
-          onClick={handleShareChart}
-          disabled={sharing}
-          title={t('analyse.shareChart')}
-          style={{
-            padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:600,cursor:sharing?'wait':'pointer',
-            border:`1px solid ${shareOk?'var(--tm-profit)':'var(--tm-border)'}`,
-            background:shareOk?`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.1)`:'transparent',
-            color:shareOk?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0,
-            transition:'all 0.2s',
-          }}>
+
+        {/* Share */}
+        <button data-share-btn="1" onClick={handleShareChart} disabled={sharing} title={t('analyse.shareChart')} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:sharing?'wait':'pointer',border:`1px solid ${shareOk?'var(--tm-profit)':'var(--tm-border)'}`,background:shareOk?`rgba(34,199,89,0.1)`:'transparent',color:shareOk?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0,transition:'all 0.2s'}}>
           {shareOk?'✓ Copié':'📤'}
         </button>
       </div>
 
-      {/* Indicateurs + settings */}
-      <div style={{padding:'6px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:5,flexWrap:'wrap',...(autoHeight&&{flexShrink:0})}}>
-        <span style={{fontSize:9,color:'var(--tm-text-muted)',fontWeight:700,flexShrink:0}}>{t('analyse.indicators')} :</span>
-        {INDS.map(ind=>(
-          <div key={ind.id} style={{display:'flex',alignItems:'center',gap:0}}>
-            <button onClick={()=>toggleInd(ind.id)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',
-              borderRadius:ind.noSettings?'6px':'6px 0 0 6px',fontSize:10,fontWeight:600,cursor:'pointer',
-              border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,
-              borderRight:ind.noSettings?undefined:'none',
-              background:indOn[ind.id]?`${ind.color}18`:'transparent',
-              color:indOn[ind.id]?ind.color:'var(--tm-text-muted)'}}>
-              {ind.icon} {ind.label}
-              {indOn[ind.id]&&<span style={{width:5,height:5,borderRadius:'50%',background:ind.color,display:'inline-block'}}/>}
+      {/* ── Main area: left toolbar + chart ── */}
+      <div style={{display:'flex',flex:1,minHeight:0,overflow:'hidden'}}>
+
+        {/* Left drawing toolbar (TradingView-style vertical) */}
+        <div style={{width:38,background:'rgba(8,12,20,0.97)',borderRight:'1px solid #1E2330',display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 0',gap:2,flexShrink:0,overflowY:'auto'}}>
+          {TOOLS.map(tool_=>(
+            <button key={tool_.id} onClick={()=>{setTool(tool_.id as ToolId);phase.current='idle';firstPt.current=null;setSelectedId(null)}} title={tool_.label} style={{width:28,height:28,borderRadius:6,fontSize:14,cursor:'pointer',border:`1px solid ${tool===tool_.id?'var(--tm-warning)':'transparent'}`,background:tool===tool_.id?'rgba(255,149,0,0.15)':'transparent',color:tool===tool_.id?'var(--tm-warning)':'rgba(255,255,255,0.38)',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.1s',flexShrink:0}}>
+              {tool_.icon}
             </button>
-            {!ind.noSettings&&<button onClick={()=>setSettingsOpen(settingsOpen===ind.id?null:ind.id)} style={{padding:'3px 6px',borderRadius:'0 6px 6px 0',fontSize:10,cursor:'pointer',
-              border:`1px solid ${indOn[ind.id]?ind.color:'var(--tm-border)'}`,
-              background:settingsOpen===ind.id?`${ind.color}28`:'transparent',
-              color:settingsOpen===ind.id?ind.color:'var(--tm-text-muted)'}}>⚙</button>}
-          </div>
-        ))}
-      </div>
+          ))}
+          <div style={{width:20,height:1,background:'#1E2330',margin:'3px 0',flexShrink:0}}/>
+          {/* Magnet */}
+          <button onClick={()=>setMagnet(m=>!m)} title="Aimant — colle aux OHLC" style={{width:28,height:28,borderRadius:6,fontSize:13,cursor:'pointer',border:`1px solid ${magnet?'#FFD60A':'transparent'}`,background:magnet?'rgba(255,214,10,0.12)':'transparent',color:magnet?'#FFD60A':'rgba(255,255,255,0.38)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🧲</button>
+          <div style={{width:20,height:1,background:'#1E2330',margin:'3px 0',flexShrink:0}}/>
+          {/* Color dots */}
+          {COLORS.map(c=>(
+            <div key={c} onClick={()=>setColor(c)} style={{width:13,height:13,borderRadius:'50%',background:c,cursor:'pointer',flexShrink:0,outline:color===c?'2px solid #F0F3FF':'none',outlineOffset:1,margin:'2px 0'}}/>
+          ))}
+          {/* Selected drawing hint */}
+          {selectedId&&<div style={{marginTop:'auto',padding:'4px 0',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+            <div style={{width:20,height:1,background:'rgba(255,59,48,0.3)',flexShrink:0}}/>
+            <span style={{fontSize:8,color:'var(--tm-loss)',textAlign:'center',lineHeight:1.2,padding:'0 2px'}}>Del</span>
+          </div>}
+        </div>
 
-      {/* Outils dessin */}
-      <div style={{padding:'5px 14px',borderBottom:'1px solid #1E2330',display:'flex',alignItems:'center',gap:4,flexWrap:'wrap',...(autoHeight&&{flexShrink:0})}}>
-        {TOOLS.map(t=><button key={t.id} onClick={()=>{setTool(t.id as ToolId);phase.current='idle';firstPt.current=null;setSelectedId(null)}} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',border:`1px solid ${tool===t.id?'var(--tm-warning)':'var(--tm-border)'}`,background:tool===t.id?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.12)`:'transparent',color:tool===t.id?'var(--tm-warning)':'var(--tm-text-muted)'}}>{t.icon} {t.label}</button>)}
-        <div style={{width:1,height:14,background:'var(--tm-border)',margin:'0 4px'}}/>
-        {/* Magnet */}
-        <button onClick={()=>setMagnet(m=>!m)} title="Aimant — colle aux OHLC" style={{padding:'3px 9px',borderRadius:6,fontSize:12,cursor:'pointer',border:`1px solid ${magnet?'#FFD60A':'var(--tm-border)'}`,background:magnet?'rgba(255,214,10,0.12)':'transparent',color:magnet?'#FFD60A':'var(--tm-text-muted)'}}>🧲</button>
-        <div style={{width:1,height:14,background:'var(--tm-border)',margin:'0 4px'}}/>
-        {COLORS.map(c=><div key={c} onClick={()=>setColor(c)} style={{width:14,height:14,borderRadius:'50%',background:c,cursor:'pointer',flexShrink:0,outline:color===c?'2px solid #F0F3FF':'none',outlineOffset:1}}/>)}
-        {selectedId&&<span style={{marginLeft:8,fontSize:9,color:'var(--tm-loss)'}}>← Clic sur ✕ pour supprimer · Suppr. pour effacer</span>}
-        {!selectedId&&tool!=='cursor'&&phase.current==='first'&&<span style={{fontSize:10,color:'var(--tm-warning)',fontWeight:700,marginLeft:4}}>← 2ème point</span>}
-      </div>
-
-      {/* Chart */}
-      <div style={{position:'relative',background:'var(--tm-bg)',...(autoHeight&&{flex:1,overflow:'hidden',minHeight:0})}} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} onClick={handleClick}>
-        {loading&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'#0D111790',zIndex:4}}><div style={{width:24,height:24,border:'2px solid #1E2330',borderTopColor:'var(--tm-profit)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>}
-        {!loading&&fetchError&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--tm-bg)',zIndex:4,gap:10}}>
-          <span style={{fontSize:28}}>📊</span>
-          <span style={{fontSize:12,color:'var(--tm-loss)',fontWeight:600,textAlign:'center',maxWidth:280,padding:'0 20px'}}>{fetchError}</span>
-          <span style={{fontSize:11,color:'var(--tm-text-muted)',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Essayez: AAPL · TSLA · MSFT · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40) · BTC-USD</span>
-          <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:`rgba(${resolveCSSColor('var(--tm-accent-rgb','0,229,255')},0.1)`,border:'1px solid #00E5FF',color:'var(--tm-accent)',cursor:'pointer',fontSize:11}}>Réessayer</button>
-        </div>}
-        <div ref={chartEl} style={{width:'100%',height:autoHeight?'100%':chartHeight}}/>
-        <canvas ref={overlayEl} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2,pointerEvents:'none'}}/>
-        {/* Settings panel */}
-        {settingsOpen&&<SettingsPanel activeId={settingsOpen} vmcSettings={vmcS} setVmcSettings={setVmcS} smcSettings={smcS} setSmcSettings={setSmcS} msdSettings={msdS} setMsdSettings={setMsdS} mpSettings={mpS} setMpSettings={setMpS} bbSettings={bbS} setBbSettings={setBbS} vegasSettings={vegasS} setVegasSettings={setVegasS} volSettings={volS} setVolSettings={setVolS} onClose={()=>setSettingsOpen(null)}/>}
+        {/* Chart + overlay */}
+        <div style={{flex:1,position:'relative',background:'var(--tm-bg)',minWidth:0,overflow:'hidden',...(autoHeight&&{height:'100%'})}} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} onClick={handleClick}>
+          {loading&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'#0D111790',zIndex:4}}><div style={{width:24,height:24,border:'2px solid #1E2330',borderTopColor:'var(--tm-profit)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>}
+          {!loading&&fetchError&&<div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'var(--tm-bg)',zIndex:4,gap:10}}>
+            <span style={{fontSize:28}}>📊</span>
+            <span style={{fontSize:12,color:'var(--tm-loss)',fontWeight:600,textAlign:'center',maxWidth:280,padding:'0 20px'}}>{fetchError}</span>
+            <span style={{fontSize:11,color:'var(--tm-text-muted)',textAlign:'center',maxWidth:280,padding:'0 20px'}}>Essayez: AAPL · TSLA · MSFT · EURUSD=X · GC=F (Gold) · ^FCHI (CAC40) · BTC-USD</span>
+            <button onClick={()=>load()} style={{padding:'6px 16px',borderRadius:8,background:`rgba(0,229,255,0.1)`,border:'1px solid #00E5FF',color:'var(--tm-accent)',cursor:'pointer',fontSize:11}}>Réessayer</button>
+          </div>}
+          <div ref={chartEl} style={{width:'100%',height:autoHeight?'100%':chartHeight}}/>
+          <canvas ref={overlayEl} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2,pointerEvents:'none'}}/>
+          {/* Settings panel */}
+          {settingsOpen&&<SettingsPanel activeId={settingsOpen} vmcSettings={vmcS} setVmcSettings={setVmcS} smcSettings={smcS} setSmcSettings={setSmcS} msdSettings={msdS} setMsdSettings={setMsdS} mpSettings={mpS} setMpSettings={setMpS} bbSettings={bbS} setBbSettings={setBbS} vegasSettings={vegasS} setVegasSettings={setVegasS} volSettings={volS} setVolSettings={setVolS} onClose={()=>setSettingsOpen(null)}/>}
+          {/* Drawing 2nd-point hint overlay */}
+          {!selectedId&&tool!=='cursor'&&phase.current==='first'&&<div style={{position:'absolute',bottom:10,left:'50%',transform:'translateX(-50%)',background:'rgba(13,17,35,0.92)',border:'1px solid rgba(255,149,0,0.35)',borderRadius:8,padding:'4px 14px',fontSize:10,color:'var(--tm-warning)',fontWeight:700,pointerEvents:'none',zIndex:5,whiteSpace:'nowrap'}}>Cliquez pour placer le 2ème point</div>}
+          {selectedId&&<div style={{position:'absolute',bottom:10,left:'50%',transform:'translateX(-50%)',background:'rgba(13,17,35,0.92)',border:'1px solid rgba(255,59,48,0.35)',borderRadius:8,padding:'4px 14px',fontSize:10,color:'var(--tm-loss)',fontWeight:700,pointerEvents:'none',zIndex:5,whiteSpace:'nowrap'}}>Clic ✕ ou Suppr. pour effacer</div>}
+        </div>
       </div>
 
       {/* VMC Panel */}
       {indOn.vmc&&vmcResult&&<VMCPanel vmcResult={vmcResult} settings={vmcS}/>}
 
-      {/* Confirm */}
-      {confirm&&<div style={{padding:'10px 14px',background:`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.06)`,borderTop:'1px solid rgba(var(--tm-warning-rgb,255,149,0),0.2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+      {/* Confirm bar */}
+      {confirm&&<div style={{padding:'9px 14px',background:`rgba(255,149,0,0.06)`,borderTop:'1px solid rgba(255,149,0,0.2)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',flexShrink:0}}>
         <span style={{fontSize:11,fontWeight:700,color:'var(--tm-warning)',flexShrink:0}}>
           {confirm.type==='hline'?`─ @ ${fmtP(confirm.p1.price)}`:confirm.type==='trendline'?t('analyse.confirmTrend'):confirm.type==='fibo'?t('analyse.confirmFibo'):confirm.type==='rect'?t('analyse.confirmRect'):'✎ Note'}
         </span>
         <input autoFocus value={labelInput} onChange={e=>setLabelInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} placeholder={confirm.type==='note'?'Texte…':'Label optionnel…'} style={{flex:1,background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:8,padding:'5px 10px',color:'var(--tm-text-primary)',fontSize:11,minWidth:120}}/>
-        <button onClick={handleSave} disabled={saving} style={{padding:'5px 14px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',background:`rgba(${resolveCSSColor('var(--tm-profit-rgb','34,199,89')},0.15)`,border:'1px solid #22C759',color:'var(--tm-profit)'}}>{saving?'…':'💾 Sauvegarder'}</button>
+        <button onClick={handleSave} disabled={saving} style={{padding:'5px 14px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',background:`rgba(34,199,89,0.15)`,border:'1px solid #22C759',color:'var(--tm-profit)'}}>{saving?'…':'💾 Sauvegarder'}</button>
         <button onClick={()=>{setConfirm(null);phase.current='idle'}} style={{padding:'5px 10px',borderRadius:8,fontSize:11,cursor:'pointer',background:'transparent',border:'1px solid #2A2F3E',color:'var(--tm-text-muted)'}}>✕</button>
       </div>}
 
-      {/* History */}
-      {showHist&&<div style={{borderTop:'1px solid #1E2330',maxHeight:200,overflowY:'auto'}}>
-        {drawings.length===0?<div style={{padding:'14px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>{t('analyse.noDrawings', {symbol, tf: tf.label})}</div>
-        :drawings.map(d=><div key={d.id} onClick={()=>setSelectedId(d.id===selectedId?null:d.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 14px',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',background:d.id===selectedId?`rgba(${resolveCSSColor('var(--tm-warning-rgb','255,149,0')},0.05)`:'transparent'}}>
-          <div style={{width:3,height:26,borderRadius:2,background:d.color,flexShrink:0}}/>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:11,fontWeight:600,color:'var(--tm-text-primary)'}}>
-              {d.type==='hline'?`─ @ ${fmtP(d.p1.price)}`:d.type==='trendline'?t('analyse.confirmTrend'):d.type==='fibo'?t('analyse.confirmFibo'):d.type==='rect'?t('analyse.confirmRect'):`✎ ${d.label||'Note'}`}
+      {/* History panel */}
+      {showHist&&<div style={{borderTop:'1px solid #1E2330',maxHeight:200,overflowY:'auto',flexShrink:0}}>
+        {drawings.length===0
+          ?<div style={{padding:'14px',textAlign:'center',color:'var(--tm-text-muted)',fontSize:12}}>{t('analyse.noDrawings', {symbol, tf: tf.label})}</div>
+          :drawings.map(d=><div key={d.id} onClick={()=>setSelectedId(d.id===selectedId?null:d.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 14px',borderBottom:'1px solid rgba(255,255,255,0.03)',cursor:'pointer',background:d.id===selectedId?`rgba(255,149,0,0.05)`:'transparent'}}>
+            <div style={{width:3,height:26,borderRadius:2,background:d.color,flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:11,fontWeight:600,color:'var(--tm-text-primary)'}}>
+                {d.type==='hline'?`─ @ ${fmtP(d.p1.price)}`:d.type==='trendline'?t('analyse.confirmTrend'):d.type==='fibo'?t('analyse.confirmFibo'):d.type==='rect'?t('analyse.confirmRect'):`✎ ${d.label||'Note'}`}
+              </div>
+              <div style={{fontSize:9,color:'var(--tm-text-muted)'}}>{new Date(d.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
             </div>
-            <div style={{fontSize:9,color:'var(--tm-text-muted)'}}>{new Date(d.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
-          </div>
-          <button onClick={async(e)=>{e.stopPropagation();await dbDelete(d.id);setDrawings(p=>p.filter(x=>x.id!==d.id));if(selectedId===d.id)setSelectedId(null);toast$(t('analyse.deleted'))}}
-            style={{background:`rgba(${resolveCSSColor('var(--tm-loss-rgb','255,59,48')},0.1)`,border:'1px solid rgba(var(--tm-loss-rgb,255,59,48),0.2)',borderRadius:6,color:'var(--tm-loss)',cursor:'pointer',fontSize:10,padding:'3px 8px'}}>✕</button>
-        </div>)}
+            <button onClick={async(e)=>{e.stopPropagation();await dbDelete(d.id);setDrawings(p=>p.filter(x=>x.id!==d.id));if(selectedId===d.id)setSelectedId(null);toast$(t('analyse.deleted'))}}
+              style={{background:`rgba(255,59,48,0.1)`,border:'1px solid rgba(255,59,48,0.2)',borderRadius:6,color:'var(--tm-loss)',cursor:'pointer',fontSize:10,padding:'3px 8px'}}>✕</button>
+          </div>)}
       </div>}
 
       {toast&&<div style={{position:'absolute',bottom:16,left:'50%',transform:'translateX(-50%)',background:'var(--tm-bg-tertiary)',border:'1px solid #2A2F3E',borderRadius:10,padding:'8px 16px',fontSize:12,color:'var(--tm-text-primary)',zIndex:10,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 20px rgba(0,0,0,0.6)'}}>{toast}</div>}
