@@ -947,9 +947,12 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, externalCrosshairFrac, lwChartRef }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; externalCrosshairFrac?: number | null; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle> }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, externalCrosshairFrac, lwChartRef, requiresSync }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; externalCrosshairFrac?: number | null; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle>; requiresSync?: boolean }) {
   type LayoutMode = 'lw' | 'tv'
   const [mode, setMode] = useState<LayoutMode>('lw')
+
+  // Force LW when current tab requires sync (oscillateurs, dispersion)
+  const effectiveMode: LayoutMode = requiresSync ? 'lw' : mode
 
   const LAYOUTS: { id: LayoutMode; icon: string; label: string; desc: string }[] = [
     { id: 'lw', icon: '⚡', label: 'Lightweight', desc: 'Lightweight Charts — synchronisé avec les indicateurs' },
@@ -966,18 +969,20 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
       }}>
         <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--tm-text-muted)', marginRight: 2, flexShrink: 0 }}>CHART :</span>
         {LAYOUTS.map(l => (
-          <button key={l.id} onClick={() => setMode(l.id)} title={l.desc} style={{
+          <button key={l.id} onClick={() => !requiresSync && setMode(l.id)} title={requiresSync && l.id === 'tv' ? 'TradingView désactivé en mode synchronisé' : l.desc} style={{
             display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-            borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer',
-            border: `1px solid ${mode === l.id ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
-            background: mode === l.id ? 'rgba(var(--tm-accent-rgb,0,229,255),0.10)' : 'transparent',
-            color: mode === l.id ? 'var(--tm-accent)' : 'var(--tm-text-muted)', transition: 'all 0.15s',
+            borderRadius: 8, fontSize: 10, fontWeight: 600,
+            cursor: requiresSync && l.id === 'tv' ? 'not-allowed' : 'pointer',
+            opacity: requiresSync && l.id === 'tv' ? 0.35 : 1,
+            border: `1px solid ${effectiveMode === l.id ? 'var(--tm-accent)' : 'var(--tm-border)'}`,
+            background: effectiveMode === l.id ? 'rgba(var(--tm-accent-rgb,0,229,255),0.10)' : 'transparent',
+            color: effectiveMode === l.id ? 'var(--tm-accent)' : 'var(--tm-text-muted)', transition: 'all 0.15s',
           }}>
             <span style={{ fontSize: 12 }}>{l.icon}</span>
             <span>{l.label}</span>
           </button>
         ))}
-        {mode === 'lw' && (
+        {effectiveMode === 'lw' && (
           <span style={{ marginLeft: 'auto', fontSize: 9, color: 'rgba(0,229,255,0.5)', flexShrink: 0 }}>
             ⚡ Synchronisé avec tous les indicateurs
           </span>
@@ -985,7 +990,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
       </div>
 
       {/* Graphique */}
-      {mode === 'lw'
+      {effectiveMode === 'lw'
         ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} onCrosshairChange={onCrosshairChange} externalCrosshairFrac={externalCrosshairFrac} />
         : <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
       }
@@ -2242,7 +2247,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} /></div>}
+      {symbol && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio)=>setSyncRange({from,to,areaRatio})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} requiresSync={mode === 'oscillateurs' || mode === 'dispersion'} /></div>}
 
       {/* Canal OU + Excès Statistiques + VMC Kaufman — visible uniquement en mode Oscillateurs (ou non-crypto) */}
       {symbol && (!isCrypto || mode === 'oscillateurs') && (() => {
