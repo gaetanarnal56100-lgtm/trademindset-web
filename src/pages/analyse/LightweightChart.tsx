@@ -784,10 +784,11 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       const total = candlesRef.current.length
       // rawTo non-clampé : > 1 si LW a de l'espace vide à droite de la dernière bougie
       const { areaRatio } = getAreaRatio()
-      // Also emit actual unix timestamps for pixel-perfect alignment with history charts
-      const timeRange = c.timeScale().getVisibleRange()
-      const fromMs = timeRange ? (timeRange.from as number) * 1000 : undefined
-      const toMs   = timeRange ? (timeRange.to   as number) * 1000 : undefined
+      // Emit unix timestamps using candlesRef (avoids NaN from Time cast)
+      const fromIdx = Math.max(0, Math.floor(range.from))
+      const toIdx   = Math.min(candlesRef.current.length - 1, Math.ceil(range.to))
+      const fromMs  = candlesRef.current[fromIdx]?.time != null ? (candlesRef.current[fromIdx].time as number) * 1000 : undefined
+      const toMs    = candlesRef.current[toIdx]?.time   != null ? (candlesRef.current[toIdx].time   as number) * 1000 : undefined
       onRangeRef.current?.(Math.max(0, range.from / total), range.to / total, areaRatio, fromMs, toMs)
     })
 
