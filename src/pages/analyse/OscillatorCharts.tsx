@@ -385,6 +385,31 @@ function CrosshairTooltip({ candles, main, signal, histogram, hoverIdx, canvasW,
 // ── Viewport type ─────────────────────────────────────────────────────────
 interface Viewport { from: number; to: number; rawTo?: number }  // fractions 0-1, rawTo may exceed 1 (LW right margin)
 
+// ── Timestamp-based sync helper ────────────────────────────────────────────
+// Converts a Unix-ms timestamp to a bar fraction (0..1) via binary search.
+// Oscillator candles use `t` in milliseconds (Binance openTime).
+// LightweightChart emits fromMs/toMs in milliseconds.
+// This ensures scroll/zoom sync is pixel-perfect regardless of candle count mismatch.
+function msToBarFrac(candles: Candle[], ms: number): number {
+  if (candles.length === 0) return 0
+  let lo = 0, hi = candles.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (candles[mid].t <= ms) lo = mid
+    else hi = mid - 1
+  }
+  return lo / candles.length  // same formula as viewStart = frac * total
+}
+
+// Shared visibleRange type used by all oscillator components
+interface OscVisibleRange {
+  from: number        // fraction 0-1 (fallback if no timestamps)
+  to: number          // fraction, may exceed 1 (LW right margin)
+  areaRatio?: number  // tsW / (tsW + psW), for price-axis alignment
+  fromMs?: number     // Unix ms — primary sync method
+  toMs?: number       // Unix ms
+}
+
 // ── Time axis helpers ──────────────────────────────────────────────────────
 const TIME_AXIS_H = 18
 
@@ -510,7 +535,7 @@ function resolveCSSColor(varName: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback
 }
 
-export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
+export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: OscVisibleRange|null; onStatusReady?: (status: string, wt1: number, wt2: number) => void; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -539,16 +564,20 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
     if (r.wt1.length > 1) signalService.checkWaveTrend(symbol, tf.label, r.wt1, r.wt2, obLevel, osLevel)
   }, [candles, symbol, tf.label])
 
-  // Sync viewport from LW chart range fractions
+  // Sync viewport — timestamp-based when fromMs/toMs available (pixel-perfect),
+  // fraction fallback when not (same-length candles case).
   useEffect(() => {
+    const n = candles.length || 1
     if (!visibleRange) {
-      const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else if (visibleRange.fromMs != null && visibleRange.toMs != null && candles.length > 0) {
+      const from = msToBarFrac(candles, visibleRange.fromMs)
+      const to   = msToBarFrac(candles, visibleRange.toMs)
+      setViewport({ from, to, rawTo: visibleRange.to })
     } else {
-      // rawTo may exceed 1 (LW right margin) — preserve it for alignment
       setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
-  }, [visibleRange, candles.length])
+  }, [visibleRange, candles])
 
   const total     = candles.length
   const viewStart = total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
@@ -628,7 +657,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 }
 
 // ── VMC Oscillator Chart ───────────────────────────────────────────────────
-export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; onStatusReady?: (status: string, sig: number) => void; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
+export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatusReady, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: OscVisibleRange|null; onStatusReady?: (status: string, sig: number) => void; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -659,15 +688,19 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
     signalService.checkVMC(symbol, tf.label, r.status, sig, mom, r.compression)
   }, [candles, symbol, tf.label])
 
-  // Sync viewport from LW chart range fractions
+  // Sync viewport — timestamp-based when fromMs/toMs available (pixel-perfect)
   useEffect(() => {
+    const n = candles.length || 1
     if (!visibleRange) {
-      const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else if (visibleRange.fromMs != null && visibleRange.toMs != null && candles.length > 0) {
+      const from = msToBarFrac(candles, visibleRange.fromMs)
+      const to   = msToBarFrac(candles, visibleRange.toMs)
+      setViewport({ from, to, rawTo: visibleRange.to })
     } else {
       setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
-  }, [visibleRange, candles.length])
+  }, [visibleRange, candles])
 
   const vmcTotal     = candles.length
   const vmcViewStart = vmcTotal > 0 ? Math.max(0, Math.floor(viewport.from * vmcTotal)) : 0
@@ -1026,7 +1059,7 @@ function drawRSIBollinger(
 }
 
 // ── RSI Bollinger Chart Component ─────────────────────────────────────────
-export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
+export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: OscVisibleRange|null; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -1058,14 +1091,19 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
     setResult(calcRSIBollinger(candles, 14, 20, bbStdev, sigma, 4, 3, showTrendlines, showDivergence))
   }, [candles, bbStdev, sigma, showTrendlines, showDivergence])
 
+  // Sync viewport — timestamp-based when fromMs/toMs available (pixel-perfect)
   useEffect(() => {
+    const n = candles.length || 1
     if (!visibleRange) {
-      const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else if (visibleRange.fromMs != null && visibleRange.toMs != null && candles.length > 0) {
+      const from = msToBarFrac(candles, visibleRange.fromMs)
+      const to   = msToBarFrac(candles, visibleRange.toMs)
+      setViewport({ from, to, rawTo: visibleRange.to })
     } else {
       setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
-  }, [visibleRange, candles.length])
+  }, [visibleRange, candles])
 
   const total     = candles.length
   const viewStart = total > 0 ? Math.max(0, Math.floor(viewport.from * total)) : 0
@@ -1314,7 +1352,7 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
 }
 
 // ── RSI Chart Component ──────────────────────────────────────────────────────
-export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: {from:number;to:number;areaRatio?:number}|null; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
+export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac, onCrosshairChange }: { symbol: string; syncInterval?: string; visibleRange?: OscVisibleRange|null; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void }) {
   const { t } = useTranslation()
   const [localTf, setLocalTf] = useState(TF_OPTIONS[3])
   const [tfOverride, setTfOverride] = useState(false)
@@ -1342,15 +1380,19 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac, on
     setRsiData(calcRSI(candles, 14))
   }, [candles])
 
-  // Sync viewport from LW chart range fractions
+  // Sync viewport — timestamp-based when fromMs/toMs available (pixel-perfect)
   useEffect(() => {
+    const n = candles.length || 1
     if (!visibleRange) {
-      const n = candles.length || 1
       setViewport({ from: Math.max(0, 1 - 150/n), to: 1 })
+    } else if (visibleRange.fromMs != null && visibleRange.toMs != null && candles.length > 0) {
+      const from = msToBarFrac(candles, visibleRange.fromMs)
+      const to   = msToBarFrac(candles, visibleRange.toMs)
+      setViewport({ from, to, rawTo: visibleRange.to })
     } else {
       setViewport({ from: visibleRange.from, to: Math.min(visibleRange.to, 1), rawTo: visibleRange.to })
     }
-  }, [visibleRange, candles.length])
+  }, [visibleRange, candles])
 
   const rsiTotal     = candles.length
   const rsiViewStart = rsiTotal > 0 ? Math.max(0, Math.floor(viewport.from * rsiTotal)) : 0
