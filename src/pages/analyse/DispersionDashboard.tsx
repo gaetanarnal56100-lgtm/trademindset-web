@@ -100,25 +100,20 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     let endIdx   = totalN
 
     if (visibleRange && timestamps && timestamps.length >= 2) {
-      // Timestamp-based slicing: exact alignment regardless of candle count differences
       const fromMs = visibleRange.fromMs
       const toMs   = visibleRange.toMs
       if (fromMs != null && toMs != null) {
-        // Binary-search first timestamp >= fromMs
+        // Binary-search: first idx where timestamp >= fromMs
         let lo = 0, hi = timestamps.length
         while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] < fromMs) lo = mid + 1; else hi = mid }
-        startIdx = Math.max(0, lo - 1) // include one point before visible range for smooth edge
-        // Binary-search first timestamp > toMs
+        startIdx = Math.max(0, lo - 1)
+        // Binary-search: first idx where timestamp > toMs
         lo = 0; hi = timestamps.length
         while (lo < hi) { const mid = (lo + hi) >> 1; if (timestamps[mid] <= toMs) lo = mid + 1; else hi = mid }
-        endIdx = Math.min(totalN, lo + 1) // include one point after visible range for smooth edge
+        endIdx = Math.min(totalN, lo + 1)
+        // No overlap (LW panned far left of dispersion history) → show full history
+        if (endIdx - startIdx < 2) { startIdx = 0; endIdx = totalN }
       }
-    } else if (visibleRange) {
-      // Fallback fraction-based (LW=500 candles, disp=150, lookback=50 → hFrac = 5f-4)
-      const hFrom = Math.max(0, 5 * visibleRange.from - 4)
-      const hTo   = Math.min(1, 5 * visibleRange.to   - 4)
-      startIdx = Math.max(0, Math.floor(hFrom * totalN))
-      endIdx   = Math.min(totalN, Math.ceil(hTo * totalN))
     }
     const visData   = data.slice(startIdx, endIdx)
     const visTimes  = timestamps?.slice(startIdx, endIdx)
@@ -131,10 +126,10 @@ function HistoryLineChart({ data, timestamps, label, color, regimes, valueFormat
     const padL = 4, padR = 60, padV = 6, padBottom = 16
     const drawW = W - padL - padR, drawH = H - padV - padBottom
 
-    // Time-based x: each point placed at its actual timestamp within [fromMs..toMs]
-    // → right edge of oscillator aligns with right edge of LW chart
-    const visFrom = visibleRange?.fromMs ?? (visTimes?.[0] ?? 0)
-    const visTo   = visibleRange?.toMs   ?? (visTimes?.[visTimes ? visTimes.length - 1 : 0] ?? 1)
+    // Use actual data timestamps for x-axis — prevents "stuck to right" when LW range
+    // is wider than the dispersion history window.
+    const visFrom = visTimes?.[0] ?? 0
+    const visTo   = visTimes?.[visTimes.length - 1] ?? 1
     const tSpan   = visTo - visFrom || 1
     const toX = (i: number) =>
       visTimes
