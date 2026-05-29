@@ -712,7 +712,7 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       const chg  = ((cur.close - prev.close) / prev.close * 100).toFixed(2)
       const vmcStatus = vmcResult?.status ?? 'N/A'
       const bbLast = bbResult?.[bbResult.length - 1]
-      const bbPos = bbLast ? `upper=${bbLast.upper.toFixed(1)} mid=${bbLast.mid.toFixed(1)} lower=${bbLast.lower.toFixed(1)}` : 'N/A'
+      const bbPos = bbLast ? `upper=${bbLast.upper.toFixed(1)} mid=${bbLast.middle.toFixed(1)} lower=${bbLast.lower.toFixed(1)}` : 'N/A'
 
       const systemPrompt = 'You are a professional trading analyst. Respond ONLY with valid JSON, no markdown, no extra text.'
       const userPrompt = `Symbol: ${symbol} | TF: ${tf.label} | Price: ${cur.close.toFixed(2)} (${chg}%)
