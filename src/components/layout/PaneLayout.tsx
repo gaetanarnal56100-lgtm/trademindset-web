@@ -2,6 +2,9 @@
  * PaneLayout — TradingView Desktop clone
  * Full-height layout, flat chart pane, oscillators below with drag resize.
  * "Add indicator" button injected directly into LightweightChart's top bar.
+ *
+ * Layout management: imperative via groupRef.setLayout() to prevent size
+ * resets when adding/removing panes. Current sizes tracked in layoutRef.
  */
 
 import React, { useState, useCallback, useRef } from 'react'
@@ -15,6 +18,8 @@ import OUChannelIndicator from '@/pages/analyse/OUChannelIndicator'
 export type OscType = 'wavetrend' | 'vmc' | 'rsi' | 'rsibollinger' | 'ou'
 type OscPane = { id: string; type: OscType }
 type SyncRange = { from: number; to: number; areaRatio?: number; fromMs?: number; toMs?: number }
+type Layout = { [id: string]: number }
+interface GroupImperativeHandle { getLayout: () => Layout; setLayout: (l: Layout) => Layout }
 
 interface PaneLayoutProps {
   symbol: string
@@ -38,7 +43,10 @@ const OSC_DEFS: Record<OscType, { icon: string; label: string; color: string }> 
 }
 
 const OSC_ORDER: OscType[] = ['wavetrend', 'vmc', 'rsi', 'rsibollinger', 'ou']
-const LS_PANES = 'tm_tv_panes_v2'
+const LS_PANES  = 'tm_tv_panes_v2'
+const CHART_ID  = 'chart'
+const NEW_OSC_SIZE = 15   // % given to a freshly added oscillator pane
+const MIN_CHART   = 25   // % floor for the chart pane
 
 // ── Drag handle ───────────────────────────────────────────────────────────────
 
@@ -77,7 +85,7 @@ function OscShell({ pane, symbol, syncInterval, syncRange, crosshairFrac, onCros
       <div style={{
         height: 26, flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 6,
-        padding: '0 10px 0 48px', // 48px = left toolbar width alignment
+        padding: '0 10px 0 48px',
         background: 'rgba(13,17,35,0.98)',
         borderBottom: '1px solid #1A1F2E',
       }}>
@@ -122,7 +130,7 @@ interface AddIndicatorBtnProps {
 function AddIndicatorBtn({ oscPanes, onAdd, onRemove }: AddIndicatorBtnProps) {
   const [open, setOpen] = useState(false)
   const addedTypes = new Set(oscPanes.map(p => p.type))
-  const available = OSC_ORDER.filter(t => !addedTypes.has(t))
+  const available  = OSC_ORDER.filter(t => !addedTypes.has(t))
 
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -218,31 +226,85 @@ export default function PaneLayout({
     ]
   })
 
+  // ── Imperative layout management ──────────────────────────────────────────
+  const groupRef   = useRef<GroupImperativeHandle | null>(null)
+  const layoutRef  = useRef<Layout>({})  // last known layout from onLayoutChanged
+
+  const handleLayoutChanged = useCallback((layout: Layout) => {
+    layoutRef.current = layout
+  }, [])
+
+  // Redistribute sizes: scale existing panels by `scale`, add new entry for `newId`
+  const applyLayoutAfterAdd = useCallback((newId: string) => {
+    requestAnimationFrame(() => {
+      const gr = groupRef.current
+      if (!gr) return
+      const cur = layoutRef.current
+      const ids = Object.keys(cur)
+      if (ids.length === 0) return
+
+      const total     = Object.values(cur).reduce((a, b) => a + b, 0)
+      const scale     = (total - NEW_OSC_SIZE) / total
+      const newLayout: Layout = {}
+      ids.forEach(id => {
+        // Ensure chart pane never shrinks below MIN_CHART
+        const scaled = (cur[id] ?? 0) * scale
+        newLayout[id] = id === CHART_ID ? Math.max(MIN_CHART, scaled) : scaled
+      })
+      newLayout[newId] = NEW_OSC_SIZE
+      gr.setLayout(newLayout)
+    })
+  }, [])
+
+  const applyLayoutAfterRemove = useCallback((removedId: string) => {
+    requestAnimationFrame(() => {
+      const gr = groupRef.current
+      if (!gr) return
+      const cur = layoutRef.current
+      const removedSize = cur[removedId] ?? 0
+      const remaining: Layout = {}
+      let remainingTotal = 0
+      Object.entries(cur).forEach(([k, v]) => {
+        if (k !== removedId) { remaining[k] = v; remainingTotal += v }
+      })
+      if (remainingTotal === 0) return
+      // Distribute removed space proportionally to remaining panels
+      const newLayout: Layout = {}
+      Object.entries(remaining).forEach(([k, v]) => {
+        newLayout[k] = v + (v / remainingTotal) * removedSize
+      })
+      gr.setLayout(newLayout)
+    })
+  }, [])
+
   const save = useCallback((next: OscPane[]) => {
     localStorage.setItem(LS_PANES, JSON.stringify(next))
   }, [])
 
   const addPane = useCallback((type: OscType) => {
+    const newId = uid()
     setOscPanes(prev => {
-      const next = [...prev, { id: uid(), type }]
+      const next = [...prev, { id: newId, type }]
       save(next)
       return next
     })
-  }, [save])
+    applyLayoutAfterAdd(newId)
+  }, [save, applyLayoutAfterAdd])
 
   const removePane = useCallback((id: string) => {
+    applyLayoutAfterRemove(id)
     setOscPanes(prev => {
       const next = prev.filter(p => p.id !== id)
       save(next)
       return next
     })
-  }, [save])
+  }, [save, applyLayoutAfterRemove])
 
-  const n = oscPanes.length
-  const chartSize = n === 0 ? 100 : Math.max(45, Math.round(100 - n * 16))
-  const oscSize   = n === 0 ? 0   : Math.round((100 - chartSize) / n)
+  // ── Default sizes (used only on first mount) ──────────────────────────────
+  const n           = oscPanes.length
+  const chartSize   = n === 0 ? 100 : Math.max(45, Math.round(100 - n * 16))
+  const oscSize     = n === 0 ? 0   : Math.round((100 - chartSize) / n)
 
-  // Escape the 28px page padding on all sides
   const TOTAL_H = 'calc(100vh - 160px)'
 
   const topBarExtra = (
@@ -250,7 +312,6 @@ export default function PaneLayout({
   )
 
   return (
-    // Negative margin to escape AnalysePage padding (28px sides, partially top)
     <div style={{ margin: '0 -28px', background: '#0D1117' }}>
       {n === 0 ? (
         <div style={{ height: TOTAL_H }}>
@@ -266,10 +327,14 @@ export default function PaneLayout({
           />
         </div>
       ) : (
-        <PanelGroup orientation="vertical" style={{ height: TOTAL_H }}>
-
+        <PanelGroup
+          orientation="vertical"
+          style={{ height: TOTAL_H }}
+          groupRef={groupRef}
+          onLayoutChanged={handleLayoutChanged}
+        >
           {/* ── Chart pane ── */}
-          <Panel defaultSize={chartSize} minSize={20}>
+          <Panel id={CHART_ID} defaultSize={chartSize} minSize={20}>
             <LightweightChart
               symbol={symbol} isCrypto={isCrypto}
               onTimeframeChange={onIntervalChange}
@@ -286,7 +351,7 @@ export default function PaneLayout({
           {oscPanes.map(pane => (
             <React.Fragment key={pane.id}>
               <DragHandle />
-              <Panel defaultSize={oscSize} minSize={7}>
+              <Panel id={pane.id} defaultSize={oscSize} minSize={7}>
                 <OscShell
                   pane={pane}
                   symbol={symbol}
