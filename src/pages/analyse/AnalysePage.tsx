@@ -948,7 +948,7 @@ function PressureBar({score}:{score:number}){
 // ── Main Component ─────────────────────────────────────────────────────────
 
 // ── ChartLayout — Sélecteur de disposition des graphiques ─────────────────
-function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, externalCrosshairFrac, lwChartRef, requiresSync, syncRangeIn }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number, fromMs?: number, toMs?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; externalCrosshairFrac?: number | null; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle>; requiresSync?: boolean; syncRangeIn?: {from: number; to: number; areaRatio?: number; fromMs?: number; toMs?: number} | null }) {
+function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange, onCrosshairChange, externalCrosshairFrac, lwChartRef, requiresSync, syncRangeIn, dispersionContext }: { symbol: string; isCrypto: boolean; onTimeframeChange?: (interval: string) => void; onVisibleRangeChange?: (from: number, to: number, areaRatio?: number, fromMs?: number, toMs?: number) => void; onCrosshairChange?: (data: { frac: number; areaRatio: number } | null) => void; externalCrosshairFrac?: number | null; lwChartRef?: React.Ref<import('./LightweightChart').LightweightChartHandle>; requiresSync?: boolean; syncRangeIn?: {from: number; to: number; areaRatio?: number; fromMs?: number; toMs?: number} | null; dispersionContext?: { regime: string; basketHurst: number; basketAutocorr: number; returnKurtosis: number; dispersionZScore: number; avgCorrelation: number; pctUp: number; tradeSignal: { bias: string; confidence: number; reasoning: string[] } } | null }) {
   type LayoutMode = 'lw' | 'tv'
   const [mode, setMode] = useState<LayoutMode>('lw')
 
@@ -992,7 +992,7 @@ function ChartLayout({ symbol, isCrypto, onTimeframeChange, onVisibleRangeChange
 
       {/* Graphique */}
       {effectiveMode === 'lw'
-        ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} onCrosshairChange={onCrosshairChange} externalCrosshairFrac={externalCrosshairFrac} syncRangeIn={syncRangeIn} />
+        ? <LightweightChart ref={lwChartRef} symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} onVisibleRangeChange={onVisibleRangeChange} onCrosshairChange={onCrosshairChange} externalCrosshairFrac={externalCrosshairFrac} syncRangeIn={syncRangeIn} dispersionContext={dispersionContext} />
         : <LiveChart symbol={symbol} isCrypto={isCrypto} onTimeframeChange={onTimeframeChange} />
       }
     </div>
@@ -1450,6 +1450,9 @@ export default function AnalysePage() {
   const [ouSignal, setOuSignal] = useState({
     excess: 'none', regime: 'ranging', z: 0, confluenceSignal: 'neutral', vmcStatus: 'NEUTRAL',
   })
+
+  // ── Dispersion context for AI analysis ──
+  const [dispersionCtx, setDispersionCtx] = useState<{ regime: string; basketHurst: number; basketAutocorr: number; returnKurtosis: number; dispersionZScore: number; avgCorrelation: number; pctUp: number; tradeSignal: { bias: string; confidence: number; reasoning: string[] } } | null>(null)
 
   // ── Refs pour accès aux valeurs crypto dans handleExportPDF (évite TDZ) ───
   const liqBiasRef    = useRef(0)           // liqLong1h - liqShort1h courant
@@ -2249,7 +2252,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && mode !== 'layout' && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio,fromMs,toMs)=>setSyncRange({from,to,areaRatio,fromMs,toMs})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} requiresSync={mode === 'oscillateurs' || mode === 'dispersion'} syncRangeIn={syncRange} /></div>}
+      {symbol && mode !== 'layout' && <div style={{position:'relative',zIndex:1}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio,fromMs,toMs)=>setSyncRange({from,to,areaRatio,fromMs,toMs})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} requiresSync={mode === 'oscillateurs' || mode === 'dispersion'} syncRangeIn={syncRange} dispersionContext={dispersionCtx} /></div>}
 
       {/* Canal OU + Excès Statistiques + VMC Kaufman — visible uniquement en mode Oscillateurs (ou non-crypto) */}
       {symbol && (!isCrypto || mode === 'oscillateurs') && (() => {
@@ -2633,7 +2636,7 @@ export default function AnalysePage() {
       {mode === 'charts' && <ChartsTab symbol={symbol} isCrypto={isCrypto}/>}
 
       {/* ── DISPERSION TAB ── */}
-      {mode === 'dispersion' && <DispersionDashboard syncInterval={syncInterval} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} visibleRange={syncRange} />}
+      {mode === 'dispersion' && <DispersionDashboard syncInterval={syncInterval} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} visibleRange={syncRange} onResult={r => setDispersionCtx({ regime: r.regime, basketHurst: r.basketHurst, basketAutocorr: r.basketAutocorr, returnKurtosis: r.returnKurtosis, dispersionZScore: r.dispersionZScore, avgCorrelation: r.avgCorrelation, pctUp: r.pctUp, tradeSignal: { bias: r.tradeSignal.bias, confidence: r.tradeSignal.confidence, reasoning: r.tradeSignal.reasoning } })} />}
 
       {/* ── LAYOUT TAB ── */}
       {mode === 'layout' && symbol && (

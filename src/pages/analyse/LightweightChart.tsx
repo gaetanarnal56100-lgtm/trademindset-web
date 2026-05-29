@@ -26,6 +26,8 @@ interface Props {
   flat?: boolean
   /** Extra buttons injected into the right side of the top bar */
   topBarExtra?: React.ReactNode
+  /** Dispersion data from DispersionDashboard — injected into AI analysis */
+  dispersionContext?: { regime: string; basketHurst: number; basketAutocorr: number; returnKurtosis: number; dispersionZScore: number; avgCorrelation: number; pctUp: number; tradeSignal: { bias: string; confidence: number; reasoning: string[] } } | null
 }
 
 export interface LightweightChartHandle {
@@ -554,7 +556,7 @@ const LW_MIN_TO_OSC: Record<number, string> = {
   1:'5m', 5:'5m', 15:'15m', 30:'30m', 60:'1h', 120:'2h', 240:'4h', 360:'4h', 720:'12h', 1440:'1d', 4320:'1d', 10080:'1w', 43200:'1w',
 }
 
-const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,externalCrosshairFrac,chartHeight=430,autoHeight=false,flat=false,topBarExtra},forwardedRef) {
+const LightweightChart = forwardRef<LightweightChartHandle, Props>(function LightweightChart({symbol,isCrypto,onTimeframeChange,onVisibleRangeChange,syncRangeIn,onCrosshairChange,externalCrosshairFrac,chartHeight=430,autoHeight=false,flat=false,topBarExtra,dispersionContext},forwardedRef) {
   const { t } = useTranslation()
   const chartEl  = useRef<HTMLDivElement>(null)
   const overlayEl = useRef<HTMLCanvasElement>(null)
@@ -714,10 +716,14 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       const bbLast = bbResult?.[bbResult.length - 1]
       const bbPos = bbLast ? `upper=${bbLast.upper.toFixed(1)} mid=${bbLast.middle.toFixed(1)} lower=${bbLast.lower.toFixed(1)}` : 'N/A'
 
+      const dispLine = dispersionContext
+        ? `Regime: ${dispersionContext.regime} | Hurst: ${dispersionContext.basketHurst.toFixed(2)} | Autocorr: ${dispersionContext.basketAutocorr.toFixed(2)} | Kurtosis: ${dispersionContext.returnKurtosis.toFixed(2)} | Dispersion Z: ${dispersionContext.dispersionZScore.toFixed(2)} | Avg Corr: ${dispersionContext.avgCorrelation.toFixed(2)} | Breadth %Up: ${Math.round(dispersionContext.pctUp)}% | Signal: ${dispersionContext.tradeSignal.bias} (conf ${dispersionContext.tradeSignal.confidence}%)`
+        : ''
+
       const systemPrompt = 'You are a professional trading analyst. Respond ONLY with valid JSON, no markdown, no extra text.'
       const userPrompt = `Symbol: ${symbol} | TF: ${tf.label} | Price: ${cur.close.toFixed(2)} (${chg}%)
 Last 20 closes: ${closes.map(v=>v.toFixed(2)).join(', ')}
-RSI(14): ${rsiVal} | VMC: ${vmcStatus} | BB: ${bbPos}
+RSI(14): ${rsiVal} | VMC: ${vmcStatus} | BB: ${bbPos}${dispLine ? `\nDispersion: ${dispLine}` : ''}
 Respond with exactly this JSON structure:
 {"bias":"BULLISH","quality":"High","score":72,"keyLevel":"73200","catalyst":"RSI oversold + support","summary":"Short analysis here.","risk":"Resistance at X"}`
 
@@ -734,7 +740,7 @@ Respond with exactly this JSON structure:
       setAiError(e?.message || 'Erreur inconnue')
     }
     setAiLoading(false)
-  }, [symbol, tf.label, vmcResult, bbResult])
+  }, [symbol, tf.label, vmcResult, bbResult, dispersionContext])
 
   // Refs for price-axis width (to avoid SMC/VP zones overlapping it)
   const priceAxisWRef = useRef(60)

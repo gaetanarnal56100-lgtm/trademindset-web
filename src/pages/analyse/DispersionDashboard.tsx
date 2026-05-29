@@ -524,7 +524,7 @@ function mapChartToDispTF(interval: string): string {
   return m[interval] ?? '1h'
 }
 
-export default function DispersionDashboard({ syncInterval, crosshairFrac, onCrosshairChange, visibleRange }: { syncInterval?: string; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void; visibleRange?: { from: number; to: number; areaRatio?: number; fromMs?: number; toMs?: number } }) {
+export default function DispersionDashboard({ syncInterval, crosshairFrac, onCrosshairChange, visibleRange, onResult }: { syncInterval?: string; crosshairFrac?: number | null; onCrosshairChange?: (frac: number | null) => void; visibleRange?: { from: number; to: number; areaRatio?: number; fromMs?: number; toMs?: number }; onResult?: (r: DispersionResult) => void }) {
   const [basketId, setBasketId] = useState('crypto')
   const [tf, setTf] = useState(() => syncInterval ? mapChartToDispTF(syncInterval) : '1h')
   const [result, setResult] = useState<DispersionResult | null>(null)
@@ -544,7 +544,7 @@ export default function DispersionDashboard({ syncInterval, crosshairFrac, onCro
     setLoading(true); setError('')
     try {
       const res = await fetchAndCompute(configs, interval) // uses defaults: limit=500, historyPoints=100
-      if (res) setResult(res)
+      if (res) { setResult(res); onResult?.(res) }
       else setError('Données insuffisantes pour le panier sélectionné')
     } catch (e) { setError(e instanceof Error ? e.message : 'Erreur') }
     finally { setLoading(false) }
