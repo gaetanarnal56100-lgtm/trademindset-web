@@ -1687,7 +1687,7 @@ export default function AnalysePage() {
 
   // ── Whale Trend ──
   useEffect(()=>{
-    if(mode!=='structure')return
+    if(mode!=='micro')return
     const TF_MAP:Record<string,{interval:string;limit:number}>={'5m':{interval:'1m',limit:5},'15m':{interval:'1m',limit:15},'1h':{interval:'5m',limit:12},'4h':{interval:'15m',limit:16},'12h':{interval:'30m',limit:24},'24h':{interval:'1h',limit:24}}
     const{interval,limit}=TF_MAP[wtTf]||{interval:'5m',limit:12}
     fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
@@ -1704,9 +1704,9 @@ export default function AnalysePage() {
       }).catch(()=>{})
   },[symbol,mode,wtTf])
 
-  // ── Segmented CVD History (Structure tab) ──
+  // ── Segmented CVD History (Micro tab) ──
   useEffect(() => {
-    if (mode !== 'structure') return
+    if (mode !== 'micro') return
     if (!symbol || !/USDT$|BUSD$|BTC$|ETH$|BNB$/i.test(symbol)) return
     setSegHistLoad(true)
     // Fetch last 3000 aggTrades from Binance futures for segmented CVD history
@@ -1921,7 +1921,7 @@ export default function AnalysePage() {
 
   // ── Raccourcis clavier 1-6 pour changer de tab ────────────────────────────
   useEffect(() => {
-    const MODES: Mode[] = ['micro', 'structure', 'derivees', 'orderflow', 'liqheat', 'charts']
+    const MODES: Mode[] = ['oscillateurs', 'micro', 'derivees', 'orderflow', 'liqheat', 'charts']
     function onTabKey(e: KeyboardEvent) {
       const tag = (document.activeElement as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
