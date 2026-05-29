@@ -51,9 +51,18 @@ interface Props {
   } | null
 }
 
+export interface ChartAnalysisData {
+  candles: { time: number; open: number; high: number; low: number; close: number; volume?: number }[]
+  tf: string
+  smcResult: { bullOBs:{top:number;btm:number;idx:number}[]; bearOBs:{top:number;btm:number;idx:number}[]; bullFVGs:{top:number;btm:number;idx:number}[]; bearFVGs:{top:number;btm:number;idx:number}[] } | null
+  msdResult: { swingHighs:{idx:number;price:number;type:string}[]; swingLows:{idx:number;price:number;type:string}[]; bosLines:{price:number;dir:string}[] } | null
+  vmcStatus: string
+  bbResult: { upper:number; middle:number; lower:number }[] | null
+}
 export interface LightweightChartHandle {
   takeScreenshot: () => string | null
   setVisibleRange: (range: { from: number; to: number }) => void
+  getAnalysisData: () => ChartAnalysisData | null
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -600,6 +609,14 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       lastSetLogical.current = target
       chartApi.current.timeScale().setVisibleLogicalRange(target)
     },
+    getAnalysisData: () => ({
+      candles: candlesRef.current,
+      tf: tf.label,
+      smcResult: smcResult ? { bullOBs: smcResult.bullOBs, bearOBs: smcResult.bearOBs, bullFVGs: smcResult.bullFVGs, bearFVGs: smcResult.bearFVGs } : null,
+      msdResult: msdResult ? { swingHighs: msdResult.swingHighs, swingLows: msdResult.swingLows, bosLines: msdResult.bosLines } : null,
+      vmcStatus: vmcResult?.status ?? 'N/A',
+      bbResult: bbResult ? bbResult.map(b => ({ upper: b.upper, middle: b.middle, lower: b.lower })) : null,
+    }),
   }))
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef      = useRef<Candle[]>([])
@@ -705,159 +722,6 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   const [bbResult,     setBbResult]     = useState<BBPoint[]|null>(null)
   const [cvdResult,    setCvdResult]    = useState<number[]|null>(null)
   const [vegasData,    setVegasData]    = useState<{time:number;e1:number;e2:number;e3:number}[][]>([])
-
-  // AI analysis
-  const [aiAnalysis, setAiAnalysis] = useState<{
-    bias:string; score:number; conviction:number; horizon:string; quality:string
-    keyLevels:string[]; catalyst:string
-    targets:{tp1:string;tp2:string;sl:string}
-    momentum:string; regimeContext:string; summary:string; risk:string; divergence:string
-  }|null>(null)
-  const [aiLoading,  setAiLoading]  = useState(false)
-  const [aiOpen,     setAiOpen]     = useState(false)
-  const [aiError,    setAiError]    = useState<string|null>(null)
-
-  const analyzeChart = useCallback(async () => {
-    const candles = candlesRef.current
-    if (!candles.length) return
-    setAiLoading(true); setAiOpen(true); setAiError(null); setAiAnalysis(null)
-    try {
-      const n = candles.length
-      const cur  = candles[n - 1]
-      const prev = candles[n - 2]
-      const chg  = ((cur.close - prev.close) / prev.close * 100).toFixed(2)
-
-      // RSI-14
-      let rsiVal = 50
-      if (n >= 15) {
-        const cl = candles.map(c => c.close)
-        let ag = 0, al = 0
-        for (let i = cl.length - 14; i < cl.length; i++) { const d = cl[i] - cl[i-1]; d > 0 ? ag += d : al -= d }
-        ag /= 14; al /= 14
-        rsiVal = al === 0 ? 100 : Math.round(100 - 100 / (1 + ag / al))
-      }
-
-      // ATR-14
-      let atr = 0
-      if (n >= 15) {
-        let sum = 0
-        for (let i = n - 14; i < n; i++) {
-          const c = candles[i], p = candles[i-1]
-          sum += Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close))
-        }
-        atr = sum / 14
-      }
-
-      // Last 50 candles stats
-      const last50 = candles.slice(-50)
-      const high50 = Math.max(...last50.map(c => c.high))
-      const low50  = Math.min(...last50.map(c => c.low))
-      const closes50 = last50.map(c => c.close.toFixed(2)).join(',')
-      const vols50 = last50.map(c => c.volume ?? 0)
-      const avgVol = vols50.reduce((a,b)=>a+b,0) / vols50.length
-      const lastVol = vols50.slice(-3).reduce((a,b)=>a+b,0) / 3
-      const volTrend = lastVol > avgVol * 1.3 ? 'INCREASING (↑ +' + Math.round((lastVol/avgVol-1)*100) + '%)' : lastVol < avgVol * 0.7 ? 'DECREASING (↓ -' + Math.round((1-lastVol/avgVol)*100) + '%)' : 'NEUTRAL'
-
-      // VMC & BB
-      const vmcStatus = vmcResult?.status ?? 'N/A'
-      const bbLast = bbResult?.[bbResult.length - 1]
-      const bbStr = bbLast ? `upper=${bbLast.upper.toFixed(2)} mid=${bbLast.middle.toFixed(2)} lower=${bbLast.lower.toFixed(2)}` : 'N/A'
-      const bbPosDesc = bbLast ? (cur.close > bbLast.upper ? 'ABOVE_UPPER_BAND (overbought)' : cur.close < bbLast.lower ? 'BELOW_LOWER_BAND (oversold)' : cur.close > bbLast.middle ? 'ABOVE_MID' : 'BELOW_MID') : 'N/A'
-
-      // SMC key levels
-      let smcLevels = 'N/A'
-      if (smcResult) {
-        const p = cur.close
-        const nearBullOBs = smcResult.bullOBs.filter(ob => Math.abs((ob.top+ob.btm)/2/p-1) < 0.03).slice(0,3)
-        const nearBearOBs = smcResult.bearOBs.filter(ob => Math.abs((ob.top+ob.btm)/2/p-1) < 0.03).slice(0,3)
-        const nearBullFVGs = smcResult.bullFVGs.filter(fvg => Math.abs((fvg.top+fvg.btm)/2/p-1) < 0.04).slice(0,2)
-        const nearBearFVGs = smcResult.bearFVGs.filter(fvg => Math.abs((fvg.top+fvg.btm)/2/p-1) < 0.04).slice(0,2)
-        const parts = []
-        if (nearBullOBs.length) parts.push(`Bull OBs (support): ${nearBullOBs.map(o=>`${o.btm.toFixed(2)}-${o.top.toFixed(2)}`).join(', ')}`)
-        if (nearBearOBs.length) parts.push(`Bear OBs (resistance): ${nearBearOBs.map(o=>`${o.btm.toFixed(2)}-${o.top.toFixed(2)}`).join(', ')}`)
-        if (nearBullFVGs.length) parts.push(`Bull FVGs (gap support): ${nearBullFVGs.map(f=>`${f.btm.toFixed(2)}-${f.top.toFixed(2)}`).join(', ')}`)
-        if (nearBearFVGs.length) parts.push(`Bear FVGs (gap resistance): ${nearBearFVGs.map(f=>`${f.btm.toFixed(2)}-${f.top.toFixed(2)}`).join(', ')}`)
-        smcLevels = parts.length ? parts.join('\n  ') : 'No nearby OBs/FVGs within 3-4%'
-      }
-
-      // MSD swing levels
-      let swingLevels = 'N/A'
-      if (msdResult) {
-        const recentHighs = msdResult.swingHighs.slice(-4).map(s=>`${s.type}@${s.price.toFixed(2)}`).join(', ')
-        const recentLows  = msdResult.swingLows.slice(-4).map(s=>`${s.type}@${s.price.toFixed(2)}`).join(', ')
-        const bos = msdResult.bosLines.slice(-3).map(b=>`${b.dir}@${b.price.toFixed(2)}`).join(', ')
-        swingLevels = `Swing highs: ${recentHighs || 'N/A'} | Swing lows: ${recentLows || 'N/A'}${bos ? ` | BoS: ${bos}` : ''}`
-      }
-
-      // Dispersion section
-      const d = dispersionContext
-      const dispSection = d ? `
-=== MARKET INTERNALS (DISPERSION ENGINE) ===
-Regime: ${d.regime} (confidence ${d.regimeConfidence}%) | Overall bias: ${d.overallBias} ${d.overallScore}/100 | RiskOn score: ${d.riskOnScore}/100
-Trend arrows → Dispersion:${d.trendArrows.dispersion} Correlation:${d.trendArrows.correlation} Breadth:${d.trendArrows.breadth} VolSpread:${d.trendArrows.volSpread}
-
-DISPERSION: Z-score=${d.dispersionZScore.toFixed(2)}σ percentile=${d.dispersionPercentile}th | Return skew=${d.returnSkew.toFixed(2)} kurtosis=${d.returnKurtosis.toFixed(2)}
-  History (last ${d.historyDispersion.length} snaps): ${d.historyDispersion.map(v=>v.toFixed(3)).join('→')}
-
-CORRELATION: avg=${d.avgCorrelation.toFixed(3)} Z=${d.correlationZScore.toFixed(2)}σ | Cross-sectional momentum=${d.crossSectionalMomentum.toFixed(3)}
-  History: ${d.historyCorrelation.map(v=>v.toFixed(3)).join('→')}
-
-VOLATILITY: component avg=${d.avgComponentVol.toFixed(1)}% realized=${d.realizedIndexVol.toFixed(1)}% implied=${d.impliedIndexVol.toFixed(1)}% | Vol spread=${d.volSpread.toFixed(2)}% regime=${d.volRegime} Z=${d.volZScore.toFixed(2)}σ
-
-BREADTH: ${Math.round(d.pctUp)}% up | EMA20=${Math.round(d.pctAboveEma20)}% EMA50=${Math.round(d.pctAboveEma50)}% | A/D ratio=${d.advanceDeclineRatio.toFixed(2)} participation=${Math.round(d.participationScore)}%
-  History: ${d.historyBreadth.map(v=>Math.round(v)+'%').join('→')}
-  Regime history: ${d.historyRegimes.join('→')}
-
-SMART MONEY: bias=${d.smartMoneyBias} | basket return=${d.basketReturn.toFixed(3)}% median=${d.medianReturn.toFixed(3)}%
-  Distribution score=${d.distributionScore}/100 Accumulation score=${d.accumulationScore}/100
-  ${d.hiddenStrength ? '⚡ HIDDEN STRENGTH detected (basket < median = smart money accumulating quietly)' : ''}${d.hiddenWeakness ? '⚠ HIDDEN WEAKNESS detected (basket > median = smart money distributing)' : ''}
-
-QUANT: Hurst exponent=${d.basketHurst.toFixed(3)} (${d.basketHurst>0.55?'TRENDING':d.basketHurst<0.45?'MEAN-REVERTING':'RANDOM WALK'}) | Lag-1 autocorr=${d.basketAutocorr.toFixed(3)}
-
-SIGNAL: action=${d.tradeSignal.action} direction=${d.tradeSignal.direction} | confidence=${d.tradeSignal.confidence}%
-  Reasoning: ${d.tradeSignal.reasoning.join(' | ')}
-  Top longs: ${d.tradeSignal.topLongs.join(', ')||'none'} | Top shorts: ${d.tradeSignal.topShorts.join(', ')||'none'}` : ''
-
-      const systemPrompt = `You are an institutional-grade quantitative trading analyst. Synthesize ALL provided data into a comprehensive, data-driven market analysis. Be specific with price levels and data-driven in your reasoning. Pay special attention to the Market Internals (Dispersion Engine) data if present — this is institutional-grade information about the broader market. Respond ONLY with valid JSON, no markdown, no extra text.`
-
-      const userPrompt = `=== ASSET & PRICE ===
-Symbol: ${symbol} | Timeframe: ${tf.label} | Current price: ${cur.close.toFixed(2)} | 1-bar change: ${chg}%
-ATR(14): ${atr.toFixed(2)} (${((atr/cur.close)*100).toFixed(2)}% of price)
-50-bar range: High=${high50.toFixed(2)} Low=${low50.toFixed(2)} (range=${(high50-low50).toFixed(2)})
-Price position in range: ${(((cur.close-low50)/(high50-low50))*100).toFixed(0)}%
-Last 50 closes: ${closes50}
-Volume: ${volTrend} (avg: ${avgVol.toFixed(0)})
-
-=== TECHNICAL INDICATORS ===
-RSI(14): ${rsiVal} | VMC status: ${vmcStatus}
-Bollinger Bands: ${bbStr} | Price position: ${bbPosDesc}
-
-=== STRUCTURE & KEY LEVELS (SMC) ===
-${smcLevels}
-${swingLevels}
-${dispSection}
-
-Provide a comprehensive analysis. Respond with this EXACT JSON:
-{"bias":"BULLISH","score":72,"conviction":4,"horizon":"4-12h","quality":"High","keyLevels":["65800","66200","67500"],"catalyst":"RSI oversold at bull OB support","targets":{"tp1":"67800","tp2":"68500","sl":"65200"},"momentum":"BULLISH","regimeContext":"Expanding dispersion regime favors stock-picking; breadth improving","summary":"Detailed 3-4 sentence analysis integrating price structure, technicals and market internals.","risk":"Key resistance at bear OB 67500, declining volume on bounce","divergence":"CVD bullish divergence visible on lower TF"}`
-
-      const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
-      const res = await fn({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 900 })
-      const raw = res.data.choices?.[0]?.message?.content || ''
-      if (!raw) throw new Error('Réponse vide')
-      const start = raw.indexOf('{'), end = raw.lastIndexOf('}')
-      if (start === -1 || end === -1) throw new Error('JSON introuvable')
-      const parsed = JSON.parse(raw.slice(start, end + 1))
-      // Normalise keyLevels to array
-      if (!Array.isArray(parsed.keyLevels)) parsed.keyLevels = [parsed.keyLevels ?? parsed.keyLevel ?? ''].filter(Boolean)
-      if (!parsed.targets) parsed.targets = { tp1: '', tp2: '', sl: '' }
-      if (!parsed.conviction) parsed.conviction = 3
-      if (!parsed.horizon) parsed.horizon = '—'
-      setAiAnalysis(parsed)
-    } catch(e: any) {
-      setAiError(e?.message || 'Erreur inconnue')
-    }
-    setAiLoading(false)
-  }, [symbol, tf.label, vmcResult, bbResult, smcResult, msdResult, dispersionContext])
 
   // Refs for price-axis width (to avoid SMC/VP zones overlapping it)
   const priceAxisWRef = useRef(60)
@@ -1807,10 +1671,6 @@ Provide a comprehensive analysis. Respond with this EXACT JSON:
           💾 {drawings.length>0?t('analyse.drawingCount', {count: drawings.length}):'Dessins'}
         </button>
 
-        {/* AI Analysis button */}
-        <button onClick={aiLoading ? undefined : analyzeChart} title="Analyse IA du chart" style={{padding:'4px 12px',borderRadius:8,fontSize:11,fontWeight:700,cursor:aiLoading?'wait':'pointer',border:`1px solid ${aiOpen?'#BF5AF2':'rgba(191,90,242,0.4)'}`,background:aiOpen?'rgba(191,90,242,0.18)':'rgba(191,90,242,0.07)',color:aiOpen?'#D98EFF':'rgba(191,90,242,0.85)',flexShrink:0,transition:'all 0.2s',display:'flex',alignItems:'center',gap:5,letterSpacing:'0.02em'}}>
-          {aiLoading ? <span style={{display:'inline-block',width:11,height:11,border:'2px solid #BF5AF2',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.6s linear infinite'}}/> : <span style={{fontSize:13}}>🤖</span>} Analyse IA
-        </button>
 
         {/* Share */}
         <button data-share-btn="1" onClick={handleShareChart} disabled={sharing} title={t('analyse.shareChart')} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:sharing?'wait':'pointer',border:`1px solid ${shareOk?'var(--tm-profit)':'var(--tm-border)'}`,background:shareOk?`rgba(34,199,89,0.1)`:'transparent',color:shareOk?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0,transition:'all 0.2s'}}>
@@ -1818,133 +1678,6 @@ Provide a comprehensive analysis. Respond with this EXACT JSON:
         </button>
       </div>
 
-      {/* ── AI Analysis panel ── */}
-      {aiOpen && (
-        <div style={{flexShrink:0,borderBottom:'2px solid rgba(191,90,242,0.25)',background:'linear-gradient(135deg,rgba(10,8,28,0.99) 0%,rgba(16,10,35,0.99) 100%)',boxShadow:'0 4px 24px rgba(0,0,0,0.6)'}}>
-          {/* Panel header */}
-          <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 16px 6px',borderBottom:'1px solid rgba(191,90,242,0.12)'}}>
-            <span style={{fontSize:14}}>🤖</span>
-            <span style={{fontSize:11,fontWeight:700,color:'rgba(191,90,242,0.9)',letterSpacing:'0.06em',fontFamily:'Syne,sans-serif'}}>ANALYSE IA</span>
-            <span style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginLeft:2}}>{symbol} · {tf.label}</span>
-            <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
-              <button onClick={aiLoading?undefined:analyzeChart} title="Relancer l'analyse" style={{background:'rgba(191,90,242,0.1)',border:'1px solid rgba(191,90,242,0.3)',borderRadius:5,color:'rgba(191,90,242,0.7)',cursor:aiLoading?'wait':'pointer',fontSize:11,padding:'2px 8px',fontWeight:600}} onMouseEnter={e=>(e.currentTarget.style.color='#BF5AF2')} onMouseLeave={e=>(e.currentTarget.style.color='rgba(191,90,242,0.7)')}>↻</button>
-              <button onClick={()=>setAiOpen(false)} style={{background:'none',border:'1px solid rgba(255,255,255,0.08)',borderRadius:5,color:'rgba(255,255,255,0.3)',cursor:'pointer',fontSize:11,padding:'2px 7px'}} onMouseEnter={e=>(e.currentTarget.style.color='#FF3B30')} onMouseLeave={e=>(e.currentTarget.style.color='rgba(255,255,255,0.3)')}>✕</button>
-            </div>
-          </div>
-
-          {aiLoading ? (
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,padding:'24px',color:'rgba(191,90,242,0.6)',fontSize:12}}>
-              <span style={{width:16,height:16,border:'2px solid #BF5AF2',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.6s linear infinite',display:'inline-block'}}/>
-              Analyse des données en cours…
-            </div>
-          ) : aiAnalysis ? (
-            <div style={{padding:'10px 16px 12px',display:'flex',flexDirection:'column',gap:10}}>
-
-              {/* ── Row 1: Bias header + score bar + conviction + targets ── */}
-              <div style={{display:'grid',gridTemplateColumns:'auto 1fr auto',gap:14,alignItems:'start'}}>
-                {/* Bias block */}
-                {(() => {
-                  const bc = aiAnalysis.bias === 'BULLISH' ? '#30D158' : aiAnalysis.bias === 'BEARISH' ? '#FF453A' : '#8E8E93'
-                  const stars = '★'.repeat(Math.min(5,Math.max(1,aiAnalysis.conviction||3))) + '☆'.repeat(5-Math.min(5,Math.max(1,aiAnalysis.conviction||3)))
-                  return (
-                    <div style={{display:'flex',flexDirection:'column',gap:4,minWidth:110}}>
-                      <div style={{display:'flex',alignItems:'center',gap:6}}>
-                        <div style={{width:10,height:10,borderRadius:'50%',background:bc,boxShadow:`0 0 8px ${bc}80`,flexShrink:0}}/>
-                        <span style={{fontSize:14,fontWeight:900,color:bc,fontFamily:'JetBrains Mono,monospace',letterSpacing:'0.04em'}}>{aiAnalysis.bias}</span>
-                      </div>
-                      <div style={{display:'flex',alignItems:'center',gap:6}}>
-                        <span style={{fontSize:10,color:bc,fontWeight:700}}>{aiAnalysis.score}/100</span>
-                        <span style={{fontSize:9,padding:'1px 6px',borderRadius:8,background:`${bc}18`,border:`1px solid ${bc}35`,color:bc,fontWeight:700,letterSpacing:'0.03em'}}>{aiAnalysis.quality}</span>
-                      </div>
-                      <div style={{fontSize:9,color:'#FFD60A',letterSpacing:'0.06em'}}>{stars}</div>
-                      <div style={{fontSize:9,color:'rgba(255,255,255,0.35)',fontFamily:'JetBrains Mono,monospace'}}>{aiAnalysis.horizon}</div>
-                    </div>
-                  )
-                })()}
-
-                {/* Score bar + catalyst + key levels */}
-                <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                  {/* Score bar */}
-                  <div style={{height:4,borderRadius:2,background:'rgba(255,255,255,0.07)',overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${aiAnalysis.score}%`,background:aiAnalysis.bias==='BULLISH'?'linear-gradient(90deg,#22863a,#30D158)':aiAnalysis.bias==='BEARISH'?'linear-gradient(90deg,#c0392b,#FF453A)':'linear-gradient(90deg,#555,#8E8E93)',transition:'width 0.6s ease',boxShadow:aiAnalysis.bias==='BULLISH'?'0 0 8px #30D15880':aiAnalysis.bias==='BEARISH'?'0 0 8px #FF453A80':undefined}}/>
-                  </div>
-                  {/* Catalyst */}
-                  <div style={{fontSize:10,color:'rgba(255,255,255,0.85)',fontWeight:500,lineHeight:1.4}}>
-                    <span style={{color:'rgba(255,255,255,0.3)',marginRight:5,fontSize:9,fontWeight:600,letterSpacing:'0.06em'}}>CATALYSEUR</span>
-                    {aiAnalysis.catalyst}
-                  </div>
-                  {/* Key levels */}
-                  {aiAnalysis.keyLevels?.length > 0 && (
-                    <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                      <span style={{color:'rgba(255,255,255,0.3)',fontSize:9,fontWeight:600,letterSpacing:'0.06em'}}>NIVEAUX CLÉS</span>
-                      {aiAnalysis.keyLevels.map((l,i)=>(
-                        <span key={i} style={{fontSize:10,fontFamily:'JetBrains Mono,monospace',fontWeight:700,color:'#FFD60A',background:'rgba(255,214,10,0.08)',border:'1px solid rgba(255,214,10,0.2)',padding:'1px 6px',borderRadius:4}}>{l}</span>
-                      ))}
-                    </div>
-                  )}
-                  {/* Momentum */}
-                  {aiAnalysis.momentum && aiAnalysis.momentum !== 'N/A' && (
-                    <div style={{fontSize:9,color:'rgba(255,255,255,0.35)'}}>
-                      <span style={{color:'rgba(255,255,255,0.25)',marginRight:4}}>MOMENTUM</span>
-                      <span style={{color:aiAnalysis.momentum==='BULLISH'?'#30D158':aiAnalysis.momentum==='BEARISH'?'#FF453A':'#8E8E93',fontWeight:700}}>{aiAnalysis.momentum}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Targets block */}
-                {(aiAnalysis.targets?.tp1 || aiAnalysis.targets?.sl) && (
-                  <div style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:8,padding:'8px 12px',minWidth:130,display:'flex',flexDirection:'column',gap:5}}>
-                    <div style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.3)',letterSpacing:'0.08em',marginBottom:2}}>OBJECTIFS</div>
-                    {aiAnalysis.targets.tp1 && <div style={{display:'flex',justifyContent:'space-between',gap:12}}>
-                      <span style={{fontSize:9,color:'rgba(48,209,88,0.7)',fontWeight:700}}>TP1</span>
-                      <span style={{fontSize:10,fontFamily:'JetBrains Mono,monospace',color:'#30D158',fontWeight:700}}>{aiAnalysis.targets.tp1}</span>
-                    </div>}
-                    {aiAnalysis.targets.tp2 && <div style={{display:'flex',justifyContent:'space-between',gap:12}}>
-                      <span style={{fontSize:9,color:'rgba(48,209,88,0.5)',fontWeight:700}}>TP2</span>
-                      <span style={{fontSize:10,fontFamily:'JetBrains Mono,monospace',color:'rgba(48,209,88,0.75)',fontWeight:700}}>{aiAnalysis.targets.tp2}</span>
-                    </div>}
-                    {aiAnalysis.targets.sl && <div style={{display:'flex',justifyContent:'space-between',gap:12,marginTop:2,paddingTop:4,borderTop:'1px solid rgba(255,255,255,0.06)'}}>
-                      <span style={{fontSize:9,color:'rgba(255,69,58,0.8)',fontWeight:700}}>SL</span>
-                      <span style={{fontSize:10,fontFamily:'JetBrains Mono,monospace',color:'#FF453A',fontWeight:700}}>{aiAnalysis.targets.sl}</span>
-                    </div>}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Row 2: Regime context (from dispersion) ── */}
-              {aiAnalysis.regimeContext && aiAnalysis.regimeContext !== 'N/A' && (
-                <div style={{background:'rgba(191,90,242,0.05)',border:'1px solid rgba(191,90,242,0.15)',borderRadius:6,padding:'6px 10px',fontSize:10,color:'rgba(191,90,242,0.85)',lineHeight:1.5}}>
-                  <span style={{fontSize:9,fontWeight:700,letterSpacing:'0.06em',color:'rgba(191,90,242,0.5)',marginRight:6}}>CONTEXTE MARCHÉ</span>
-                  {aiAnalysis.regimeContext}
-                </div>
-              )}
-
-              {/* ── Row 3: Summary + divergence + risk ── */}
-              <div style={{borderTop:'1px solid rgba(255,255,255,0.06)',paddingTop:8,display:'flex',flexDirection:'column',gap:5}}>
-                <div style={{fontSize:11,color:'rgba(255,255,255,0.78)',lineHeight:1.65,fontWeight:400}}>{aiAnalysis.summary}</div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:2}}>
-                  {aiAnalysis.divergence && aiAnalysis.divergence !== 'N/A' && (
-                    <span style={{fontSize:10,color:'rgba(0,213,255,0.75)',background:'rgba(0,213,255,0.06)',border:'1px solid rgba(0,213,255,0.15)',borderRadius:4,padding:'2px 8px'}}>
-                      🔀 {aiAnalysis.divergence}
-                    </span>
-                  )}
-                  {aiAnalysis.risk && (
-                    <span style={{fontSize:10,color:'rgba(255,149,0,0.85)',background:'rgba(255,149,0,0.07)',border:'1px solid rgba(255,149,0,0.2)',borderRadius:4,padding:'2px 8px'}}>
-                      ⚠ {aiAnalysis.risk}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-            </div>
-          ) : (
-            <div style={{padding:'12px 16px',display:'flex',alignItems:'center',gap:8}}>
-              <span style={{fontSize:10,color:'var(--tm-loss)'}}>Erreur : {aiError || 'inconnue'}</span>
-              <button onClick={analyzeChart} style={{background:'rgba(255,149,0,0.1)',border:'1px solid rgba(255,149,0,0.3)',borderRadius:5,color:'#FF9500',cursor:'pointer',fontSize:10,padding:'2px 8px',fontWeight:600}}>Réessayer</button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── Main area: left toolbar + chart ── */}
       <div style={{display:'flex',flex:1,minHeight:0,overflow:'hidden'}}>

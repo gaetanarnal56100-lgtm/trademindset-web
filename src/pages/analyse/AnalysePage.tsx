@@ -19,6 +19,7 @@ import ChartScreenshotAnalysis from './ChartScreenshotAnalysis'
 import FootprintChart from './FootprintChart'
 import LiqHeatmapChart from './LiqHeatmapChart'
 import DispersionDashboard from './DispersionDashboard'
+import IaTab from './IaTab'
 import PaneLayout from '@/components/layout/PaneLayout'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
@@ -250,7 +251,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'oscillateurs' | 'micro' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion' | 'layout'
+type Mode = 'oscillateurs' | 'micro' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion' | 'layout' | 'ia'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -2111,6 +2112,7 @@ export default function AnalysePage() {
               {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,69,58,0.9)'},
               {id:'charts',    icon:'📅', label:'Charts',      sub:'Rendements · On-Chain',      color:'rgba(52,199,89,0.9)'},
               {id:'dispersion',icon:'🔬', label:'Dispersion',  sub:'Internals institutionnels',  color:'rgba(0,229,255,0.9)'},
+              {id:'ia',        icon:'🤖', label:'Analyse IA',  sub:'Synthèse IA de tous les indicateurs', color:'rgba(191,90,242,0.9)'},
             ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m => {
               const active = mode === m.id
               return (
@@ -2651,6 +2653,22 @@ export default function AnalysePage() {
         historyRegimes: r.history.regimes.slice(-10),
         trendArrows: { dispersion: r.trendArrows.dispersion, correlation: r.trendArrows.correlation, breadth: r.trendArrows.breadth, volSpread: r.trendArrows.volSpread },
       })} />}
+
+      {/* ── IA TAB ── */}
+      {mode === 'ia' && symbol && (
+        <IaTab
+          symbol={symbol}
+          isCrypto={isCrypto}
+          lwChartRef={lwChartRef}
+          dispersionCtx={dispersionCtx}
+          pressure={pressure}
+          liqLong1h={liqLong1h}
+          liqShort1h={liqShort1h}
+          pdfMtfSnap={pdfMtfSnap}
+          ouSignal={ouSignal}
+          fng={fng}
+        />
+      )}
 
       {/* ── LAYOUT TAB ── */}
       {mode === 'layout' && symbol && (
