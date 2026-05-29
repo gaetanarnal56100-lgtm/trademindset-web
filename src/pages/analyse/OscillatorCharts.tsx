@@ -612,7 +612,7 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
 
   const dots = result ? result.signals.flatMap((s,i)=>s?[{i,type:s}]:[]) : []
   const histogram = result ? result.wt1.map((v,i)=>v-result.wt2[i]) : []
-  const wtExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1)))) : null
+  const wtExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1) / Math.max(0.01, 1 - inPlotMargin)))) : null
 
   const handleVpChange = useCallback((vp: Viewport) => {
     if (!onRangeChange || candles.length === 0) return
@@ -760,7 +760,7 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
     return []
   }) : []
 
-  const vmcExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(vmcViewSize - 1, Math.round(crosshairFrac * (vmcViewSize - 1)))) : null
+  const vmcExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(vmcViewSize - 1, Math.round(crosshairFrac * (vmcViewSize - 1) / Math.max(0.01, 1 - vmcInPlotMargin)))) : null
 
   const handleVmcVpChange = useCallback((vp: Viewport) => {
     if (!onRangeChange || candles.length === 0) return
@@ -1151,7 +1151,7 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
     : 0
   const rsbAreaRatio = visibleRange?.areaRatio ?? 1
   const rsbRightMargin = (1 - rsbAreaRatio) + rsbInPlotMargin * rsbAreaRatio
-  const rsbExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1)))) : null
+  const rsbExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(viewSize - 1, Math.round(crosshairFrac * (viewSize - 1) / Math.max(0.01, 1 - rsbInPlotMargin)))) : null
 
   const handleRsbVpChange = useCallback((vp: Viewport) => {
     if (!onRangeChange || candles.length === 0) return
@@ -1449,7 +1449,7 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac, on
     : 0
   const rsiAreaRatio = visibleRange?.areaRatio ?? 1
   const rsiRightMargin = (1 - rsiAreaRatio) + rsiInPlotMargin * rsiAreaRatio
-  const rsiExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(rsiViewSize - 1, Math.round(crosshairFrac * (rsiViewSize - 1)))) : null
+  const rsiExternalIdx = crosshairFrac != null ? Math.max(0, Math.min(rsiViewSize - 1, Math.round(crosshairFrac * (rsiViewSize - 1) / Math.max(0.01, 1 - rsiInPlotMargin)))) : null
 
   const lastRsi = rsiData.length > 0 ? rsiData[rsiData.length - 1] : 50
   const badge = lastRsi >= obLevel ? { label: t('analyse.zoneOverbought'), color: 'var(--tm-loss)' }
