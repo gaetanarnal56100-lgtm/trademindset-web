@@ -239,16 +239,18 @@ export default function PaneLayout({
     requestAnimationFrame(() => {
       const gr = groupRef.current
       if (!gr) return
-      const cur = layoutRef.current
-      const ids = Object.keys(cur)
-      if (ids.length === 0) return
+      // Always use gr.getLayout() — layoutRef is empty until first drag
+      const live = gr.getLayout()
+      const existingIds = Object.keys(live).filter(id => id !== newId)
+      if (existingIds.length === 0) return
 
-      const total     = Object.values(cur).reduce((a, b) => a + b, 0)
-      const scale     = (total - NEW_OSC_SIZE) / total
+      const existingTotal = existingIds.reduce((a, id) => a + (live[id] ?? 0), 0)
+      if (existingTotal === 0) return
+      const scale = (existingTotal - NEW_OSC_SIZE) / existingTotal
+
       const newLayout: Layout = {}
-      ids.forEach(id => {
-        // Ensure chart pane never shrinks below MIN_CHART
-        const scaled = (cur[id] ?? 0) * scale
+      existingIds.forEach(id => {
+        const scaled = (live[id] ?? 0) * scale
         newLayout[id] = id === CHART_ID ? Math.max(MIN_CHART, scaled) : scaled
       })
       newLayout[newId] = NEW_OSC_SIZE
@@ -260,15 +262,14 @@ export default function PaneLayout({
     requestAnimationFrame(() => {
       const gr = groupRef.current
       if (!gr) return
-      const cur = layoutRef.current
-      const removedSize = cur[removedId] ?? 0
+      const live = gr.getLayout()
+      const removedSize = live[removedId] ?? 0
       const remaining: Layout = {}
       let remainingTotal = 0
-      Object.entries(cur).forEach(([k, v]) => {
+      Object.entries(live).forEach(([k, v]) => {
         if (k !== removedId) { remaining[k] = v; remainingTotal += v }
       })
       if (remainingTotal === 0) return
-      // Distribute removed space proportionally to remaining panels
       const newLayout: Layout = {}
       Object.entries(remaining).forEach(([k, v]) => {
         newLayout[k] = v + (v / remainingTotal) * removedSize
