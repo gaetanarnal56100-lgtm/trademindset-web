@@ -2636,7 +2636,21 @@ export default function AnalysePage() {
       {mode === 'charts' && <ChartsTab symbol={symbol} isCrypto={isCrypto}/>}
 
       {/* ── DISPERSION TAB ── */}
-      {mode === 'dispersion' && <DispersionDashboard syncInterval={syncInterval} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} visibleRange={syncRange} onResult={r => setDispersionCtx({ regime: r.regime, regimeConfidence: r.regimeConfidence, dispersionZScore: r.dispersionZScore, dispersionPercentile: r.dispersionPercentile, returnSkew: r.returnSkew, returnKurtosis: r.returnKurtosis, avgCorrelation: r.avgCorrelation, correlationZScore: r.correlationZScore, crossSectionalMomentum: r.crossSectionalMomentum, avgComponentVol: r.avgComponentVol, realizedIndexVol: r.realizedIndexVol, impliedIndexVol: r.impliedIndexVol, volSpread: r.volSpread, volRegime: r.volRegime, volZScore: r.volZScore, pctUp: r.pctUp, pctAboveEma20: r.pctAboveEma20, pctAboveEma50: r.pctAboveEma50, advanceDeclineRatio: r.advanceDeclineRatio, participationScore: r.participationScore, basketReturn: r.basketReturn, medianReturn: r.medianReturn, smartMoneyBias: r.smartMoneyBias, distributionScore: r.distributionScore, accumulationScore: r.accumulationScore, hiddenStrength: r.hiddenStrength, hiddenWeakness: r.hiddenWeakness, basketHurst: r.basketHurst, basketAutocorr: r.basketAutocorr, riskOnScore: r.riskOnScore, overallScore: r.overallScore, overallBias: r.overallBias, tradeSignal: { bias: r.tradeSignal.bias, confidence: r.tradeSignal.confidence, reasoning: r.tradeSignal.reasoning } })} />}
+      {mode === 'dispersion' && <DispersionDashboard syncInterval={syncInterval} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} visibleRange={syncRange} onResult={r => setDispersionCtx({
+        regime: r.regime, regimeConfidence: r.regimeConfidence,
+        dispersionZScore: r.dispersionZScore, dispersionPercentile: r.dispersionPercentile, returnSkew: r.returnSkew, returnKurtosis: r.returnKurtosis,
+        avgCorrelation: r.avgCorrelation, correlationZScore: r.correlationZScore, crossSectionalMomentum: r.crossSectionalMomentum,
+        avgComponentVol: r.avgComponentVol, realizedIndexVol: r.realizedIndexVol, impliedIndexVol: r.impliedIndexVol, volSpread: r.volSpread, volRegime: r.volRegime, volZScore: r.volZScore,
+        pctUp: r.pctUp, pctAboveEma20: r.pctAboveEma20, pctAboveEma50: r.pctAboveEma50, advanceDeclineRatio: r.advanceDeclineRatio, participationScore: r.participationScore,
+        basketReturn: r.basketReturn, medianReturn: r.medianReturn, smartMoneyBias: r.smartMoneyBias, distributionScore: r.distributionScore, accumulationScore: r.accumulationScore, hiddenStrength: r.hiddenStrength, hiddenWeakness: r.hiddenWeakness,
+        basketHurst: r.basketHurst, basketAutocorr: r.basketAutocorr, riskOnScore: r.riskOnScore, overallScore: r.overallScore, overallBias: r.overallBias,
+        tradeSignal: { action: r.tradeSignal.action, direction: r.tradeSignal.direction, bias: r.tradeSignal.bias, confidence: r.tradeSignal.confidence, reasoning: r.tradeSignal.reasoning, topLongs: r.tradeSignal.topLongs, topShorts: r.tradeSignal.topShorts },
+        historyDispersion: r.history.dispersion.slice(-10),
+        historyCorrelation: r.history.avgCorrelation.slice(-10),
+        historyBreadth: r.history.pctUp.slice(-10),
+        historyRegimes: r.history.regimes.slice(-10),
+        trendArrows: { dispersion: r.trendArrows.dispersion, correlation: r.trendArrows.correlation, breadth: r.trendArrows.breadth, volSpread: r.trendArrows.volSpread },
+      })} />}
 
       {/* ── LAYOUT TAB ── */}
       {mode === 'layout' && symbol && (
