@@ -93,7 +93,7 @@ async function fetchCandles(sym:string,isCrypto:boolean,min:number):Promise<Cand
     for(const bSym of binanceSyms){
       for(const base of['https://fapi.binance.com/fapi/v1','https://api.binance.com/api/v3']){
         try{
-          const r=await fetch(`${base}/klines?symbol=${bSym}&interval=${tfStr(min)}&limit=500`)
+          const r=await fetch(`${base}/klines?symbol=${bSym}&interval=${tfStr(min)}&limit=1000`)
           if(!r.ok)continue
           const d=await r.json()
           if(!Array.isArray(d)||d.length < 5)continue
@@ -274,12 +274,12 @@ interface VolumeSettings{opacity:number}
 interface VegasTunnel{enabled:boolean;color:string;fillOpacity:number}
 interface VegasSettings{tunnels:VegasTunnel[]}
 const VEGAS_TFS = [
-  {label:'5m',  min:5,    binance:'5m',  yh:'5m',  yhRange:'5d',  limit:500},
-  {label:'15m', min:15,   binance:'15m', yh:'15m', yhRange:'5d',  limit:500},
-  {label:'1H',  min:60,   binance:'1h',  yh:'1h',  yhRange:'3mo', limit:500},
-  {label:'4H',  min:240,  binance:'4h',  yh:'4h',  yhRange:'1y',  limit:500},
-  {label:'1J',  min:1440, binance:'1d',  yh:'1d',  yhRange:'3y',  limit:500},
-  {label:'3J',  min:4320, binance:'3d',  yh:'1wk', yhRange:'5y',  limit:500},
+  {label:'5m',  min:5,    binance:'5m',  yh:'5m',  yhRange:'5d',  limit:1000},
+  {label:'15m', min:15,   binance:'15m', yh:'15m', yhRange:'5d',  limit:1000},
+  {label:'1H',  min:60,   binance:'1h',  yh:'1h',  yhRange:'3mo', limit:1000},
+  {label:'4H',  min:240,  binance:'4h',  yh:'4h',  yhRange:'1y',  limit:1000},
+  {label:'1J',  min:1440, binance:'1d',  yh:'1d',  yhRange:'3y',  limit:1000},
+  {label:'3J',  min:4320, binance:'3d',  yh:'1wk', yhRange:'5y',  limit:1000},
 ]
 const VEGAS_DEFAULTS:VegasTunnel[]=[
   {enabled:true, color:'#40e0d0', fillOpacity:0.08},
@@ -683,6 +683,51 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   const [cvdResult,    setCvdResult]    = useState<number[]|null>(null)
   const [vegasData,    setVegasData]    = useState<{time:number;e1:number;e2:number;e3:number}[][]>([])
 
+  // AI analysis
+  const [aiAnalysis, setAiAnalysis] = useState<{bias:string;quality:string;score:number;keyLevel:string;catalyst:string;summary:string;risk:string}|null>(null)
+  const [aiLoading,  setAiLoading]  = useState(false)
+  const [aiOpen,     setAiOpen]     = useState(false)
+
+  const analyzeChart = useCallback(async () => {
+    const candles = candlesRef.current
+    if (!candles.length) return
+    setAiLoading(true); setAiOpen(true)
+    try {
+      const last = candles.slice(-20)
+      const closes = last.map(c => c.close)
+      // Simple RSI-14 on available data
+      let rsiVal = 50
+      if (candles.length >= 15) {
+        const cl = candles.map(c => c.close)
+        let ag = 0, al = 0
+        for (let i = cl.length - 14; i < cl.length; i++) {
+          const d = cl[i] - cl[i-1]; d > 0 ? ag += d : al -= d
+        }
+        ag /= 14; al /= 14
+        rsiVal = al === 0 ? 100 : Math.round(100 - 100 / (1 + ag / al))
+      }
+      const cur = candles[candles.length - 1]
+      const prev = candles[candles.length - 2]
+      const chg = ((cur.close - prev.close) / prev.close * 100).toFixed(2)
+      const vmcStatus = vmcResult?.status ?? 'N/A'
+      const bbLast = bbResult?.[bbResult.length - 1]
+      const bbPos = bbLast ? `upper=${bbLast.upper.toFixed(1)} mid=${bbLast.mid.toFixed(1)} lower=${bbLast.lower.toFixed(1)}` : 'N/A'
+
+      const userPrompt = `Symbol: ${symbol} | TF: ${tf.label} | Price: ${cur.close.toFixed(2)} (${chg}%)
+Last 20 closes: ${closes.map(v=>v.toFixed(2)).join(', ')}
+RSI(14): ${rsiVal} | VMC: ${vmcStatus} | BB: ${bbPos}
+Analyze and respond ONLY with this JSON (no markdown, no text outside):
+{"bias":"BULLISH|BEARISH|NEUTRAL","quality":"Low|Medium|High","score":0-100,"keyLevel":"price","catalyst":"short phrase","summary":"1-2 sentences max","risk":"1 sentence max"}`
+
+      const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
+      const res = await fn({ messages: [{ role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 200 })
+      const raw = res.data.choices?.[0]?.message?.content || '{}'
+      const parsed = JSON.parse(raw.replace(/```json\n?|```\n?/g, '').trim())
+      setAiAnalysis(parsed)
+    } catch { setAiAnalysis(null) }
+    setAiLoading(false)
+  }, [symbol, tf.label, vmcResult, bbResult])
+
   // Refs for price-axis width (to avoid SMC/VP zones overlapping it)
   const priceAxisWRef = useRef(60)
   // Volume series ref
@@ -915,7 +960,7 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       candlesRef.current=candles
       const last=candles[candles.length-1],first=candles[0]
       setLiveP(last.close);setChange(((last.close-first.open)/first.open)*100)
-      chartApi.current?.timeScale().fitContent()
+      chartApi.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - 150), to: candles.length - 1 })
       setSmcResult(calcSMC(candles,smcS.swingLen))
       setMsdResult(calcMSD(candles,msdS.swingLen))
       setVmcResult(calcVMC(candles,vmcS.smoothLen,vmcS.signalMult,vmcS.upThreshold,vmcS.loThreshold,vmcS.rsiLen,vmcS.stochSmooth,vmcS.mfiWeight))
@@ -1631,11 +1676,61 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
           💾 {drawings.length>0?t('analyse.drawingCount', {count: drawings.length}):'Dessins'}
         </button>
 
+        {/* AI Analysis button */}
+        <button onClick={aiLoading ? undefined : analyzeChart} title="Analyse IA du chart" style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:aiLoading?'wait':'pointer',border:`1px solid ${aiOpen?'#BF5AF2':'var(--tm-border)'}`,background:aiOpen?'rgba(191,90,242,0.12)':'transparent',color:aiOpen?'#BF5AF2':'var(--tm-text-muted)',flexShrink:0,transition:'all 0.2s',display:'flex',alignItems:'center',gap:4}}>
+          {aiLoading ? <span style={{display:'inline-block',width:10,height:10,border:'1.5px solid #BF5AF2',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.6s linear infinite'}}/> : '🤖'} IA
+        </button>
+
         {/* Share */}
         <button data-share-btn="1" onClick={handleShareChart} disabled={sharing} title={t('analyse.shareChart')} style={{padding:'3px 9px',borderRadius:6,fontSize:10,fontWeight:600,cursor:sharing?'wait':'pointer',border:`1px solid ${shareOk?'var(--tm-profit)':'var(--tm-border)'}`,background:shareOk?`rgba(34,199,89,0.1)`:'transparent',color:shareOk?'var(--tm-profit)':'var(--tm-text-muted)',flexShrink:0,transition:'all 0.2s'}}>
           {shareOk?'✓ Copié':'📤'}
         </button>
       </div>
+
+      {/* ── AI Analysis panel ── */}
+      {aiOpen && (
+        <div style={{flexShrink:0,borderBottom:`1px solid #1A1F2E`,background:'rgba(13,17,35,0.98)',padding:'8px 14px',display:'flex',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+          {aiLoading ? (
+            <div style={{display:'flex',alignItems:'center',gap:8,color:'rgba(191,90,242,0.7)',fontSize:11}}>
+              <span style={{width:14,height:14,border:'2px solid #BF5AF2',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.6s linear infinite',display:'inline-block'}}/>
+              Analyse en cours…
+            </div>
+          ) : aiAnalysis ? (
+            <>
+              {/* Bias pill */}
+              {(() => {
+                const bc = aiAnalysis.bias === 'BULLISH' ? '#34C759' : aiAnalysis.bias === 'BEARISH' ? '#FF3B30' : '#8E8E93'
+                return <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+                  <div style={{width:8,height:8,borderRadius:'50%',background:bc,boxShadow:`0 0 6px ${bc}`}}/>
+                  <span style={{fontSize:11,fontWeight:800,color:bc,fontFamily:'JetBrains Mono,monospace'}}>{aiAnalysis.bias}</span>
+                  <span style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>·</span>
+                  <span style={{fontSize:10,fontWeight:600,color:'rgba(255,255,255,0.6)'}}>{aiAnalysis.score}/100</span>
+                  <span style={{fontSize:9,padding:'1px 7px',borderRadius:10,background:`${bc}20`,border:`1px solid ${bc}40`,color:bc,fontWeight:700}}>{aiAnalysis.quality}</span>
+                </div>
+              })()}
+              {/* Key info */}
+              <div style={{display:'flex',gap:12,flexWrap:'wrap',flex:1,minWidth:0}}>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.5)'}}>
+                  <span style={{color:'rgba(255,255,255,0.3)',marginRight:4}}>Niveau clé</span>
+                  <span style={{color:'#FFD60A',fontFamily:'JetBrains Mono,monospace',fontWeight:700}}>{aiAnalysis.keyLevel}</span>
+                </div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.5)'}}>
+                  <span style={{color:'rgba(255,255,255,0.3)',marginRight:4}}>Catalyseur</span>
+                  <span style={{color:'rgba(255,255,255,0.75)'}}>{aiAnalysis.catalyst}</span>
+                </div>
+              </div>
+              {/* Summary */}
+              <div style={{width:'100%',fontSize:10,color:'rgba(255,255,255,0.6)',lineHeight:1.5,borderTop:'1px solid rgba(255,255,255,0.05)',paddingTop:6,marginTop:2}}>
+                {aiAnalysis.summary}
+                {aiAnalysis.risk && <span style={{color:'#FF9500',marginLeft:8}}>⚠ {aiAnalysis.risk}</span>}
+              </div>
+            </>
+          ) : (
+            <span style={{fontSize:10,color:'var(--tm-loss)'}}>Analyse échouée — réessayer</span>
+          )}
+          <button onClick={()=>setAiOpen(false)} style={{marginLeft:'auto',background:'none',border:'none',color:'rgba(255,255,255,0.2)',cursor:'pointer',fontSize:12,flexShrink:0}} onMouseEnter={e=>(e.currentTarget.style.color='#FF3B30')} onMouseLeave={e=>(e.currentTarget.style.color='rgba(255,255,255,0.2)')}>✕</button>
+        </div>
+      )}
 
       {/* ── Main area: left toolbar + chart ── */}
       <div style={{display:'flex',flex:1,minHeight:0,overflow:'hidden'}}>

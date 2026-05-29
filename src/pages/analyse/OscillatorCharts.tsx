@@ -17,15 +17,15 @@ const TF_REFRESH_MS: Record<string, number> = {
 interface Candle { o: number; h: number; l: number; c: number; v: number; t: number; bv?: number }
 
 const TF_OPTIONS = [
-  { label:'5m',  interval:'5m',  limit:500 },
-  { label:'15m', interval:'15m', limit:500 },
-  { label:'30m', interval:'30m', limit:500 },
-  { label:'1H',  interval:'1h',  limit:500 },
-  { label:'2H',  interval:'2h',  limit:500 },
-  { label:'4H',  interval:'4h',  limit:500 },
-  { label:'12H', interval:'12h', limit:500 },
-  { label:'1J',  interval:'1d',  limit:500 },
-  { label:'1S',  interval:'1w',  limit:500 },
+  { label:'5m',  interval:'5m',  limit:1000 },
+  { label:'15m', interval:'15m', limit:1000 },
+  { label:'30m', interval:'30m', limit:1000 },
+  { label:'1H',  interval:'1h',  limit:1000 },
+  { label:'2H',  interval:'2h',  limit:1000 },
+  { label:'4H',  interval:'4h',  limit:1000 },
+  { label:'12H', interval:'12h', limit:1000 },
+  { label:'1J',  interval:'1d',  limit:1000 },
+  { label:'1S',  interval:'1w',  limit:1000 },
 ]
 
 function isCryptoSymbol(symbol: string) {
@@ -258,7 +258,7 @@ function drawRibbonStrip(ctx:CanvasRenderingContext2D, W:number, H:number, emas:
 }
 
 // ── Draw oscillator ───────────────────────────────────────────────────────
-function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,vpiData?:number[],compressionArr?:boolean[],rightMarginFrac=0) {
+function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:number[],signal:number[],histogram:number[],obLevel:number,osLevel:number,mainColor:string,signalColor:string,histBullColor:string,histBearColor:string,dots?:{i:number;type:string}[],emas?:number[][],hoverIdx?:number|null,viewStart?:number,viewEnd?:number,vpiData?:number[],compressionArr?:boolean[],rightMarginFrac=0,vpFrom?:number,vpTo?:number) {
   // Resolve canvas-unsafe CSS vars to real colors
   const resolvedSignal = signalColor.startsWith('var(') ? resolveCSSColor(signalColor.replace(/^var\((.+)\)$/,'$1'),'#F59714') : signalColor
   const resolvedBg = resolveCSSColor('--tm-bg','#0D1117')
@@ -276,7 +276,11 @@ function drawOscillator(ctx:CanvasRenderingContext2D,W:number,H:number,main:numb
   const yp=(v:number)=>oscH-((v-minV)/range)*oscH
   // drawW: canvas width minus right margin — last bar lands at drawW exactly (mirrors LW)
   const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
-  const xp=(i:number)=>m.length>1?(i/(m.length-1))*drawW:drawW/2
+  const total = main.length || 1
+  const vpF = vpFrom !== undefined ? vpFrom : startIdx / total
+  const vpT = vpTo   !== undefined ? vpTo   : endIdx   / total
+  const vpSpan = vpT - vpF || 1
+  const xp=(i:number)=> total > 1 ? ((startIdx + i) / total - vpF) / vpSpan * drawW : drawW/2
 
   // Background zones
   ctx.fillStyle=`rgba(255,59,48,0.06)`;ctx.fillRect(0,yp(maxV),W,yp(obLevel)-yp(maxV))
@@ -440,12 +444,17 @@ function fmtAxisLabel(ts: number, interval: string): string {
 function drawTimeAxis(
   ctx: CanvasRenderingContext2D, W: number, H: number,
   candles: Candle[], viewStart: number, viewEnd: number,
-  rightMarginFrac: number, interval: string
+  rightMarginFrac: number, interval: string,
+  vpFrom?: number, vpTo?: number
 ) {
   const slice = candles.slice(viewStart, viewEnd)
   if (slice.length < 2) return
   const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
-  const xp = (i: number) => (i / (slice.length - 1)) * drawW
+  const total = candles.length || 1
+  const vpF = vpFrom !== undefined ? vpFrom : viewStart / total
+  const vpT = vpTo   !== undefined ? vpTo   : viewEnd   / total
+  const vpSpan = vpT - vpF || 1
+  const xp = (i: number) => ((viewStart + i) / total - vpF) / vpSpan * drawW
 
   // Background strip
   ctx.fillStyle = 'rgba(8,12,20,0.97)'
@@ -626,9 +635,9 @@ export function WaveTrendChart({ symbol, syncInterval, visibleRange, onStatusRea
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.wt1.length<2) return
-      drawOscillator(ctx,W,H-TIME_AXIS_H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd,undefined,undefined,rightMarginFrac)
-      drawTimeAxis(ctx,W,H,candles,viewStart,viewEnd,rightMarginFrac,tf.interval)
-    }, [result, viewStart, viewEnd, rightMarginFrac, tf.interval, candles], viewSize, viewport, setViewport, wtExternalIdx, onCrosshairChange, handleVpChange
+      drawOscillator(ctx,W,H-TIME_AXIS_H,result.wt1,result.wt2,histogram,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.5)`,`rgba(255,59,48,0.5)`,dots,undefined,hi,viewStart,viewEnd,undefined,undefined,rightMarginFrac,viewport.from,viewport.to)
+      drawTimeAxis(ctx,W,H,candles,viewStart,viewEnd,rightMarginFrac,tf.interval,viewport.from,viewport.to)
+    }, [result, viewStart, viewEnd, rightMarginFrac, tf.interval, candles, viewport.from, viewport.to], viewSize, viewport, setViewport, wtExternalIdx, onCrosshairChange, handleVpChange
   )
 
   const wt1Last = result?.wt1[result.wt1.length-1]??0, wt2Last = result?.wt2[result.wt2.length-1]??0
@@ -774,9 +783,9 @@ export function VMCOscillatorChart({ symbol, syncInterval, visibleRange, onStatu
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
       if(!result||result.sig.length<2) return
-      drawOscillator(ctx,W,H-TIME_AXIS_H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr,vmcRightMargin)
-      drawTimeAxis(ctx,W,H,candles,vmcViewStart,vmcViewEnd,vmcRightMargin,tf.interval)
-    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin, tf.interval, candles], vmcViewSize, viewport, setViewport, vmcExternalIdx, onCrosshairChange, handleVmcVpChange
+      drawOscillator(ctx,W,H-TIME_AXIS_H,result.sig,result.sigSignal,result.momentum,obLevel,osLevel,'#37D7FF','#F59714',`rgba(34,199,89,0.55)`,`rgba(255,59,48,0.55)`,vmcDots,result.emas,hi,vmcViewStart,vmcViewEnd,result.vpi,result.smartCompressionArr,vmcRightMargin,viewport.from,viewport.to)
+      drawTimeAxis(ctx,W,H,candles,vmcViewStart,vmcViewEnd,vmcRightMargin,tf.interval,viewport.from,viewport.to)
+    }, [result, vmcDots, vmcViewStart, vmcViewEnd, obLevel, osLevel, vmcRightMargin, tf.interval, candles, viewport.from, viewport.to], vmcViewSize, viewport, setViewport, vmcExternalIdx, onCrosshairChange, handleVmcVpChange
   )
 
   return (
@@ -961,7 +970,7 @@ function drawRSIBollinger(
   result: RSIBBResult, hoverIdx: number | null,
   viewStart: number, viewEnd: number,
   showTrendlines: boolean, showDivergence: boolean,
-  rightMarginFrac = 0
+  rightMarginFrac = 0, vpFrom?: number, vpTo?: number
 ) {
   ctx.fillStyle = resolveCSSColor('--tm-bg', '#0D1117'); ctx.fillRect(0, 0, W, H)
   const { rsi, basis, upper, lower, disp_up, disp_down, trendlines, divBull, divBear, tpUpperBars, tpLowerBars } = result
@@ -978,7 +987,11 @@ function drawRSIBollinger(
   const pad = { top: 8, bot: 8 }
   const oscH = H - pad.top - pad.bot
   const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
-  const xp    = (i: number) => n > 1 ? (i / (n - 1)) * drawW : drawW / 2
+  const total = rsi.length || 1
+  const vpF = vpFrom !== undefined ? vpFrom : si / total
+  const vpT = vpTo   !== undefined ? vpTo   : ei / total
+  const vpSpan = vpT - vpF || 1
+  const xp    = (i: number) => total > 1 ? ((si + i) / total - vpF) / vpSpan * drawW : drawW / 2
   const yp    = (v: number) => pad.top + oscH * (1 - Math.max(0, Math.min(100, v)) / 100)
   const xpAbs = (abs: number) => xp(abs - si)
 
@@ -1164,10 +1177,10 @@ export function RSIBollingerChart({ symbol, syncInterval, visibleRange, crosshai
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
-      if (result) drawRSIBollinger(ctx, W, H - TIME_AXIS_H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin)
-      drawTimeAxis(ctx, W, H, candles, viewStart, viewEnd, rsbRightMargin, tf.interval)
+      if (result) drawRSIBollinger(ctx, W, H - TIME_AXIS_H, result, hi, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin, viewport.from, viewport.to)
+      drawTimeAxis(ctx, W, H, candles, viewStart, viewEnd, rsbRightMargin, tf.interval, viewport.from, viewport.to)
     },
-    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin, tf.interval, candles], viewSize, viewport, setViewport, rsbExternalIdx, onCrosshairChange, handleRsbVpChange
+    [result, viewStart, viewEnd, showTrendlines, showDivergence, rsbRightMargin, tf.interval, candles, viewport.from, viewport.to], viewSize, viewport, setViewport, rsbExternalIdx, onCrosshairChange, handleRsbVpChange
   )
 
   const lastRsi = result?.rsi[result.rsi.length - 1] ?? 50
@@ -1324,7 +1337,7 @@ function calcRSI(candles: Candle[], period = 14): number[] {
 }
 
 // ── RSI Canvas draw ──────────────────────────────────────────────────────────
-function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: number[], obLevel: number, osLevel: number, hoverIdx: number | null, viewStart?: number, viewEnd?: number, rightMarginFrac = 0) {
+function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: number[], obLevel: number, osLevel: number, hoverIdx: number | null, viewStart?: number, viewEnd?: number, rightMarginFrac = 0, vpFrom?: number, vpTo?: number) {
   const pad = { top: 8, bottom: 8 }
   const oscH = H - pad.top - pad.bottom
   const startIdx = viewStart !== undefined ? viewStart : Math.max(0, rsiData.length - 150)
@@ -1332,7 +1345,11 @@ function drawRSI(ctx: CanvasRenderingContext2D, W: number, H: number, rsiData: n
   const data = rsiData.slice(startIdx, endIdx)
   const n = data.length
   const drawW = W * (1 - Math.max(0, Math.min(0.35, rightMarginFrac)))
-  const xp = (i: number) => n > 1 ? (i / (n - 1)) * drawW : drawW / 2
+  const total = rsiData.length || 1
+  const vpF = vpFrom !== undefined ? vpFrom : startIdx / total
+  const vpT = vpTo   !== undefined ? vpTo   : endIdx   / total
+  const vpSpan = vpT - vpF || 1
+  const xp = (i: number) => total > 1 ? ((startIdx + i) / total - vpF) / vpSpan * drawW : drawW / 2
   const yp = (v: number) => pad.top + oscH * (1 - v / 100)
 
   ctx.clearRect(0, 0, W, H)
@@ -1469,10 +1486,10 @@ export function RSIChart({ symbol, syncInterval, visibleRange, crosshairFrac, on
 
   const { ref: canvasRef, hoverIdx, canvasW, onWheel, onMouseDown, onMouseMove, onMouseUp, onLeave } = useInteractiveCanvas(
     (ctx, W, H, hi) => {
-      drawRSI(ctx, W, H - TIME_AXIS_H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd, rsiRightMargin)
-      drawTimeAxis(ctx, W, H, candles, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval)
+      drawRSI(ctx, W, H - TIME_AXIS_H, rsiData, obLevel, osLevel, hi, rsiViewStart, rsiViewEnd, rsiRightMargin, viewport.from, viewport.to)
+      drawTimeAxis(ctx, W, H, candles, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval, viewport.from, viewport.to)
     },
-    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval, candles], rsiViewSize, viewport, setViewport, rsiExternalIdx, onCrosshairChange, handleRsiVpChange
+    [rsiData, rsiViewStart, rsiViewEnd, rsiRightMargin, tf.interval, candles, viewport.from, viewport.to], rsiViewSize, viewport, setViewport, rsiExternalIdx, onCrosshairChange, handleRsiVpChange
   )
 
   return (
