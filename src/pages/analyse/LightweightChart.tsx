@@ -687,15 +687,16 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   const [aiAnalysis, setAiAnalysis] = useState<{bias:string;quality:string;score:number;keyLevel:string;catalyst:string;summary:string;risk:string}|null>(null)
   const [aiLoading,  setAiLoading]  = useState(false)
   const [aiOpen,     setAiOpen]     = useState(false)
+  const [aiError,    setAiError]    = useState<string|null>(null)
 
   const analyzeChart = useCallback(async () => {
     const candles = candlesRef.current
     if (!candles.length) return
-    setAiLoading(true); setAiOpen(true)
+    setAiLoading(true); setAiOpen(true); setAiError(null); setAiAnalysis(null)
     try {
       const last = candles.slice(-20)
       const closes = last.map(c => c.close)
-      // Simple RSI-14 on available data
+      // Simple RSI-14
       let rsiVal = 50
       if (candles.length >= 15) {
         const cl = candles.map(c => c.close)
@@ -706,25 +707,32 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
         ag /= 14; al /= 14
         rsiVal = al === 0 ? 100 : Math.round(100 - 100 / (1 + ag / al))
       }
-      const cur = candles[candles.length - 1]
+      const cur  = candles[candles.length - 1]
       const prev = candles[candles.length - 2]
-      const chg = ((cur.close - prev.close) / prev.close * 100).toFixed(2)
+      const chg  = ((cur.close - prev.close) / prev.close * 100).toFixed(2)
       const vmcStatus = vmcResult?.status ?? 'N/A'
       const bbLast = bbResult?.[bbResult.length - 1]
       const bbPos = bbLast ? `upper=${bbLast.upper.toFixed(1)} mid=${bbLast.mid.toFixed(1)} lower=${bbLast.lower.toFixed(1)}` : 'N/A'
 
+      const systemPrompt = 'You are a professional trading analyst. Respond ONLY with valid JSON, no markdown, no extra text.'
       const userPrompt = `Symbol: ${symbol} | TF: ${tf.label} | Price: ${cur.close.toFixed(2)} (${chg}%)
 Last 20 closes: ${closes.map(v=>v.toFixed(2)).join(', ')}
 RSI(14): ${rsiVal} | VMC: ${vmcStatus} | BB: ${bbPos}
-Analyze and respond ONLY with this JSON (no markdown, no text outside):
-{"bias":"BULLISH|BEARISH|NEUTRAL","quality":"Low|Medium|High","score":0-100,"keyLevel":"price","catalyst":"short phrase","summary":"1-2 sentences max","risk":"1 sentence max"}`
+Respond with exactly this JSON structure:
+{"bias":"BULLISH","quality":"High","score":72,"keyLevel":"73200","catalyst":"RSI oversold + support","summary":"Short analysis here.","risk":"Resistance at X"}`
 
       const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
-      const res = await fn({ messages: [{ role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 200 })
-      const raw = res.data.choices?.[0]?.message?.content || '{}'
-      const parsed = JSON.parse(raw.replace(/```json\n?|```\n?/g, '').trim())
+      const res = await fn({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 500 })
+      const raw = res.data.choices?.[0]?.message?.content || ''
+      if (!raw) throw new Error('Réponse vide')
+      // Extract JSON robustly: find first { to last }
+      const start = raw.indexOf('{'), end = raw.lastIndexOf('}')
+      if (start === -1 || end === -1) throw new Error('JSON introuvable dans la réponse')
+      const parsed = JSON.parse(raw.slice(start, end + 1))
       setAiAnalysis(parsed)
-    } catch { setAiAnalysis(null) }
+    } catch(e: any) {
+      setAiError(e?.message || 'Erreur inconnue')
+    }
     setAiLoading(false)
   }, [symbol, tf.label, vmcResult, bbResult])
 
@@ -1726,7 +1734,7 @@ Analyze and respond ONLY with this JSON (no markdown, no text outside):
               </div>
             </>
           ) : (
-            <span style={{fontSize:10,color:'var(--tm-loss)'}}>Analyse échouée — réessayer</span>
+            <span style={{fontSize:10,color:'var(--tm-loss)'}}>Erreur : {aiError || 'inconnue'} — <button onClick={analyzeChart} style={{background:'none',border:'none',color:'#FF9500',cursor:'pointer',fontSize:10,padding:0,textDecoration:'underline'}}>réessayer</button></span>
           )}
           <button onClick={()=>setAiOpen(false)} style={{marginLeft:'auto',background:'none',border:'none',color:'rgba(255,255,255,0.2)',cursor:'pointer',fontSize:12,flexShrink:0}} onMouseEnter={e=>(e.currentTarget.style.color='#FF3B30')} onMouseLeave={e=>(e.currentTarget.style.color='rgba(255,255,255,0.2)')}>✕</button>
         </div>
