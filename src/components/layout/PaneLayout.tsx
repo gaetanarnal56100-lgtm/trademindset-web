@@ -266,7 +266,7 @@ export default function PaneLayout({
           />
         </div>
       ) : (
-        <PanelGroup direction="vertical" style={{ height: TOTAL_H }}>
+        <PanelGroup orientation="vertical" style={{ height: TOTAL_H }}>
 
           {/* ── Chart pane ── */}
           <Panel defaultSize={chartSize} minSize={20}>
