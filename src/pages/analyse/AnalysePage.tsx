@@ -1452,7 +1452,7 @@ export default function AnalysePage() {
   })
 
   // ── Dispersion context for AI analysis ──
-  const [dispersionCtx, setDispersionCtx] = useState<{ regime: string; basketHurst: number; basketAutocorr: number; returnKurtosis: number; dispersionZScore: number; avgCorrelation: number; pctUp: number; tradeSignal: { bias: string; confidence: number; reasoning: string[] } } | null>(null)
+  const [dispersionCtx, setDispersionCtx] = useState<import('./LightweightChart').Props['dispersionContext']>(null)
 
   // ── Refs pour accès aux valeurs crypto dans handleExportPDF (évite TDZ) ───
   const liqBiasRef    = useRef(0)           // liqLong1h - liqShort1h courant
@@ -2636,7 +2636,7 @@ export default function AnalysePage() {
       {mode === 'charts' && <ChartsTab symbol={symbol} isCrypto={isCrypto}/>}
 
       {/* ── DISPERSION TAB ── */}
-      {mode === 'dispersion' && <DispersionDashboard syncInterval={syncInterval} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} visibleRange={syncRange} onResult={r => setDispersionCtx({ regime: r.regime, basketHurst: r.basketHurst, basketAutocorr: r.basketAutocorr, returnKurtosis: r.returnKurtosis, dispersionZScore: r.dispersionZScore, avgCorrelation: r.avgCorrelation, pctUp: r.pctUp, tradeSignal: { bias: r.tradeSignal.bias, confidence: r.tradeSignal.confidence, reasoning: r.tradeSignal.reasoning } })} />}
+      {mode === 'dispersion' && <DispersionDashboard syncInterval={syncInterval} crosshairFrac={crosshairFrac} onCrosshairChange={setCrosshairFrac} visibleRange={syncRange} onResult={r => setDispersionCtx({ regime: r.regime, regimeConfidence: r.regimeConfidence, dispersionZScore: r.dispersionZScore, dispersionPercentile: r.dispersionPercentile, returnSkew: r.returnSkew, returnKurtosis: r.returnKurtosis, avgCorrelation: r.avgCorrelation, correlationZScore: r.correlationZScore, crossSectionalMomentum: r.crossSectionalMomentum, avgComponentVol: r.avgComponentVol, realizedIndexVol: r.realizedIndexVol, impliedIndexVol: r.impliedIndexVol, volSpread: r.volSpread, volRegime: r.volRegime, volZScore: r.volZScore, pctUp: r.pctUp, pctAboveEma20: r.pctAboveEma20, pctAboveEma50: r.pctAboveEma50, advanceDeclineRatio: r.advanceDeclineRatio, participationScore: r.participationScore, basketReturn: r.basketReturn, medianReturn: r.medianReturn, smartMoneyBias: r.smartMoneyBias, distributionScore: r.distributionScore, accumulationScore: r.accumulationScore, hiddenStrength: r.hiddenStrength, hiddenWeakness: r.hiddenWeakness, basketHurst: r.basketHurst, basketAutocorr: r.basketAutocorr, riskOnScore: r.riskOnScore, overallScore: r.overallScore, overallBias: r.overallBias, tradeSignal: { bias: r.tradeSignal.bias, confidence: r.tradeSignal.confidence, reasoning: r.tradeSignal.reasoning } })} />}
 
       {/* ── LAYOUT TAB ── */}
       {mode === 'layout' && symbol && (

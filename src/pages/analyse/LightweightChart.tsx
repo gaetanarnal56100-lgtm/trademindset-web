@@ -27,7 +27,24 @@ interface Props {
   /** Extra buttons injected into the right side of the top bar */
   topBarExtra?: React.ReactNode
   /** Dispersion data from DispersionDashboard — injected into AI analysis */
-  dispersionContext?: { regime: string; basketHurst: number; basketAutocorr: number; returnKurtosis: number; dispersionZScore: number; avgCorrelation: number; pctUp: number; tradeSignal: { bias: string; confidence: number; reasoning: string[] } } | null
+  dispersionContext?: {
+    // Regime
+    regime: string; regimeConfidence: number
+    // Dispersion
+    dispersionZScore: number; dispersionPercentile: number; returnSkew: number; returnKurtosis: number
+    // Correlation
+    avgCorrelation: number; correlationZScore: number; crossSectionalMomentum: number
+    // Volatility
+    avgComponentVol: number; realizedIndexVol: number; impliedIndexVol: number; volSpread: number; volRegime: string; volZScore: number
+    // Breadth
+    pctUp: number; pctAboveEma20: number; pctAboveEma50: number; advanceDeclineRatio: number; participationScore: number
+    // Smart money
+    basketReturn: number; medianReturn: number; smartMoneyBias: string; distributionScore: number; accumulationScore: number; hiddenStrength: boolean; hiddenWeakness: boolean
+    // Quant
+    basketHurst: number; basketAutocorr: number; riskOnScore: number; overallScore: number; overallBias: string
+    // Signal
+    tradeSignal: { bias: string; confidence: number; reasoning: string[] }
+  } | null
 }
 
 export interface LightweightChartHandle {
@@ -716,9 +733,17 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       const bbLast = bbResult?.[bbResult.length - 1]
       const bbPos = bbLast ? `upper=${bbLast.upper.toFixed(1)} mid=${bbLast.middle.toFixed(1)} lower=${bbLast.lower.toFixed(1)}` : 'N/A'
 
-      const dispLine = dispersionContext
-        ? `Regime: ${dispersionContext.regime} | Hurst: ${dispersionContext.basketHurst.toFixed(2)} | Autocorr: ${dispersionContext.basketAutocorr.toFixed(2)} | Kurtosis: ${dispersionContext.returnKurtosis.toFixed(2)} | Dispersion Z: ${dispersionContext.dispersionZScore.toFixed(2)} | Avg Corr: ${dispersionContext.avgCorrelation.toFixed(2)} | Breadth %Up: ${Math.round(dispersionContext.pctUp)}% | Signal: ${dispersionContext.tradeSignal.bias} (conf ${dispersionContext.tradeSignal.confidence}%)`
-        : ''
+      const d = dispersionContext
+      const dispLine = d ? `
+DISPERSION ANALYSIS:
+  Regime: ${d.regime} (conf ${d.regimeConfidence}%) | Overall: ${d.overallBias} ${d.overallScore}/100 | RiskOn: ${d.riskOnScore}/100
+  Dispersion: Z=${d.dispersionZScore.toFixed(2)}σ pct=${d.dispersionPercentile}e | Skew=${d.returnSkew.toFixed(2)} Kurtosis=${d.returnKurtosis.toFixed(2)}
+  Correlation: avg=${d.avgCorrelation.toFixed(2)} Z=${d.correlationZScore.toFixed(2)}σ | Cross-sect momentum=${d.crossSectionalMomentum.toFixed(3)}
+  Volatility: components=${d.avgComponentVol.toFixed(1)}% realised=${d.realizedIndexVol.toFixed(1)}% implied=${d.impliedIndexVol.toFixed(1)}% spread=${d.volSpread.toFixed(2)}% regime=${d.volRegime} Z=${d.volZScore.toFixed(2)}σ
+  Breadth: %up=${Math.round(d.pctUp)}% EMA20=${Math.round(d.pctAboveEma20)}% EMA50=${Math.round(d.pctAboveEma50)}% A/D=${d.advanceDeclineRatio.toFixed(2)} participation=${Math.round(d.participationScore)}%
+  SmartMoney: bias=${d.smartMoneyBias} basket=${d.basketReturn.toFixed(3)}% median=${d.medianReturn.toFixed(3)}% distrib=${d.distributionScore}/100 accum=${d.accumulationScore}/100${d.hiddenStrength?' [HIDDEN STRENGTH]':''}${d.hiddenWeakness?' [HIDDEN WEAKNESS]':''}
+  Quant: Hurst=${d.basketHurst.toFixed(2)} Autocorr=${d.basketAutocorr.toFixed(2)}
+  Signal: ${d.tradeSignal.bias} conf=${d.tradeSignal.confidence}% | ${d.tradeSignal.reasoning.slice(0,2).join(' | ')}` : ''
 
       const systemPrompt = 'You are a professional trading analyst. Respond ONLY with valid JSON, no markdown, no extra text.'
       const userPrompt = `Symbol: ${symbol} | TF: ${tf.label} | Price: ${cur.close.toFixed(2)} (${chg}%)
