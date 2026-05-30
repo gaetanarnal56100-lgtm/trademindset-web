@@ -360,9 +360,12 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
         import('html2canvas'),
         import('jspdf'),
       ])
+      // windowWidth=900 forces layout to render at 900px wide regardless of screen size
+      // → content scales properly to A4 portrait (190mm usable ≈ 900px at 120dpi)
       const canvas = await html2canvas(contentRef.current, {
         backgroundColor: '#0D1123',
         scale: 2,
+        windowWidth: 900,
         useCORS: true,
         logging: false,
       })
