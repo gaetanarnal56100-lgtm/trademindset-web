@@ -95,15 +95,19 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [usedSources, setUsedSources] = useState<Record<string, 'prop' | 'auto' | 'none'> | null>(null)
-  const [history, setHistory] = useState<IaAnalysisRecord[]>([])
+  const [allHistory, setAllHistory] = useState<IaAnalysisRecord[]>([])
   const [showHistory, setShowHistory] = useState(false)
+  const [historyFilter, setHistoryFilter] = useState<'all' | string>('all')
   const lastSavedId = useRef<string | null>(null)
 
-  // Load history on mount / symbol change
+  // Derived: filtered history for display
+  const history = historyFilter === 'all' ? allHistory : allHistory.filter(r => r.symbol === historyFilter)
+
+  // Load ALL history on mount (no symbol filter — no composite index needed)
   useEffect(() => {
     if (!user?.uid) return
-    getIaHistory(user.uid, symbol, 30).then(setHistory).catch(() => {})
-  }, [user?.uid, symbol])
+    getIaHistory(user.uid, undefined, 100).then(setAllHistory).catch(() => {})
+  }, [user?.uid])
 
   // Evaluate open IA trades against actual price data
   const evaluatePendingTrades = useCallback(async (uid: string) => {
@@ -143,7 +147,7 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
       } catch { /* skip */ }
     }
     // Refresh after evaluation
-    getIaHistory(uid, symbol, 30).then(setHistory).catch(() => {})
+    getIaHistory(uid, undefined, 100).then(setAllHistory).catch(() => {})
   }, [history, symbol])
 
   const analyze = useCallback(async () => {
@@ -423,10 +427,11 @@ Respond with EXACTLY this JSON (no example values — compute everything from th
         }
         saveIaAnalysis(record).then(id => {
           lastSavedId.current = id
-          // Evaluate open trades in history asynchronously
-          evaluatePendingTrades(user.uid)
-          // Refresh history
-          getIaHistory(user.uid, symbol, 30).then(setHistory).catch(() => {})
+          // Refresh all history then evaluate open trades
+          getIaHistory(user.uid, undefined, 100).then(h => {
+            setAllHistory(h)
+            evaluatePendingTrades(user.uid)
+          }).catch(() => {})
         }).catch(() => {})
       }
     } catch(e: any) {
@@ -774,55 +779,111 @@ Respond with EXACTLY this JSON (no example values — compute everything from th
         </div>
       )}
 
-      {/* ── Backtest History ── */}
-      {history.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <button onClick={() => setShowHistory(h => !h)} style={{
-            background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8,
-            color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-            padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-            📊 Backtest IA — {history.length} analyses
-            {(() => {
-              const closed = history.filter(r => r.outcome !== 'open' && r.outcome !== 'expired')
-              const wins = closed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
-              const avgR = closed.length ? closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / closed.length : 0
-              return closed.length ? <span style={{ color: wins.length/closed.length >= 0.5 ? '#34C759' : '#FF3B30' }}>
-                {Math.round(wins.length/closed.length*100)}% win · avg {avgR.toFixed(2)}R
-              </span> : null
-            })()}
-            <span>{showHistory ? '▲' : '▼'}</span>
-          </button>
-          {showHistory && (
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {history.map(rec => {
-                const outcomeColor = rec.outcome === 'tp1_hit' || rec.outcome === 'tp2_hit' ? '#34C759'
-                  : rec.outcome === 'sl_hit' ? '#FF3B30' : rec.outcome === 'expired' ? '#8E8E93' : '#FF9500'
-                const outcomeLabel = rec.outcome === 'tp1_hit' ? 'TP1 ✅' : rec.outcome === 'tp2_hit' ? 'TP2 ✅'
-                  : rec.outcome === 'sl_hit' ? 'SL ❌' : rec.outcome === 'expired' ? 'Expiré' : '⏳ Open'
-                const biasColor = rec.bias === 'BULLISH' ? '#34C759' : rec.bias === 'BEARISH' ? '#FF3B30' : '#8E8E93'
-                return (
-                  <div key={rec.id} style={{
-                    display: 'grid', gridTemplateColumns: '80px 60px 1fr auto auto', gap: 8, alignItems: 'center',
-                    padding: '6px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 6,
-                    fontSize: 10, fontFamily: 'JetBrains Mono,monospace',
-                  }}>
-                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>
-                      {new Date(rec.timestamp).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' })} {new Date(rec.timestamp).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}
-                    </span>
-                    <span style={{ color: biasColor, fontWeight: 700 }}>{rec.bias}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.5)' }}>Entry {rec.entryPrice.toFixed(0)} · TP {rec.targets.tp1} · SL {rec.targets.sl}</span>
-                    <span style={{ color: outcomeColor, fontWeight: 700 }}>{outcomeLabel}</span>
-                    <span style={{ color: rec.outcomeR && rec.outcomeR > 0 ? '#34C759' : '#FF3B30' }}>
-                      {rec.outcomeR != null ? `${rec.outcomeR.toFixed(2)}R` : ''}
-                    </span>
+      {/* ── Backtest IA — Global Stats + History ── */}
+      {(() => {
+        const closed = allHistory.filter(r => r.outcome !== 'open' && r.outcome !== 'expired')
+        const wins   = closed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
+        const losses = closed.filter(r => r.outcome === 'sl_hit')
+        const open   = allHistory.filter(r => r.outcome === 'open')
+        const winRate = closed.length ? wins.length / closed.length : 0
+        const avgR    = closed.length ? closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / closed.length : 0
+        const totalR  = closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0)
+        // Symbols in history
+        const symbols = [...new Set(allHistory.map(r => r.symbol))]
+        return (
+          <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'hidden' }}>
+            {/* Header + toggle */}
+            <button onClick={() => setShowHistory(h => !h)} style={{
+              width: '100%', background: 'rgba(255,255,255,0.03)', border: 'none',
+              padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>📊 Backtest IA</span>
+              {/* Global stats pills */}
+              <span style={{ fontSize: 10, fontWeight: 700, color: winRate >= 0.5 ? '#34C759' : winRate > 0 ? '#FF9500' : '#8E8E93',
+                background: 'rgba(255,255,255,0.05)', borderRadius: 5, padding: '2px 8px' }}>
+                {closed.length > 0 ? `${Math.round(winRate*100)}% win` : 'Pas encore de résultats'}
+              </span>
+              {closed.length > 0 && <>
+                <span style={{ fontSize: 10, color: avgR >= 0 ? '#34C759' : '#FF3B30', fontFamily: 'JetBrains Mono,monospace' }}>avg {avgR.toFixed(2)}R</span>
+                <span style={{ fontSize: 10, color: totalR >= 0 ? '#34C759' : '#FF3B30', fontFamily: 'JetBrains Mono,monospace' }}>total {totalR.toFixed(1)}R</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{wins.length}W · {losses.length}L · {open.length} open</span>
+              </>}
+              <span style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>{allHistory.length} analyses {showHistory ? '▲' : '▼'}</span>
+            </button>
+
+            {showHistory && (
+              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {/* Symbol filter */}
+                {symbols.length > 1 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                    {(['all', ...symbols] as string[]).map(s => (
+                      <button key={s} onClick={() => setHistoryFilter(s)} style={{
+                        background: historyFilter === s ? 'rgba(191,90,242,0.15)' : 'none',
+                        border: `1px solid ${historyFilter === s ? '#BF5AF2' : 'rgba(255,255,255,0.1)'}`,
+                        borderRadius: 5, color: historyFilter === s ? '#BF5AF2' : 'rgba(255,255,255,0.4)',
+                        fontSize: 10, fontWeight: 600, cursor: 'pointer', padding: '2px 8px',
+                      }}>{s === 'all' ? 'Tous' : s}</button>
+                    ))}
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                )}
+
+                {/* Stats by symbol if showing all */}
+                {historyFilter === 'all' && symbols.length > 1 && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                    {symbols.map(sym => {
+                      const symClosed = allHistory.filter(r => r.symbol === sym && r.outcome !== 'open' && r.outcome !== 'expired')
+                      const symWins   = symClosed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
+                      const symR      = symClosed.length ? symClosed.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / symClosed.length : 0
+                      return symClosed.length > 0 ? (
+                        <div key={sym} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6,
+                          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+                          fontFamily: 'JetBrains Mono,monospace', color: 'rgba(255,255,255,0.5)' }}>
+                          <span style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>{sym}</span>
+                          {' '}{Math.round(symWins.length/symClosed.length*100)}% · {symR.toFixed(2)}R
+                        </div>
+                      ) : null
+                    })}
+                  </div>
+                )}
+
+                {/* Trade rows */}
+                {history.length === 0
+                  ? <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', padding: '8px 0', textAlign: 'center' }}>
+                      Lance une analyse pour commencer à construire l'historique
+                    </div>
+                  : history.map(rec => {
+                    const oc = rec.outcome ?? 'open'
+                    const ocColor = oc === 'tp1_hit' || oc === 'tp2_hit' ? '#34C759' : oc === 'sl_hit' ? '#FF3B30' : oc === 'expired' ? '#8E8E93' : '#FF9500'
+                    const ocLabel = oc === 'tp1_hit' ? 'TP1 ✅' : oc === 'tp2_hit' ? 'TP2 ✅' : oc === 'sl_hit' ? 'SL ❌' : oc === 'expired' ? 'Expiré' : '⏳'
+                    const bc = rec.bias === 'BULLISH' ? '#34C759' : rec.bias === 'BEARISH' ? '#FF3B30' : '#8E8E93'
+                    return (
+                      <div key={rec.id} style={{
+                        display: 'grid', gridTemplateColumns: '90px 70px 50px 1fr 55px 40px',
+                        gap: 6, alignItems: 'center', padding: '5px 8px',
+                        background: 'rgba(255,255,255,0.02)', borderRadius: 6,
+                        fontSize: 10, fontFamily: 'JetBrains Mono,monospace', borderLeft: `2px solid ${bc}40`,
+                      }}>
+                        <span style={{ color: 'rgba(255,255,255,0.35)' }}>
+                          {new Date(rec.timestamp).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} {new Date(rec.timestamp).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}
+                        </span>
+                        <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{rec.symbol}</span>
+                        <span style={{ color: bc, fontWeight: 700 }}>{rec.bias.slice(0,4)}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.4)' }}>
+                          {rec.entryPrice.toFixed(0)} → TP {rec.targets.tp1} · SL {rec.targets.sl}
+                        </span>
+                        <span style={{ color: ocColor, fontWeight: 700 }}>{ocLabel}</span>
+                        <span style={{ color: rec.outcomeR != null && rec.outcomeR > 0 ? '#34C759' : '#FF3B30', fontWeight: 700 }}>
+                          {rec.outcomeR != null ? `${rec.outcomeR.toFixed(2)}R` : ''}
+                        </span>
+                      </div>
+                    )
+                  })
+                }
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Empty state ── */}
       {!result && !loading && !error && (

@@ -35,13 +35,13 @@ export async function saveIaAnalysis(record: Omit<IaAnalysisRecord, 'id'>): Prom
   return ref.id
 }
 
-export async function getIaHistory(uid: string, symbol?: string, limitN = 50): Promise<IaAnalysisRecord[]> {
+export async function getIaHistory(uid: string, symbol?: string, limitN = 100): Promise<IaAnalysisRecord[]> {
   const col = collection(db, 'users', uid, 'iaHistory')
-  const q = symbol
-    ? query(col, where('symbol', '==', symbol), orderBy('timestamp', 'desc'), limit(limitN))
-    : query(col, orderBy('timestamp', 'desc'), limit(limitN))
+  // No composite index needed — fetch all, filter client-side
+  const q = query(col, orderBy('timestamp', 'desc'), limit(limitN))
   const snap = await getDocs(q)
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as IaAnalysisRecord))
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as IaAnalysisRecord))
+  return symbol ? all.filter(r => r.symbol === symbol) : all
 }
 
 export async function updateIaOutcome(
