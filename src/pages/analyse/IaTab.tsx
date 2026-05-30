@@ -1,6 +1,6 @@
 // IaTab — Onglet Analyse IA complète
 // Synthèse de TOUS les indicateurs disponibles (chart + oscillateurs + dérivés + dispersion)
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import type { LightweightChartHandle } from './LightweightChart'
@@ -239,6 +239,33 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
     setLoading(false)
   }, [symbol, lwChartRef, dispersionCtx, pressure, liqLong1h, liqShort1h, pdfMtfSnap, ouSignal, fng, isCrypto])
 
+  // ── Export PDF ───────────────────────────────────────────────────────────
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [exporting, setExporting] = useState(false)
+
+  const exportPDF = useCallback(async () => {
+    if (!result || !contentRef.current) return
+    setExporting(true)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      const canvas = await html2canvas(contentRef.current, {
+        backgroundColor: '#0D1123',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      })
+      const imgW = canvas.width / 2
+      const imgH = canvas.height / 2
+      const pdf = new jsPDF({ orientation: imgW > imgH ? 'landscape' : 'portrait', unit: 'px', format: [imgW, imgH] })
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, imgW, imgH)
+      pdf.save(`${symbol}-IA-${new Date().toISOString().slice(0,10)}.pdf`)
+    } catch(e) { console.error('Export IA PDF', e) }
+    setExporting(false)
+  }, [result, symbol])
+
   // ── Render ───────────────────────────────────────────────────────────────
   const bc = result ? (result.bias === 'BULLISH' ? '#30D158' : result.bias === 'BEARISH' ? '#FF453A' : '#8E8E93') : '#BF5AF2'
 
@@ -282,6 +309,25 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
               : <><span style={{ fontSize: 15 }}>🔍</span> {result ? 'Relancer l\'analyse' : 'Lancer l\'analyse'}</>
             }
           </button>
+          {result && (
+            <button
+              onClick={exporting ? undefined : exportPDF}
+              disabled={exporting}
+              title="Exporter en PDF"
+              style={{
+                padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+                cursor: exporting ? 'wait' : 'pointer',
+                border: '1px solid rgba(52,199,89,0.4)', background: 'rgba(52,199,89,0.08)',
+                color: '#30D158', display: 'flex', alignItems: 'center', gap: 6,
+                transition: 'all 0.2s',
+              }}
+            >
+              {exporting
+                ? <><span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid #30D158', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }}/> Export…</>
+                : <><span style={{ fontSize: 14 }}>📥</span> PDF</>
+              }
+            </button>
+          )}
         </div>
       </div>
 
@@ -330,7 +376,7 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
 
       {/* ── Results ── */}
       {result && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {/* ── Header: Bias + Score + Conviction + Targets ── */}
           <div style={{
