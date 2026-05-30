@@ -7,8 +7,8 @@ import type { LightweightChartHandle } from './LightweightChart'
 import type { MTFSnapshot } from './MTFDashboard'
 import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
-import { saveIaAnalysis, getIaHistory, updateIaOutcome } from '@/services/firestore/iaHistory'
-import type { IaAnalysisRecord } from '@/services/firestore/iaHistory'
+import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome } from '@/services/firestore/iaHistory'
+import type { IaAnalysisRecord, IaGlobalRecord } from '@/services/firestore/iaHistory'
 import { useUser } from '@/hooks/useAuth'
 
 const fbFn = getFunctions(app, 'europe-west1')
@@ -96,17 +96,27 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [usedSources, setUsedSources] = useState<Record<string, 'prop' | 'auto' | 'none'> | null>(null)
   const [allHistory, setAllHistory] = useState<IaAnalysisRecord[]>([])
+  const [globalHistory, setGlobalHistory] = useState<IaGlobalRecord[]>([])
   const [showHistory, setShowHistory] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<'all' | string>('all')
+  const [historyTab, setHistoryTab] = useState<'personal' | 'global'>('personal')
   const lastSavedId = useRef<string | null>(null)
 
   // Derived: filtered history for display
   const history = historyFilter === 'all' ? allHistory : allHistory.filter(r => r.symbol === historyFilter)
+  const globalFiltered = historyFilter === 'all' ? globalHistory : globalHistory.filter(r => r.symbol === historyFilter)
 
-  // Load ALL history on mount (no symbol filter — no composite index needed)
+  // Load personal + global history on mount
   useEffect(() => {
-    if (!user?.uid) return
-    getIaHistory(user.uid, undefined, 100).then(setAllHistory).catch(() => {})
+    if (user?.uid) {
+      getIaHistory(user.uid, undefined, 100).then(setAllHistory).catch(() => {})
+    }
+    getGlobalIaHistory(undefined, 500).then(glob => {
+      setGlobalHistory(glob)
+      // Evaluate open global trades
+      evaluateGlobalTrades(glob)
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid])
 
   // Evaluate open IA trades against actual price data
@@ -149,6 +159,41 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
     // Refresh after evaluation
     getIaHistory(uid, undefined, 100).then(setAllHistory).catch(() => {})
   }, [history, symbol])
+
+  // Evaluate open global trades (runs on load, lightweight — max 50 open at a time)
+  const evaluateGlobalTrades = useCallback(async (records: IaGlobalRecord[]) => {
+    const open = records.filter(r => r.outcome === 'open' && r.id && r.trades?.length)
+      .slice(0, 50) // limit to avoid too many API calls
+    for (const rec of open) {
+      try {
+        const url = `https://api.binance.com/api/v3/klines?symbol=${rec.symbol}&interval=15m&startTime=${rec.timestamp}&limit=200`
+        const klines = await fetch(url).then(r => r.json()) as unknown[][]
+        if (!Array.isArray(klines) || klines.length < 2) continue
+        const highs = klines.map(k => parseFloat(k[2] as string))
+        const lows  = klines.map(k => parseFloat(k[3] as string))
+        const trade = rec.trades[0]; if (!trade) continue
+        const entry = parseFloat(trade.entry), tp1 = parseFloat(trade.tp1), sl = parseFloat(trade.sl)
+        if (!entry || !tp1 || !sl) continue
+        let outcome: IaAnalysisRecord['outcome'] = 'open'; let outcomeR = 0
+        const riskPts = Math.abs(entry - sl)
+        for (let i = 0; i < highs.length; i++) {
+          if (trade.direction === 'LONG') {
+            if (lows[i] <= sl)   { outcome = 'sl_hit';  outcomeR = -1; break }
+            if (highs[i] >= tp1) { outcome = 'tp1_hit'; outcomeR = Math.abs(tp1-entry)/riskPts; break }
+          } else {
+            if (highs[i] >= sl)  { outcome = 'sl_hit';  outcomeR = -1; break }
+            if (lows[i] <= tp1)  { outcome = 'tp1_hit'; outcomeR = Math.abs(tp1-entry)/riskPts; break }
+          }
+        }
+        if (outcome === 'open' && Date.now() - rec.timestamp > 24*3600_000) outcome = 'expired'
+        if (outcome !== 'open' && rec.id) {
+          await updateGlobalIaOutcome(rec.id, outcome, outcomeR)
+        }
+      } catch { /* skip */ }
+    }
+    // Refresh global after evaluation
+    getGlobalIaHistory(undefined, 500).then(setGlobalHistory).catch(() => {})
+  }, [])
 
   const analyze = useCallback(async () => {
     setLoading(true); setError(null)
@@ -779,97 +824,110 @@ Respond with EXACTLY this JSON (no example values — compute everything from th
         </div>
       )}
 
-      {/* ── Backtest IA — Global Stats + History ── */}
+      {/* ── Backtest IA — Personal + Global ── */}
       {(() => {
-        const closed = allHistory.filter(r => r.outcome !== 'open' && r.outcome !== 'expired')
-        const wins   = closed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
-        const losses = closed.filter(r => r.outcome === 'sl_hit')
-        const open   = allHistory.filter(r => r.outcome === 'open')
+        const activeRecords  = historyTab === 'personal' ? history : globalFiltered
+        const closed  = activeRecords.filter(r => r.outcome !== 'open' && r.outcome !== 'expired')
+        const wins    = closed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
+        const losses  = closed.filter(r => r.outcome === 'sl_hit')
+        const openR   = activeRecords.filter(r => r.outcome === 'open')
         const winRate = closed.length ? wins.length / closed.length : 0
         const avgR    = closed.length ? closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / closed.length : 0
         const totalR  = closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0)
-        // Symbols in history
-        const symbols = [...new Set(allHistory.map(r => r.symbol))]
+        const allSymbols = [...new Set(activeRecords.map(r => r.symbol))]
         return (
           <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'hidden' }}>
-            {/* Header + toggle */}
+            {/* Header */}
             <button onClick={() => setShowHistory(h => !h)} style={{
               width: '100%', background: 'rgba(255,255,255,0.03)', border: 'none',
-              padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+              padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
             }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>📊 Backtest IA</span>
-              {/* Global stats pills */}
-              <span style={{ fontSize: 10, fontWeight: 700, color: winRate >= 0.5 ? '#34C759' : winRate > 0 ? '#FF9500' : '#8E8E93',
-                background: 'rgba(255,255,255,0.05)', borderRadius: 5, padding: '2px 8px' }}>
-                {closed.length > 0 ? `${Math.round(winRate*100)}% win` : 'Pas encore de résultats'}
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: 'rgba(255,255,255,0.05)',
+                color: winRate >= 0.5 ? '#34C759' : winRate > 0 ? '#FF9500' : '#8E8E93' }}>
+                {closed.length > 0 ? `${Math.round(winRate*100)}% win` : '—'}
               </span>
               {closed.length > 0 && <>
-                <span style={{ fontSize: 10, color: avgR >= 0 ? '#34C759' : '#FF3B30', fontFamily: 'JetBrains Mono,monospace' }}>avg {avgR.toFixed(2)}R</span>
-                <span style={{ fontSize: 10, color: totalR >= 0 ? '#34C759' : '#FF3B30', fontFamily: 'JetBrains Mono,monospace' }}>total {totalR.toFixed(1)}R</span>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{wins.length}W · {losses.length}L · {open.length} open</span>
+                <span style={{ fontSize: 10, fontFamily: 'JetBrains Mono,monospace', color: avgR >= 0 ? '#34C759' : '#FF3B30' }}>avg {avgR.toFixed(2)}R</span>
+                <span style={{ fontSize: 10, fontFamily: 'JetBrains Mono,monospace', color: totalR >= 0 ? '#34C759' : '#FF3B30' }}>Σ{totalR.toFixed(1)}R</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{wins.length}W·{losses.length}L·{openR.length}⏳</span>
               </>}
-              <span style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>{allHistory.length} analyses {showHistory ? '▲' : '▼'}</span>
+              <span style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>{activeRecords.length} analyses {showHistory ? '▲' : '▼'}</span>
             </button>
 
             {showHistory && (
-              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Personal / Global tabs */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {(['personal', 'global'] as const).map(t => (
+                    <button key={t} onClick={() => setHistoryTab(t)} style={{
+                      background: historyTab === t ? 'rgba(191,90,242,0.15)' : 'none',
+                      border: `1px solid ${historyTab === t ? '#BF5AF2' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: 6, color: historyTab === t ? '#BF5AF2' : 'rgba(255,255,255,0.4)',
+                      fontSize: 10, fontWeight: 700, cursor: 'pointer', padding: '3px 10px',
+                    }}>
+                      {t === 'personal' ? `👤 Mes analyses (${allHistory.length})` : `🌍 Global (${globalHistory.length})`}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Symbol filter */}
-                {symbols.length > 1 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                    {(['all', ...symbols] as string[]).map(s => (
+                {allSymbols.length > 1 && (
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {(['all', ...allSymbols] as string[]).map(s => (
                       <button key={s} onClick={() => setHistoryFilter(s)} style={{
-                        background: historyFilter === s ? 'rgba(191,90,242,0.15)' : 'none',
-                        border: `1px solid ${historyFilter === s ? '#BF5AF2' : 'rgba(255,255,255,0.1)'}`,
-                        borderRadius: 5, color: historyFilter === s ? '#BF5AF2' : 'rgba(255,255,255,0.4)',
-                        fontSize: 10, fontWeight: 600, cursor: 'pointer', padding: '2px 8px',
+                        background: historyFilter === s ? 'rgba(0,213,255,0.1)' : 'none',
+                        border: `1px solid ${historyFilter === s ? '#00D5FF' : 'rgba(255,255,255,0.08)'}`,
+                        borderRadius: 5, color: historyFilter === s ? '#00D5FF' : 'rgba(255,255,255,0.35)',
+                        fontSize: 9, fontWeight: 600, cursor: 'pointer', padding: '2px 7px',
                       }}>{s === 'all' ? 'Tous' : s}</button>
                     ))}
                   </div>
                 )}
 
-                {/* Stats by symbol if showing all */}
-                {historyFilter === 'all' && symbols.length > 1 && (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                    {symbols.map(sym => {
-                      const symClosed = allHistory.filter(r => r.symbol === sym && r.outcome !== 'open' && r.outcome !== 'expired')
-                      const symWins   = symClosed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
-                      const symR      = symClosed.length ? symClosed.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / symClosed.length : 0
-                      return symClosed.length > 0 ? (
-                        <div key={sym} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6,
-                          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
-                          fontFamily: 'JetBrains Mono,monospace', color: 'rgba(255,255,255,0.5)' }}>
-                          <span style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 700 }}>{sym}</span>
-                          {' '}{Math.round(symWins.length/symClosed.length*100)}% · {symR.toFixed(2)}R
+                {/* Per-symbol stats strip */}
+                {historyFilter === 'all' && allSymbols.length > 1 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {allSymbols.map(sym => {
+                      const sc = activeRecords.filter(r => r.symbol === sym && r.outcome !== 'open' && r.outcome !== 'expired')
+                      const sw = sc.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
+                      const sr = sc.length ? sc.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / sc.length : 0
+                      return sc.length > 0 ? (
+                        <div key={sym} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 5,
+                          background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
+                          fontFamily: 'JetBrains Mono,monospace', color: 'rgba(255,255,255,0.45)' }}>
+                          <b style={{ color: 'rgba(255,255,255,0.75)' }}>{sym}</b>
+                          {' '}{Math.round(sw.length/sc.length*100)}% · {sr.toFixed(2)}R
                         </div>
                       ) : null
                     })}
                   </div>
                 )}
 
-                {/* Trade rows */}
-                {history.length === 0
-                  ? <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', padding: '8px 0', textAlign: 'center' }}>
-                      Lance une analyse pour commencer à construire l'historique
+                {/* Rows */}
+                {activeRecords.length === 0
+                  ? <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', padding: '10px 0', textAlign: 'center' }}>
+                      {historyTab === 'personal' ? 'Lance une analyse pour commencer' : 'Aucune donnée globale encore'}
                     </div>
-                  : history.map(rec => {
+                  : activeRecords.map(rec => {
                     const oc = rec.outcome ?? 'open'
                     const ocColor = oc === 'tp1_hit' || oc === 'tp2_hit' ? '#34C759' : oc === 'sl_hit' ? '#FF3B30' : oc === 'expired' ? '#8E8E93' : '#FF9500'
-                    const ocLabel = oc === 'tp1_hit' ? 'TP1 ✅' : oc === 'tp2_hit' ? 'TP2 ✅' : oc === 'sl_hit' ? 'SL ❌' : oc === 'expired' ? 'Expiré' : '⏳'
+                    const ocLabel = oc === 'tp1_hit' ? 'TP1 ✅' : oc === 'tp2_hit' ? 'TP2 ✅' : oc === 'sl_hit' ? 'SL ❌' : oc === 'expired' ? 'Exp.' : '⏳'
                     const bc = rec.bias === 'BULLISH' ? '#34C759' : rec.bias === 'BEARISH' ? '#FF3B30' : '#8E8E93'
                     return (
                       <div key={rec.id} style={{
-                        display: 'grid', gridTemplateColumns: '90px 70px 50px 1fr 55px 40px',
-                        gap: 6, alignItems: 'center', padding: '5px 8px',
+                        display: 'grid', gridTemplateColumns: '78px 65px 46px 1fr 50px 38px',
+                        gap: 5, alignItems: 'center', padding: '5px 8px',
                         background: 'rgba(255,255,255,0.02)', borderRadius: 6,
                         fontSize: 10, fontFamily: 'JetBrains Mono,monospace', borderLeft: `2px solid ${bc}40`,
                       }}>
-                        <span style={{ color: 'rgba(255,255,255,0.35)' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9 }}>
                           {new Date(rec.timestamp).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} {new Date(rec.timestamp).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}
                         </span>
                         <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{rec.symbol}</span>
                         <span style={{ color: bc, fontWeight: 700 }}>{rec.bias.slice(0,4)}</span>
-                        <span style={{ color: 'rgba(255,255,255,0.4)' }}>
-                          {rec.entryPrice.toFixed(0)} → TP {rec.targets.tp1} · SL {rec.targets.sl}
+                        <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 9 }}>
+                          {rec.entryPrice.toFixed(0)} → TP {rec.targets?.tp1} SL {rec.targets?.sl}
                         </span>
                         <span style={{ color: ocColor, fontWeight: 700 }}>{ocLabel}</span>
                         <span style={{ color: rec.outcomeR != null && rec.outcomeR > 0 ? '#34C759' : '#FF3B30', fontWeight: 700 }}>
