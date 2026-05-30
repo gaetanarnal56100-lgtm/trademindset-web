@@ -366,10 +366,34 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
         useCORS: true,
         logging: false,
       })
-      const imgW = canvas.width / 2
-      const imgH = canvas.height / 2
-      const pdf = new jsPDF({ orientation: imgW > imgH ? 'landscape' : 'portrait', unit: 'px', format: [imgW, imgH] })
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, imgW, imgH)
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()   // 210mm
+      const pageH = pdf.internal.pageSize.getHeight()  // 297mm
+      const margin = 10  // mm
+      const usableW = pageW - margin * 2
+      const imgW = usableW
+      const imgH = (canvas.height / canvas.width) * imgW  // maintain aspect ratio
+      const imgData = canvas.toDataURL('image/png')
+      // multi-page: slice image across A4 pages
+      const usableH = pageH - margin * 2
+      let yOffset = 0
+      let pageNum = 0
+      while (yOffset < imgH) {
+        if (pageNum > 0) pdf.addPage()
+        // sourceY in canvas pixels corresponding to yOffset mm
+        const srcY = (yOffset / imgH) * canvas.height
+        const sliceH = Math.min(usableH, imgH - yOffset)
+        const srcH = (sliceH / imgH) * canvas.height
+        // create a slice canvas
+        const slice = document.createElement('canvas')
+        slice.width = canvas.width
+        slice.height = Math.ceil(srcH)
+        const ctx = slice.getContext('2d')!
+        ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
+        pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, imgW, sliceH)
+        yOffset += usableH
+        pageNum++
+      }
       pdf.save(`${symbol}-IA-${new Date().toISOString().slice(0,10)}.pdf`)
     } catch(e) { console.error('Export IA PDF', e) }
     setExporting(false)
