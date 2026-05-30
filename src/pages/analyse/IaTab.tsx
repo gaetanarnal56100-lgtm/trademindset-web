@@ -1,12 +1,15 @@
 // IaTab — Onglet Analyse IA complète
 // Synthèse de TOUS les indicateurs disponibles (chart + oscillateurs + dérivés + dispersion)
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import type { LightweightChartHandle } from './LightweightChart'
 import type { MTFSnapshot } from './MTFDashboard'
 import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
+import { saveIaAnalysis, getIaHistory, updateIaOutcome } from '@/services/firestore/iaHistory'
+import type { IaAnalysisRecord } from '@/services/firestore/iaHistory'
+import { useUser } from '@/hooks/useAuth'
 
 const fbFn = getFunctions(app, 'europe-west1')
 
@@ -31,6 +34,12 @@ interface OUSignal {
 
 interface FngData { value: number; label: string; history: number[] }
 
+interface AiTrade {
+  label: string; direction: 'LONG' | 'SHORT'
+  entry: string; tp1: string; tp2: string; sl: string
+  rr: string; probability: number; horizon: string; rationale: string
+}
+
 interface AiResult {
   bias: string; score: number; conviction: number; horizon: string; quality: string
   keyLevels: string[]
@@ -40,6 +49,7 @@ interface AiResult {
   mtfAnalysis: string
   whaleAnalysis: string
   scenarios: { bull: string; bear: string }
+  trades?: AiTrade[]
 }
 
 interface Props {
@@ -79,11 +89,62 @@ function calcATR14(candles: { high: number; low: number; close: number }[]): num
 
 // ── Main component ───────────────────────────────────────────────────────────
 export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pressure, liqLong1h, liqShort1h, pdfMtfSnap, ouSignal, fng }: Props) {
+  const user = useUser()
   const [result, setResult] = useState<AiResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [usedSources, setUsedSources] = useState<Record<string, 'prop' | 'auto' | 'none'> | null>(null)
+  const [history, setHistory] = useState<IaAnalysisRecord[]>([])
+  const [showHistory, setShowHistory] = useState(false)
+  const lastSavedId = useRef<string | null>(null)
+
+  // Load history on mount / symbol change
+  useEffect(() => {
+    if (!user?.uid) return
+    getIaHistory(user.uid, symbol, 30).then(setHistory).catch(() => {})
+  }, [user?.uid, symbol])
+
+  // Evaluate open IA trades against actual price data
+  const evaluatePendingTrades = useCallback(async (uid: string) => {
+    const open = history.filter(r => r.outcome === 'open' && r.trades?.length)
+    for (const rec of open) {
+      try {
+        // Fetch klines from rec.timestamp to now (max 200 bars 15m)
+        const url = `https://api.binance.com/api/v3/klines?symbol=${rec.symbol}&interval=15m&startTime=${rec.timestamp}&limit=200`
+        const klines = await fetch(url).then(r => r.json()) as unknown[][]
+        if (!Array.isArray(klines) || klines.length < 2) continue
+        const highs = klines.map(k => parseFloat(k[2] as string))
+        const lows  = klines.map(k => parseFloat(k[3] as string))
+        // Check primary trade (first LONG or SHORT)
+        const trade = rec.trades[0]
+        if (!trade) continue
+        const entry = parseFloat(trade.entry)
+        const tp1   = parseFloat(trade.tp1)
+        const sl    = parseFloat(trade.sl)
+        if (!entry || !tp1 || !sl) continue
+        let outcome: IaAnalysisRecord['outcome'] = 'open'
+        let outcomeR = 0
+        const riskPts = Math.abs(entry - sl)
+        for (let i = 0; i < highs.length; i++) {
+          if (trade.direction === 'LONG') {
+            if (lows[i] <= sl)  { outcome = 'sl_hit';  outcomeR = -1; break }
+            if (highs[i] >= tp1) { outcome = 'tp1_hit'; outcomeR = Math.abs(tp1 - entry) / riskPts; break }
+          } else {
+            if (highs[i] >= sl)  { outcome = 'sl_hit';  outcomeR = -1; break }
+            if (lows[i] <= tp1)  { outcome = 'tp1_hit'; outcomeR = Math.abs(tp1 - entry) / riskPts; break }
+          }
+        }
+        // Expire if horizon passed (> 24h open)
+        if (outcome === 'open' && Date.now() - rec.timestamp > 24 * 3600_000) outcome = 'expired'
+        if (outcome !== 'open' && rec.id) {
+          await updateIaOutcome(uid, rec.id, outcome, outcomeR)
+        }
+      } catch { /* skip */ }
+    }
+    // Refresh after evaluation
+    getIaHistory(uid, symbol, 30).then(setHistory).catch(() => {})
+  }, [history, symbol])
 
   const analyze = useCallback(async () => {
     setLoading(true); setError(null)
@@ -288,10 +349,16 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   Leaders: ${d.tradeSignal.topLongs.join(', ')||'none'} | Laggards: ${d.tradeSignal.topShorts.join(', ')||'none'}` : 'Not available — visit Dispersion tab first to compute'
 
       // ── 9. Build prompt ──────────────────────────────────────────────────
-      const systemPrompt = `You are an elite institutional trading analyst with deep expertise in quantitative analysis, Smart Money Concepts (SMC), market microstructure, and dispersion trading. Your role is to synthesize ALL available market data into a comprehensive, actionable trading analysis. Be specific with price levels, cite the data you are basing each conclusion on, and provide clear reasoning. Respond ONLY with valid JSON, no markdown, no extra text.`
+      const curPrice = cur?.close ?? 0
+      const systemPrompt = `You are an elite institutional trading analyst. Synthesize ALL provided market data into actionable trading analysis. Rules:
+1. ALL price levels (keyLevels, targets, trades) MUST be derived from the actual data provided — never invent levels unrelated to the data.
+2. Current price is explicitly stated. For BULLISH setups: tp1 > tp2 > entry_price > sl. For BEARISH setups: tp1 < tp2 < entry_price < sl. NEVER put tp below entry for a BULLISH trade.
+3. Provide 2-3 distinct trade setups in "trades" array covering different timeframes or scenarios.
+4. keyLevels must be real S/R levels from SMC/MSD data or 50-bar range extremes.
+5. Respond ONLY with valid JSON, no markdown, no extra text.`
 
       const userPrompt = `=== ASSET ===
-Symbol: ${symbol} | Timeframe: ${tf} | Price: ${cur?.close.toFixed(2) ?? '?'} (${chg}%) | ATR(14): ${atr.toFixed(2)} (${cur ? ((atr/cur.close)*100).toFixed(2) : '?'}%)
+Symbol: ${symbol} | Timeframe: ${tf} | CURRENT PRICE: ${curPrice.toFixed(2)} (${chg}%) | ATR(14): ${atr.toFixed(2)} (${cur ? ((atr/cur.close)*100).toFixed(2) : '?'}%)
 50-bar range: High=${high50.toFixed(2)} Low=${low50.toFixed(2)} | Price at ${cur && high50 !== low50 ? (((cur.close-low50)/(high50-low50))*100).toFixed(0) : '?'}% of range
 Closes (last 50): ${closes50}
 Volume: ${volTrend}
@@ -317,8 +384,10 @@ ${fngSection}
 === MARKET INTERNALS (DISPERSION ENGINE — institutional grade) ===
 ${dispSection}
 
-Based on ALL the above data, provide a complete trading analysis. Respond with EXACTLY this JSON:
-{"bias":"BULLISH","score":74,"conviction":4,"horizon":"4-12h","quality":"High","keyLevels":["65800","66200","67800","68500"],"catalyst":"Bull OB reclaim at 66200 with whale accumulation + hidden strength signal","targets":{"tp1":"67800","tp2":"68500","sl":"65500"},"momentum":"BULLISH","regimeContext":"Dispersion expansion regime: stock-picking environment; breadth improving confirms move","summary":"3-4 sentences integrating price structure + MTF + dispersion + whale data with specific data references.","risk":"Bear OB resistance 67800, declining volume on bounce, RSI approaching 65","divergence":"CVD bullish divergence on 1h; breadth histogram turning up","mtfAnalysis":"Brief MTF alignment analysis with specific TF signals.","whaleAnalysis":"Brief whale/liq analysis with specific numbers.","scenarios":{"bull":"Specific bullish scenario with price targets and trigger.","bear":"Specific bearish scenario with invalidation level."}}`
+Current price is ${curPrice.toFixed(2)}. All TP/SL levels must be consistent with this price and with the bias direction.
+
+Respond with EXACTLY this JSON (no example values — compute everything from the data above):
+{"bias":"BULLISH|BEARISH|NEUTRAL","score":0,"conviction":0,"horizon":"Xh-Yh","quality":"Low|Medium|High","keyLevels":["LEVEL1","LEVEL2","LEVEL3","LEVEL4"],"catalyst":"specific catalyst from data","targets":{"tp1":"PRICE","tp2":"PRICE","sl":"PRICE"},"momentum":"BULLISH|BEARISH|NEUTRAL","regimeContext":"dispersion regime context","summary":"3-4 sentences with specific data references","risk":"specific risk factors","divergence":"divergence observations","mtfAnalysis":"MTF alignment with specific TF signals","whaleAnalysis":"whale/liq analysis with numbers","scenarios":{"bull":"bullish scenario with trigger and target","bear":"bearish scenario with invalidation"},"trades":[{"label":"Primary setup label","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"},{"label":"Alternative setup","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"}]}`
 
       const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
       const res = await fn({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 1200 })
@@ -332,6 +401,7 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
       if (!parsed.conviction) parsed.conviction = 3
       if (!parsed.horizon) parsed.horizon = '—'
       if (!parsed.scenarios) parsed.scenarios = { bull: '', bear: '' }
+      if (!Array.isArray(parsed.trades)) parsed.trades = []
       setUsedSources({
         chart:      lwChartRef.current?.getAnalysisData() ? 'prop' : 'none',
         mtf:        pdfMtfSnap ? 'prop' : liveMtf ? 'auto' : 'none',
@@ -342,6 +412,23 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
       })
       setResult(parsed)
       setLastUpdated(new Date())
+
+      // ── Save to Firestore + trigger backtest evaluation ───────────────────
+      if (user?.uid && cur) {
+        const record = {
+          uid: user.uid, symbol, timestamp: Date.now(),
+          bias: parsed.bias, score: parsed.score, conviction: parsed.conviction,
+          horizon: parsed.horizon, entryPrice: cur.close,
+          targets: parsed.targets, trades: parsed.trades ?? [],
+        }
+        saveIaAnalysis(record).then(id => {
+          lastSavedId.current = id
+          // Evaluate open trades in history asynchronously
+          evaluatePendingTrades(user.uid)
+          // Refresh history
+          getIaHistory(user.uid, symbol, 30).then(setHistory).catch(() => {})
+        }).catch(() => {})
+      }
     } catch(e: any) {
       setError(e?.message || 'Erreur inconnue')
     }
@@ -634,6 +721,42 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
             </div>
           )}
 
+          {/* ── Trade setups ── */}
+          {result.trades && result.trades.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', marginBottom: 8 }}>SETUPS PROPOSÉS</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {result.trades.map((t, i) => {
+                  const isLong = t.direction === 'LONG'
+                  const clr = isLong ? '#34C759' : '#FF3B30'
+                  const probColor = (t.probability ?? 0) >= 60 ? '#34C759' : (t.probability ?? 0) >= 40 ? '#FF9500' : '#FF3B30'
+                  return (
+                    <div key={i} style={{ padding: '10px 14px', background: `${clr}06`, border: `1px solid ${clr}25`, borderRadius: 10, display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '8px 16px', alignItems: 'start' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: clr, fontFamily: 'JetBrains Mono,monospace' }}>{t.direction}</span>
+                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>{t.horizon}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{t.label}</span>
+                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{t.rationale}</span>
+                        <div style={{ display: 'flex', gap: 10, marginTop: 2, fontFamily: 'JetBrains Mono,monospace', fontSize: 10 }}>
+                          <span style={{ color: 'rgba(255,255,255,0.4)' }}>Entry <span style={{ color: 'rgba(255,255,255,0.8)' }}>{t.entry}</span></span>
+                          <span style={{ color: '#34C759' }}>TP1 {t.tp1}</span>
+                          <span style={{ color: '#34C759' }}>TP2 {t.tp2}</span>
+                          <span style={{ color: '#FF3B30' }}>SL {t.sl}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: '#FF9500', fontFamily: 'JetBrains Mono,monospace' }}>R:{t.rr}</span>
+                        <span style={{ fontSize: 10, color: probColor, fontWeight: 700 }}>{t.probability}%</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ── Risk + Divergence pills ── */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {result.divergence && result.divergence !== 'N/A' && (
@@ -648,6 +771,56 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
             )}
           </div>
 
+        </div>
+      )}
+
+      {/* ── Backtest History ── */}
+      {history.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <button onClick={() => setShowHistory(h => !h)} style={{
+            background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8,
+            color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            📊 Backtest IA — {history.length} analyses
+            {(() => {
+              const closed = history.filter(r => r.outcome !== 'open' && r.outcome !== 'expired')
+              const wins = closed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
+              const avgR = closed.length ? closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / closed.length : 0
+              return closed.length ? <span style={{ color: wins.length/closed.length >= 0.5 ? '#34C759' : '#FF3B30' }}>
+                {Math.round(wins.length/closed.length*100)}% win · avg {avgR.toFixed(2)}R
+              </span> : null
+            })()}
+            <span>{showHistory ? '▲' : '▼'}</span>
+          </button>
+          {showHistory && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {history.map(rec => {
+                const outcomeColor = rec.outcome === 'tp1_hit' || rec.outcome === 'tp2_hit' ? '#34C759'
+                  : rec.outcome === 'sl_hit' ? '#FF3B30' : rec.outcome === 'expired' ? '#8E8E93' : '#FF9500'
+                const outcomeLabel = rec.outcome === 'tp1_hit' ? 'TP1 ✅' : rec.outcome === 'tp2_hit' ? 'TP2 ✅'
+                  : rec.outcome === 'sl_hit' ? 'SL ❌' : rec.outcome === 'expired' ? 'Expiré' : '⏳ Open'
+                const biasColor = rec.bias === 'BULLISH' ? '#34C759' : rec.bias === 'BEARISH' ? '#FF3B30' : '#8E8E93'
+                return (
+                  <div key={rec.id} style={{
+                    display: 'grid', gridTemplateColumns: '80px 60px 1fr auto auto', gap: 8, alignItems: 'center',
+                    padding: '6px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 6,
+                    fontSize: 10, fontFamily: 'JetBrains Mono,monospace',
+                  }}>
+                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>
+                      {new Date(rec.timestamp).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' })} {new Date(rec.timestamp).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}
+                    </span>
+                    <span style={{ color: biasColor, fontWeight: 700 }}>{rec.bias}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.5)' }}>Entry {rec.entryPrice.toFixed(0)} · TP {rec.targets.tp1} · SL {rec.targets.sl}</span>
+                    <span style={{ color: outcomeColor, fontWeight: 700 }}>{outcomeLabel}</span>
+                    <span style={{ color: rec.outcomeR && rec.outcomeR > 0 ? '#34C759' : '#FF3B30' }}>
+                      {rec.outcomeR != null ? `${rec.outcomeR.toFixed(2)}R` : ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
