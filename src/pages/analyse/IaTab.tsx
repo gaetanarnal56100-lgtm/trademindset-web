@@ -85,6 +85,74 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   const analyze = useCallback(async () => {
     setLoading(true); setError(null)
     try {
+      // ── 0. Auto-fetch missing data ────────────────────────────────────────
+      let liveMtf: string | null = null
+      let liveWhale: string | null = null
+      let liveOU: string | null = null
+
+      const autoFetches: Promise<void>[] = []
+
+      // MTF — fetch RSI for 5 timeframes if pdfMtfSnap absent
+      if (!pdfMtfSnap && symbol) {
+        autoFetches.push((async () => {
+          try {
+            const TFS = ['5m','15m','1h','4h','1d']
+            const base = isCrypto ? 'https://fapi.binance.com/fapi/v1' : 'https://api.binance.com/api/v3'
+            const results = await Promise.all(TFS.map(t =>
+              fetch(`${base}/klines?symbol=${symbol}&interval=${t}&limit=30`)
+                .then(r => r.json())
+                .then((k: unknown[][]) => {
+                  const cls = k.map(c => parseFloat(c[4] as string))
+                  const r = calcRSI14(cls)
+                  return { t, r, sig: r > 60 ? 'BULLISH' : r < 40 ? 'BEARISH' : 'NEUTRAL' }
+                })
+                .catch(() => ({ t, r: 50, sig: 'NEUTRAL' }))
+            ))
+            const avg = results.reduce((s,x) => s + x.r, 0) / results.length
+            const bull = results.filter(x => x.r > 55).length
+            const bear = results.filter(x => x.r < 45).length
+            const sig = bull >= 3 ? 'BULLISH' : bear >= 3 ? 'BEARISH' : 'NEUTRAL'
+            liveMtf = `Global score: ${Math.round(avg)}/100 | Signal: ${sig} | Confluence: ${Math.round(Math.max(bull,bear)/TFS.length*100)}%
+  Per-timeframe: ${results.map(x=>`${x.t}:${x.sig}(RSI${x.r.toFixed(0)})`).join(' | ')} [auto-fetched]`
+          } catch {}
+        })())
+      }
+
+      // Whale pressure — fetch last 500 aggTrades if pressure absent
+      if (isCrypto && !pressure && symbol) {
+        autoFetches.push((async () => {
+          try {
+            const trades = await fetch(`https://fapi.binance.com/fapi/v1/aggTrades?symbol=${symbol}&limit=500`)
+              .then(r => r.json()) as { p: string; q: string; m: boolean }[]
+            if (Array.isArray(trades) && trades.length > 0) {
+              let bV = 0, sV = 0
+              for (const t of trades) { const v = parseFloat(t.p)*parseFloat(t.q); if(t.m) sV+=v; else bV+=v }
+              const tot = bV+sV, sc = tot>0 ? (bV-sV)/tot : 0
+              liveWhale = `Whale pressure score: ${(sc*100).toFixed(0)}% (${sc>0.3?'ACCUMULATION':sc<-0.3?'DISTRIBUTION':'NEUTRAL'})
+  Buy: $${(bV/1e6).toFixed(1)}M | Sell: $${(sV/1e6).toFixed(1)}M [auto-fetched last 500 trades]`
+            }
+          } catch {}
+        })())
+      }
+
+      // OU Z-score — compute from 1h closes if ouSignal default
+      if (ouSignal.excess === 'none' && ouSignal.z === 0 && symbol) {
+        autoFetches.push((async () => {
+          try {
+            const kl = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=50`)
+              .then(r => r.json()) as unknown[][]
+            const cls = kl.map(k => parseFloat(k[4] as string))
+            const mean = cls.reduce((s,c)=>s+c,0)/cls.length
+            const std = Math.sqrt(cls.reduce((s,c)=>s+(c-mean)**2,0)/cls.length)
+            const z = std>0 ? (cls[cls.length-1]-mean)/std : 0
+            const exc = z>2?'extreme_overbought':z>1?'overbought':z<-2?'extreme_oversold':z<-1?'oversold':'none'
+            liveOU = `Excess: ${exc} | Regime: auto | Z-score: ${z.toFixed(2)}σ [auto-computed 1h closes] | Confluence signal: ${z<-1?'long':z>1?'short':'neutral'}`
+          } catch {}
+        })())
+      }
+
+      await Promise.all(autoFetches)
+
       // ── 1. Chart data (candles + indicators from LW chart) ──────────────
       const chartData = lwChartRef.current?.getAnalysisData()
       const candles = chartData?.candles ?? []
@@ -141,7 +209,7 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
       }
 
       // ── 4. MTF snapshot ──────────────────────────────────────────────────
-      let mtfSection = 'Not available (load page Analyse first)'
+      let mtfSection = liveMtf ?? 'Not available'
       if (pdfMtfSnap) {
         const snap = pdfMtfSnap
         mtfSection = `Global score: ${snap.globalScore}/100 | Signal: ${snap.globalSignal} | Confluence: ${snap.confluence}%
@@ -151,17 +219,24 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
       }
 
       // ── 5. OU oscillator ─────────────────────────────────────────────────
-      const ouSection = `Excess: ${ouSignal.excess} | Regime: ${ouSignal.regime} | Z-score: ${ouSignal.z.toFixed(2)}σ | VMC(OU): ${ouSignal.vmcStatus} | Confluence signal: ${ouSignal.confluenceSignal}`
+      const ouSection = liveOU ?? `Excess: ${ouSignal.excess} | Regime: ${ouSignal.regime} | Z-score: ${ouSignal.z.toFixed(2)}σ | VMC(OU): ${ouSignal.vmcStatus} | Confluence signal: ${ouSignal.confluenceSignal}`
 
       // ── 6. Whale & liquidations (crypto only) ───────────────────────────
       let whaleSection = 'N/A (non-crypto asset)'
       if (isCrypto) {
-        const wp = pressure?.score ?? 0
-        const liqBias = liqLong1h - liqShort1h
-        whaleSection = `Whale pressure score: ${(wp*100).toFixed(0)}% (${wp > 0.3 ? 'ACCUMULATION' : wp < -0.3 ? 'DISTRIBUTION' : 'NEUTRAL'})
+        if (liveWhale && !pressure) {
+          const liqBias = liqLong1h - liqShort1h
+          whaleSection = `${liveWhale}
+  1h Liquidations: Long $${(liqLong1h/1e6).toFixed(1)}M | Short $${(liqShort1h/1e6).toFixed(1)}M
+  Liq bias: ${Math.abs(liqBias) < 0.1e6 ? 'NEUTRAL' : liqBias > 0 ? `BEARISH` : `BULLISH`}`
+        } else {
+          const wp = pressure?.score ?? 0
+          const liqBias = liqLong1h - liqShort1h
+          whaleSection = `Whale pressure score: ${(wp*100).toFixed(0)}% (${wp > 0.3 ? 'ACCUMULATION' : wp < -0.3 ? 'DISTRIBUTION' : 'NEUTRAL'})
   Buy volume: $${((pressure?.buyVol ?? 0)/1e6).toFixed(1)}M | Sell volume: $${((pressure?.sellVol ?? 0)/1e6).toFixed(1)}M
   1h Liquidations: Long $${(liqLong1h/1e6).toFixed(1)}M | Short $${(liqShort1h/1e6).toFixed(1)}M
   Liq bias: ${Math.abs(liqBias) < 0.1e6 ? 'NEUTRAL' : liqBias > 0 ? `BEARISH (more longs liquidated $${(Math.abs(liqBias)/1e6).toFixed(1)}M more)` : `BULLISH (more shorts liquidated $${(Math.abs(liqBias)/1e6).toFixed(1)}M more)`}`
+        }
       }
 
       // ── 7. Fear & Greed ──────────────────────────────────────────────────
