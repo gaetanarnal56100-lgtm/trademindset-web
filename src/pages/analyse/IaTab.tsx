@@ -5,6 +5,8 @@ import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import type { LightweightChartHandle } from './LightweightChart'
 import type { MTFSnapshot } from './MTFDashboard'
+import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
+import { CRYPTO_BASKET } from '@/services/dispersion/types'
 
 const fbFn = getFunctions(app, 'europe-west1')
 
@@ -89,6 +91,7 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
       let liveMtf: string | null = null
       let liveWhale: string | null = null
       let liveOU: string | null = null
+      let liveDisp: string | null = null
 
       const autoFetches: Promise<void>[] = []
 
@@ -147,6 +150,28 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
             const z = std>0 ? (cls[cls.length-1]-mean)/std : 0
             const exc = z>2?'extreme_overbought':z>1?'overbought':z<-2?'extreme_oversold':z<-1?'oversold':'none'
             liveOU = `Excess: ${exc} | Regime: auto | Z-score: ${z.toFixed(2)}σ [auto-computed 1h closes] | Confluence signal: ${z<-1?'long':z>1?'short':'neutral'}`
+          } catch {}
+        })())
+      }
+
+      // Dispersion engine — auto-compute CRYPTO_BASKET if no dispersionCtx
+      if (isCrypto && !dispersionCtx) {
+        autoFetches.push((async () => {
+          try {
+            const r = await fetchAndCompute(CRYPTO_BASKET, '1h', 100, 50, 20)
+            if (!r) return
+            liveDisp = `Regime: ${r.regime} (conf ${r.regimeConfidence}%) | Overall: ${r.overallBias} ${r.overallScore}/100 | RiskOn: ${r.riskOnScore}/100
+  Trend → Dispersion:${r.trendArrows.dispersion} Correlation:${r.trendArrows.correlation} Breadth:${r.trendArrows.breadth} VolSpread:${r.trendArrows.volSpread}
+  Dispersion: Z=${r.dispersionZScore.toFixed(2)}σ pct=${r.dispersionPercentile}th | Skew=${r.returnSkew.toFixed(2)} Kurt=${r.returnKurtosis.toFixed(2)}
+  Correlation: avg=${r.avgCorrelation.toFixed(3)} Z=${r.correlationZScore.toFixed(2)}σ | X-sect momentum=${r.crossSectionalMomentum.toFixed(3)}
+  Volatility: comp=${r.avgComponentVol.toFixed(1)}% realized=${r.realizedIndexVol.toFixed(1)}% implied=${r.impliedIndexVol.toFixed(1)}% spread=${r.volSpread.toFixed(2)}% regime=${r.volRegime} Z=${r.volZScore.toFixed(2)}σ
+  Breadth: ${Math.round(r.pctUp)}% up | EMA20=${Math.round(r.pctAboveEma20)}% EMA50=${Math.round(r.pctAboveEma50)}% A/D=${r.advanceDeclineRatio.toFixed(2)} participation=${Math.round(r.participationScore)}%
+  Smart money: ${r.smartMoneyBias} | basket=${r.basketReturn.toFixed(3)}% median=${r.medianReturn.toFixed(3)}% | distrib=${r.distributionScore}/100 accum=${r.accumulationScore}/100
+  ${r.hiddenStrength ? '⚡ HIDDEN STRENGTH: quiet accumulation' : ''}${r.hiddenWeakness ? '⚠ HIDDEN WEAKNESS: stealth distribution' : ''}
+  Quant: Hurst=${r.basketHurst.toFixed(3)} Autocorr=${r.basketAutocorr.toFixed(3)}
+  Signal: ${r.tradeSignal.action} / ${r.tradeSignal.direction} (conf ${r.tradeSignal.confidence}%)
+  Reasoning: ${r.tradeSignal.reasoning.join(' | ')}
+  Leaders: ${r.tradeSignal.topLongs.join(', ')||'none'} | Laggards: ${r.tradeSignal.topShorts.join(', ')||'none'} [auto-computed]`
           } catch {}
         })())
       }
@@ -244,7 +269,7 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
 
       // ── 8. Dispersion engine ─────────────────────────────────────────────
       const d = dispersionCtx
-      const dispSection = d ? `Regime: ${d.regime} (conf ${d.regimeConfidence}%) | Overall: ${d.overallBias} ${d.overallScore}/100 | RiskOn: ${d.riskOnScore}/100
+      const dispSection = liveDisp && !d ? liveDisp : d ? `Regime: ${d.regime} (conf ${d.regimeConfidence}%) | Overall: ${d.overallBias} ${d.overallScore}/100 | RiskOn: ${d.riskOnScore}/100
   Trend → Dispersion:${d.trendArrows.dispersion} Correlation:${d.trendArrows.correlation} Breadth:${d.trendArrows.breadth} VolSpread:${d.trendArrows.volSpread}
   Dispersion: Z=${d.dispersionZScore.toFixed(2)}σ pct=${d.dispersionPercentile}th | Skew=${d.returnSkew.toFixed(2)} Kurt=${d.returnKurtosis.toFixed(2)}
   History: ${d.historyDispersion.map(v=>v.toFixed(3)).join('→')}
@@ -425,9 +450,9 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
             <span style={{ fontSize: 10, fontWeight: 600, color: ok ? 'rgba(48,209,88,0.9)' : 'rgba(255,255,255,0.3)' }}>{label}</span>
           </div>
         ))}
-        {!dispersionCtx && (
-          <div style={{ fontSize: 10, color: 'rgba(255,149,0,0.7)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span>⚠</span> Visite l'onglet Dispersion pour charger les internals
+        {!dispersionCtx && isCrypto && (
+          <div style={{ fontSize: 10, color: 'rgba(52,199,89,0.7)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>✓</span> Dispersion auto-fetchée au clic
           </div>
         )}
       </div>
