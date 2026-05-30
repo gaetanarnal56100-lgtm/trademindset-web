@@ -360,14 +360,25 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
         import('html2canvas'),
         import('jspdf'),
       ])
-      const canvas = await html2canvas(contentRef.current, {
+      // Force element to render at 800px width so layout reflows to A4-friendly proportions
+      const el = contentRef.current
+      const prevWidth = el.style.width
+      const prevMaxWidth = el.style.maxWidth
+      el.style.width = '800px'
+      el.style.maxWidth = '800px'
+      // Wait one frame for reflow
+      await new Promise(r => requestAnimationFrame(r))
+      const canvas = await html2canvas(el, {
         backgroundColor: '#0D1123',
         scale: 2,
         useCORS: true,
         logging: false,
       })
-      // Custom page size = content aspect ratio at A4 portrait width
-      // → 1 page, content fills width, height adjusts to content, nothing cut
+      // Restore original width
+      el.style.width = prevWidth
+      el.style.maxWidth = prevMaxWidth
+      // Custom page size = content aspect ratio at 210mm portrait width
+      // → 1 page, content fills full width, height = content height, nothing cut
       const margin = 10       // mm
       const pageW = 210       // A4 portrait width mm
       const usableW = pageW - margin * 2
