@@ -157,7 +157,7 @@ function buildFromTrades(klines:unknown[][], trades:{p:string;q:string;m:boolean
 // ── Main Component ────────────────────────────────────────────────────────────
 let _bubbleId = 0
 
-export default function FootprintChart({ symbol }: { symbol: string }) {
+export default function FootprintChart({ symbol, visibleRange }: { symbol: string; visibleRange?: { fromMs?: number; toMs?: number } | null }) {
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const crosshairRef = useRef<HTMLCanvasElement>(null)
   const wrapRef      = useRef<HTMLDivElement>(null)
@@ -185,6 +185,17 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
 
   const [tooltip, setTooltip] = useState<Tooltip|null>(null)
 
+  // Auto-select TF from visible range duration
+  const syncedTf: TF | null = React.useMemo(() => {
+    if (!visibleRange?.fromMs || !visibleRange?.toMs) return null
+    const dur = visibleRange.toMs - visibleRange.fromMs
+    if (dur <= 60*60*1000) return '1m'
+    if (dur <= 4*60*60*1000) return '5m'
+    if (dur <= 24*60*60*1000) return '15m'
+    if (dur <= 7*24*60*60*1000) return '1h'
+    return '4h'
+  }, [visibleRange?.fromMs, visibleRange?.toMs])
+
   const IMBALANCE = 3.0
   const PRICE_W   = 74
   const DELTA_H   = 36
@@ -198,7 +209,11 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
     if (!symbol) return
     setLoading(true); setError('')
     try {
-      const klinesRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${BUFFER}`)
+      const activeTf = syncedTf ?? tf
+      const klinesUrl = (visibleRange?.fromMs && visibleRange?.toMs)
+        ? `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${activeTf}&startTime=${visibleRange.fromMs}&endTime=${visibleRange.toMs}&limit=500`
+        : `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${activeTf}&limit=${BUFFER}`
+      const klinesRes = await fetch(klinesUrl)
       if (!klinesRes.ok) throw new Error(`HTTP ${klinesRes.status}`)
       const klines: unknown[][] = await klinesRes.json()
       if (!Array.isArray(klines) || klines.length===0) throw new Error('Aucune donnée')
@@ -214,7 +229,7 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
       let fp: FPCandle[]
       let histBubbles: BubbleTrade[] = []
 
-      if (tf==='1m') {
+      if (activeTf==='1m') {
         const dur = endTime - startTime
         const chunk = Math.floor(dur/8)
         const batches = await Promise.all(
@@ -240,7 +255,7 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
         }
         fp = buildFromTrades(klines, trades, bs)
       } else {
-        const subTf = SUB_TF[tf]
+        const subTf = SUB_TF[activeTf]
         const subRes = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${subTf}&startTime=${startTime}&limit=1000`)
         const subKlines: unknown[][] = subRes.ok ? await subRes.json() : []
         fp = buildFromSubKlines(klines, Array.isArray(subKlines)?subKlines:[], bs)
@@ -286,9 +301,16 @@ export default function FootprintChart({ symbol }: { symbol: string }) {
     } finally {
       setLoading(false)
     }
-  }, [symbol, tf, bubbleThreshold])
+  }, [symbol, tf, syncedTf, bubbleThreshold, visibleRange])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Debounce re-fetch when visibleRange changes
+  useEffect(() => {
+    if (!visibleRange?.fromMs || !visibleRange?.toMs) return
+    const t = setTimeout(() => { fetchData() }, 600)
+    return () => clearTimeout(t)
+  }, [visibleRange?.fromMs, visibleRange?.toMs, fetchData])
   useEffect(() => { const t=setInterval(fetchData, 30_000); return ()=>clearInterval(t) }, [fetchData])
 
   // ── Real-time bubble WebSocket ────────────────────────────────────────────
