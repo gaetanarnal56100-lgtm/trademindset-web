@@ -360,43 +360,22 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
         import('html2canvas'),
         import('jspdf'),
       ])
-      // windowWidth=900 forces layout to render at 900px wide regardless of screen size
-      // → content scales properly to A4 portrait (190mm usable ≈ 900px at 120dpi)
       const canvas = await html2canvas(contentRef.current, {
         backgroundColor: '#0D1123',
         scale: 2,
-        windowWidth: 900,
         useCORS: true,
         logging: false,
       })
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const pageW = pdf.internal.pageSize.getWidth()   // 210mm
-      const pageH = pdf.internal.pageSize.getHeight()  // 297mm
-      const margin = 10  // mm
+      // Custom page size = content aspect ratio at A4 portrait width
+      // → 1 page, content fills width, height adjusts to content, nothing cut
+      const margin = 10       // mm
+      const pageW = 210       // A4 portrait width mm
       const usableW = pageW - margin * 2
       const imgW = usableW
-      const imgH = (canvas.height / canvas.width) * imgW  // maintain aspect ratio
-      const imgData = canvas.toDataURL('image/png')
-      // multi-page: slice image across A4 pages
-      const usableH = pageH - margin * 2
-      let yOffset = 0
-      let pageNum = 0
-      while (yOffset < imgH) {
-        if (pageNum > 0) pdf.addPage()
-        // sourceY in canvas pixels corresponding to yOffset mm
-        const srcY = (yOffset / imgH) * canvas.height
-        const sliceH = Math.min(usableH, imgH - yOffset)
-        const srcH = (sliceH / imgH) * canvas.height
-        // create a slice canvas
-        const slice = document.createElement('canvas')
-        slice.width = canvas.width
-        slice.height = Math.ceil(srcH)
-        const ctx = slice.getContext('2d')!
-        ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
-        pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, imgW, sliceH)
-        yOffset += usableH
-        pageNum++
-      }
+      const imgH = (canvas.height / canvas.width) * imgW
+      const pageH = imgH + margin * 2
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [pageW, pageH] })
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, imgW, imgH)
       pdf.save(`${symbol}-IA-${new Date().toISOString().slice(0,10)}.pdf`)
     } catch(e) { console.error('Export IA PDF', e) }
     setExporting(false)
