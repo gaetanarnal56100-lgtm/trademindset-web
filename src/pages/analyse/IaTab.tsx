@@ -83,6 +83,7 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [usedSources, setUsedSources] = useState<Record<string, 'prop' | 'auto' | 'none'> | null>(null)
 
   const analyze = useCallback(async () => {
     setLoading(true); setError(null)
@@ -331,6 +332,14 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
       if (!parsed.conviction) parsed.conviction = 3
       if (!parsed.horizon) parsed.horizon = '—'
       if (!parsed.scenarios) parsed.scenarios = { bull: '', bear: '' }
+      setUsedSources({
+        chart:      lwChartRef.current?.getAnalysisData() ? 'prop' : 'none',
+        mtf:        pdfMtfSnap ? 'prop' : liveMtf ? 'auto' : 'none',
+        ouVmc:      (ouSignal.excess !== 'none' || ouSignal.z !== 0) ? 'prop' : liveOU ? 'auto' : 'none',
+        baleines:   pressure ? 'prop' : liveWhale ? 'auto' : 'none',
+        fng:        fng ? 'prop' : 'none',
+        dispersion: dispersionCtx ? 'prop' : liveDisp ? 'auto' : 'none',
+      })
       setResult(parsed)
       setLastUpdated(new Date())
     } catch(e: any) {
@@ -432,29 +441,35 @@ Based on ALL the above data, provide a complete trading analysis. Respond with E
       </div>
 
       {/* ── Data availability indicators ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {[
-          { label: 'Chart', ok: !!(lwChartRef.current?.getAnalysisData()?.candles.length), detail: 'Candles + SMC + MSD + VMC + BB' },
-          { label: 'MTF', ok: !!pdfMtfSnap, detail: 'Multi-timeframe RSI/VMC scores' },
-          { label: 'OU / VMC', ok: ouSignal.excess !== 'none' || ouSignal.z !== 0, detail: 'Oscillateur OU + VMC Kaufman' },
-          { label: 'Baleines', ok: isCrypto && !!pressure, detail: 'Whale pressure + liquidations' },
-          { label: 'Fear & Greed', ok: !!fng, detail: 'Indice F&G' },
-          { label: 'Dispersion', ok: !!dispersionCtx, detail: 'Market internals institutionnels' },
-        ].map(({ label, ok, detail }) => (
-          <div key={label} title={detail} style={{
-            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6,
-            background: ok ? 'rgba(48,209,88,0.08)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${ok ? 'rgba(48,209,88,0.25)' : 'rgba(255,255,255,0.07)'}`,
-          }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: ok ? '#30D158' : 'rgba(255,255,255,0.2)', boxShadow: ok ? '0 0 5px #30D15880' : 'none' }} />
-            <span style={{ fontSize: 10, fontWeight: 600, color: ok ? 'rgba(48,209,88,0.9)' : 'rgba(255,255,255,0.3)' }}>{label}</span>
-          </div>
-        ))}
-        {!dispersionCtx && isCrypto && (
-          <div style={{ fontSize: 10, color: 'rgba(52,199,89,0.7)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span>✓</span> Dispersion auto-fetchée au clic
-          </div>
-        )}
+          { label: 'Chart',        key: 'chart',      detail: 'Candles + SMC + MSD + VMC + BB',         propOk: !!(lwChartRef.current?.getAnalysisData()?.candles.length) },
+          { label: 'MTF',          key: 'mtf',        detail: 'Multi-timeframe RSI/VMC scores',          propOk: !!pdfMtfSnap },
+          { label: 'OU / VMC',     key: 'ouVmc',      detail: 'Oscillateur OU + VMC Kaufman',            propOk: ouSignal.excess !== 'none' || ouSignal.z !== 0 },
+          { label: 'Baleines',     key: 'baleines',   detail: 'Whale pressure + liquidations',           propOk: isCrypto && !!pressure },
+          { label: 'Fear & Greed', key: 'fng',        detail: 'Indice F&G',                              propOk: !!fng },
+          { label: 'Dispersion',   key: 'dispersion', detail: 'Market internals institutionnels',        propOk: !!dispersionCtx },
+        ].map(({ label, key, detail, propOk }) => {
+          const src = usedSources?.[key]
+          // post-analysis: use usedSources; pre-analysis: use prop state
+          const state: 'prop' | 'auto' | 'none' = src ?? (propOk ? 'prop' : 'none')
+          const dotColor  = state === 'prop' ? '#30D158' : state === 'auto' ? '#FF9500' : 'rgba(255,255,255,0.2)'
+          const dotGlow   = state === 'prop' ? '0 0 5px #30D15880' : state === 'auto' ? '0 0 5px #FF950080' : 'none'
+          const bgColor   = state === 'prop' ? 'rgba(48,209,88,0.08)' : state === 'auto' ? 'rgba(255,149,0,0.08)' : 'rgba(255,255,255,0.03)'
+          const bdColor   = state === 'prop' ? 'rgba(48,209,88,0.25)' : state === 'auto' ? 'rgba(255,149,0,0.25)' : 'rgba(255,255,255,0.07)'
+          const txtColor  = state === 'prop' ? 'rgba(48,209,88,0.9)' : state === 'auto' ? 'rgba(255,149,0,0.9)' : 'rgba(255,255,255,0.3)'
+          const titleFull = state === 'auto' ? `${detail} [auto-fetché au clic]` : detail
+          return (
+            <div key={label} title={titleFull} style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6,
+              background: bgColor, border: `1px solid ${bdColor}`,
+            }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, boxShadow: dotGlow }} />
+              <span style={{ fontSize: 10, fontWeight: 600, color: txtColor }}>{label}</span>
+              {state === 'auto' && <span style={{ fontSize: 8, color: 'rgba(255,149,0,0.6)', fontWeight: 700 }}>AUTO</span>}
+            </div>
+          )
+        })}
       </div>
 
       {/* ── Error ── */}
