@@ -1910,6 +1910,16 @@ export default function AnalysePage() {
   pressureRef.current = pressure?.score ?? 0
   isCryptoRef.current = isCrypto
 
+  // ── Seed syncRange when switching to orderflow (chart already mounted) ──────
+  useEffect(() => {
+    if (mode !== 'orderflow') return
+    const t = setTimeout(() => {
+      const range = lwChartRef.current?.getVisibleRange?.()
+      if (range) setSyncRange(prev => ({ ...(prev ?? { from: 0, to: 1 }), fromMs: range.fromMs, toMs: range.toMs }))
+    }, 150)
+    return () => clearTimeout(t)
+  }, [mode])
+
   // ── Cmd+K pour ouvrir la recherche ────────────────────────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

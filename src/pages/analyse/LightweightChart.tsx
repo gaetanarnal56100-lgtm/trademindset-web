@@ -63,6 +63,7 @@ export interface LightweightChartHandle {
   takeScreenshot: () => string | null
   setVisibleRange: (range: { from: number; to: number }) => void
   getAnalysisData: () => ChartAnalysisData | null
+  getVisibleRange: () => { fromMs: number; toMs: number } | null
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -608,6 +609,25 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       const target = { from: range.from * total, to: range.to * total }
       lastSetLogical.current = target
       chartApi.current.timeScale().setVisibleLogicalRange(target)
+    },
+    getVisibleRange: () => {
+      if (!chartApi.current || !candlesRef.current.length) return null
+      const range = chartApi.current.timeScale().getVisibleLogicalRange()
+      if (!range) return null
+      const candles = candlesRef.current
+      const total = candles.length
+      const interval = total >= 2
+        ? ((candles[total-1].time as number) - (candles[total-2].time as number)) * 1000
+        : 3_600_000
+      const fromFloor = Math.floor(range.from)
+      const fromMs = fromFloor >= 0
+        ? (candles[Math.min(fromFloor, total-1)].time as number) * 1000
+        : (candles[0].time as number) * 1000 + fromFloor * interval
+      const toCeil = Math.ceil(range.to)
+      const toMs = toCeil < total
+        ? (candles[toCeil].time as number) * 1000
+        : (candles[total-1].time as number) * 1000 + (toCeil - (total-1)) * interval
+      return { fromMs, toMs }
     },
     getAnalysisData: () => ({
       candles: candlesRef.current,
