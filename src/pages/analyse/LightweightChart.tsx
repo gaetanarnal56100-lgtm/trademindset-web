@@ -942,7 +942,10 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       onCrosshairRef.current?.({ frac: -1, areaRatio })  // frac -1 = resize event (pas de crosshair)
     })
     ro.observe(el)
-    return()=>{ro.disconnect();c.remove();chartApi.current=null;seriesR.current=null}
+    // Stop wheel propagation to parent scroll container so LW zoom works
+    const stopWheel = (e: WheelEvent) => e.stopPropagation()
+    el.addEventListener('wheel', stopWheel, { passive: true })
+    return()=>{el.removeEventListener('wheel',stopWheel);ro.disconnect();c.remove();chartApi.current=null;seriesR.current=null}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
