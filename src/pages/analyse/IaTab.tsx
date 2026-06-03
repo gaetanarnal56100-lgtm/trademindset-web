@@ -87,6 +87,57 @@ function calcATR14(candles: { high: number; low: number; close: number }[]): num
   return sum / 14
 }
 
+// ── Performance feedback brief ───────────────────────────────────────────────
+function computePerformanceBrief(
+  records: Array<Pick<IaAnalysisRecord, 'outcome' | 'outcomeR' | 'symbol' | 'bias' | 'conviction' | 'trades'>>,
+  symbol: string
+): string {
+  const closed = records.filter(r => r.outcome && r.outcome !== 'open' && r.outcome !== 'expired')
+  if (closed.length < 3) return 'Insufficient historical data (< 3 resolved trades) — no calibration available yet.'
+
+  const wins = closed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
+  const winRate = (wins.length / closed.length * 100).toFixed(0)
+  const avgR = (closed.reduce((s, r) => s + (r.outcomeR ?? 0), 0) / closed.length).toFixed(2)
+  const totalR = closed.reduce((s, r) => s + (r.outcomeR ?? 0), 0).toFixed(1)
+
+  // Per direction (using first trade of each record)
+  const allTrades = closed.flatMap(r =>
+    (r.trades ?? []).map(t => ({ dir: t.direction, prob: t.probability, outcome: r.outcome!, r: r.outcomeR ?? 0 }))
+  )
+  const longs = allTrades.filter(t => t.dir === 'LONG')
+  const shorts = allTrades.filter(t => t.dir === 'SHORT')
+  const longWin = longs.length >= 2 ? `${(longs.filter(t => t.outcome !== 'sl_hit').length / longs.length * 100).toFixed(0)}% (n=${longs.length})` : `? (n=${longs.length})`
+  const shortWin = shorts.length >= 2 ? `${(shorts.filter(t => t.outcome !== 'sl_hit').length / shorts.length * 100).toFixed(0)}% (n=${shorts.length})` : `? (n=${shorts.length})`
+
+  // High conviction trades
+  const highConv = closed.filter(r => (r.conviction ?? 0) >= 70)
+  const highConvLine = highConv.length >= 2
+    ? `High conviction (≥70): ${(highConv.filter(r => r.outcome !== 'sl_hit').length / highConv.length * 100).toFixed(0)}% win (n=${highConv.length})`
+    : ''
+
+  // This symbol
+  const symRecs = closed.filter(r => r.symbol === symbol)
+  const symLine = symRecs.length >= 2
+    ? `${symbol} history: ${symRecs.filter(r => r.outcome !== 'sl_hit').length}/${symRecs.length} wins (${(symRecs.filter(r => r.outcome !== 'sl_hit').length / symRecs.length * 100).toFixed(0)}%)`
+    : `${symbol}: insufficient history`
+
+  // Probability calibration — was AI overconfident?
+  const highProb = allTrades.filter(t => t.prob >= 65)
+  const calibLine = highProb.length >= 3
+    ? `Probability calibration: proposals ≥65% had ${(highProb.filter(t => t.outcome !== 'sl_hit').length / highProb.length * 100).toFixed(0)}% actual win rate — ${highProb.filter(t => t.outcome !== 'sl_hit').length / highProb.length >= 0.65 ? 'well calibrated' : 'OVERCONFIDENT — lower your probability estimates'}`
+    : ''
+
+  return [
+    `=== HISTORICAL PERFORMANCE (self-calibration — ${closed.length} resolved trades) ===`,
+    `Overall: Win rate ${winRate}% | Avg R: ${avgR} | Total R: ${totalR}R`,
+    `By direction: LONG ${longWin} win | SHORT ${shortWin} win`,
+    highConvLine,
+    symLine,
+    calibLine,
+    `→ Use these stats to calibrate probability%, favor direction with better historical win rate, and adjust confidence levels accordingly.`,
+  ].filter(Boolean).join('\n')
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pressure, liqLong1h, liqShort1h, pdfMtfSnap, ouSignal, fng }: Props) {
   const user = useUser()
@@ -399,12 +450,21 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
 
       // ── 9. Build prompt ──────────────────────────────────────────────────
       const curPrice = cur?.close ?? 0
+
+      // Performance feedback: merge personal + global closed records for calibration
+      const closedForBrief = [
+        ...allHistory.filter(r => r.outcome && r.outcome !== 'open'),
+        ...globalHistory.filter(r => r.outcome && r.outcome !== 'open').slice(0, 100),
+      ]
+      const perfBrief = computePerformanceBrief(closedForBrief, symbol)
+
       const systemPrompt = `You are an elite institutional trading analyst. Synthesize ALL provided market data into actionable trading analysis. Rules:
 1. ALL price levels (keyLevels, targets, trades) MUST be derived from the actual data provided — never invent levels unrelated to the data.
 2. Current price is explicitly stated. For BULLISH setups: tp1 > tp2 > entry_price > sl. For BEARISH setups: tp1 < tp2 < entry_price < sl. NEVER put tp below entry for a BULLISH trade.
 3. Provide 2-3 distinct trade setups in "trades" array covering different timeframes or scenarios.
 4. keyLevels must be real S/R levels from SMC/MSD data or 50-bar range extremes.
-5. Respond ONLY with valid JSON, no markdown, no extra text.`
+5. Respond ONLY with valid JSON, no markdown, no extra text.
+6. HISTORICAL PERFORMANCE section shows your past accuracy on this system. Use it to calibrate probability% and direction bias. If SHORT trades historically underperform, reflect that with lower probability for SHORT setups. If you were overconfident (high prob proposals had low actual win rate), lower your probability estimates accordingly.`
 
       const userPrompt = `=== ASSET ===
 Symbol: ${symbol} | Timeframe: ${tf} | CURRENT PRICE: ${curPrice.toFixed(2)} (${chg}%) | ATR(14): ${atr.toFixed(2)} (${cur ? ((atr/cur.close)*100).toFixed(2) : '?'}%)
@@ -432,6 +492,8 @@ ${fngSection}
 
 === MARKET INTERNALS (DISPERSION ENGINE — institutional grade) ===
 ${dispSection}
+
+${perfBrief}
 
 Current price is ${curPrice.toFixed(2)}. All TP/SL levels must be consistent with this price and with the bias direction.
 
