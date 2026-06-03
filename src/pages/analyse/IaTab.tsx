@@ -7,7 +7,7 @@ import type { LightweightChartHandle } from './LightweightChart'
 import type { MTFSnapshot } from './MTFDashboard'
 import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
-import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome } from '@/services/firestore/iaHistory'
+import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome, updateIaEmbedding } from '@/services/firestore/iaHistory'
 import type { IaAnalysisRecord, IaGlobalRecord } from '@/services/firestore/iaHistory'
 import { useUser } from '@/hooks/useAuth'
 
@@ -87,54 +87,138 @@ function calcATR14(candles: { high: number; low: number; close: number }[]): num
   return sum / 14
 }
 
+// ── RAG helpers ──────────────────────────────────────────────────────────────
+function cosineSim(a: number[], b: number[]): number {
+  let dot = 0, ma = 0, mb = 0
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; ma += a[i] * a[i]; mb += b[i] * b[i] }
+  const denom = Math.sqrt(ma) * Math.sqrt(mb)
+  return denom === 0 ? 0 : dot / denom
+}
+
+function buildEmbeddingText(
+  symbol: string, bias: string, rsi: number, vmcStatus: string,
+  ouExcess: string, whaleScore: number, regime: string, fng: number, liqBias: number
+): string {
+  return `${symbol} bias:${bias} rsi:${rsi.toFixed(0)} vmc:${vmcStatus} ou:${ouExcess} whale:${whaleScore.toFixed(2)} regime:${regime} fng:${fng} liqbias:${liqBias > 0 ? 'long' : 'short'}`
+}
+
+function findSimilarSetups(
+  queryEmbedding: number[],
+  records: Array<IaAnalysisRecord | IaGlobalRecord>,
+  topK = 3
+): Array<{ record: IaAnalysisRecord | IaGlobalRecord; sim: number }> {
+  const withEmb = records.filter(r =>
+    r.embedding && r.embedding.length > 0 &&
+    r.outcome && r.outcome !== 'open' && r.outcome !== 'expired'
+  )
+  return withEmb
+    .map(r => ({ record: r, sim: cosineSim(queryEmbedding, r.embedding!) }))
+    .sort((a, b) => b.sim - a.sim)
+    .slice(0, topK)
+}
+
+function formatSimilarSetups(similar: Array<{ record: IaAnalysisRecord | IaGlobalRecord; sim: number }>): string {
+  if (similar.length === 0) return ''
+  const lines = similar.map(({ record: r, sim }) => {
+    const dt = new Date(r.timestamp).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+    const outcomeLabel = r.outcome === 'tp1_hit' ? '✅TP1' : r.outcome === 'tp2_hit' ? '✅TP2' : '❌SL'
+    const rVal = r.outcomeR != null ? ` ${r.outcomeR > 0 ? '+' : ''}${r.outcomeR.toFixed(1)}R` : ''
+    const condStr = [
+      r.condRsi != null ? `RSI:${r.condRsi.toFixed(0)}` : '',
+      r.condVmcStatus ? `VMC:${r.condVmcStatus}` : '',
+      r.condOuExcess && r.condOuExcess !== 'none' ? `OU:${r.condOuExcess}` : '',
+      r.condRegime ? `regime:${r.condRegime}` : '',
+    ].filter(Boolean).join(' ')
+    return `  [${(sim * 100).toFixed(0)}% match] ${r.symbol} ${r.bias} ${dt} — ${condStr} → ${outcomeLabel}${rVal}`
+  })
+  return `=== SIMILAR PAST SETUPS (RAG — most similar market conditions + outcomes) ===\n${lines.join('\n')}\n→ These real past outcomes should directly inform your probability estimates and direction bias.`
+}
+
 // ── Performance feedback brief ───────────────────────────────────────────────
 function computePerformanceBrief(
-  records: Array<Pick<IaAnalysisRecord, 'outcome' | 'outcomeR' | 'symbol' | 'bias' | 'conviction' | 'trades'>>,
+  records: Array<Pick<IaAnalysisRecord, 'outcome' | 'outcomeR' | 'symbol' | 'bias' | 'conviction' | 'trades' | 'condRsi' | 'condWhaleScore' | 'condRegime' | 'condOuExcess' | 'condFng'>>,
   symbol: string
 ): string {
   const closed = records.filter(r => r.outcome && r.outcome !== 'open' && r.outcome !== 'expired')
   if (closed.length < 3) return 'Insufficient historical data (< 3 resolved trades) — no calibration available yet.'
 
-  const wins = closed.filter(r => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit')
-  const winRate = (wins.length / closed.length * 100).toFixed(0)
+  const isWin = (r: { outcome?: string }) => r.outcome === 'tp1_hit' || r.outcome === 'tp2_hit'
+  const pct = (n: number, d: number) => d === 0 ? '?' : `${(n / d * 100).toFixed(0)}%`
+
+  const wins = closed.filter(isWin)
+  const winRate = pct(wins.length, closed.length)
   const avgR = (closed.reduce((s, r) => s + (r.outcomeR ?? 0), 0) / closed.length).toFixed(2)
   const totalR = closed.reduce((s, r) => s + (r.outcomeR ?? 0), 0).toFixed(1)
 
-  // Per direction (using first trade of each record)
+  // Per direction
   const allTrades = closed.flatMap(r =>
     (r.trades ?? []).map(t => ({ dir: t.direction, prob: t.probability, outcome: r.outcome!, r: r.outcomeR ?? 0 }))
   )
   const longs = allTrades.filter(t => t.dir === 'LONG')
   const shorts = allTrades.filter(t => t.dir === 'SHORT')
-  const longWin = longs.length >= 2 ? `${(longs.filter(t => t.outcome !== 'sl_hit').length / longs.length * 100).toFixed(0)}% (n=${longs.length})` : `? (n=${longs.length})`
-  const shortWin = shorts.length >= 2 ? `${(shorts.filter(t => t.outcome !== 'sl_hit').length / shorts.length * 100).toFixed(0)}% (n=${shorts.length})` : `? (n=${shorts.length})`
+  const longWin = `${pct(longs.filter(t => t.outcome !== 'sl_hit').length, longs.length)} (n=${longs.length})`
+  const shortWin = `${pct(shorts.filter(t => t.outcome !== 'sl_hit').length, shorts.length)} (n=${shorts.length})`
 
-  // High conviction trades
+  // High conviction
   const highConv = closed.filter(r => (r.conviction ?? 0) >= 70)
   const highConvLine = highConv.length >= 2
-    ? `High conviction (≥70): ${(highConv.filter(r => r.outcome !== 'sl_hit').length / highConv.length * 100).toFixed(0)}% win (n=${highConv.length})`
+    ? `High conviction (≥70): ${pct(highConv.filter(isWin).length, highConv.length)} win (n=${highConv.length})`
     : ''
 
-  // This symbol
+  // Symbol-specific
   const symRecs = closed.filter(r => r.symbol === symbol)
   const symLine = symRecs.length >= 2
-    ? `${symbol} history: ${symRecs.filter(r => r.outcome !== 'sl_hit').length}/${symRecs.length} wins (${(symRecs.filter(r => r.outcome !== 'sl_hit').length / symRecs.length * 100).toFixed(0)}%)`
+    ? `${symbol}: ${symRecs.filter(isWin).length}/${symRecs.length} wins (${pct(symRecs.filter(isWin).length, symRecs.length)})`
     : `${symbol}: insufficient history`
 
-  // Probability calibration — was AI overconfident?
+  // ── Level 2: Conditional patterns ────────────────────────────────────────
+  const condLines: string[] = []
+
+  // RSI condition
+  const lowRsi = closed.filter(r => (r.condRsi ?? 50) < 35)
+  const highRsi = closed.filter(r => (r.condRsi ?? 50) > 65)
+  if (lowRsi.length >= 2) condLines.push(`RSI<35: ${pct(lowRsi.filter(isWin).length, lowRsi.length)} win (n=${lowRsi.length})`)
+  if (highRsi.length >= 2) condLines.push(`RSI>65: ${pct(highRsi.filter(isWin).length, highRsi.length)} win (n=${highRsi.length})`)
+
+  // Whale condition
+  const whaleBull = closed.filter(r => (r.condWhaleScore ?? 0) > 0.4)
+  const whaleBear = closed.filter(r => (r.condWhaleScore ?? 0) < -0.4)
+  if (whaleBull.length >= 2) condLines.push(`Whale accumulation (>0.4): ${pct(whaleBull.filter(isWin).length, whaleBull.length)} win (n=${whaleBull.length})`)
+  if (whaleBear.length >= 2) condLines.push(`Whale distribution (<-0.4): ${pct(whaleBear.filter(isWin).length, whaleBear.length)} win (n=${whaleBear.length})`)
+
+  // OU oversold/overbought
+  const oversold = closed.filter(r => r.condOuExcess === 'oversold' || r.condOuExcess === 'extreme_os')
+  const overbought = closed.filter(r => r.condOuExcess === 'overbought' || r.condOuExcess === 'extreme_ob')
+  if (oversold.length >= 2) condLines.push(`OU oversold: ${pct(oversold.filter(isWin).length, oversold.length)} win (n=${oversold.length})`)
+  if (overbought.length >= 2) condLines.push(`OU overbought: ${pct(overbought.filter(isWin).length, overbought.length)} win (n=${overbought.length})`)
+
+  // Regime
+  const trending = closed.filter(r => r.condRegime === 'trending' || r.condRegime === 'TRENDING')
+  const ranging = closed.filter(r => r.condRegime === 'ranging' || r.condRegime === 'RANGING')
+  if (trending.length >= 2) condLines.push(`Trending regime: ${pct(trending.filter(isWin).length, trending.length)} win (n=${trending.length})`)
+  if (ranging.length >= 2) condLines.push(`Ranging regime: ${pct(ranging.filter(isWin).length, ranging.length)} win (n=${ranging.length})`)
+
+  // Fear & Greed
+  const fearZone = closed.filter(r => (r.condFng ?? 50) < 30)
+  const greedZone = closed.filter(r => (r.condFng ?? 50) > 70)
+  if (fearZone.length >= 2) condLines.push(`FNG Fear (<30): ${pct(fearZone.filter(isWin).length, fearZone.length)} win (n=${fearZone.length})`)
+  if (greedZone.length >= 2) condLines.push(`FNG Greed (>70): ${pct(greedZone.filter(isWin).length, greedZone.length)} win (n=${greedZone.length})`)
+
+  // Probability calibration
   const highProb = allTrades.filter(t => t.prob >= 65)
   const calibLine = highProb.length >= 3
-    ? `Probability calibration: proposals ≥65% had ${(highProb.filter(t => t.outcome !== 'sl_hit').length / highProb.length * 100).toFixed(0)}% actual win rate — ${highProb.filter(t => t.outcome !== 'sl_hit').length / highProb.length >= 0.65 ? 'well calibrated' : 'OVERCONFIDENT — lower your probability estimates'}`
+    ? `Prob calibration: ≥65% proposals → ${pct(highProb.filter(t => t.outcome !== 'sl_hit').length, highProb.length)} actual win — ${highProb.filter(t => t.outcome !== 'sl_hit').length / highProb.length >= 0.65 ? 'well calibrated' : 'OVERCONFIDENT → lower probabilities'}`
     : ''
 
   return [
     `=== HISTORICAL PERFORMANCE (self-calibration — ${closed.length} resolved trades) ===`,
-    `Overall: Win rate ${winRate}% | Avg R: ${avgR} | Total R: ${totalR}R`,
+    `Overall: Win rate ${winRate} | Avg R: ${avgR} | Total R: ${totalR}R`,
     `By direction: LONG ${longWin} win | SHORT ${shortWin} win`,
     highConvLine,
     symLine,
+    condLines.length > 0 ? `Conditional patterns: ${condLines.join(' | ')}` : '',
     calibLine,
-    `→ Use these stats to calibrate probability%, favor direction with better historical win rate, and adjust confidence levels accordingly.`,
+    `→ Use these stats to calibrate probability%, favor conditions with historically better win rate.`,
   ].filter(Boolean).join('\n')
 }
 
@@ -458,6 +542,25 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
       ]
       const perfBrief = computePerformanceBrief(closedForBrief, symbol)
 
+      // RAG: find similar past setups using embeddings (Level 3)
+      const currentRegime = liveDisp
+        ? (liveDisp.includes('TRENDING') ? 'trending' : 'ranging')
+        : (dispersionCtx?.regime?.toLowerCase() ?? ouSignal.regime)
+      let ragSection = ''
+      try {
+        const queryEmbText = buildEmbeddingText(
+          symbol, 'UNKNOWN', rsi, ouSignal.vmcStatus, ouSignal.excess,
+          pressure?.score ?? 0, currentRegime, fng?.value ?? 50, isCrypto ? liqLong1h - liqShort1h : 0
+        )
+        const embedFn = httpsCallable<Record<string,unknown>, { embedding: number[] }>(fbFn, 'generateEmbedding')
+        const embRes = await embedFn({ text: queryEmbText })
+        if (embRes.data.embedding) {
+          const allRecords = [...allHistory, ...globalHistory]
+          const similar = findSimilarSetups(embRes.data.embedding, allRecords, 3)
+          ragSection = formatSimilarSetups(similar)
+        }
+      } catch { /* RAG optional — don't block analysis if it fails */ }
+
       const systemPrompt = `You are an elite institutional trading analyst. Synthesize ALL provided market data into actionable trading analysis. Rules:
 1. ALL price levels (keyLevels, targets, trades) MUST be derived from the actual data provided — never invent levels unrelated to the data.
 2. Current price is explicitly stated. For BULLISH setups: tp1 > tp2 > entry_price > sl. For BEARISH setups: tp1 < tp2 < entry_price < sl. NEVER put tp below entry for a BULLISH trade.
@@ -493,7 +596,7 @@ ${fngSection}
 === MARKET INTERNALS (DISPERSION ENGINE — institutional grade) ===
 ${dispSection}
 
-${perfBrief}
+${ragSection ? ragSection + '\n\n' : ''}${perfBrief}
 
 Current price is ${curPrice.toFixed(2)}. All TP/SL levels must be consistent with this price and with the bias direction.
 
@@ -524,16 +627,41 @@ Respond with EXACTLY this JSON (no example values — compute everything from th
       setResult(parsed)
       setLastUpdated(new Date())
 
-      // ── Save to Firestore + trigger backtest evaluation ───────────────────
+      // ── Save to Firestore + trigger backtest evaluation + embedding ─────────
       if (user?.uid && cur) {
-        const record = {
+        // Capture market conditions for Level 2 pattern extraction
+        const condRegime = liveDisp
+          ? (liveDisp.includes('TRENDING') ? 'trending' : liveDisp.includes('MEAN') ? 'ranging' : 'random')
+          : (dispersionCtx?.regime?.toLowerCase() ?? ouSignal.regime)
+        const condRecord = {
           uid: user.uid, symbol, timestamp: Date.now(),
           bias: parsed.bias, score: parsed.score, conviction: parsed.conviction,
           horizon: parsed.horizon, entryPrice: cur.close,
           targets: parsed.targets, trades: parsed.trades ?? [],
+          // Level 2 — market conditions
+          condRsi: rsi,
+          condWhaleScore: pressure?.score ?? (liveWhale ? parseFloat(liveWhale.match(/[-\d.]+/)?.[0] ?? '0') : 0),
+          condRegime,
+          condVmcStatus: ouSignal.vmcStatus,
+          condOuExcess: ouSignal.excess,
+          condLiqBias: isCrypto ? liqLong1h - liqShort1h : 0,
+          condFng: fng?.value ?? 50,
         }
-        saveIaAnalysis(record).then(id => {
+        saveIaAnalysis(condRecord).then(id => {
           lastSavedId.current = id
+          // Level 3 — generate embedding async (non-blocking)
+          if (id) {
+            const embText = buildEmbeddingText(
+              symbol, parsed.bias, rsi, ouSignal.vmcStatus, ouSignal.excess,
+              condRecord.condWhaleScore, condRegime, fng?.value ?? 50, condRecord.condLiqBias
+            )
+            const embedFn = httpsCallable<Record<string,unknown>, { embedding: number[] }>(fbFn, 'generateEmbedding')
+            embedFn({ text: embText }).then(res => {
+              if (res.data.embedding) {
+                updateIaEmbedding(user.uid, id, res.data.embedding, embText).catch(() => {})
+              }
+            }).catch(() => {}) // non-blocking — embedding failure doesn't break the flow
+          }
           // Refresh all history then evaluate open trades
           getIaHistory(user.uid, undefined, 100).then(h => {
             setAllHistory(h)

@@ -24,6 +24,17 @@ export interface IaAnalysisRecord {
   outcome?: 'tp1_hit' | 'tp2_hit' | 'sl_hit' | 'open' | 'expired'
   outcomeR?: number
   outcomeCheckedAt?: number
+  // Market conditions at analysis time (Level 2 — pattern extraction)
+  condRsi?: number
+  condWhaleScore?: number
+  condRegime?: string
+  condVmcStatus?: string
+  condOuExcess?: string
+  condLiqBias?: number
+  condFng?: number
+  // RAG embedding (Level 3)
+  embedding?: number[]
+  embeddingText?: string
 }
 
 // ── Per-user history ─────────────────────────────────────────────────────────
@@ -54,6 +65,16 @@ export async function updateIaOutcome(
   await updateDoc(doc(db, 'users', uid, 'iaHistory', id), {
     outcome, outcomeR, outcomeCheckedAt: Date.now()
   })
+}
+
+export async function updateIaEmbedding(
+  uid: string, id: string, embedding: number[], embeddingText: string
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'iaHistory', id), { embedding, embeddingText })
+  // Also update global copy if id matches (best effort)
+  try {
+    await updateDoc(doc(db, 'iaHistory', id), { embedding, embeddingText })
+  } catch { /* global id differs from personal id — ignore */ }
 }
 
 // ── Global history (all users, anonymized) ───────────────────────────────────
