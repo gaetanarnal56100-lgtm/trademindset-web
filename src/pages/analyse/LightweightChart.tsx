@@ -682,6 +682,16 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
       projCenterRef.current.setData(centerWithAnchor)
       projUpperRef.current.setData(upperWithAnchor)
       projLowerRef.current.setData(lowerWithAnchor)
+
+      // Auto-scroll to show projection: extend visible range to include future bars
+      const currentRange = chart.timeScale().getVisibleLogicalRange()
+      if (currentRange) {
+        const visibleBars = currentRange.to - currentRange.from
+        chart.timeScale().setVisibleLogicalRange({
+          from: currentRange.to - visibleBars * 0.6,
+          to: n + bars.length + 2,  // show all projected bars + 2 padding
+        })
+      }
     },
   }))
   const wsRef    = useRef<WebSocket|null>(null)

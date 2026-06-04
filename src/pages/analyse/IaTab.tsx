@@ -687,7 +687,17 @@ PROJECTION RULES (${projectionBars} bars forward from current price ${curPrice.t
       if (!parsed.horizon) parsed.horizon = '—'
       if (!parsed.scenarios) parsed.scenarios = { bull: '', bear: '' }
       if (!Array.isArray(parsed.trades)) parsed.trades = []
-      if (!Array.isArray(parsed.projection)) parsed.projection = []
+      if (!Array.isArray(parsed.projection) || parsed.projection.length === 0 || parsed.projection[0]?.center === 0) {
+        // Fallback: generate simple projection from bias + ATR
+        const isBull = parsed.bias === 'BULLISH'
+        const drift = isBull ? atr * 0.3 : -atr * 0.3
+        parsed.projection = Array.from({ length: projectionBars }, (_, i) => {
+          const i1 = i + 1
+          const center = curPrice + drift * i1
+          const spread = atr * 0.5 * Math.sqrt(i1)
+          return { bar: i1, center, upper: center + spread, lower: center - spread }
+        })
+      }
       // Push projection to chart
       if (parsed.projection.length > 0) {
         lwChartRef.current?.setProjection(parsed.projection)
