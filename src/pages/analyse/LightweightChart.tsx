@@ -700,9 +700,20 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
       projUpperRef.current.setData(upperWithAnchor)
       projLowerRef.current.setData(lowerWithAnchor)
 
-      // Set rightOffset so future projection bars are visible without needing to scroll
-      chart.timeScale().applyOptions({ rightOffset: bars.length + 5 })
-      chart.timeScale().scrollToRealTime()
+      // Scroll to show ~100 bars before last candle + all projected bars
+      // Use a small delay to let LW process the new series data
+      setTimeout(() => {
+        try {
+          const iSec = intervalSec || 900
+          const lT = hasTimes ? bars[0].time! - iSec : lastTime
+          // fromTime: 100 bars before last real candle
+          const fromTime = (lT - 100 * iSec) as Time
+          // toTime: last projected bar + 5 bars padding
+          const toTime = (lT + (bars.length + 5) * iSec) as Time
+          chart.timeScale().applyOptions({ rightOffset: 3 })
+          chart.timeScale().setVisibleRange({ from: fromTime, to: toTime })
+        } catch { chart.timeScale().fitContent() }
+      }, 50)
     },
   }))
   const wsRef    = useRef<WebSocket|null>(null)
