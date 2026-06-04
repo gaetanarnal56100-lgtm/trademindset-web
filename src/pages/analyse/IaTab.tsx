@@ -8,6 +8,7 @@ import type { MTFSnapshot } from './MTFDashboard'
 import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
 import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome, updateIaEmbedding } from '@/services/firestore/iaHistory'
+import type { ProjectionBar } from './LightweightChart'
 import type { IaAnalysisRecord, IaGlobalRecord } from '@/services/firestore/iaHistory'
 import { getKnowledge, saveKnowledge, formatKnowledgeForPrompt } from '@/services/firestore/iaLearning'
 import type { TradingKnowledge } from '@/services/firestore/iaLearning'
@@ -52,6 +53,7 @@ interface AiResult {
   whaleAnalysis: string
   scenarios: { bull: string; bear: string }
   trades?: AiTrade[]
+  projection?: ProjectionBar[]
 }
 
 interface Props {
@@ -229,6 +231,7 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   const user = useUser()
   const [result, setResult] = useState<AiResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [projectionBars, setProjectionBars] = useState(30)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [usedSources, setUsedSources] = useState<Record<string, 'prop' | 'auto' | 'none'> | null>(null)
@@ -641,7 +644,15 @@ ${knowledgeSection ? knowledgeSection + '\n\n' : ''}${ragSection ? ragSection + 
 Current price is ${curPrice.toFixed(2)}. All TP/SL levels must be consistent with this price and with the bias direction.
 
 Respond with EXACTLY this JSON (no example values — compute everything from the data above):
-{"bias":"BULLISH|BEARISH|NEUTRAL","score":0,"conviction":0,"horizon":"Xh-Yh","quality":"Low|Medium|High","keyLevels":["LEVEL1","LEVEL2","LEVEL3","LEVEL4"],"catalyst":"specific catalyst from data","targets":{"tp1":"PRICE","tp2":"PRICE","sl":"PRICE"},"momentum":"BULLISH|BEARISH|NEUTRAL","regimeContext":"dispersion regime context","summary":"3-4 sentences with specific data references","risk":"specific risk factors","divergence":"divergence observations","mtfAnalysis":"MTF alignment with specific TF signals","whaleAnalysis":"whale/liq analysis with numbers","scenarios":{"bull":"bullish scenario with trigger and target","bear":"bearish scenario with invalidation"},"trades":[{"label":"Primary setup label","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"},{"label":"Alternative setup","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"}]}`
+{"bias":"BULLISH|BEARISH|NEUTRAL","score":0,"conviction":0,"horizon":"Xh-Yh","quality":"Low|Medium|High","keyLevels":["LEVEL1","LEVEL2","LEVEL3","LEVEL4"],"catalyst":"specific catalyst from data","targets":{"tp1":"PRICE","tp2":"PRICE","sl":"PRICE"},"momentum":"BULLISH|BEARISH|NEUTRAL","regimeContext":"dispersion regime context","summary":"3-4 sentences with specific data references","risk":"specific risk factors","divergence":"divergence observations","mtfAnalysis":"MTF alignment with specific TF signals","whaleAnalysis":"whale/liq analysis with numbers","scenarios":{"bull":"bullish scenario with trigger and target","bear":"bearish scenario with invalidation"},"trades":[{"label":"Primary setup label","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"},{"label":"Alternative setup","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"}],"projection":[{"bar":1,"center":0,"upper":0,"lower":0}]}
+
+PROJECTION RULES (${projectionBars} bars forward from current price ${curPrice.toFixed(2)}):
+- Generate exactly ${projectionBars} bars in the "projection" array
+- center = expected price path based on bias and momentum
+- upper = optimistic scenario (bull case), lower = pessimistic scenario (bear case)
+- All values must be realistic prices derived from ATR(${atr.toFixed(2)}), key levels, and bias direction
+- Upper/lower spread should widen over time (uncertainty grows)
+- Use ATR as base unit: typical 1-bar move = 0.3-0.8 ATR`
 
       const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
       const res = await fn({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 1200 })
@@ -656,6 +667,11 @@ Respond with EXACTLY this JSON (no example values — compute everything from th
       if (!parsed.horizon) parsed.horizon = '—'
       if (!parsed.scenarios) parsed.scenarios = { bull: '', bear: '' }
       if (!Array.isArray(parsed.trades)) parsed.trades = []
+      if (!Array.isArray(parsed.projection)) parsed.projection = []
+      // Push projection to chart
+      if (parsed.projection.length > 0) {
+        lwChartRef.current?.setProjection(parsed.projection)
+      }
       setUsedSources({
         chart:      lwChartRef.current?.getAnalysisData() ? 'prop' : 'none',
         mtf:        pdfMtfSnap ? 'prop' : liveMtf ? 'auto' : 'none',
@@ -781,7 +797,17 @@ Respond with EXACTLY this JSON (no example values — compute everything from th
           </div>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* Projection bars slider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(59,138,255,0.08)', border: '1px solid rgba(59,138,255,0.2)', borderRadius: 8, padding: '4px 10px' }}>
+            <span style={{ fontSize: 10, color: '#3B8AFF', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>📈 {projectionBars} bougies</span>
+            <input
+              type="range" min={5} max={60} step={5} value={projectionBars}
+              onChange={e => setProjectionBars(parseInt(e.target.value))}
+              style={{ width: 70, accentColor: '#3B8AFF', cursor: 'pointer' }}
+              title="Nombre de bougies de projection"
+            />
+          </div>
           {lastUpdated && (
             <span style={{ fontSize: 10, color: 'var(--tm-text-muted)' }}>
               Dernière analyse : {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}

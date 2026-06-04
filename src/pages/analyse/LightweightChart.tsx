@@ -59,11 +59,19 @@ export interface ChartAnalysisData {
   vmcStatus: string
   bbResult: { upper:number; middle:number; lower:number }[] | null
 }
+export interface ProjectionBar {
+  bar: number      // 1-based index into future
+  center: number
+  upper: number
+  lower: number
+}
+
 export interface LightweightChartHandle {
   takeScreenshot: () => string | null
   setVisibleRange: (range: { from: number; to: number }) => void
   getAnalysisData: () => ChartAnalysisData | null
   getVisibleRange: () => { fromMs: number; toMs: number } | null
+  setProjection: (bars: ProjectionBar[] | null) => void
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -593,6 +601,9 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
   const overlayEl = useRef<HTMLCanvasElement>(null)
   const chartApi = useRef<IChartApi|null>(null)
   const seriesR  = useRef<ISeriesApi<'Candlestick'>|null>(null)
+const projCenterRef = useRef<ISeriesApi<'Line'>|null>(null)
+const projUpperRef  = useRef<ISeriesApi<'Line'>|null>(null)
+const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
 
   useImperativeHandle(forwardedRef, () => ({
     takeScreenshot: () => {
@@ -637,6 +648,41 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       vmcStatus: vmcResult?.status ?? 'N/A',
       bbResult: bbResult ? bbResult.map(b => ({ upper: b.upper, middle: b.middle, lower: b.lower })) : null,
     }),
+    setProjection: (bars: ProjectionBar[] | null) => {
+      const chart = chartApi.current
+      const candles = candlesRef.current
+      if (!chart) return
+
+      // Clear existing projection series
+      if (projCenterRef.current) { try { chart.removeSeries(projCenterRef.current) } catch {} projCenterRef.current = null }
+      if (projUpperRef.current)  { try { chart.removeSeries(projUpperRef.current)  } catch {} projUpperRef.current  = null }
+      if (projLowerRef.current)  { try { chart.removeSeries(projLowerRef.current)  } catch {} projLowerRef.current  = null }
+
+      if (!bars || bars.length === 0 || candles.length < 2) return
+
+      // Compute interval in seconds from last two candles
+      const n = candles.length
+      const intervalSec = (candles[n-1].time as number) - (candles[n-2].time as number)
+      const lastTime = candles[n-1].time as number
+
+      const centerData = bars.map(b => ({ time: (lastTime + b.bar * intervalSec) as Time, value: b.center }))
+      const upperData  = bars.map(b => ({ time: (lastTime + b.bar * intervalSec) as Time, value: b.upper  }))
+      const lowerData  = bars.map(b => ({ time: (lastTime + b.bar * intervalSec) as Time, value: b.lower  }))
+
+      // Anchor: connect last real candle close to projection start
+      const anchor = { time: (lastTime) as Time, value: candles[n-1].close }
+      const centerWithAnchor = [anchor, ...centerData]
+      const upperWithAnchor  = [anchor, ...upperData]
+      const lowerWithAnchor  = [anchor, ...lowerData]
+
+      projCenterRef.current = chart.addLineSeries({ color: '#3B8AFF', lineWidth: 2, lineStyle: 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+      projUpperRef.current  = chart.addLineSeries({ color: '#3B8AFF55', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+      projLowerRef.current  = chart.addLineSeries({ color: '#3B8AFF55', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+
+      projCenterRef.current.setData(centerWithAnchor)
+      projUpperRef.current.setData(upperWithAnchor)
+      projLowerRef.current.setData(lowerWithAnchor)
+    },
   }))
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef      = useRef<Candle[]>([])
@@ -974,6 +1020,10 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
       return
     }
     if(candles.length){
+      // Clear projection on new data load
+      if (projCenterRef.current) { try { chartApi.current?.removeSeries(projCenterRef.current) } catch {} projCenterRef.current = null }
+      if (projUpperRef.current)  { try { chartApi.current?.removeSeries(projUpperRef.current)  } catch {} projUpperRef.current  = null }
+      if (projLowerRef.current)  { try { chartApi.current?.removeSeries(projLowerRef.current)  } catch {} projLowerRef.current  = null }
       seriesR.current.setData(candles.map(c=>({time:c.time as Time,open:c.open,high:c.high,low:c.low,close:c.close})))
       candlesRef.current=candles
       const last=candles[candles.length-1],first=candles[0]
