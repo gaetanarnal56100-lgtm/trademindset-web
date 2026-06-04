@@ -2264,7 +2264,7 @@ export default function AnalysePage() {
       )}
 
       {/* Graphique — layout selector */}
-      {symbol && mode !== 'layout' && <div style={{position:'relative',zIndex:1, display: (mode === 'derivees' || mode === 'micro') ? 'none' : 'block'}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio,fromMs,toMs)=>setSyncRange({from,to,areaRatio,fromMs,toMs})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} requiresSync={mode === 'oscillateurs' || mode === 'dispersion' || mode === 'orderflow'} syncRangeIn={syncRange} dispersionContext={dispersionCtx} /></div>}
+      {symbol && mode !== 'layout' && <div style={{position:'relative',zIndex:1, display: (mode === 'derivees' || mode === 'micro') ? 'none' : 'block'}}><ChartLayout symbol={symbol} isCrypto={isCryptoSymbol(symbol)} onTimeframeChange={setSyncInterval} onVisibleRangeChange={(from,to,areaRatio,fromMs,toMs)=>setSyncRange({from,to,areaRatio,fromMs,toMs})} onCrosshairChange={d=>setCrosshairFrac(d ? d.frac : null)} externalCrosshairFrac={crosshairFrac} lwChartRef={lwChartRef} requiresSync={mode === 'ia' || mode === 'oscillateurs' || mode === 'dispersion' || mode === 'orderflow'} syncRangeIn={syncRange} dispersionContext={dispersionCtx} /></div>}
 
       {/* Canal OU + Excès Statistiques + VMC Kaufman — visible uniquement en mode Oscillateurs (ou non-crypto) */}
       {symbol && (!isCrypto || mode === 'oscillateurs') && (() => {
