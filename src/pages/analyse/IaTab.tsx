@@ -9,6 +9,8 @@ import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
 import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome, updateIaEmbedding } from '@/services/firestore/iaHistory'
 import type { IaAnalysisRecord, IaGlobalRecord } from '@/services/firestore/iaHistory'
+import { getKnowledge, saveKnowledge, formatKnowledgeForPrompt } from '@/services/firestore/iaLearning'
+import type { TradingKnowledge } from '@/services/firestore/iaLearning'
 import { useUser } from '@/hooks/useAuth'
 
 const fbFn = getFunctions(app, 'europe-west1')
@@ -235,16 +237,18 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   const [showHistory, setShowHistory] = useState(false)
   const [historyFilter, setHistoryFilter] = useState<'all' | string>('all')
   const [historyTab, setHistoryTab] = useState<'personal' | 'global'>('personal')
+  const [knowledge, setKnowledge] = useState<TradingKnowledge | null>(null)
   const lastSavedId = useRef<string | null>(null)
 
   // Derived: filtered history for display
   const history = historyFilter === 'all' ? allHistory : allHistory.filter(r => r.symbol === historyFilter)
   const globalFiltered = historyFilter === 'all' ? globalHistory : globalHistory.filter(r => r.symbol === historyFilter)
 
-  // Load personal + global history on mount
+  // Load personal + global history + knowledge base on mount
   useEffect(() => {
     if (user?.uid) {
       getIaHistory(user.uid, undefined, 100).then(setAllHistory).catch(() => {})
+      getKnowledge(user.uid).then(setKnowledge).catch(() => {})
     }
     getGlobalIaHistory(undefined, 500).then(glob => {
       setGlobalHistory(glob)
@@ -288,12 +292,46 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
         if (outcome === 'open' && Date.now() - rec.timestamp > 24 * 3600_000) outcome = 'expired'
         if (outcome !== 'open' && rec.id) {
           await updateIaOutcome(uid, rec.id, outcome, outcomeR)
+          // ── Post-mortem: analyze why trade succeeded/failed ───────────────
+          try {
+            const structuredKlines = klines.map(k => ({
+              time: parseInt(k[0] as string), open: parseFloat(k[1] as string),
+              high: parseFloat(k[2] as string), low: parseFloat(k[3] as string), close: parseFloat(k[4] as string),
+            }))
+            const analyzeFn = httpsCallable<Record<string,unknown>, { lesson: string; errorType: string; severity: string; rule: string }>(fbFn, 'analyzeTradeOutcome')
+            const postMortem = await analyzeFn({ record: { ...rec, outcome, outcomeR }, klines: structuredKlines.slice(0, 100) })
+            if (postMortem.data.lesson && user?.uid) {
+              // Update knowledge base with this lesson
+              const currentK = knowledge ?? { version: 0, rules: [], symbolNotes: {}, metaLearning: '', recentLessons: [] }
+              const updateFn = httpsCallable<Record<string,unknown>, { rules: string[]; symbolNote: string; metaLearning: string }>(fbFn, 'updateKnowledge')
+              const updated = await updateFn({
+                uid, currentKnowledge: currentK,
+                newLesson: { symbol: rec.symbol, direction: rec.trades[0]?.direction ?? '', outcome, lesson: postMortem.data.lesson, rule: postMortem.data.rule, errorType: postMortem.data.errorType, severity: postMortem.data.severity }
+              })
+              const newKnowledge: TradingKnowledge = {
+                version: (currentK.version ?? 0) + 1,
+                lastUpdated: Date.now(),
+                rules: updated.data.rules ?? currentK.rules,
+                symbolNotes: {
+                  ...currentK.symbolNotes,
+                  ...(updated.data.symbolNote ? { [rec.symbol]: [...(currentK.symbolNotes?.[rec.symbol] ?? []), updated.data.symbolNote] } : {}),
+                },
+                metaLearning: updated.data.metaLearning ?? currentK.metaLearning,
+                recentLessons: [
+                  ...(currentK.recentLessons ?? []).slice(-19),
+                  { timestamp: Date.now(), symbol: rec.symbol, direction: rec.trades[0]?.direction ?? '', outcome, lesson: postMortem.data.lesson }
+                ],
+              }
+              await saveKnowledge(uid, newKnowledge)
+              setKnowledge(newKnowledge)
+            }
+          } catch { /* post-mortem non-blocking */ }
         }
       } catch { /* skip */ }
     }
     // Refresh after evaluation
     getIaHistory(uid, undefined, 100).then(setAllHistory).catch(() => {})
-  }, [history, symbol])
+  }, [history, symbol, knowledge])
 
   // Evaluate open global trades (runs on load, lightweight — max 50 open at a time)
   const evaluateGlobalTrades = useCallback(async (records: IaGlobalRecord[]) => {
@@ -541,6 +579,7 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
         ...globalHistory.filter(r => r.outcome && r.outcome !== 'open').slice(0, 100),
       ]
       const perfBrief = computePerformanceBrief(closedForBrief, symbol)
+      const knowledgeSection = knowledge ? formatKnowledgeForPrompt(knowledge, symbol) : ''
 
       // RAG: find similar past setups using embeddings (Level 3)
       const currentRegime = liveDisp
@@ -567,7 +606,8 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
 3. Provide 2-3 distinct trade setups in "trades" array covering different timeframes or scenarios.
 4. keyLevels must be real S/R levels from SMC/MSD data or 50-bar range extremes.
 5. Respond ONLY with valid JSON, no markdown, no extra text.
-6. HISTORICAL PERFORMANCE section shows your past accuracy on this system. Use it to calibrate probability% and direction bias. If SHORT trades historically underperform, reflect that with lower probability for SHORT setups. If you were overconfident (high prob proposals had low actual win rate), lower your probability estimates accordingly.`
+6. LEARNED RULES section contains post-mortem lessons from real past trades — these are MANDATORY. Do not repeat documented errors. If a rule says "don't trade X condition", do not propose it.
+7. HISTORICAL PERFORMANCE section shows your past accuracy. Use it to calibrate probability% and direction bias — if SHORT trades historically underperform, lower SHORT probabilities. If overconfident, lower all probabilities.`
 
       const userPrompt = `=== ASSET ===
 Symbol: ${symbol} | Timeframe: ${tf} | CURRENT PRICE: ${curPrice.toFixed(2)} (${chg}%) | ATR(14): ${atr.toFixed(2)} (${cur ? ((atr/cur.close)*100).toFixed(2) : '?'}%)
@@ -596,7 +636,7 @@ ${fngSection}
 === MARKET INTERNALS (DISPERSION ENGINE — institutional grade) ===
 ${dispSection}
 
-${ragSection ? ragSection + '\n\n' : ''}${perfBrief}
+${knowledgeSection ? knowledgeSection + '\n\n' : ''}${ragSection ? ragSection + '\n\n' : ''}${perfBrief}
 
 Current price is ${curPrice.toFixed(2)}. All TP/SL levels must be consistent with this price and with the bias direction.
 
