@@ -229,7 +229,17 @@ function computePerformanceBrief(
 // ── Main component ───────────────────────────────────────────────────────────
 export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pressure, liqLong1h, liqShort1h, pdfMtfSnap, ouSignal, fng }: Props) {
   const user = useUser()
-  const [result, setResult] = useState<AiResult | null>(null)
+
+  // Restore result from sessionStorage on mount (survives navigation)
+  const sessionKey = `iaResult_${symbol}`
+  const [result, setResultState] = useState<AiResult | null>(() => {
+    try { const s = sessionStorage.getItem(sessionKey); return s ? JSON.parse(s) : null } catch { return null }
+  })
+  const setResult = (r: AiResult | null) => {
+    setResultState(r)
+    try { r ? sessionStorage.setItem(sessionKey, JSON.stringify(r)) : sessionStorage.removeItem(sessionKey) } catch {}
+  }
+
   const [loading, setLoading] = useState(false)
   const [projectionBars, setProjectionBars] = useState(30)
   const [error, setError] = useState<string | null>(null)
@@ -246,6 +256,16 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   // Derived: filtered history for display
   const history = historyFilter === 'all' ? allHistory : allHistory.filter(r => r.symbol === historyFilter)
   const globalFiltered = historyFilter === 'all' ? globalHistory : globalHistory.filter(r => r.symbol === historyFilter)
+
+  // Re-apply projection after remount (chart needs ~1s to load candles)
+  useEffect(() => {
+    if (!result?.projection?.length) return
+    const t = setTimeout(() => {
+      lwChartRef.current?.setProjection(result.projection ?? null)
+    }, 1200)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // only on mount
 
   // Load personal + global history + knowledge base on mount
   useEffect(() => {
