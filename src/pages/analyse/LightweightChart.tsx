@@ -605,6 +605,7 @@ const LightweightChart = forwardRef<LightweightChartHandle, Props>(function Ligh
 const projCenterRef = useRef<ISeriesApi<'Line'>|null>(null)
 const projUpperRef  = useRef<ISeriesApi<'Line'>|null>(null)
 const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
+const projDataRef   = useRef<ProjectionBar[] | null>(null)
 
   useImperativeHandle(forwardedRef, () => ({
     takeScreenshot: () => {
@@ -650,70 +651,13 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
       bbResult: bbResult ? bbResult.map(b => ({ upper: b.upper, middle: b.middle, lower: b.lower })) : null,
     }),
     setProjection: (bars: ProjectionBar[] | null) => {
+      // Remove any old LineSeries (legacy cleanup)
       const chart = chartApi.current
-      const candles = candlesRef.current
-      if (!chart) return
-
-      // Clear existing projection series
-      if (projCenterRef.current) { try { chart.removeSeries(projCenterRef.current) } catch {} projCenterRef.current = null }
-      if (projUpperRef.current)  { try { chart.removeSeries(projUpperRef.current)  } catch {} projUpperRef.current  = null }
-      if (projLowerRef.current)  { try { chart.removeSeries(projLowerRef.current)  } catch {} projLowerRef.current  = null }
-
-      if (!bars || bars.length === 0) return
-
-      // Use pre-computed times if available (from IaTab candles) — avoids race with candlesRef
-      const hasTimes = bars[0].time != null
-      let intervalSec = 3600
-      let lastTime = Math.floor(Date.now() / 1000)
-      let anchorClose = bars[0].center
-
-      if (hasTimes) {
-        // Times pre-computed by IaTab — use directly
-        intervalSec = bars.length > 1 ? (bars[1].time! - bars[0].time!) : 3600
-        lastTime = bars[0].time! - intervalSec
-        anchorClose = bars[0].center
-      } else if (candles.length >= 2) {
-        const n = candles.length
-        intervalSec = (candles[n-1].time as number) - (candles[n-2].time as number)
-        lastTime = candles[n-1].time as number
-        anchorClose = candles[n-1].close
-      }
-
-      const getTime = (b: ProjectionBar) => hasTimes ? b.time! as Time : (lastTime + b.bar * intervalSec) as Time
-
-      const centerData = bars.map(b => ({ time: getTime(b), value: b.center }))
-      const upperData  = bars.map(b => ({ time: getTime(b), value: b.upper  }))
-      const lowerData  = bars.map(b => ({ time: getTime(b), value: b.lower  }))
-
-      // Anchor: connect last real candle close to projection start
-      const anchorTime = hasTimes ? (bars[0].time! - intervalSec) as Time : lastTime as Time
-      const anchor = { time: anchorTime, value: anchorClose }
-      const centerWithAnchor = [anchor, ...centerData]
-      const upperWithAnchor  = [anchor, ...upperData]
-      const lowerWithAnchor  = [anchor, ...lowerData]
-
-      projCenterRef.current = chart.addLineSeries({ color: '#3B8AFF', lineWidth: 2, lineStyle: 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
-      projUpperRef.current  = chart.addLineSeries({ color: '#3B8AFF55', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
-      projLowerRef.current  = chart.addLineSeries({ color: '#3B8AFF55', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
-
-      projCenterRef.current.setData(centerWithAnchor)
-      projUpperRef.current.setData(upperWithAnchor)
-      projLowerRef.current.setData(lowerWithAnchor)
-
-      // Scroll to show ~100 bars before last candle + all projected bars
-      // Use a small delay to let LW process the new series data
-      setTimeout(() => {
-        try {
-          const iSec = intervalSec || 900
-          const lT = hasTimes ? bars[0].time! - iSec : lastTime
-          // fromTime: 100 bars before last real candle
-          const fromTime = (lT - 100 * iSec) as Time
-          // toTime: last projected bar + 5 bars padding
-          const toTime = (lT + (bars.length + 5) * iSec) as Time
-          chart.timeScale().applyOptions({ rightOffset: 3 })
-          chart.timeScale().setVisibleRange({ from: fromTime, to: toTime })
-        } catch { chart.timeScale().fitContent() }
-      }, 50)
+      if (projCenterRef.current) { try { chart?.removeSeries(projCenterRef.current) } catch {} projCenterRef.current = null }
+      if (projUpperRef.current)  { try { chart?.removeSeries(projUpperRef.current)  } catch {} projUpperRef.current  = null }
+      if (projLowerRef.current)  { try { chart?.removeSeries(projLowerRef.current)  } catch {} projLowerRef.current  = null }
+      // Store in ref — drawn by canvas overlay RAF loop
+      projDataRef.current = bars && bars.length > 0 ? bars : null
     },
   }))
   const wsRef    = useRef<WebSocket|null>(null)
@@ -1053,9 +997,7 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
     }
     if(candles.length){
       // Clear projection on new data load
-      if (projCenterRef.current) { try { chartApi.current?.removeSeries(projCenterRef.current) } catch {} projCenterRef.current = null }
-      if (projUpperRef.current)  { try { chartApi.current?.removeSeries(projUpperRef.current)  } catch {} projUpperRef.current  = null }
-      if (projLowerRef.current)  { try { chartApi.current?.removeSeries(projLowerRef.current)  } catch {} projLowerRef.current  = null }
+      projDataRef.current = null
       seriesR.current.setData(candles.map(c=>({time:c.time as Time,open:c.open,high:c.high,low:c.low,close:c.close})))
       candlesRef.current=candles
       const last=candles[candles.length-1],first=candles[0]
@@ -1539,6 +1481,79 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
       }
       rsiDivResult.bullDivs.forEach(p=>drawDiv(p,true))
       rsiDivResult.bearDivs.forEach(p=>drawDiv(p,false))
+    }
+
+    // ── AI Projection ─────────────────────────────────────────────────
+    const proj = projDataRef.current
+    if (proj && proj.length > 0 && ser) {
+      // Find anchor: last real candle
+      const lastCandle = candles[candles.length - 1]
+      if (lastCandle) {
+        const anchorX = toX(lastCandle.time as number)
+        const anchorY = toY(lastCandle.close)
+
+        // Build pixel paths for center, upper, lower
+        const pts = proj.map(b => ({
+          x: b.time ? toX(b.time) : null,
+          yc: toY(b.center),
+          yu: toY(b.upper),
+          yl: toY(b.lower),
+        })).filter(p => p.x != null && p.yc != null)
+
+        if (pts.length > 0 && anchorX != null && anchorY != null) {
+          ctx.save()
+          ctx.lineJoin = 'round'
+          ctx.lineCap = 'round'
+
+          // Fill area between upper and lower
+          ctx.beginPath()
+          ctx.moveTo(anchorX, anchorY)
+          pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
+          for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x!, pts[i].yl!)
+          ctx.closePath()
+          ctx.fillStyle = 'rgba(59,138,255,0.08)'
+          ctx.fill()
+
+          // Upper bound (dashed)
+          ctx.beginPath()
+          ctx.moveTo(anchorX, anchorY)
+          pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
+          ctx.strokeStyle = 'rgba(59,138,255,0.35)'
+          ctx.lineWidth = 1
+          ctx.setLineDash([5, 4])
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          // Lower bound (dashed)
+          ctx.beginPath()
+          ctx.moveTo(anchorX, anchorY)
+          pts.forEach(p => ctx.lineTo(p.x!, p.yl!))
+          ctx.strokeStyle = 'rgba(59,138,255,0.35)'
+          ctx.lineWidth = 1
+          ctx.setLineDash([5, 4])
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          // Center line (solid blue)
+          ctx.beginPath()
+          ctx.moveTo(anchorX, anchorY)
+          pts.forEach(p => ctx.lineTo(p.x!, p.yc!))
+          ctx.strokeStyle = '#3B8AFF'
+          ctx.lineWidth = 2
+          ctx.stroke()
+
+          // Label at last projected bar
+          const last = pts[pts.length - 1]
+          if (last.x != null && last.yc != null) {
+            ctx.font = 'bold 9px JetBrains Mono, monospace'
+            ctx.fillStyle = '#3B8AFF'
+            ctx.globalAlpha = 0.9
+            ctx.fillText(`IA +${proj.length}`, last.x! + 4, last.yc!)
+          }
+
+          ctx.restore()
+        }
+      }
     }
   },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,smcMtfResults,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
 
