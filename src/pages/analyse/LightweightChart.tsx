@@ -64,6 +64,7 @@ export interface ProjectionBar {
   center: number
   upper: number
   lower: number
+  time?: number    // pre-computed unix timestamp in seconds (optional — skips candlesRef dependency)
 }
 
 export interface LightweightChartHandle {
@@ -658,19 +659,35 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
       if (projUpperRef.current)  { try { chart.removeSeries(projUpperRef.current)  } catch {} projUpperRef.current  = null }
       if (projLowerRef.current)  { try { chart.removeSeries(projLowerRef.current)  } catch {} projLowerRef.current  = null }
 
-      if (!bars || bars.length === 0 || candles.length < 2) return
+      if (!bars || bars.length === 0) return
 
-      // Compute interval in seconds from last two candles
-      const n = candles.length
-      const intervalSec = (candles[n-1].time as number) - (candles[n-2].time as number)
-      const lastTime = candles[n-1].time as number
+      // Use pre-computed times if available (from IaTab candles) — avoids race with candlesRef
+      const hasTimes = bars[0].time != null
+      let intervalSec = 3600
+      let lastTime = Math.floor(Date.now() / 1000)
+      let anchorClose = bars[0].center
 
-      const centerData = bars.map(b => ({ time: (lastTime + b.bar * intervalSec) as Time, value: b.center }))
-      const upperData  = bars.map(b => ({ time: (lastTime + b.bar * intervalSec) as Time, value: b.upper  }))
-      const lowerData  = bars.map(b => ({ time: (lastTime + b.bar * intervalSec) as Time, value: b.lower  }))
+      if (hasTimes) {
+        // Times pre-computed by IaTab — use directly
+        intervalSec = bars.length > 1 ? (bars[1].time! - bars[0].time!) : 3600
+        lastTime = bars[0].time! - intervalSec
+        anchorClose = bars[0].center
+      } else if (candles.length >= 2) {
+        const n = candles.length
+        intervalSec = (candles[n-1].time as number) - (candles[n-2].time as number)
+        lastTime = candles[n-1].time as number
+        anchorClose = candles[n-1].close
+      }
+
+      const getTime = (b: ProjectionBar) => hasTimes ? b.time! as Time : (lastTime + b.bar * intervalSec) as Time
+
+      const centerData = bars.map(b => ({ time: getTime(b), value: b.center }))
+      const upperData  = bars.map(b => ({ time: getTime(b), value: b.upper  }))
+      const lowerData  = bars.map(b => ({ time: getTime(b), value: b.lower  }))
 
       // Anchor: connect last real candle close to projection start
-      const anchor = { time: (lastTime) as Time, value: candles[n-1].close }
+      const anchorTime = hasTimes ? (bars[0].time! - intervalSec) as Time : lastTime as Time
+      const anchor = { time: anchorTime, value: anchorClose }
       const centerWithAnchor = [anchor, ...centerData]
       const upperWithAnchor  = [anchor, ...upperData]
       const lowerWithAnchor  = [anchor, ...lowerData]
@@ -683,13 +700,14 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
       projUpperRef.current.setData(upperWithAnchor)
       projLowerRef.current.setData(lowerWithAnchor)
 
-      // Auto-scroll to show projection: extend visible range to include future bars
+      // Auto-scroll to show projection
       const currentRange = chart.timeScale().getVisibleLogicalRange()
       if (currentRange) {
         const visibleBars = currentRange.to - currentRange.from
+        const candleCount = candles.length || 300
         chart.timeScale().setVisibleLogicalRange({
-          from: currentRange.to - visibleBars * 0.6,
-          to: n + bars.length + 2,  // show all projected bars + 2 padding
+          from: Math.max(0, currentRange.to - visibleBars * 0.6),
+          to: candleCount + bars.length + 5,
         })
       }
     },

@@ -698,9 +698,20 @@ PROJECTION RULES (${projectionBars} bars forward from current price ${curPrice.t
           return { bar: i1, center, upper: center + spread, lower: center - spread }
         })
       }
+      // Pre-compute timestamps from IaTab's own candles (bypasses chart candlesRef race)
+      if (parsed.projection.length > 0 && candles.length >= 2) {
+        const lastT = candles[n-1].time as number  // unix seconds
+        const intervalSec = (candles[n-1].time as number) - (candles[n-2].time as number)
+        parsed.projection = parsed.projection.map(b => ({
+          ...b,
+          time: lastT + b.bar * intervalSec,
+        }))
+      }
       // Push projection to chart
       if (parsed.projection.length > 0) {
         lwChartRef.current?.setProjection(parsed.projection)
+        // Retry after mount in case chart wasn't ready
+        setTimeout(() => lwChartRef.current?.setProjection(parsed.projection!), 800)
       }
       setUsedSources({
         chart:      lwChartRef.current?.getAnalysisData() ? 'prop' : 'none',
