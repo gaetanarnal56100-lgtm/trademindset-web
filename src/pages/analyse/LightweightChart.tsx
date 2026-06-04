@@ -700,15 +700,16 @@ const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
       projUpperRef.current.setData(upperWithAnchor)
       projLowerRef.current.setData(lowerWithAnchor)
 
-      // Auto-scroll to show projection
-      const currentRange = chart.timeScale().getVisibleLogicalRange()
-      if (currentRange) {
-        const visibleBars = currentRange.to - currentRange.from
-        const candleCount = candles.length || 300
-        chart.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, currentRange.to - visibleBars * 0.6),
-          to: candleCount + bars.length + 5,
-        })
+      // Auto-scroll: use real timestamps to show ~80 bars before last candle + all projected bars
+      const iSec = intervalSec || 900
+      const lT = hasTimes ? bars[0].time! - iSec : lastTime
+      const fromTime = (lT - 80 * iSec) as Time
+      const toTime   = (lT + (bars.length + 3) * iSec) as Time
+      try {
+        chart.timeScale().setVisibleRange({ from: fromTime, to: toTime })
+      } catch {
+        // fallback: just scroll to realtime
+        chart.timeScale().scrollToRealTime()
       }
     },
   }))
