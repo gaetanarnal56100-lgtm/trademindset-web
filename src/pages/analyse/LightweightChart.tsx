@@ -1486,15 +1486,26 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
     // ── AI Projection ─────────────────────────────────────────────────
     const proj = projDataRef.current
     if (proj && proj.length > 0 && ser && candles.length > 0) {
-      const lastIdx = candles.length - 1
-      // Anchor at last real candle using logical index (always works)
-      const anchorX = toXIdx(lastIdx)
-      const anchorY = toY(candles[lastIdx].close)
+      // Find anchor: candle whose time matches proj[0].time - intervalSec
+      // (proj times were computed from IaTab's candles, not the chart's full candle set)
+      const firstProjTime = proj[0].time
+      const intervalSec = proj.length > 1 ? proj[1].time! - proj[0].time! : 900
+      const anchorTime = firstProjTime ? firstProjTime - intervalSec : null
 
-      // Project bars beyond last candle index using toXIdx
-      // bar.bar is 1-based, so logical index = lastIdx + bar.bar
+      // Binary search for the anchor candle index
+      let anchorIdx = candles.length - 1
+      if (anchorTime) {
+        let lo = 0, hi = candles.length - 1
+        while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
+        anchorIdx = lo
+      }
+
+      const anchorX = toXIdx(anchorIdx)
+      const anchorY = toY(candles[anchorIdx].close)
+
+      // Each projected bar is anchorIdx + bar (1-based)
       const pts = proj.map(b => ({
-        x:  toXIdx(lastIdx + b.bar),
+        x:  toXIdx(anchorIdx + b.bar),
         yc: toY(b.center),
         yu: toY(b.upper),
         yl: toY(b.lower),
