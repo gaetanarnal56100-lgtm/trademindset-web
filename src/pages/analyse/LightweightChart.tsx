@@ -1485,74 +1485,64 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
 
     // ── AI Projection ─────────────────────────────────────────────────
     const proj = projDataRef.current
-    if (proj && proj.length > 0 && ser) {
-      // Find anchor: last real candle
-      const lastCandle = candles[candles.length - 1]
-      if (lastCandle) {
-        const anchorX = toX(lastCandle.time as number)
-        const anchorY = toY(lastCandle.close)
+    if (proj && proj.length > 0 && ser && candles.length > 0) {
+      const lastIdx = candles.length - 1
+      // Anchor at last real candle using logical index (always works)
+      const anchorX = toXIdx(lastIdx)
+      const anchorY = toY(candles[lastIdx].close)
 
-        // Build pixel paths for center, upper, lower
-        const pts = proj.map(b => ({
-          x: b.time ? toX(b.time) : null,
-          yc: toY(b.center),
-          yu: toY(b.upper),
-          yl: toY(b.lower),
-        })).filter(p => p.x != null && p.yc != null)
+      // Project bars beyond last candle index using toXIdx
+      // bar.bar is 1-based, so logical index = lastIdx + bar.bar
+      const pts = proj.map(b => ({
+        x:  toXIdx(lastIdx + b.bar),
+        yc: toY(b.center),
+        yu: toY(b.upper),
+        yl: toY(b.lower),
+      })).filter(p => p.x != null && p.yc != null && p.yu != null && p.yl != null)
 
-        if (pts.length > 0 && anchorX != null && anchorY != null) {
-          ctx.save()
-          ctx.lineJoin = 'round'
-          ctx.lineCap = 'round'
+      if (pts.length > 0 && anchorX != null && anchorY != null) {
+        ctx.save()
+        ctx.lineJoin = 'round'
+        ctx.lineCap  = 'round'
 
-          // Fill area between upper and lower
-          ctx.beginPath()
-          ctx.moveTo(anchorX, anchorY)
-          pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
-          for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x!, pts[i].yl!)
-          ctx.closePath()
-          ctx.fillStyle = 'rgba(59,138,255,0.08)'
-          ctx.fill()
+        // Filled band between upper and lower
+        ctx.beginPath()
+        ctx.moveTo(anchorX, anchorY)
+        pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
+        for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x!, pts[i].yl!)
+        ctx.closePath()
+        ctx.fillStyle = 'rgba(59,138,255,0.10)'
+        ctx.fill()
 
-          // Upper bound (dashed)
-          ctx.beginPath()
-          ctx.moveTo(anchorX, anchorY)
-          pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
-          ctx.strokeStyle = 'rgba(59,138,255,0.35)'
-          ctx.lineWidth = 1
-          ctx.setLineDash([5, 4])
-          ctx.stroke()
-          ctx.setLineDash([])
+        // Upper bound dashed
+        ctx.strokeStyle = 'rgba(59,138,255,0.40)'
+        ctx.lineWidth = 1
+        ctx.setLineDash([5, 4])
+        ctx.beginPath(); ctx.moveTo(anchorX, anchorY)
+        pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
+        ctx.stroke(); ctx.setLineDash([])
 
-          // Lower bound (dashed)
-          ctx.beginPath()
-          ctx.moveTo(anchorX, anchorY)
-          pts.forEach(p => ctx.lineTo(p.x!, p.yl!))
-          ctx.strokeStyle = 'rgba(59,138,255,0.35)'
-          ctx.lineWidth = 1
-          ctx.setLineDash([5, 4])
-          ctx.stroke()
-          ctx.setLineDash([])
+        // Lower bound dashed
+        ctx.setLineDash([5, 4])
+        ctx.beginPath(); ctx.moveTo(anchorX, anchorY)
+        pts.forEach(p => ctx.lineTo(p.x!, p.yl!))
+        ctx.stroke(); ctx.setLineDash([])
 
-          // Center line (solid blue)
-          ctx.beginPath()
-          ctx.moveTo(anchorX, anchorY)
-          pts.forEach(p => ctx.lineTo(p.x!, p.yc!))
-          ctx.strokeStyle = '#3B8AFF'
-          ctx.lineWidth = 2
-          ctx.stroke()
+        // Center line solid
+        ctx.strokeStyle = '#3B8AFF'
+        ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(anchorX, anchorY)
+        pts.forEach(p => ctx.lineTo(p.x!, p.yc!))
+        ctx.stroke()
 
-          // Label at last projected bar
-          const last = pts[pts.length - 1]
-          if (last.x != null && last.yc != null) {
-            ctx.font = 'bold 9px JetBrains Mono, monospace'
-            ctx.fillStyle = '#3B8AFF'
-            ctx.globalAlpha = 0.9
-            ctx.fillText(`IA +${proj.length}`, last.x! + 4, last.yc!)
-          }
+        // Label
+        const last = pts[pts.length - 1]
+        ctx.font = 'bold 9px JetBrains Mono, monospace'
+        ctx.fillStyle = '#3B8AFF'
+        ctx.globalAlpha = 0.9
+        ctx.fillText(`IA +${proj.length}`, last.x! + 4, last.yc!)
 
-          ctx.restore()
-        }
+        ctx.restore()
       }
     }
   },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,smcMtfResults,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
