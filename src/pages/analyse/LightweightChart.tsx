@@ -72,12 +72,20 @@ export interface ProjectionBar {
   lower?: number
 }
 
+export interface ProjectionScenario {
+  label: string            // e.g. "Base", "Bull (risk-on)", "Bear (escalation)"
+  probability: number      // 0-100
+  color: string            // line color
+  bars: ProjectionBar[]
+}
+
 export interface LightweightChartHandle {
   takeScreenshot: () => string | null
   setVisibleRange: (range: { from: number; to: number }) => void
   getAnalysisData: () => ChartAnalysisData | null
   getVisibleRange: () => { fromMs: number; toMs: number } | null
   setProjection: (bars: ProjectionBar[] | null) => void
+  setProjectionScenarios: (scenarios: ProjectionScenario[] | null) => void
 }
 interface Candle { time: number; open: number; high: number; low: number; close: number; volume?: number }
 type ToolId = 'cursor'|'hline'|'trendline'|'fibo'|'rect'|'note'
@@ -611,6 +619,7 @@ const projCenterRef = useRef<ISeriesApi<'Line'>|null>(null)
 const projUpperRef  = useRef<ISeriesApi<'Line'>|null>(null)
 const projLowerRef  = useRef<ISeriesApi<'Line'>|null>(null)
 const projDataRef   = useRef<ProjectionBar[] | null>(null)
+const projScenariosRef = useRef<ProjectionScenario[] | null>(null)
 
   useImperativeHandle(forwardedRef, () => ({
     takeScreenshot: () => {
@@ -690,6 +699,36 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
         setTimeout(applyZoom, 100)
       }
     },
+    setProjectionScenarios: (scenarios: ProjectionScenario[] | null) => {
+      const chart = chartApi.current
+      projScenariosRef.current = scenarios && scenarios.length > 0 ? scenarios : null
+      projDataRef.current = null  // multi-scenario mode replaces single projection
+      // Zoom to fit the longest scenario
+      if (chart && scenarios && scenarios.length > 0) {
+        const maxLen = Math.max(...scenarios.map(s => s.bars.length))
+        const firstBars = scenarios[0].bars
+        const applyZoom = () => {
+          const candles = candlesRef.current
+          if (!candles.length || !firstBars.length) return
+          const firstProjTime = firstBars[0].time
+          const intervalSec = firstBars.length > 1 ? firstBars[1].time! - firstBars[0].time! : 900
+          let anchorIdx = candles.length - 1
+          if (firstProjTime) {
+            const anchorTime = firstProjTime - intervalSec
+            let lo = 0, hi = candles.length - 1
+            while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
+            anchorIdx = lo
+          }
+          chart.timeScale().applyOptions({ rightOffset: maxLen + 6 })
+          chart.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, anchorIdx - 70),
+            to: anchorIdx + maxLen + 4,
+          })
+        }
+        applyZoom()
+        setTimeout(applyZoom, 100)
+      }
+    },
   }))
   const wsRef    = useRef<WebSocket|null>(null)
   const candlesRef      = useRef<Candle[]>([])
@@ -711,7 +750,7 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
   // Fallback fraction-based si pas de timestamps (même candle count requis).
   useEffect(() => {
     if (!syncRangeIn || !chartApi.current || !candlesRef.current.length) return
-    if (projDataRef.current) return  // projection active — don't let sync override the zoom
+    if (projDataRef.current || projScenariosRef.current) return  // projection active — don't let sync override the zoom
     const candles = candlesRef.current
     let target: { from: number; to: number }
     if (syncRangeIn.fromMs != null && syncRangeIn.toMs != null) {
@@ -1030,6 +1069,7 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
     if(candles.length){
       // Clear projection on new data load
       projDataRef.current = null
+      projScenariosRef.current = null
       seriesR.current.setData(candles.map(c=>({time:c.time as Time,open:c.open,high:c.high,low:c.low,close:c.close})))
       candlesRef.current=candles
       const last=candles[candles.length-1],first=candles[0]
@@ -1515,12 +1555,10 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
       rsiDivResult.bearDivs.forEach(p=>drawDiv(p,false))
     }
 
-    // ── AI Projection (candlestick style) ──────────────────────────────
-    const proj = projDataRef.current
-    if (proj && proj.length > 0 && ser && candles.length > 0) {
-      // Find anchor candle index via binary search on proj[0].time
-      const firstProjTime = proj[0].time
-      const intervalSec = proj.length > 1 ? proj[1].time! - proj[0].time! : 900
+    // ── AI Projection ──────────────────────────────────────────────────
+    const anchorIdxFor = (bars: ProjectionBar[]): number => {
+      const firstProjTime = bars[0].time
+      const intervalSec = bars.length > 1 ? bars[1].time! - bars[0].time! : 900
       let anchorIdx = candles.length - 1
       if (firstProjTime) {
         const anchorTime = firstProjTime - intervalSec
@@ -1528,6 +1566,52 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
         while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
         anchorIdx = lo
       }
+      return anchorIdx
+    }
+
+    // Multi-scenario mode: draw each scenario as a line path (probability-weighted width)
+    const scenarios = projScenariosRef.current
+    if (scenarios && scenarios.length > 0 && ser && candles.length > 0) {
+      ctx.save()
+      // Sort so highest-probability draws last (on top)
+      const sorted = [...scenarios].sort((a, b) => a.probability - b.probability)
+      for (const sc of sorted) {
+        if (!sc.bars.length) continue
+        const anchorIdx = anchorIdxFor(sc.bars)
+        const anchorX = toXIdx(anchorIdx)
+        const anchorY = toY(candles[anchorIdx].close)
+        if (anchorX == null || anchorY == null) continue
+        const isTop = sc.probability >= Math.max(...scenarios.map(s => s.probability))
+        ctx.strokeStyle = sc.color
+        ctx.lineWidth = isTop ? 2.5 : 1.3
+        ctx.globalAlpha = isTop ? 0.95 : 0.55
+        ctx.setLineDash(isTop ? [] : [5, 4])
+        ctx.beginPath()
+        ctx.moveTo(anchorX, anchorY)
+        for (const b of sc.bars) {
+          const x = toXIdx(anchorIdx + b.bar), y = toY(b.close)
+          if (x == null || y == null) continue
+          ctx.lineTo(x, y)
+        }
+        ctx.stroke()
+        ctx.setLineDash([])
+        // Label at end
+        const lb = sc.bars[sc.bars.length - 1]
+        const lx = toXIdx(anchorIdx + lb.bar), ly = toY(lb.close)
+        if (lx != null && ly != null) {
+          ctx.globalAlpha = 1
+          ctx.font = `bold ${isTop ? 10 : 9}px JetBrains Mono, monospace`
+          ctx.fillStyle = sc.color
+          ctx.fillText(`${sc.label} ${sc.probability}%`, lx + 6, ly)
+        }
+      }
+      ctx.restore()
+    }
+
+    // Single-projection mode (legacy candlestick style)
+    const proj = projDataRef.current
+    if (proj && proj.length > 0 && ser && candles.length > 0) {
+      const anchorIdx = anchorIdxFor(proj)
 
       // Candle width from logical spacing
       const x0 = toXIdx(anchorIdx)
@@ -1544,10 +1628,8 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
         if (yO == null || yH == null || yL == null || yC == null) continue
 
         const isUp = b.close >= b.open
-        // Projected candles in blue tones (lighter=up, darker=down)
         const col = isUp ? '#4D9FFF' : '#2563C9'
 
-        // Wick
         ctx.strokeStyle = col
         ctx.lineWidth = 1
         ctx.beginPath()
@@ -1555,14 +1637,12 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
         ctx.lineTo(x, yL)
         ctx.stroke()
 
-        // Body
         ctx.fillStyle = col
         const bodyTop = Math.min(yO, yC)
         const bodyH = Math.max(1, Math.abs(yC - yO))
         ctx.fillRect(x - barW / 2, bodyTop, barW, bodyH)
       }
 
-      // Label at last projected candle
       const lastBar = proj[proj.length - 1]
       const lastX = toXIdx(anchorIdx + lastBar.bar)
       const lastY = toY(lastBar.close)

@@ -9,7 +9,7 @@ import type { MTFSnapshot } from './MTFDashboard'
 import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
 import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome, updateIaEmbedding, updateIaProjAccuracy } from '@/services/firestore/iaHistory'
-import type { ProjectionBar } from './LightweightChart'
+import type { ProjectionBar, ProjectionScenario } from './LightweightChart'
 import type { IaAnalysisRecord, IaGlobalRecord } from '@/services/firestore/iaHistory'
 import { getKnowledge, saveKnowledge, formatKnowledgeForPrompt } from '@/services/firestore/iaLearning'
 import type { TradingKnowledge } from '@/services/firestore/iaLearning'
@@ -56,6 +56,15 @@ interface AiResult {
   trades?: AiTrade[]
   projection?: ProjectionBar[]
   priceTarget24h?: string
+  projScenarios?: AiScenario[]
+  chartScenarios?: ProjectionScenario[]   // rendered paths (for re-draw on navigation)
+}
+
+interface AiScenario {
+  label: string          // e.g. "Base", "Bull risk-on", "Bear escalation"
+  probability: number    // 0-100
+  priceTarget: string    // target price for this scenario
+  trigger: string        // condition/catalyst (technical or geopolitical) that activates it
 }
 
 interface Props {
@@ -313,9 +322,10 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
 
   // Re-apply projection after remount (chart needs ~1s to load candles)
   useEffect(() => {
-    if (!result?.projection?.length) return
+    if (!result?.projection?.length && !result?.chartScenarios?.length) return
     const t = setTimeout(() => {
-      lwChartRef.current?.setProjection(result.projection ?? null)
+      if (result?.chartScenarios?.length) lwChartRef.current?.setProjectionScenarios(result.chartScenarios)
+      else if (result?.projection?.length) lwChartRef.current?.setProjection(result.projection)
     }, 1200)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -507,6 +517,21 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
       let liveDisp: string | null = null
 
       const autoFetches: Promise<void>[] = []
+
+      // Geopolitical + macro news (for scenario triggers)
+      let geoContext: string | null = null
+      autoFetches.push((async () => {
+        try {
+          const fn = httpsCallable<Record<string,unknown>, { geoNews?: {title:string;date:string;category:string}[]; economic?: {event:string;impact:string;date:string}[] }>(fbFn, 'fetchMarketCalendar')
+          const res = await fn({})
+          const geo = (res.data.geoNews ?? []).slice(0, 6)
+          const eco = (res.data.economic ?? []).filter(e => e.impact === 'high' || e.impact === 'High').slice(0, 5)
+          const parts: string[] = []
+          if (geo.length) parts.push('Geopolitical: ' + geo.map(g => `${g.title} [${g.category}]`).join(' · '))
+          if (eco.length) parts.push('High-impact macro: ' + eco.map(e => `${e.event} (${e.date})`).join(' · '))
+          geoContext = parts.length ? parts.join('\n') : null
+        } catch { /* optional */ }
+      })())
 
       // MTF — fetch RSI for 5 timeframes if pdfMtfSnap absent
       if (!pdfMtfSnap && symbol) {
@@ -826,14 +851,17 @@ ${fngSection}
 === MARKET INTERNALS (DISPERSION ENGINE — institutional grade) ===
 ${dispSection}
 
+=== GEOPOLITICAL & MACRO CONTEXT ===
+${geoContext ?? 'No major geopolitical/macro events flagged'}
+
 ${knowledgeSection ? knowledgeSection + '\n\n' : ''}${ragSection ? ragSection + '\n\n' : ''}${perfBrief}
 
 Current price is ${curPrice.toFixed(2)}. All TP/SL levels must be consistent with this price and with the bias direction.
 
 Respond with EXACTLY this JSON (no example values — compute everything from the data above):
-{"bias":"BULLISH|BEARISH|NEUTRAL","score":0,"conviction":0,"horizon":"Xh-Yh","quality":"Low|Medium|High","keyLevels":["LEVEL1","LEVEL2","LEVEL3","LEVEL4"],"catalyst":"specific catalyst from data","targets":{"tp1":"PRICE","tp2":"PRICE","sl":"PRICE"},"momentum":"BULLISH|BEARISH|NEUTRAL","regimeContext":"dispersion regime context","summary":"3-4 sentences with specific data references","risk":"specific risk factors","divergence":"divergence observations","mtfAnalysis":"MTF alignment with specific TF signals","whaleAnalysis":"whale/liq analysis with numbers","scenarios":{"bull":"bullish scenario with trigger and target","bear":"bearish scenario with invalidation"},"trades":[{"label":"Primary setup label","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"},{"label":"Alternative setup","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"}],"priceTarget24h":"PRICE expected price after the horizon — drives the chart projection"}
+{"bias":"BULLISH|BEARISH|NEUTRAL","score":0,"conviction":0,"horizon":"Xh-Yh","quality":"Low|Medium|High","keyLevels":["LEVEL1","LEVEL2","LEVEL3","LEVEL4"],"catalyst":"specific catalyst from data","targets":{"tp1":"PRICE","tp2":"PRICE","sl":"PRICE"},"momentum":"BULLISH|BEARISH|NEUTRAL","regimeContext":"dispersion regime context","summary":"3-4 sentences with specific data references","risk":"specific risk factors","divergence":"divergence observations","mtfAnalysis":"MTF alignment with specific TF signals","whaleAnalysis":"whale/liq analysis with numbers","scenarios":{"bull":"bullish scenario with trigger and target","bear":"bearish scenario with invalidation"},"trades":[{"label":"Primary setup label","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"},{"label":"Alternative setup","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"}],"priceTarget24h":"PRICE expected price after the horizon","projScenarios":[{"label":"Base","probability":50,"priceTarget":"PRICE","trigger":"most likely path given current technicals"},{"label":"Bull","probability":30,"priceTarget":"PRICE","trigger":"specific bullish catalyst incl. geopolitical/macro if relevant"},{"label":"Bear","probability":20,"priceTarget":"PRICE","trigger":"specific bearish catalyst incl. geopolitical/macro if relevant"}]}
 
-The "priceTarget24h" must be a single realistic price the asset will likely reach by the end of your horizon, consistent with bias and key levels. The projection candles are rendered client-side from this target.`
+RULES for projScenarios: provide 2-3 DISTINCT scenarios with probabilities summing to ~100. Each must have a different priceTarget and a concrete trigger. Use the GEOPOLITICAL & MACRO CONTEXT for the bull/bear triggers when relevant (e.g. "ceasefire → risk-on", "rate hike → risk-off"). The "priceTarget24h" = the base scenario target.`
 
       const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
       const res = await fn({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 1400 })
@@ -848,108 +876,55 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
       if (!parsed.horizon) parsed.horizon = '—'
       if (!parsed.scenarios) parsed.scenarios = { bull: '', bear: '' }
       if (!Array.isArray(parsed.trades)) parsed.trades = []
-      // ── Generate projection candles CLIENT-SIDE (guided by AI target) ─────
-      {
-        // Target price: from AI priceTarget24h, else from primary trade tp1, else bias drift
-        let target = parseFloat(parsed.priceTarget24h ?? '')
-        if (!isFinite(target) || target <= 0) {
-          const t0 = parsed.trades?.[0]
-          const tp = t0 ? parseFloat(t0.tp1) : NaN
-          if (isFinite(tp) && tp > 0) target = tp
-          else {
-            const isBull = parsed.bias === 'BULLISH', isBear = parsed.bias === 'BEARISH'
-            target = curPrice + (isBull ? atr * 4 : isBear ? -atr * 4 : 0)
-          }
-        }
-        // ── Indicator-aware path generation ──────────────────────────────
+      // ── Generate projection candles CLIENT-SIDE (guided by AI targets) ────
+      // Shared indicator params (computed once, reused per scenario)
+      const convRaw = parsed.conviction ?? 3
+      const conviction = convRaw > 10 ? convRaw / 100 : convRaw / 5
+      const driftStrength = 0.5 + conviction * 0.5
+      const dispVol = dispersionCtx
+        ? (dispersionCtx.regime === 'HIGH_DISPERSION' || dispersionCtx.volRegime === 'high' ? 1.4 : 0.85)
+        : liveDisp ? (liveDisp.includes('HIGH') ? 1.4 : 0.9) : 1.0
+      const vol = Math.max(atr * 0.4, curPrice * 0.0008) * dispVol
+      const momBias = parsed.momentum === 'BULLISH' ? 1 : parsed.momentum === 'BEARISH' ? -1 : 0
+      const keyPrices = (parsed.keyLevels ?? [])
+        .map(k => parseFloat(String(k).replace(/[^0-9.]/g, '')))
+        .filter(p => isFinite(p) && p > 0 && Math.abs(p / curPrice - 1) < 0.15)
+      const vmcAmp = Math.max(30, Math.abs(curVmc))
+      const phaseDir = vmcMom >= 0 ? 1 : -1
+      const vmcPhase0 = Math.asin(Math.max(-1, Math.min(1, curVmc / vmcAmp)))
+      const vmcW = (2 * Math.PI) / vmcPeriod
+      const vmcAt = (i: number) => vmcAmp * Math.sin(vmcPhase0 + phaseDir * vmcW * (i + 1))
+      const cloud = ichimoku.futureCloud
+      const cloudBias = ichimoku.bias === 'bull' ? 1 : ichimoku.bias === 'bear' ? -1 : 0
+
+      // Generate one OHLC path toward `target`
+      const genPath = (target: number): ProjectionBar[] => {
         const totalMove = target - curPrice
-
-        // 1. Conviction (1-5 or 0-100) → drift consistency. High conviction = smoother trend
-        const convRaw = parsed.conviction ?? 3
-        const conviction = convRaw > 10 ? convRaw / 100 : convRaw / 5   // normalize to 0-1
-        const driftStrength = 0.5 + conviction * 0.5                     // 0.5..1.0
-
-        // 2. Volatility from ATR + dispersion regime (high dispersion = wider candles)
-        const dispVol = dispersionCtx
-          ? (dispersionCtx.regime === 'HIGH_DISPERSION' || dispersionCtx.volRegime === 'high' ? 1.4 : 0.85)
-          : liveDisp ? (liveDisp.includes('HIGH') ? 1.4 : 0.9) : 1.0
-        const vol = Math.max(atr * 0.4, curPrice * 0.0008) * dispVol
-
-        // 3. Momentum: early bars follow current momentum direction
-        const momBull = parsed.momentum === 'BULLISH'
-        const momBear = parsed.momentum === 'BEARISH'
-        const momBias = momBull ? 1 : momBear ? -1 : 0
-
-        // 4. Key levels (parse numeric S/R from keyLevels) → price reacts near them
-        const keyPrices = (parsed.keyLevels ?? [])
-          .map(k => parseFloat(String(k).replace(/[^0-9.]/g, '')))
-          .filter(p => isFinite(p) && p > 0 && Math.abs(p / curPrice - 1) < 0.15)
-
-        // S-curve drift: slower start, accelerate mid, ease near target (realistic path)
         const easeDrift = (i: number) => {
-          const t = (i + 1) / projectionBars
-          // ease-in-out cumulative fraction
-          const prev = i / projectionBars
-          const ease = (x: number) => x * x * (3 - 2 * x)  // smoothstep
+          const t = (i + 1) / projectionBars, prev = i / projectionBars
+          const ease = (x: number) => x * x * (3 - 2 * x)
           return totalMove * (ease(t) - ease(prev))
         }
-
-        // 5. VMC wave: continue the oscillator cycle → mean-reversion at extremes
-        const vmcAmp = Math.max(30, Math.abs(curVmc))
-        const phaseDir = vmcMom >= 0 ? 1 : -1
-        const vmcPhase0 = Math.asin(Math.max(-1, Math.min(1, curVmc / vmcAmp)))
-        const vmcW = (2 * Math.PI) / vmcPeriod
-        const vmcAt = (i: number) => vmcAmp * Math.sin(vmcPhase0 + phaseDir * vmcW * (i + 1))
-
-        // 6. Ichimoku Kumo: future cloud = known S/R for next ~26 bars
-        const cloud = ichimoku.futureCloud  // [{spanA, spanB}] indexed by future bar (0 = bar1)
-        const cloudBias = ichimoku.bias === 'bull' ? 1 : ichimoku.bias === 'bear' ? -1 : 0
-
         let prevClose = curPrice
-        parsed.projection = Array.from({ length: projectionBars }, (_, i) => {
+        return Array.from({ length: projectionBars }, (_, i) => {
           const open = prevClose
           let drift = easeDrift(i) * driftStrength
-
-          // Momentum kick on first ~20% of bars
           if (i < projectionBars * 0.2) drift += momBias * vol * 0.3
-
-          // Ichimoku cloud bias: small persistent drift in cloud direction
           drift += cloudBias * vol * 0.12
-
-          // Higher-timeframe macro bias: persistent drift aligned with HTF trend
           if (htf) drift += htf.bias * vol * 0.18
-
-          // VMC mean-reversion: overbought (→+ob) pushes down, oversold (→-os) pushes up
-          const vmcVal = vmcAt(i)
-          const meanRevForce = -(vmcVal / obLevel) * vol * 0.6
-
-          // Noise inversely proportional to conviction (high conviction = less chop)
+          const meanRevForce = -(vmcAt(i) / obLevel) * vol * 0.6
           const noise = (Math.random() - 0.5) * vol * (2.2 - conviction)
-
           let close = open + drift + meanRevForce + noise
-
-          // Key level magnetism: if close crosses a key level, dampen (price reacts)
           for (const kp of keyPrices) {
-            if ((open - kp) * (close - kp) < 0) {        // crossed the level
-              const overshoot = close - kp
-              close = kp + overshoot * 0.4               // 60% rejection at level
-            }
+            if ((open - kp) * (close - kp) < 0) { const o = close - kp; close = kp + o * 0.4 }
           }
-
-          // Ichimoku cloud edges as dynamic S/R for this future bar
           const cb = cloud[i]
           if (cb) {
-            const cloudTop = Math.max(cb.spanA, cb.spanB)
-            const cloudBot = Math.min(cb.spanA, cb.spanB)
-            // Reject at cloud edges (price tends to bounce off the cloud)
-            for (const edge of [cloudTop, cloudBot]) {
-              if ((open - edge) * (close - edge) < 0) {
-                const overshoot = close - edge
-                close = edge + overshoot * 0.45          // 55% rejection at cloud edge
-              }
+            const ct = Math.max(cb.spanA, cb.spanB), cbn = Math.min(cb.spanA, cb.spanB)
+            for (const edge of [ct, cbn]) {
+              if ((open - edge) * (close - edge) < 0) { const o = close - edge; close = edge + o * 0.45 }
             }
           }
-
           const wick = vol * (0.4 + Math.random() * 0.5)
           const high = Math.max(open, close) + Math.random() * wick
           const low  = Math.min(open, close) - Math.random() * wick
@@ -957,19 +932,50 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
           return { bar: i + 1, open, high, low, close }
         })
       }
-      // Pre-compute timestamps from IaTab's own candles (bypasses chart candlesRef race)
-      if (parsed.projection.length > 0 && candles.length >= 2) {
-        const lastT = candles[n-1].time as number  // unix seconds
-        const intervalSec = (candles[n-1].time as number) - (candles[n-2].time as number)
-        parsed.projection = parsed.projection.map(b => ({
-          ...b,
-          time: lastT + b.bar * intervalSec,
-        }))
+
+      // Base target (fallback chain)
+      let baseTarget = parseFloat(parsed.priceTarget24h ?? '')
+      if (!isFinite(baseTarget) || baseTarget <= 0) {
+        const tp = parsed.trades?.[0] ? parseFloat(parsed.trades[0].tp1) : NaN
+        baseTarget = isFinite(tp) && tp > 0 ? tp
+          : curPrice + (parsed.bias === 'BULLISH' ? atr * 4 : parsed.bias === 'BEARISH' ? -atr * 4 : 0)
       }
-      // Push projection to chart
-      if (parsed.projection.length > 0) {
+      parsed.projection = genPath(baseTarget)
+
+      // Timestamp helper
+      const intervalSec = candles.length >= 2 ? (candles[n-1].time as number) - (candles[n-2].time as number) : 900
+      const lastT = candles.length ? candles[n-1].time as number : Math.floor(Date.now()/1000)
+      const stampBars = (bars: ProjectionBar[]) => bars.map(b => ({ ...b, time: lastT + b.bar * intervalSec }))
+      parsed.projection = stampBars(parsed.projection)
+
+      // Build multi-scenario projections from AI projScenarios
+      let chartScenarios: ProjectionScenario[] | null = null
+      if (Array.isArray(parsed.projScenarios) && parsed.projScenarios.length > 0) {
+        const colorFor = (sc: AiScenario): string => {
+          const t = parseFloat(sc.priceTarget)
+          const l = sc.label.toLowerCase()
+          if (l.includes('bull') || (isFinite(t) && t > curPrice * 1.002)) return '#34C759'
+          if (l.includes('bear') || (isFinite(t) && t < curPrice * 0.998)) return '#FF3B30'
+          return '#3B8AFF'  // base / neutral
+        }
+        chartScenarios = parsed.projScenarios
+          .filter(sc => isFinite(parseFloat(sc.priceTarget)) && parseFloat(sc.priceTarget) > 0)
+          .slice(0, 3)
+          .map(sc => ({
+            label: sc.label,
+            probability: Math.round(sc.probability) || 0,
+            color: colorFor(sc),
+            bars: stampBars(genPath(parseFloat(sc.priceTarget))),
+          }))
+      }
+
+      // Push to chart: scenarios if available, else single projection
+      if (chartScenarios && chartScenarios.length > 0) {
+        parsed.chartScenarios = chartScenarios
+        lwChartRef.current?.setProjectionScenarios(chartScenarios)
+        setTimeout(() => lwChartRef.current?.setProjectionScenarios(chartScenarios!), 800)
+      } else if (parsed.projection.length > 0) {
         lwChartRef.current?.setProjection(parsed.projection)
-        // Retry after mount in case chart wasn't ready
         setTimeout(() => lwChartRef.current?.setProjection(parsed.projection!), 800)
       }
       setUsedSources({
