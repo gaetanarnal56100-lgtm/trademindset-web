@@ -660,12 +660,21 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
       projDataRef.current = bars && bars.length > 0 ? bars : null
       // Create right margin so projected bars have space to render
       if (chart && bars && bars.length > 0) {
-        const n = candlesRef.current.length || 300
-        // Show 100 real bars before last candle + all projected bars — no scroll needed
+        // Find anchor index via binary search on proj[0].time
+        const candles = candlesRef.current
+        const firstProjTime = bars[0].time
+        const intervalSec = bars.length > 1 ? bars[1].time! - bars[0].time! : 900
+        let anchorIdx = candles.length - 1
+        if (firstProjTime && candles.length > 0) {
+          const anchorTime = firstProjTime - intervalSec
+          let lo = 0, hi = candles.length - 1
+          while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
+          anchorIdx = lo
+        }
         chart.timeScale().applyOptions({ rightOffset: 3 })
         chart.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, n - 100),
-          to: n + bars.length + 3,
+          from: Math.max(0, anchorIdx - 80),
+          to: anchorIdx + bars.length + 5,
         })
       }
     },
