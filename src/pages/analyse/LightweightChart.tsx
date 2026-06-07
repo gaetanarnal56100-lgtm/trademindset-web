@@ -1569,32 +1569,43 @@ const projScenariosRef = useRef<ProjectionScenario[] | null>(null)
       return anchorIdx
     }
 
-    // Multi-scenario mode: draw each scenario as a line path (probability-weighted width)
+    // Multi-scenario mode: draw each scenario as candlesticks in sub-columns
     const scenarios = projScenariosRef.current
     if (scenarios && scenarios.length > 0 && ser && candles.length > 0) {
       ctx.save()
-      // Sort so highest-probability draws last (on top)
-      const sorted = [...scenarios].sort((a, b) => a.probability - b.probability)
-      for (const sc of sorted) {
-        if (!sc.bars.length) continue
+      const nSc = scenarios.length
+      // Full slot width from logical spacing
+      const anchor0 = anchorIdxFor(scenarios[0].bars)
+      const sx0 = toXIdx(anchor0), sx1 = toXIdx(anchor0 + 1)
+      const slotW = (sx0 != null && sx1 != null) ? Math.abs(sx1 - sx0) : 6
+      const subW = Math.max(1.5, (slotW * 0.8) / nSc)   // width per scenario sub-candle
+      const maxProb = Math.max(...scenarios.map(s => s.probability))
+
+      scenarios.forEach((sc, si) => {
+        if (!sc.bars.length) return
         const anchorIdx = anchorIdxFor(sc.bars)
-        const anchorX = toXIdx(anchorIdx)
-        const anchorY = toY(candles[anchorIdx].close)
-        if (anchorX == null || anchorY == null) continue
-        const isTop = sc.probability >= Math.max(...scenarios.map(s => s.probability))
-        ctx.strokeStyle = sc.color
-        ctx.lineWidth = isTop ? 2.5 : 1.3
-        ctx.globalAlpha = isTop ? 0.95 : 0.55
-        ctx.setLineDash(isTop ? [] : [5, 4])
-        ctx.beginPath()
-        ctx.moveTo(anchorX, anchorY)
+        const isTop = sc.probability >= maxProb
+        // Sub-column offset: center the group, spread scenarios across the slot
+        const offset = (si - (nSc - 1) / 2) * subW
+        ctx.globalAlpha = isTop ? 0.9 : 0.5
+
         for (const b of sc.bars) {
-          const x = toXIdx(anchorIdx + b.bar), y = toY(b.close)
-          if (x == null || y == null) continue
-          ctx.lineTo(x, y)
+          const xc = toXIdx(anchorIdx + b.bar)
+          if (xc == null) continue
+          const x = xc + offset
+          const yO = toY(b.open), yH = toY(b.high), yL = toY(b.low), yC = toY(b.close)
+          if (yO == null || yH == null || yL == null || yC == null) continue
+          // Wick
+          ctx.strokeStyle = sc.color
+          ctx.lineWidth = 1
+          ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke()
+          // Body
+          ctx.fillStyle = sc.color
+          const bodyTop = Math.min(yO, yC)
+          const bodyH = Math.max(1, Math.abs(yC - yO))
+          ctx.fillRect(x - subW / 2, bodyTop, subW, bodyH)
         }
-        ctx.stroke()
-        ctx.setLineDash([])
+
         // Label at end
         const lb = sc.bars[sc.bars.length - 1]
         const lx = toXIdx(anchorIdx + lb.bar), ly = toY(lb.close)
@@ -1602,9 +1613,9 @@ const projScenariosRef = useRef<ProjectionScenario[] | null>(null)
           ctx.globalAlpha = 1
           ctx.font = `bold ${isTop ? 10 : 9}px JetBrains Mono, monospace`
           ctx.fillStyle = sc.color
-          ctx.fillText(`${sc.label} ${sc.probability}%`, lx + 6, ly)
+          ctx.fillText(`${sc.label} ${sc.probability}%`, lx + 8, ly)
         }
-      }
+      })
       ctx.restore()
     }
 
