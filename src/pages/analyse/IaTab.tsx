@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app from '@/services/firebase/config'
 import type { LightweightChartHandle } from './LightweightChart'
+import { calcVMCOscillator } from './OscillatorCharts'
 import type { MTFSnapshot } from './MTFDashboard'
 import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
@@ -499,6 +500,26 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
 
       const rsi = calcRSI14(closes)
       const atr = calcATR14(candles)
+
+      // ── VMC wave state (for projection mean-reversion cycle) ──────────────
+      const vmcCandles = candles.map(c => ({ o: c.open, h: c.high, l: c.low, c: c.close, v: c.volume ?? 0, t: c.time }))
+      const vmc = calcVMCOscillator(vmcCandles)
+      const vmcSig = vmc.sig
+      const curVmc = vmcSig.length ? vmcSig[vmcSig.length - 1] : 0
+      const vmcMom = vmc.momentum.length ? vmc.momentum[vmc.momentum.length - 1] : 0
+      const obLevel = vmc.obLevel || 40, osLevel = vmc.osLevel || -40
+      // Estimate VMC cycle period from sig zero-crossings (last ~100 bars)
+      const vmcPeriod = (() => {
+        const recent = vmcSig.slice(-100)
+        const crossings: number[] = []
+        for (let i = 1; i < recent.length; i++)
+          if ((recent[i-1] <= 0 && recent[i] > 0) || (recent[i-1] >= 0 && recent[i] < 0)) crossings.push(i)
+        if (crossings.length < 2) return 20
+        const gaps = crossings.slice(1).map((c, i) => c - crossings[i])
+        const avgHalf = gaps.reduce((a, b) => a + b, 0) / gaps.length
+        return Math.max(8, Math.min(60, avgHalf * 2))
+      })()
+
       const last50 = candles.slice(-50)
       const high50 = last50.length ? Math.max(...last50.map(c => c.high)) : 0
       const low50  = last50.length ? Math.min(...last50.map(c => c.low)) : 0
@@ -641,6 +662,7 @@ Volume: ${volTrend}
 
 === PRICE INDICATORS ===
 RSI(14): ${rsi} | VMC status: ${vmcStatus}
+VMC wave: ${curVmc.toFixed(0)} (overbought ${obLevel} / oversold ${osLevel}) momentum ${vmcMom>=0?'+':''}${vmcMom.toFixed(0)} cycle≈${vmcPeriod.toFixed(0)} bars — ${curVmc>obLevel?'OVERBOUGHT, expect pullback':curVmc<osLevel?'OVERSOLD, expect bounce':'mid-range'}
 Bollinger Bands: ${bbStr} | Position: ${bbPos}
 OU Channel: ${ouSection}
 
@@ -728,6 +750,13 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
           return totalMove * (ease(t) - ease(prev))
         }
 
+        // 5. VMC wave: continue the oscillator cycle → mean-reversion at extremes
+        const vmcAmp = Math.max(30, Math.abs(curVmc))
+        const phaseDir = vmcMom >= 0 ? 1 : -1
+        const vmcPhase0 = Math.asin(Math.max(-1, Math.min(1, curVmc / vmcAmp)))
+        const vmcW = (2 * Math.PI) / vmcPeriod
+        const vmcAt = (i: number) => vmcAmp * Math.sin(vmcPhase0 + phaseDir * vmcW * (i + 1))
+
         let prevClose = curPrice
         parsed.projection = Array.from({ length: projectionBars }, (_, i) => {
           const open = prevClose
@@ -736,10 +765,14 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
           // Momentum kick on first ~20% of bars
           if (i < projectionBars * 0.2) drift += momBias * vol * 0.3
 
+          // VMC mean-reversion: overbought (→+ob) pushes down, oversold (→-os) pushes up
+          const vmcVal = vmcAt(i)
+          const meanRevForce = -(vmcVal / obLevel) * vol * 0.6
+
           // Noise inversely proportional to conviction (high conviction = less chop)
           const noise = (Math.random() - 0.5) * vol * (2.2 - conviction)
 
-          let close = open + drift + noise
+          let close = open + drift + meanRevForce + noise
 
           // Key level magnetism: if close crosses a key level, dampen (price reacts)
           for (const kp of keyPrices) {
