@@ -660,9 +660,13 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
       projDataRef.current = bars && bars.length > 0 ? bars : null
       // Create right margin so projected bars have space to render
       if (chart && bars && bars.length > 0) {
-        // rightOffset creates empty space AFTER last candle = projection zone
-        // Do NOT scrollToRealTime — keep current viewport so projection is visible
-        chart.timeScale().applyOptions({ rightOffset: bars.length + 5 })
+        const n = candlesRef.current.length || 300
+        // Show 100 real bars before last candle + all projected bars — no scroll needed
+        chart.timeScale().applyOptions({ rightOffset: 3 })
+        chart.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, n - 100),
+          to: n + bars.length + 3,
+        })
       }
     },
   }))
