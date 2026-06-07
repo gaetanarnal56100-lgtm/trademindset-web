@@ -695,17 +695,63 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
             target = curPrice + (isBull ? atr * 4 : isBear ? -atr * 4 : 0)
           }
         }
-        // Linear drift per bar toward target + noise + wicks
+        // ── Indicator-aware path generation ──────────────────────────────
         const totalMove = target - curPrice
-        const driftPerBar = totalMove / projectionBars
-        const vol = Math.max(atr * 0.4, curPrice * 0.0008)
+
+        // 1. Conviction (1-5 or 0-100) → drift consistency. High conviction = smoother trend
+        const convRaw = parsed.conviction ?? 3
+        const conviction = convRaw > 10 ? convRaw / 100 : convRaw / 5   // normalize to 0-1
+        const driftStrength = 0.5 + conviction * 0.5                     // 0.5..1.0
+
+        // 2. Volatility from ATR + dispersion regime (high dispersion = wider candles)
+        const dispVol = dispersionCtx
+          ? (dispersionCtx.regime === 'HIGH_DISPERSION' || dispersionCtx.volRegime === 'high' ? 1.4 : 0.85)
+          : liveDisp ? (liveDisp.includes('HIGH') ? 1.4 : 0.9) : 1.0
+        const vol = Math.max(atr * 0.4, curPrice * 0.0008) * dispVol
+
+        // 3. Momentum: early bars follow current momentum direction
+        const momBull = parsed.momentum === 'BULLISH'
+        const momBear = parsed.momentum === 'BEARISH'
+        const momBias = momBull ? 1 : momBear ? -1 : 0
+
+        // 4. Key levels (parse numeric S/R from keyLevels) → price reacts near them
+        const keyPrices = (parsed.keyLevels ?? [])
+          .map(k => parseFloat(String(k).replace(/[^0-9.]/g, '')))
+          .filter(p => isFinite(p) && p > 0 && Math.abs(p / curPrice - 1) < 0.15)
+
+        // S-curve drift: slower start, accelerate mid, ease near target (realistic path)
+        const easeDrift = (i: number) => {
+          const t = (i + 1) / projectionBars
+          // ease-in-out cumulative fraction
+          const prev = i / projectionBars
+          const ease = (x: number) => x * x * (3 - 2 * x)  // smoothstep
+          return totalMove * (ease(t) - ease(prev))
+        }
+
         let prevClose = curPrice
         parsed.projection = Array.from({ length: projectionBars }, (_, i) => {
           const open = prevClose
-          const noise = (Math.random() - 0.5) * vol * 1.5
-          const close = open + driftPerBar + noise
-          const high = Math.max(open, close) + Math.random() * vol * 0.6
-          const low = Math.min(open, close) - Math.random() * vol * 0.6
+          let drift = easeDrift(i) * driftStrength
+
+          // Momentum kick on first ~20% of bars
+          if (i < projectionBars * 0.2) drift += momBias * vol * 0.3
+
+          // Noise inversely proportional to conviction (high conviction = less chop)
+          const noise = (Math.random() - 0.5) * vol * (2.2 - conviction)
+
+          let close = open + drift + noise
+
+          // Key level magnetism: if close crosses a key level, dampen (price reacts)
+          for (const kp of keyPrices) {
+            if ((open - kp) * (close - kp) < 0) {        // crossed the level
+              const overshoot = close - kp
+              close = kp + overshoot * 0.4               // 60% rejection at level
+            }
+          }
+
+          const wick = vol * (0.4 + Math.random() * 0.5)
+          const high = Math.max(open, close) + Math.random() * wick
+          const low  = Math.min(open, close) - Math.random() * wick
           prevClose = close
           return { bar: i + 1, open, high, low, close }
         })
