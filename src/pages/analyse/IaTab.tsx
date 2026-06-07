@@ -959,10 +959,10 @@ RULES for projScenarios: provide 2-3 DISTINCT scenarios with probabilities summi
         // so the lines are always ordered logically on the chart.
         const byTarget = [...valid].sort((a, b) => b.t - a.t)  // high → low
         const roleFor = (sc: typeof valid[number]): { label: string; color: string } => {
-          if (byTarget.length === 1) return { label: 'Base', color: '#3B8AFF' }
+          if (byTarget.length === 1) return { label: 'Base', color: '#FF9500' }
           if (sc === byTarget[0]) return { label: 'Bull', color: '#34C759' }                    // highest
           if (sc === byTarget[byTarget.length - 1]) return { label: 'Bear', color: '#FF3B30' }  // lowest
-          return { label: 'Base', color: '#3B8AFF' }                                            // middle
+          return { label: 'Base', color: '#FF9500' }                                            // middle
         }
         chartScenarios = valid.map(sc => {
           const role = roleFor(sc)
