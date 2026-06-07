@@ -951,22 +951,28 @@ RULES for projScenarios: provide 2-3 DISTINCT scenarios with probabilities summi
       // Build multi-scenario projections from AI projScenarios
       let chartScenarios: ProjectionScenario[] | null = null
       if (Array.isArray(parsed.projScenarios) && parsed.projScenarios.length > 0) {
-        const colorFor = (sc: AiScenario): string => {
-          const t = parseFloat(sc.priceTarget)
-          const l = sc.label.toLowerCase()
-          if (l.includes('bull') || (isFinite(t) && t > curPrice * 1.002)) return '#34C759'
-          if (l.includes('bear') || (isFinite(t) && t < curPrice * 0.998)) return '#FF3B30'
-          return '#3B8AFF'  // base / neutral
-        }
-        chartScenarios = parsed.projScenarios
-          .filter(sc => isFinite(parseFloat(sc.priceTarget)) && parseFloat(sc.priceTarget) > 0)
+        const valid = parsed.projScenarios
+          .map(sc => ({ ...sc, t: parseFloat(sc.priceTarget) }))
+          .filter(sc => isFinite(sc.t) && sc.t > 0)
           .slice(0, 3)
-          .map(sc => ({
-            label: sc.label,
+        // Assign role by TARGET RANK (highest=Bull, lowest=Bear, middle=Base)
+        // so the lines are always ordered logically on the chart.
+        const byTarget = [...valid].sort((a, b) => b.t - a.t)  // high → low
+        const roleFor = (sc: typeof valid[number]): { label: string; color: string } => {
+          if (byTarget.length === 1) return { label: 'Base', color: '#3B8AFF' }
+          if (sc === byTarget[0]) return { label: 'Bull', color: '#34C759' }                    // highest
+          if (sc === byTarget[byTarget.length - 1]) return { label: 'Bear', color: '#FF3B30' }  // lowest
+          return { label: 'Base', color: '#3B8AFF' }                                            // middle
+        }
+        chartScenarios = valid.map(sc => {
+          const role = roleFor(sc)
+          return {
+            label: role.label,
             probability: Math.round(sc.probability) || 0,
-            color: colorFor(sc),
-            bars: stampBars(genPath(parseFloat(sc.priceTarget))),
-          }))
+            color: role.color,
+            bars: stampBars(genPath(sc.t)),
+          }
+        })
       }
 
       // Push to chart: scenarios if available, else single projection
