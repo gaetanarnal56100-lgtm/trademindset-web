@@ -8,7 +8,7 @@ import { calcVMCOscillator } from './OscillatorCharts'
 import type { MTFSnapshot } from './MTFDashboard'
 import { fetchAndCompute } from '@/services/dispersion/dispersionEngine'
 import { CRYPTO_BASKET } from '@/services/dispersion/types'
-import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome, updateIaEmbedding } from '@/services/firestore/iaHistory'
+import { saveIaAnalysis, getIaHistory, updateIaOutcome, getGlobalIaHistory, updateGlobalIaOutcome, updateIaEmbedding, updateIaProjAccuracy } from '@/services/firestore/iaHistory'
 import type { ProjectionBar } from './LightweightChart'
 import type { IaAnalysisRecord, IaGlobalRecord } from '@/services/firestore/iaHistory'
 import { getKnowledge, saveKnowledge, formatKnowledgeForPrompt } from '@/services/firestore/iaLearning'
@@ -324,7 +324,10 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
   // Load personal + global history + knowledge base on mount
   useEffect(() => {
     if (user?.uid) {
-      getIaHistory(user.uid, undefined, 100).then(setAllHistory).catch(() => {})
+      getIaHistory(user.uid, undefined, 100).then(h => {
+        setAllHistory(h)
+        evaluateProjections(user.uid!, h)  // backtest projection accuracy
+      }).catch(() => {})
       getKnowledge(user.uid).then(setKnowledge).catch(() => {})
     }
     getGlobalIaHistory(undefined, 500).then(glob => {
@@ -334,6 +337,55 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
     }).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid])
+
+  // Evaluate projection accuracy for records that have enough elapsed bars
+  const evaluateProjections = useCallback(async (uid: string, records: IaAnalysisRecord[]) => {
+    const tfToBinance = (tf: string): string => {
+      const m = tf.toLowerCase().replace('min', 'm')
+      return ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','1w'].includes(m) ? m : '15m'
+    }
+    for (const rec of records) {
+      if (!rec.id || !rec.projCloses?.length || rec.projAccuracy) continue
+      const intervalSec = rec.projIntervalSec ?? 900
+      const elapsedBars = Math.floor((Date.now() - rec.timestamp) / (intervalSec * 1000))
+      if (elapsedBars < 3) continue  // need ≥3 bars to evaluate
+      try {
+        const interval = tfToBinance(rec.projTf ?? '15m')
+        const url = `https://api.binance.com/api/v3/klines?symbol=${rec.symbol}&interval=${interval}&startTime=${rec.timestamp}&limit=${Math.min(rec.projCloses.length + 2, 200)}`
+        const klines = await fetch(url).then(r => r.json()) as unknown[][]
+        if (!Array.isArray(klines) || klines.length < 2) continue
+        const actualCloses = klines.map(k => parseFloat(k[4] as string))
+        const nEval = Math.min(rec.projCloses.length, actualCloses.length - 1, elapsedBars)
+        if (nEval < 3) continue
+
+        const base = rec.entryPrice
+        const atr = base * 0.01  // rough ATR proxy (1%) for normalization
+        let dirHits = 0, absErr = 0, bandHits = 0
+        for (let i = 0; i < nEval; i++) {
+          const proj = rec.projCloses[i]
+          const act = actualCloses[i + 1]   // +1: actual bar after entry
+          const prevProj = i === 0 ? base : rec.projCloses[i-1]
+          const prevAct  = i === 0 ? base : actualCloses[i]
+          // Directional hit
+          if (Math.sign(proj - prevProj) === Math.sign(act - prevAct)) dirHits++
+          absErr += Math.abs(proj - act)
+          // band: projected close ± 1.5 ATR
+          if (Math.abs(act - proj) <= atr * 1.5) bandHits++
+        }
+        const projAccuracy = {
+          dirHitRate: Math.round(dirHits / nEval * 100),
+          maeAtr: +(absErr / nEval / atr).toFixed(2),
+          bandHitRate: Math.round(bandHits / nEval * 100),
+          evaluatedBars: nEval,
+          checkedAt: Date.now(),
+        }
+        // Only persist once projection fully elapsed (stable) or ≥80% of bars done
+        if (nEval >= rec.projCloses.length * 0.8) {
+          await updateIaProjAccuracy(uid, rec.id, projAccuracy)
+        }
+      } catch { /* skip */ }
+    }
+  }, [])
 
   // Evaluate open IA trades against actual price data
   const evaluatePendingTrades = useCallback(async (uid: string) => {
@@ -575,6 +627,38 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
       // ── Ichimoku Kumo: forward cloud = known future S/R for projection ────
       const ichimoku = calcIchimoku(candles)
 
+      // ── Higher-timeframe context (macro bias for projection) ──────────────
+      // Map current TF → next-higher TF (one step up the ladder)
+      const tfLadder: Record<string, string> = {
+        '1m':'15m','3m':'30m','5m':'1h','15m':'4h','30m':'4h','1h':'1d','2h':'1d','4h':'1d','6h':'1d','12h':'1w','1d':'1w','1w':'1M'
+      }
+      const htfInterval = tfLadder[tf.toLowerCase()] ?? '4h'
+      let htf: { rsi: number; vmcStatus: string; vmcSig: number; cloudBias: string; trend: string; bias: number } | null = null
+      try {
+        const htfKl = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${htfInterval}&limit=200`).then(r => r.json()) as unknown[][]
+        if (Array.isArray(htfKl) && htfKl.length > 60) {
+          const htfCandles = htfKl.map(k => ({
+            o: parseFloat(k[1] as string), h: parseFloat(k[2] as string), l: parseFloat(k[3] as string),
+            c: parseFloat(k[4] as string), v: parseFloat(k[5] as string), t: Math.floor((k[0] as number)/1000),
+          }))
+          const htfCloses = htfCandles.map(c => c.c)
+          const htfRsi = calcRSI14(htfCloses)
+          const htfVmc = calcVMCOscillator(htfCandles)
+          const htfIchi = calcIchimoku(htfCandles.map(c => ({ high: c.h, low: c.l, close: c.c })))
+          const htfSig = htfVmc.sig.length ? htfVmc.sig[htfVmc.sig.length-1] : 0
+          // SMA50 vs SMA200-ish trend
+          const sma = (arr: number[], len: number) => arr.slice(-len).reduce((s,v)=>s+v,0)/Math.min(len,arr.length)
+          const trend = sma(htfCloses, 20) > sma(htfCloses, 50) ? 'up' : 'down'
+          // Aggregate macro bias score [-1..1]
+          let bias = 0
+          bias += htfRsi > 55 ? 0.25 : htfRsi < 45 ? -0.25 : 0
+          bias += htfSig > 0 ? 0.25 : -0.25
+          bias += htfIchi.bias === 'bull' ? 0.3 : htfIchi.bias === 'bear' ? -0.3 : 0
+          bias += trend === 'up' ? 0.2 : -0.2
+          htf = { rsi: htfRsi, vmcStatus: htfVmc.status, vmcSig: htfSig, cloudBias: htfIchi.bias, trend, bias: Math.max(-1, Math.min(1, bias)) }
+        }
+      } catch { /* HTF optional */ }
+
       const last50 = candles.slice(-50)
       const high50 = last50.length ? Math.max(...last50.map(c => c.high)) : 0
       const low50  = last50.length ? Math.min(...last50.map(c => c.low)) : 0
@@ -729,6 +813,10 @@ MSD: ${msdSection}
 === MULTI-TIMEFRAME (MTF) ===
 ${mtfSection}
 
+=== HIGHER TIMEFRAME (${htfInterval} — macro context) ===
+${htf ? `RSI: ${htf.rsi} | VMC: ${htf.vmcStatus} (sig ${htf.vmcSig.toFixed(0)}) | Ichimoku cloud: ${htf.cloudBias.toUpperCase()} | Trend(SMA20/50): ${htf.trend.toUpperCase()} | Macro bias: ${htf.bias > 0.3 ? 'BULLISH' : htf.bias < -0.3 ? 'BEARISH' : 'NEUTRAL'} (${htf.bias.toFixed(2)})
+IMPORTANT: align your bias and priceTarget24h with this higher-TF context. Do not fight the macro trend — counter-trend setups need stronger justification.` : 'Not available'}
+
 === WHALE & LIQUIDATIONS ===
 ${whaleSection}
 
@@ -828,6 +916,9 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
           // Ichimoku cloud bias: small persistent drift in cloud direction
           drift += cloudBias * vol * 0.12
 
+          // Higher-timeframe macro bias: persistent drift aligned with HTF trend
+          if (htf) drift += htf.bias * vol * 0.18
+
           // VMC mean-reversion: overbought (→+ob) pushes down, oversold (→-os) pushes up
           const vmcVal = vmcAt(i)
           const meanRevForce = -(vmcVal / obLevel) * vol * 0.6
@@ -911,6 +1002,10 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
           condOuExcess: ouSignal.excess,
           condLiqBias: isCrypto ? liqLong1h - liqShort1h : 0,
           condFng: fng?.value ?? 50,
+          // Projection center path for accuracy backtest
+          projTf: tf,
+          projIntervalSec: candles.length >= 2 ? (candles[n-1].time as number) - (candles[n-2].time as number) : 900,
+          projCloses: (parsed.projection ?? []).map(b => b.close),
         }
         saveIaAnalysis(condRecord).then(id => {
           lastSavedId.current = id
@@ -1300,6 +1395,10 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
         const avgR    = closed.length ? closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0) / closed.length : 0
         const totalR  = closed.reduce((s,r) => s + (r.outcomeR ?? 0), 0)
         const allSymbols = [...new Set(activeRecords.map(r => r.symbol))]
+        // Projection accuracy aggregate
+        const projEvald = activeRecords.filter(r => r.projAccuracy)
+        const avgDirHit = projEvald.length ? Math.round(projEvald.reduce((s,r) => s + (r.projAccuracy!.dirHitRate), 0) / projEvald.length) : 0
+        const avgBandHit = projEvald.length ? Math.round(projEvald.reduce((s,r) => s + (r.projAccuracy!.bandHitRate), 0) / projEvald.length) : 0
         return (
           <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'hidden' }}>
             {/* Header */}
@@ -1317,6 +1416,12 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
                 <span style={{ fontSize: 10, fontFamily: 'JetBrains Mono,monospace', color: totalR >= 0 ? '#34C759' : '#FF3B30' }}>Σ{totalR.toFixed(1)}R</span>
                 <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{wins.length}W·{losses.length}L·{openR.length}⏳</span>
               </>}
+              {projEvald.length > 0 && (
+                <span style={{ fontSize: 10, fontFamily: 'JetBrains Mono,monospace', padding: '2px 8px', borderRadius: 5,
+                  background: 'rgba(59,138,255,0.1)', color: '#3B8AFF' }} title="Précision projection: direction + dans la bande">
+                  📈 {avgDirHit}% dir · {avgBandHit}% bande ({projEvald.length})
+                </span>
+              )}
               <span style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>{activeRecords.length} analyses {showHistory ? '▲' : '▼'}</span>
             </button>
 
@@ -1398,6 +1503,11 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
                         <span style={{ color: rec.outcomeR != null && rec.outcomeR > 0 ? '#34C759' : '#FF3B30', fontWeight: 700 }}>
                           {rec.outcomeR != null ? `${rec.outcomeR.toFixed(2)}R` : ''}
                         </span>
+                        {rec.projAccuracy && (
+                          <span style={{ gridColumn: '1 / -1', fontSize: 8.5, color: '#3B8AFF', opacity: 0.8, marginTop: 2 }}>
+                            📈 projection: {rec.projAccuracy.dirHitRate}% direction · {rec.projAccuracy.bandHitRate}% dans bande · MAE {rec.projAccuracy.maeAtr} ATR ({rec.projAccuracy.evaluatedBars} bougies)
+                          </span>
+                        )}
                       </div>
                     )
                   })

@@ -35,6 +35,17 @@ export interface IaAnalysisRecord {
   // RAG embedding (Level 3)
   embedding?: number[]
   embeddingText?: string
+  // Projection (center path) for accuracy backtest
+  projTf?: string                  // timeframe of the projection
+  projIntervalSec?: number         // seconds per projected bar
+  projCloses?: number[]            // projected center close per bar
+  projAccuracy?: {
+    dirHitRate: number             // % bars where projected direction matched actual
+    maeAtr: number                 // mean abs error in ATR units
+    bandHitRate: number            // % actual closes that fell inside [low,high] band
+    evaluatedBars: number
+    checkedAt: number
+  }
 }
 
 // ── Per-user history ─────────────────────────────────────────────────────────
@@ -65,6 +76,12 @@ export async function updateIaOutcome(
   await updateDoc(doc(db, 'users', uid, 'iaHistory', id), {
     outcome, outcomeR, outcomeCheckedAt: Date.now()
   })
+}
+
+export async function updateIaProjAccuracy(
+  uid: string, id: string, projAccuracy: NonNullable<IaAnalysisRecord['projAccuracy']>
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'iaHistory', id), { projAccuracy })
 }
 
 export async function updateIaEmbedding(
