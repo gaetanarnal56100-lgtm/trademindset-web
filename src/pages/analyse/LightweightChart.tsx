@@ -659,10 +659,10 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
       // Store in ref — drawn by canvas overlay RAF loop
       projDataRef.current = bars && bars.length > 0 ? bars : null
       // Create right margin so projected bars have space to render
-      if (chart) {
-        const offset = bars && bars.length > 0 ? bars.length + 5 : 10
-        chart.timeScale().applyOptions({ rightOffset: offset })
-        chart.timeScale().scrollToRealTime()
+      if (chart && bars && bars.length > 0) {
+        // rightOffset creates empty space AFTER last candle = projection zone
+        // Do NOT scrollToRealTime — keep current viewport so projection is visible
+        chart.timeScale().applyOptions({ rightOffset: bars.length + 5 })
       }
     },
   }))
