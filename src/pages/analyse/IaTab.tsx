@@ -54,6 +54,7 @@ interface AiResult {
   scenarios: { bull: string; bear: string }
   trades?: AiTrade[]
   projection?: ProjectionBar[]
+  priceTarget24h?: string
 }
 
 interface Props {
@@ -664,20 +665,12 @@ ${knowledgeSection ? knowledgeSection + '\n\n' : ''}${ragSection ? ragSection + 
 Current price is ${curPrice.toFixed(2)}. All TP/SL levels must be consistent with this price and with the bias direction.
 
 Respond with EXACTLY this JSON (no example values — compute everything from the data above):
-{"bias":"BULLISH|BEARISH|NEUTRAL","score":0,"conviction":0,"horizon":"Xh-Yh","quality":"Low|Medium|High","keyLevels":["LEVEL1","LEVEL2","LEVEL3","LEVEL4"],"catalyst":"specific catalyst from data","targets":{"tp1":"PRICE","tp2":"PRICE","sl":"PRICE"},"momentum":"BULLISH|BEARISH|NEUTRAL","regimeContext":"dispersion regime context","summary":"3-4 sentences with specific data references","risk":"specific risk factors","divergence":"divergence observations","mtfAnalysis":"MTF alignment with specific TF signals","whaleAnalysis":"whale/liq analysis with numbers","scenarios":{"bull":"bullish scenario with trigger and target","bear":"bearish scenario with invalidation"},"trades":[{"label":"Primary setup label","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"},{"label":"Alternative setup","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"}],"projection":[{"bar":1,"open":0,"high":0,"low":0,"close":0}]}
+{"bias":"BULLISH|BEARISH|NEUTRAL","score":0,"conviction":0,"horizon":"Xh-Yh","quality":"Low|Medium|High","keyLevels":["LEVEL1","LEVEL2","LEVEL3","LEVEL4"],"catalyst":"specific catalyst from data","targets":{"tp1":"PRICE","tp2":"PRICE","sl":"PRICE"},"momentum":"BULLISH|BEARISH|NEUTRAL","regimeContext":"dispersion regime context","summary":"3-4 sentences with specific data references","risk":"specific risk factors","divergence":"divergence observations","mtfAnalysis":"MTF alignment with specific TF signals","whaleAnalysis":"whale/liq analysis with numbers","scenarios":{"bull":"bullish scenario with trigger and target","bear":"bearish scenario with invalidation"},"trades":[{"label":"Primary setup label","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"},{"label":"Alternative setup","direction":"LONG|SHORT","entry":"PRICE","tp1":"PRICE","tp2":"PRICE","sl":"PRICE","rr":"X.X","probability":0,"horizon":"Xh","rationale":"1 sentence"}],"priceTarget24h":"PRICE expected price after the horizon — drives the chart projection"}
 
-PROJECTION RULES — generate ${projectionBars} realistic future CANDLES (OHLC):
-- Generate exactly ${projectionBars} candles in the "projection" array, each with open/high/low/close
-- First candle opens near current price ${curPrice.toFixed(2)}
-- Each candle's open = previous candle's close (continuous price path)
-- Follow the bias direction: BULLISH = net upward drift, BEARISH = net downward drift, NEUTRAL = sideways
-- Realistic per-candle range based on ATR(${atr.toFixed(2)}): high-low ≈ 0.5-1.2 ATR, body ≈ 0.3-0.8 ATR
-- Include realistic noise: not every candle goes the same direction (mix of up/down candles within the trend)
-- Respect key levels: price should react (pause/reverse) near major S/R from the data
-- high ≥ max(open,close), low ≤ min(open,close) for every candle`
+The "priceTarget24h" must be a single realistic price the asset will likely reach by the end of your horizon, consistent with bias and key levels. The projection candles are rendered client-side from this target.`
 
       const fn = httpsCallable<Record<string,unknown>, {choices?: {message:{content:string}}[]}>(fbFn, 'openaiChat')
-      const res = await fn({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 2500 })
+      const res = await fn({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], model: 'gpt-4o-mini', max_tokens: 1400 })
       const raw = res.data.choices?.[0]?.message?.content || ''
       if (!raw) throw new Error('Réponse vide du modèle')
       const start = raw.indexOf('{'), end = raw.lastIndexOf('}')
@@ -689,20 +682,30 @@ PROJECTION RULES — generate ${projectionBars} realistic future CANDLES (OHLC):
       if (!parsed.horizon) parsed.horizon = '—'
       if (!parsed.scenarios) parsed.scenarios = { bull: '', bear: '' }
       if (!Array.isArray(parsed.trades)) parsed.trades = []
-      const validProj = Array.isArray(parsed.projection) && parsed.projection.length > 0 &&
-        parsed.projection[0]?.close != null && parsed.projection[0]?.close !== 0
-      if (!validProj) {
-        // Fallback: generate OHLC candles from bias + ATR with random walk
-        const isBull = parsed.bias === 'BULLISH'
-        const isBear = parsed.bias === 'BEARISH'
-        const drift = isBull ? atr * 0.2 : isBear ? -atr * 0.2 : 0
+      // ── Generate projection candles CLIENT-SIDE (guided by AI target) ─────
+      {
+        // Target price: from AI priceTarget24h, else from primary trade tp1, else bias drift
+        let target = parseFloat(parsed.priceTarget24h ?? '')
+        if (!isFinite(target) || target <= 0) {
+          const t0 = parsed.trades?.[0]
+          const tp = t0 ? parseFloat(t0.tp1) : NaN
+          if (isFinite(tp) && tp > 0) target = tp
+          else {
+            const isBull = parsed.bias === 'BULLISH', isBear = parsed.bias === 'BEARISH'
+            target = curPrice + (isBull ? atr * 4 : isBear ? -atr * 4 : 0)
+          }
+        }
+        // Linear drift per bar toward target + noise + wicks
+        const totalMove = target - curPrice
+        const driftPerBar = totalMove / projectionBars
+        const vol = Math.max(atr * 0.4, curPrice * 0.0008)
         let prevClose = curPrice
         parsed.projection = Array.from({ length: projectionBars }, (_, i) => {
           const open = prevClose
-          const noise = (Math.random() - 0.5) * atr * 0.8
-          const close = open + drift + noise
-          const high = Math.max(open, close) + Math.random() * atr * 0.4
-          const low = Math.min(open, close) - Math.random() * atr * 0.4
+          const noise = (Math.random() - 0.5) * vol * 1.5
+          const close = open + driftPerBar + noise
+          const high = Math.max(open, close) + Math.random() * vol * 0.6
+          const low = Math.min(open, close) - Math.random() * vol * 0.6
           prevClose = close
           return { bar: i + 1, open, high, low, close }
         })
