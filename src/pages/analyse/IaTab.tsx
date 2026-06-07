@@ -93,6 +93,58 @@ function calcATR14(candles: { high: number; low: number; close: number }[]): num
   return sum / 14
 }
 
+// ── Ichimoku Kumo (forward cloud for projection S/R) ──────────────────────────
+interface IchimokuResult {
+  bias: 'bull' | 'bear' | 'neutral'          // current cloud color
+  futureCloud: { spanA: number; spanB: number }[]  // next `displacement` bars (already known)
+  convBaseCross: 'bull' | 'bear' | 'none'    // tenkan/kijun cross
+}
+function calcIchimoku(
+  candles: { high: number; low: number; close: number }[],
+  conv = 9, base = 26, spanBLen = 52, displacement = 26
+): IchimokuResult {
+  const n = candles.length
+  const EMPTY: IchimokuResult = { bias: 'neutral', futureCloud: [], convBaseCross: 'none' }
+  if (n < spanBLen + displacement) return EMPTY
+
+  const donchian = (end: number, len: number): number => {
+    let hi = -Infinity, lo = Infinity
+    for (let i = Math.max(0, end - len + 1); i <= end; i++) {
+      if (candles[i].high > hi) hi = candles[i].high
+      if (candles[i].low < lo) lo = candles[i].low
+    }
+    return (hi + lo) / 2
+  }
+
+  // spanA_raw[i] = avg(conversion, base) at bar i ; spanB_raw[i] = donchian(spanBLen) at bar i
+  // These get displayed `displacement` bars ahead → future cloud is known now.
+  const spanARaw = (i: number) => (donchian(i, conv) + donchian(i, base)) / 2
+  const spanBRaw = (i: number) => donchian(i, spanBLen)
+
+  const last = n - 1
+  // Future cloud for the next `displacement` bars = raw values from (last - displacement + d)
+  const futureCloud: { spanA: number; spanB: number }[] = []
+  for (let d = 1; d <= displacement; d++) {
+    const srcIdx = last - displacement + d
+    if (srcIdx < 0) continue
+    futureCloud.push({ spanA: spanARaw(srcIdx), spanB: spanBRaw(srcIdx) })
+  }
+
+  // Current cloud color (at the latest displayed bar)
+  const curSpanA = spanARaw(last - displacement + 1 >= 0 ? last : last)
+  const curA = futureCloud.length ? futureCloud[0].spanA : curSpanA
+  const curB = futureCloud.length ? futureCloud[0].spanB : spanBRaw(last)
+  const bias: IchimokuResult['bias'] = curA > curB ? 'bull' : curA < curB ? 'bear' : 'neutral'
+
+  // Conversion/Base cross (tenkan/kijun)
+  const c0 = donchian(last, conv), b0 = donchian(last, base)
+  const c1 = donchian(last - 1, conv), b1 = donchian(last - 1, base)
+  const convBaseCross: IchimokuResult['convBaseCross'] =
+    (c1 <= b1 && c0 > b0) ? 'bull' : (c1 >= b1 && c0 < b0) ? 'bear' : 'none'
+
+  return { bias, futureCloud, convBaseCross }
+}
+
 // ── RAG helpers ──────────────────────────────────────────────────────────────
 function cosineSim(a: number[], b: number[]): number {
   let dot = 0, ma = 0, mb = 0
@@ -520,6 +572,9 @@ export default function IaTab({ symbol, isCrypto, lwChartRef, dispersionCtx, pre
         return Math.max(8, Math.min(60, avgHalf * 2))
       })()
 
+      // ── Ichimoku Kumo: forward cloud = known future S/R for projection ────
+      const ichimoku = calcIchimoku(candles)
+
       const last50 = candles.slice(-50)
       const high50 = last50.length ? Math.max(...last50.map(c => c.high)) : 0
       const low50  = last50.length ? Math.min(...last50.map(c => c.low)) : 0
@@ -663,6 +718,7 @@ Volume: ${volTrend}
 === PRICE INDICATORS ===
 RSI(14): ${rsi} | VMC status: ${vmcStatus}
 VMC wave: ${curVmc.toFixed(0)} (overbought ${obLevel} / oversold ${osLevel}) momentum ${vmcMom>=0?'+':''}${vmcMom.toFixed(0)} cycle≈${vmcPeriod.toFixed(0)} bars — ${curVmc>obLevel?'OVERBOUGHT, expect pullback':curVmc<osLevel?'OVERSOLD, expect bounce':'mid-range'}
+Ichimoku Kumo: cloud ${ichimoku.bias.toUpperCase()} | Conv/Base cross: ${ichimoku.convBaseCross} | Future cloud (next ${ichimoku.futureCloud.length} bars) top≈${ichimoku.futureCloud.length ? Math.max(ichimoku.futureCloud[ichimoku.futureCloud.length-1].spanA, ichimoku.futureCloud[ichimoku.futureCloud.length-1].spanB).toFixed(2) : '?'} bot≈${ichimoku.futureCloud.length ? Math.min(ichimoku.futureCloud[ichimoku.futureCloud.length-1].spanA, ichimoku.futureCloud[ichimoku.futureCloud.length-1].spanB).toFixed(2) : '?'} (known forward S/R — price reacts at these levels)
 Bollinger Bands: ${bbStr} | Position: ${bbPos}
 OU Channel: ${ouSection}
 
@@ -757,6 +813,10 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
         const vmcW = (2 * Math.PI) / vmcPeriod
         const vmcAt = (i: number) => vmcAmp * Math.sin(vmcPhase0 + phaseDir * vmcW * (i + 1))
 
+        // 6. Ichimoku Kumo: future cloud = known S/R for next ~26 bars
+        const cloud = ichimoku.futureCloud  // [{spanA, spanB}] indexed by future bar (0 = bar1)
+        const cloudBias = ichimoku.bias === 'bull' ? 1 : ichimoku.bias === 'bear' ? -1 : 0
+
         let prevClose = curPrice
         parsed.projection = Array.from({ length: projectionBars }, (_, i) => {
           const open = prevClose
@@ -764,6 +824,9 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
 
           // Momentum kick on first ~20% of bars
           if (i < projectionBars * 0.2) drift += momBias * vol * 0.3
+
+          // Ichimoku cloud bias: small persistent drift in cloud direction
+          drift += cloudBias * vol * 0.12
 
           // VMC mean-reversion: overbought (→+ob) pushes down, oversold (→-os) pushes up
           const vmcVal = vmcAt(i)
@@ -779,6 +842,20 @@ The "priceTarget24h" must be a single realistic price the asset will likely reac
             if ((open - kp) * (close - kp) < 0) {        // crossed the level
               const overshoot = close - kp
               close = kp + overshoot * 0.4               // 60% rejection at level
+            }
+          }
+
+          // Ichimoku cloud edges as dynamic S/R for this future bar
+          const cb = cloud[i]
+          if (cb) {
+            const cloudTop = Math.max(cb.spanA, cb.spanB)
+            const cloudBot = Math.min(cb.spanA, cb.spanB)
+            // Reject at cloud edges (price tends to bounce off the cloud)
+            for (const edge of [cloudTop, cloudBot]) {
+              if ((open - edge) * (close - edge) < 0) {
+                const overshoot = close - edge
+                close = edge + overshoot * 0.45          // 55% rejection at cloud edge
+              }
             }
           }
 
