@@ -660,22 +660,28 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
       projDataRef.current = bars && bars.length > 0 ? bars : null
       // Create right margin so projected bars have space to render
       if (chart && bars && bars.length > 0) {
-        // Find anchor index via binary search on proj[0].time
-        const candles = candlesRef.current
-        const firstProjTime = bars[0].time
-        const intervalSec = bars.length > 1 ? bars[1].time! - bars[0].time! : 900
-        let anchorIdx = candles.length - 1
-        if (firstProjTime && candles.length > 0) {
-          const anchorTime = firstProjTime - intervalSec
-          let lo = 0, hi = candles.length - 1
-          while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
-          anchorIdx = lo
+        const applyZoom = () => {
+          const candles = candlesRef.current
+          if (!candles.length) return
+          const firstProjTime = bars[0].time
+          const intervalSec = bars.length > 1 ? bars[1].time! - bars[0].time! : 900
+          let anchorIdx = candles.length - 1
+          if (firstProjTime) {
+            const anchorTime = firstProjTime - intervalSec
+            let lo = 0, hi = candles.length - 1
+            while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
+            anchorIdx = lo
+          }
+          // rightOffset must cover all projected bars so they fit in view
+          chart.timeScale().applyOptions({ rightOffset: bars.length + 4 })
+          chart.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, anchorIdx - 80),
+            to: anchorIdx + bars.length + 4,
+          })
         }
-        chart.timeScale().applyOptions({ rightOffset: 3 })
-        chart.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, anchorIdx - 80),
-          to: anchorIdx + bars.length + 5,
-        })
+        applyZoom()
+        // Re-apply after a tick in case candles updated / range got reset
+        setTimeout(applyZoom, 100)
       }
     },
   }))
