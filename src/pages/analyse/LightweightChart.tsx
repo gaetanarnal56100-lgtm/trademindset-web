@@ -658,6 +658,12 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
       if (projLowerRef.current)  { try { chart?.removeSeries(projLowerRef.current)  } catch {} projLowerRef.current  = null }
       // Store in ref — drawn by canvas overlay RAF loop
       projDataRef.current = bars && bars.length > 0 ? bars : null
+      // Create right margin so projected bars have space to render
+      if (chart) {
+        const offset = bars && bars.length > 0 ? bars.length + 5 : 10
+        chart.timeScale().applyOptions({ rightOffset: offset })
+        chart.timeScale().scrollToRealTime()
+      }
     },
   }))
   const wsRef    = useRef<WebSocket|null>(null)
