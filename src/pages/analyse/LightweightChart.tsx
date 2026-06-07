@@ -711,6 +711,7 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
   // Fallback fraction-based si pas de timestamps (même candle count requis).
   useEffect(() => {
     if (!syncRangeIn || !chartApi.current || !candlesRef.current.length) return
+    if (projDataRef.current) return  // projection active — don't let sync override the zoom
     const candles = candlesRef.current
     let target: { from: number; to: number }
     if (syncRangeIn.fromMs != null && syncRangeIn.toMs != null) {
