@@ -677,9 +677,9 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
             while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
             anchorIdx = lo
           }
-          // Single mechanism: logical range covers history + projection
-          // rightOffset 0 so setVisibleLogicalRange controls everything
-          chart.timeScale().applyOptions({ rightOffset: 0 })
+          // rightOffset MUST be >= projection length so LW allows the view to
+          // extend past the last real candle (otherwise it clamps & projection is off-frame)
+          chart.timeScale().applyOptions({ rightOffset: bars.length + 6 })
           chart.timeScale().setVisibleLogicalRange({
             from: Math.max(0, anchorIdx - 70),
             to: anchorIdx + bars.length + 4,
