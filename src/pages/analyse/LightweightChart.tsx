@@ -61,10 +61,15 @@ export interface ChartAnalysisData {
 }
 export interface ProjectionBar {
   bar: number      // 1-based index into future
-  center: number
-  upper: number
-  lower: number
+  open: number
+  high: number
+  low: number
+  close: number
   time?: number    // pre-computed unix timestamp in seconds (optional — skips candlesRef dependency)
+  // Legacy band fields (optional — kept for backward compat)
+  center?: number
+  upper?: number
+  lower?: number
 }
 
 export interface LightweightChartHandle {
@@ -1508,78 +1513,65 @@ const projDataRef   = useRef<ProjectionBar[] | null>(null)
       rsiDivResult.bearDivs.forEach(p=>drawDiv(p,false))
     }
 
-    // ── AI Projection ─────────────────────────────────────────────────
+    // ── AI Projection (candlestick style) ──────────────────────────────
     const proj = projDataRef.current
     if (proj && proj.length > 0 && ser && candles.length > 0) {
-      // Find anchor: candle whose time matches proj[0].time - intervalSec
-      // (proj times were computed from IaTab's candles, not the chart's full candle set)
+      // Find anchor candle index via binary search on proj[0].time
       const firstProjTime = proj[0].time
       const intervalSec = proj.length > 1 ? proj[1].time! - proj[0].time! : 900
-      const anchorTime = firstProjTime ? firstProjTime - intervalSec : null
-
-      // Binary search for the anchor candle index
       let anchorIdx = candles.length - 1
-      if (anchorTime) {
+      if (firstProjTime) {
+        const anchorTime = firstProjTime - intervalSec
         let lo = 0, hi = candles.length - 1
         while (lo < hi) { const mid = (lo + hi + 1) >> 1; if ((candles[mid].time as number) <= anchorTime) lo = mid; else hi = mid - 1 }
         anchorIdx = lo
       }
 
-      const anchorX = toXIdx(anchorIdx)
-      const anchorY = toY(candles[anchorIdx].close)
+      // Candle width from logical spacing
+      const x0 = toXIdx(anchorIdx)
+      const x1 = toXIdx(anchorIdx + 1)
+      const barW = (x0 != null && x1 != null) ? Math.max(1, Math.abs(x1 - x0) * 0.7) : 4
 
-      // Each projected bar is anchorIdx + bar (1-based)
-      const pts = proj.map(b => ({
-        x:  toXIdx(anchorIdx + b.bar),
-        yc: toY(b.center),
-        yu: toY(b.upper),
-        yl: toY(b.lower),
-      })).filter(p => p.x != null && p.yc != null && p.yu != null && p.yl != null)
+      ctx.save()
+      ctx.globalAlpha = 0.85
 
-      if (pts.length > 0 && anchorX != null && anchorY != null) {
-        ctx.save()
-        ctx.lineJoin = 'round'
-        ctx.lineCap  = 'round'
+      for (const b of proj) {
+        const x  = toXIdx(anchorIdx + b.bar)
+        if (x == null) continue
+        const yO = toY(b.open), yH = toY(b.high), yL = toY(b.low), yC = toY(b.close)
+        if (yO == null || yH == null || yL == null || yC == null) continue
 
-        // Filled band between upper and lower
-        ctx.beginPath()
-        ctx.moveTo(anchorX, anchorY)
-        pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
-        for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x!, pts[i].yl!)
-        ctx.closePath()
-        ctx.fillStyle = 'rgba(59,138,255,0.10)'
-        ctx.fill()
+        const isUp = b.close >= b.open
+        // Projected candles in blue tones (lighter=up, darker=down)
+        const col = isUp ? '#4D9FFF' : '#2563C9'
 
-        // Upper bound dashed
-        ctx.strokeStyle = 'rgba(59,138,255,0.40)'
+        // Wick
+        ctx.strokeStyle = col
         ctx.lineWidth = 1
-        ctx.setLineDash([5, 4])
-        ctx.beginPath(); ctx.moveTo(anchorX, anchorY)
-        pts.forEach(p => ctx.lineTo(p.x!, p.yu!))
-        ctx.stroke(); ctx.setLineDash([])
-
-        // Lower bound dashed
-        ctx.setLineDash([5, 4])
-        ctx.beginPath(); ctx.moveTo(anchorX, anchorY)
-        pts.forEach(p => ctx.lineTo(p.x!, p.yl!))
-        ctx.stroke(); ctx.setLineDash([])
-
-        // Center line solid
-        ctx.strokeStyle = '#3B8AFF'
-        ctx.lineWidth = 2
-        ctx.beginPath(); ctx.moveTo(anchorX, anchorY)
-        pts.forEach(p => ctx.lineTo(p.x!, p.yc!))
+        ctx.beginPath()
+        ctx.moveTo(x, yH)
+        ctx.lineTo(x, yL)
         ctx.stroke()
 
-        // Label
-        const last = pts[pts.length - 1]
-        ctx.font = 'bold 9px JetBrains Mono, monospace'
-        ctx.fillStyle = '#3B8AFF'
-        ctx.globalAlpha = 0.9
-        ctx.fillText(`IA +${proj.length}`, last.x! + 4, last.yc!)
-
-        ctx.restore()
+        // Body
+        ctx.fillStyle = col
+        const bodyTop = Math.min(yO, yC)
+        const bodyH = Math.max(1, Math.abs(yC - yO))
+        ctx.fillRect(x - barW / 2, bodyTop, barW, bodyH)
       }
+
+      // Label at last projected candle
+      const lastBar = proj[proj.length - 1]
+      const lastX = toXIdx(anchorIdx + lastBar.bar)
+      const lastY = toY(lastBar.close)
+      if (lastX != null && lastY != null) {
+        ctx.globalAlpha = 1
+        ctx.font = 'bold 9px JetBrains Mono, monospace'
+        ctx.fillStyle = '#4D9FFF'
+        ctx.fillText(`IA +${proj.length}`, lastX + 6, lastY)
+      }
+
+      ctx.restore()
     }
   },[drawings,selectedId,hoverPoint,color,tool,magnet,indOn,smcResult,smcMtfResults,msdResult,vmcResult,mpResult,rsiDivResult,smcS,msdS,mpS,snapPrice,bbResult,bbS,cvdResult,vegasData,vegasS,isCrypto])
 
