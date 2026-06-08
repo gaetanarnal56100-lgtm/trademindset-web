@@ -1,7 +1,7 @@
 // FundamentalScreener.tsx — AI natural-language fundamental stock screener
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
-  runScreener, parseNlQuery, searchSymbol, PRESETS, FIELD_META,
+  runScreener, parseNlQuery, searchSymbol, PRESETS,
   type ScreenerFilters, type EnrichedStock, type ParseResult, type NumericField, type SymbolSearchResult,
 } from '@/services/screener/fundamentalScreener'
 import StockDetailSheet from './StockDetailSheet'
@@ -14,15 +14,12 @@ const EXAMPLES = [
   'Similaire à Nvidia mais moins cher',
 ]
 
-const COLS: { field: NumericField; w: number }[] = [
-  { field: 'qualityScore', w: 60 },
-  { field: 'pe', w: 55 },
-  { field: 'roe', w: 60 },
-  { field: 'netMargin', w: 70 },
-  { field: 'revenueGrowth', w: 70 },
-  { field: 'dividendYield', w: 60 },
-  { field: 'debtToEbitda', w: 70 },
-  { field: 'piotroski', w: 55 },
+// Free-tier columns (premium metrics unavailable on FMP free plan)
+const COLS: { field: NumericField; w: number; label: string; unit: string }[] = [
+  { field: 'qualityScore', w: 60, label: 'Note Q', unit: '/20' },
+  { field: 'pe',           w: 55, label: 'P/E',    unit: '' },
+  { field: 'marketCap',    w: 75, label: 'Capi.',  unit: '$' },
+  { field: 'price',        w: 60, label: 'Prix',   unit: '' },
 ]
 
 const fmtNum = (v: number, unit: string): string => {
@@ -62,9 +59,9 @@ export default function FundamentalScreener() {
   const execute = useCallback(async (f: ScreenerFilters) => {
     setLoading(true); setError(null)
     try {
-      const { stocks } = await runScreener(f)
+      const { stocks, debug } = await runScreener(f)
       setStocks(stocks)
-      if (stocks.length === 0) setError('Aucune action ne correspond. Élargis les critères.')
+      if (stocks.length === 0) setError(`Aucune action ne correspond.${debug ? ' [debug: ' + debug + ']' : ''}`)
     } catch (e: any) {
       setError(e?.message?.includes('FMP_API_KEY') ? 'Clé FMP non configurée côté serveur.' : 'Erreur lors de la recherche.')
     }
@@ -226,9 +223,10 @@ export default function FundamentalScreener() {
                 <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--tm-text-muted)', fontWeight: 600 }}>Action</th>
                 {COLS.map(c => (
                   <th key={c.field} style={{ textAlign: 'right', padding: '8px 6px', color: 'var(--tm-text-muted)', fontWeight: 600, minWidth: c.w }}>
-                    {FIELD_META[c.field].label}
+                    {c.label}
                   </th>
                 ))}
+                <th style={{ textAlign: 'right', padding: '8px 6px', color: 'var(--tm-text-muted)', fontWeight: 600, minWidth: 60 }}>Var.</th>
               </tr>
             </thead>
             <tbody>
@@ -243,15 +241,17 @@ export default function FundamentalScreener() {
                     </div>
                   </td>
                   {COLS.map(c => {
-                    const v = s[c.field]
-                    const meta = FIELD_META[c.field]
+                    const v = s[c.field] as number
                     const isQ = c.field === 'qualityScore'
                     return (
                       <td key={c.field} style={{ textAlign: 'right', padding: '7px 6px', color: isQ ? noteQColor(v) : 'var(--tm-text-secondary)', fontWeight: isQ ? 700 : 400 }}>
-                        {fmtNum(v, meta.unit)}
+                        {fmtNum(v, c.unit)}
                       </td>
                     )
                   })}
+                  <td style={{ textAlign: 'right', padding: '7px 6px', color: s.change >= 0 ? '#22C759' : '#FF3B30' }}>
+                    {s.change >= 0 ? '+' : ''}{s.change.toFixed(2)}%
+                  </td>
                 </tr>
               ))}
             </tbody>

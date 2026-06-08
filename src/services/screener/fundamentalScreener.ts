@@ -34,6 +34,8 @@ export interface EnrichedStock {
   debtToEbitda: number; dividendYield: number; payoutRatio: number
   revenueGrowth: number; epsGrowth: number; piotroski: number; altmanZ: number
   qualityScore: number
+  // free-tier (quote) fields
+  eps?: number; yearHigh?: number; yearLow?: number; pos52w?: number
 }
 
 export interface ParseResult {
@@ -80,8 +82,8 @@ export const PRESETS: Record<NonNullable<ScreenerFilters['preset']>, { label: st
 }
 
 // ── API calls ────────────────────────────────────────────────────────────────
-export async function runScreener(filters: ScreenerFilters): Promise<{ stocks: EnrichedStock[]; total: number }> {
-  const fn = httpsCallable<{ filters: ScreenerFilters }, { stocks: EnrichedStock[]; total: number }>(functions, 'fmpScreener')
+export async function runScreener(filters: ScreenerFilters): Promise<{ stocks: EnrichedStock[]; total: number; debug?: string }> {
+  const fn = httpsCallable<{ filters: ScreenerFilters }, { stocks: EnrichedStock[]; total: number; debug?: string }>(functions, 'fmpScreener')
   const res = await fn({ filters })
   return res.data
 }
