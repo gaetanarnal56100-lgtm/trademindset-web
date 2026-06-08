@@ -1,9 +1,10 @@
 // FundamentalScreener.tsx — AI natural-language fundamental stock screener
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
-  runScreener, parseNlQuery, PRESETS, FIELD_META,
-  type ScreenerFilters, type EnrichedStock, type ParseResult, type NumericField,
+  runScreener, parseNlQuery, searchSymbol, PRESETS, FIELD_META,
+  type ScreenerFilters, type EnrichedStock, type ParseResult, type NumericField, type SymbolSearchResult,
 } from '@/services/screener/fundamentalScreener'
+import StockDetailSheet from './StockDetailSheet'
 
 const EXAMPLES = [
   'Actions françaises de qualité avec dividende croissant',
@@ -44,6 +45,19 @@ export default function FundamentalScreener() {
   const [filters, setFilters] = useState<ScreenerFilters>({})
   const [stocks, setStocks] = useState<EnrichedStock[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [detailSymbol, setDetailSymbol] = useState<string | null>(null)
+  // Symbol search (access full FMP universe)
+  const [symQuery, setSymQuery] = useState('')
+  const [symResults, setSymResults] = useState<SymbolSearchResult[]>([])
+  const symTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (symTimer.current) clearTimeout(symTimer.current)
+    if (symQuery.trim().length < 2) { setSymResults([]); return }
+    symTimer.current = setTimeout(() => {
+      searchSymbol(symQuery).then(setSymResults).catch(() => setSymResults([]))
+    }, 350)
+  }, [symQuery])
 
   const execute = useCallback(async (f: ScreenerFilters) => {
     setLoading(true); setError(null)
@@ -155,6 +169,34 @@ export default function FundamentalScreener() {
         )}
       </div>
 
+      {/* ── Search any stock (full FMP universe) ── */}
+      <div style={{ position: 'relative' }}>
+        <input
+          value={symQuery}
+          onChange={e => setSymQuery(e.target.value)}
+          placeholder="🔎 Rechercher n'importe quelle action (10 000+ disponibles)…"
+          style={{
+            width: '100%', boxSizing: 'border-box', background: 'var(--tm-bg-secondary)',
+            border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '9px 14px',
+            color: 'var(--tm-text-primary)', fontSize: 13, outline: 'none',
+          }}
+        />
+        {symResults.length > 0 && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 20,
+            background: 'var(--tm-bg)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, overflow: 'hidden', maxHeight: 280, overflowY: 'auto' }}>
+            {symResults.map(r => (
+              <button key={r.symbol} onClick={() => { setDetailSymbol(r.symbol); setSymQuery(''); setSymResults([]) }} style={{
+                width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                padding: '8px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span><b style={{ color: 'var(--tm-text-primary)', fontSize: 12 }}>{r.symbol}</b> <span style={{ color: 'var(--tm-text-muted)', fontSize: 11 }}>{r.name}</span></span>
+                <span style={{ color: 'var(--tm-text-muted)', fontSize: 9 }}>{r.exchange}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* ── Presets ── */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
         {(Object.keys(PRESETS) as (keyof typeof PRESETS)[]).map(k => (
@@ -191,7 +233,9 @@ export default function FundamentalScreener() {
             </thead>
             <tbody>
               {stocks.map(s => (
-                <tr key={s.symbol} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={s.symbol} onClick={() => setDetailSymbol(s.symbol)} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <td style={{ padding: '7px 10px' }}>
                     <div style={{ fontWeight: 700, color: 'var(--tm-text-primary)' }}>{s.symbol}</div>
                     <div style={{ fontSize: 9, color: 'var(--tm-text-muted)' }}>
@@ -214,6 +258,7 @@ export default function FundamentalScreener() {
           </table>
         </div>
       )}
+      {detailSymbol && <StockDetailSheet symbol={detailSymbol} onClose={() => setDetailSymbol(null)} />}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )

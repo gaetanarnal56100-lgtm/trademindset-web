@@ -91,3 +91,29 @@ export async function parseNlQuery(query: string): Promise<ParseResult> {
   const res = await fn({ query })
   return res.data
 }
+
+// ── Stock detail ─────────────────────────────────────────────────────────────
+export interface StockDetail {
+  profile: { symbol: string; companyName: string; price: number; change: number; marketCap: number; currency: string; exchange: string; sector: string; industry: string; country: string; isin: string; website: string; beta: number; volume: number; avgVolume: number; range: string; description: string; image: string; lastDiv: number; ceo: string; employees: number }
+  valuation: { pe: number; forwardPe: number; pb: number; ps: number; pfcf: number; pocf: number; dcfFairValue: number; dcfDiff: number }
+  margins: { gross: number; operating: number; net: number; fcf: number }
+  profitability: { roe: number; roa: number; roic: number; roce: number }
+  health: { debtToEbitda: number; currentRatio: number; interestCoverage: number; debtToEquity: number; altmanZ: number; piotroski: number }
+  dividend: { yield: number; payout: number; perShare: number }
+  growth: { revenue: number; eps: number; netIncome: number; fcf: number }
+  noteQ: number
+  incomeStatement: { year: string | number; revenue: number; grossProfit: number; operatingIncome: number; netIncome: number; eps: number }[]
+}
+
+export async function getStockDetail(symbol: string): Promise<StockDetail> {
+  const fn = httpsCallable<{ symbol: string }, StockDetail>(functions, 'fmpStockDetail')
+  const res = await fn({ symbol })
+  return res.data
+}
+
+export interface SymbolSearchResult { symbol: string; name: string; exchange: string; currency: string }
+export async function searchSymbol(query: string): Promise<SymbolSearchResult[]> {
+  const fn = httpsCallable<{ query: string }, { results: SymbolSearchResult[] }>(functions, 'fmpSearchSymbol')
+  const res = await fn({ query })
+  return res.data.results
+}
