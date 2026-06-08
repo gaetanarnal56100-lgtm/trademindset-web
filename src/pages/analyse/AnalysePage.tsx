@@ -20,6 +20,7 @@ import FootprintChart from './FootprintChart'
 import LiqHeatmapChart from './LiqHeatmapChart'
 import DispersionDashboard from './DispersionDashboard'
 import IaTab from './IaTab'
+import StockDetailSheet from '@/pages/marches/StockDetailSheet'
 import PaneLayout from '@/components/layout/PaneLayout'
 import type { AnalysisPDFData } from './AnalysisPDFExport'
 import MarketStateEngine from './MarketStateEngine'
@@ -251,7 +252,7 @@ function ShareWrapper({ children, label }: { children: React.ReactNode; label: s
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Mode = 'oscillateurs' | 'micro' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion' | 'layout' | 'ia'
+type Mode = 'oscillateurs' | 'micro' | 'derivees' | 'orderflow' | 'charts' | 'liqheat' | 'dispersion' | 'layout' | 'ia' | 'fondamental'
 type Seg  = 'small'|'medium'|'large'|'institutional'|'whales'|'all'
 type CVDBias = 'bullish'|'bearish'|'neutral'
 
@@ -1905,6 +1906,14 @@ export default function AnalysePage() {
 
   const isCrypto = isCryptoSymbol(symbol)
 
+  // Reset to a valid mode when switching to a stock if current mode is crypto-only
+  useEffect(() => {
+    if (!symbol) return
+    const cryptoOnly: Mode[] = ['micro', 'derivees', 'orderflow', 'liqheat', 'dispersion']
+    if (!isCrypto && cryptoOnly.includes(mode)) setMode('fondamental')
+    if (isCrypto && mode === 'fondamental') setMode('layout')
+  }, [isCrypto, symbol, mode])
+
   // ── Sync refs pour handleExportPDF (déclaré avant ces consts) ────────────
   liqBiasRef.current  = liqLong1h - liqShort1h
   pressureRef.current = pressure?.score ?? 0
@@ -2113,17 +2122,20 @@ export default function AnalysePage() {
             borderRadius:14,
             boxShadow:'0 4px 20px rgba(0,0,0,0.3)',
           }}>
-            {([
-              {id:'layout',    icon:'📺',  label:'TradingView',  sub:'Chart · WT · VMC · RSI · OU', color:'rgba(191,90,242,0.9)'},
-              {id:'oscillateurs',icon:'🎛️',label:'Oscillateurs',sub:'WT · VMC · OU · RSI',       color:'rgba(255,214,10,0.9)'},
-              {id:'micro',     icon:'📊',label:'Micro',       sub:'CVD · Structure · Baleines',  color:'rgba(0,229,255,0.9)'},
-              {id:'derivees',  icon:'📈',label:'Dérivés',     sub:'OI · Funding · L/S',          color:'rgba(255,149,0,0.9)'},
-              {id:'orderflow', icon:'⊞', label:'Order Flow',  sub:'Footprint · Cluster',        color:'rgba(255,69,58,0.9)'},
-              {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,69,58,0.9)'},
-              {id:'charts',    icon:'📅', label:'Charts',      sub:'Rendements · On-Chain',      color:'rgba(52,199,89,0.9)'},
-              {id:'dispersion',icon:'🔬', label:'Dispersion',  sub:'Internals institutionnels',  color:'rgba(0,229,255,0.9)'},
-              {id:'ia',        icon:'🤖', label:'Analyse IA',  sub:'Synthèse IA de tous les indicateurs', color:'rgba(191,90,242,0.9)'},
-            ] as {id:Mode;icon:string;label:string;sub:string;color:string}[]).map(m => {
+            {(([
+              {id:'layout',    icon:'📺',  label:'TradingView',  sub:'Chart · WT · VMC · RSI · OU', color:'rgba(191,90,242,0.9)', crypto:false},
+              {id:'oscillateurs',icon:'🎛️',label:'Oscillateurs',sub:'WT · VMC · OU · RSI',       color:'rgba(255,214,10,0.9)', crypto:false},
+              {id:'fondamental',icon:'💼',label:'Fondamental', sub:'Ratios · Marges · Note Q',   color:'rgba(10,133,255,0.9)', crypto:false, stockOnly:true},
+              {id:'micro',     icon:'📊',label:'Micro',       sub:'CVD · Structure · Baleines',  color:'rgba(0,229,255,0.9)', crypto:true},
+              {id:'derivees',  icon:'📈',label:'Dérivés',     sub:'OI · Funding · L/S',          color:'rgba(255,149,0,0.9)', crypto:true},
+              {id:'orderflow', icon:'⊞', label:'Order Flow',  sub:'Footprint · Cluster',        color:'rgba(255,69,58,0.9)', crypto:true},
+              {id:'liqheat',   icon:'🔥', label:'Liq Heatmap',sub:'Zones de liquidation',       color:'rgba(255,69,58,0.9)', crypto:true},
+              {id:'charts',    icon:'📅', label:'Charts',      sub:'Rendements · On-Chain',      color:'rgba(52,199,89,0.9)', crypto:false},
+              {id:'dispersion',icon:'🔬', label:'Dispersion',  sub:'Internals institutionnels',  color:'rgba(0,229,255,0.9)', crypto:true},
+              {id:'ia',        icon:'🤖', label:'Analyse IA',  sub:'Synthèse IA de tous les indicateurs', color:'rgba(191,90,242,0.9)', crypto:false},
+            ] as {id:Mode;icon:string;label:string;sub:string;color:string;crypto?:boolean;stockOnly?:boolean}[])
+              .filter(m => (isCrypto ? !m.stockOnly : !m.crypto))
+            ).map(m => {
               const active = mode === m.id
               return (
                 <button key={m.id} className="mode-tab" onClick={() => setMode(m.id)} style={{
@@ -2641,6 +2653,13 @@ export default function AnalysePage() {
           <div style={{ height:'calc(100vh - 320px)', minHeight:500, display:'flex', flexDirection:'column' }}>
             <LiqHeatmapChart symbol={symbol} syncInterval={syncInterval} />
           </div>
+        </div>
+      )}
+
+      {/* ── FONDAMENTAL TAB (stocks) ── */}
+      {mode === 'fondamental' && symbol && !isCrypto && (
+        <div style={{ background:'rgba(13,17,35,0.5)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:14, padding:18 }}>
+          <StockDetailSheet symbol={symbol.replace(/USDT?$/,'')} embedded />
         </div>
       )}
 

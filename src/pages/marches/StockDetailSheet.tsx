@@ -66,7 +66,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-export default function StockDetailSheet({ symbol, onClose }: { symbol: string; onClose: () => void }) {
+export default function StockDetailSheet({ symbol, onClose, embedded = false }: { symbol: string; onClose?: () => void; embedded?: boolean }) {
   const [data, setData] = useState<StockDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -87,16 +87,12 @@ export default function StockDetailSheet({ symbol, onClose }: { symbol: string; 
       .finally(() => setLoading(false))
   }, [symbol])
 
-  return createPortal(
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-      zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto',
-    }}>
+  const inner = (
       <div onClick={e => e.stopPropagation()} style={{
-        width: '100%', maxWidth: 820, background: 'var(--tm-bg)', border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 18, padding: 20, position: 'relative',
+        width: '100%', maxWidth: embedded ? '100%' : 820, background: embedded ? 'transparent' : 'var(--tm-bg)', border: embedded ? 'none' : '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 18, padding: embedded ? 0 : 20, position: 'relative',
       }}>
-        <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, color: 'var(--tm-text-muted)', cursor: 'pointer', fontSize: 16, width: 30, height: 30 }}>✕</button>
+        {!embedded && <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, color: 'var(--tm-text-muted)', cursor: 'pointer', fontSize: 16, width: 30, height: 30 }}>✕</button>}
 
         {loading && <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(10,133,255,0.7)' }}>
           <span style={{ display: 'inline-block', width: 30, height: 30, border: '3px solid #0A85FF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -248,6 +244,16 @@ export default function StockDetailSheet({ symbol, onClose }: { symbol: string; 
         )}
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
+  )
+
+  if (embedded) return inner
+
+  return createPortal(
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+      zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto',
+    }}>
+      {inner}
     </div>,
     document.body,
   )
