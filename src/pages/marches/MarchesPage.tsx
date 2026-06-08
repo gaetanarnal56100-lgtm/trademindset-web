@@ -15,6 +15,7 @@ import RsiHeatmap from '@/pages/analyse/RsiHeatmap'
 import type { TokenRSI, Timeframe } from '@/pages/analyse/RsiHeatmap'
 import AssetDetailSheet from './AssetDetailSheet'
 import MultiAssetAnalytics from '@/pages/analytics/MultiAssetAnalytics'
+import FundamentalScreener from './FundamentalScreener'
 
 const fbFunctions = getFunctions(app, 'europe-west1')
 
@@ -35,7 +36,7 @@ type StockSubset    = 'all' | 'us' | 'europe' | 'cac40' | 'dax' | 'ftse' | 'asia
 type CryptoRef      = 'none' | 'btc' | 'eth' | 'top10avg'
 type StockRef       = 'none' | 'spy' | 'qqq' | 'cac40avg' | 'sp500avg'
 type StrengthFilter = 'all' | 'stronger' | 'weaker'
-type Tab            = 'crypto' | 'actions' | 'forex' | 'multiasset'
+type Tab            = 'crypto' | 'actions' | 'screener' | 'forex' | 'multiasset'
 
 // ── Screener ─────────────────────────────────────────────────────────────────
 
@@ -3069,6 +3070,7 @@ export default function MarchesPage() {
   const TABS: { id: Tab; label: string; glow: string }[] = [
     { id:'crypto',      label:'🪙 Crypto',             glow:'191,90,242' },
     { id:'actions',     label:'📈 Actions',             glow:'10,133,255' },
+  { id:'screener',    label:'🔬 Screener IA',         glow:'10,133,255' },
     { id:'forex',       label:'💱 Forex & Commodités',  glow:'52,199,89'  },
     { id:'multiasset',  label:'🌐 Multi-Asset',         glow:'255,149,0'  },
   ]
@@ -3154,6 +3156,7 @@ export default function MarchesPage() {
           <motion.div key={tab} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-8 }} transition={{ duration:0.25 }}>
             {tab === 'crypto'      && <CryptoTab     onTokenClick={handleTokenClick} shareRef={cryptoShareRef} />}
             {tab === 'actions'     && <StocksTab     onTokenClick={handleTokenClick} shareRef={stocksShareRef} />}
+            {tab === 'screener'    && <FundamentalScreener />}
             {tab === 'forex'       && <ForexTab       onTokenClick={handleTokenClick} shareRef={forexShareRef}  />}
             {tab === 'multiasset'  && <MultiAssetTab />}
           </motion.div>
