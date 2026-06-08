@@ -14,12 +14,15 @@ const EXAMPLES = [
   'Similaire à Nvidia mais moins cher',
 ]
 
-// Free-tier columns (premium metrics unavailable on FMP free plan)
+// Columns from Finnhub free fundamentals (real data)
 const COLS: { field: NumericField; w: number; label: string; unit: string }[] = [
-  { field: 'qualityScore', w: 60, label: 'Note Q', unit: '/20' },
-  { field: 'pe',           w: 55, label: 'P/E',    unit: '' },
-  { field: 'marketCap',    w: 75, label: 'Capi.',  unit: '$' },
-  { field: 'price',        w: 60, label: 'Prix',   unit: '' },
+  { field: 'qualityScore',  w: 60, label: 'Note Q', unit: '/20' },
+  { field: 'pe',            w: 55, label: 'P/E',    unit: '' },
+  { field: 'roe',           w: 60, label: 'ROE',    unit: '%' },
+  { field: 'netMargin',     w: 70, label: 'Marge nette', unit: '%' },
+  { field: 'revenueGrowth', w: 70, label: 'Croiss. CA', unit: '%' },
+  { field: 'dividendYield', w: 60, label: 'Div.',   unit: '%' },
+  { field: 'marketCap',     w: 75, label: 'Capi.',  unit: '$' },
 ]
 
 const fmtNum = (v: number, unit: string): string => {
@@ -226,7 +229,6 @@ export default function FundamentalScreener() {
                     {c.label}
                   </th>
                 ))}
-                <th style={{ textAlign: 'right', padding: '8px 6px', color: 'var(--tm-text-muted)', fontWeight: 600, minWidth: 60 }}>Var.</th>
               </tr>
             </thead>
             <tbody>
@@ -249,9 +251,6 @@ export default function FundamentalScreener() {
                       </td>
                     )
                   })}
-                  <td style={{ textAlign: 'right', padding: '7px 6px', color: s.change >= 0 ? '#22C759' : '#FF3B30' }}>
-                    {s.change >= 0 ? '+' : ''}{s.change.toFixed(2)}%
-                  </td>
                 </tr>
               ))}
             </tbody>
