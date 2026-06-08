@@ -1,7 +1,40 @@
 // StockDetailSheet.tsx — rich fundamental detail modal for a stock
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getStockDetail, type StockDetail } from '@/services/screener/fundamentalScreener'
+import { getStockDetail, getBusinessModel, type StockDetail } from '@/services/screener/fundamentalScreener'
+
+// ── Quantitative radar (6 axes, 0-5) ─────────────────────────────────────────
+function QuantRadar({ q }: { q: NonNullable<StockDetail['quant']> }) {
+  const axes = [
+    { label: 'Rentabilité', v: q.rentabilite },
+    { label: 'Marges', v: q.marges },
+    { label: 'Croissance', v: q.croissance },
+    { label: 'Santé', v: q.sante },
+    { label: 'Dividende', v: q.dividende },
+    { label: 'Valorisation', v: q.valorisation },
+  ]
+  const size = 220, cx = size / 2, cy = size / 2, R = 78
+  const pt = (i: number, r: number) => {
+    const a = (Math.PI * 2 * i) / axes.length - Math.PI / 2
+    return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]
+  }
+  const poly = axes.map((ax, i) => pt(i, (ax.v / 5) * R).join(',')).join(' ')
+  return (
+    <svg width={size} height={size} style={{ display: 'block', margin: '0 auto' }}>
+      {[1, 2, 3, 4, 5].map(ring => (
+        <polygon key={ring} points={axes.map((_, i) => pt(i, (ring / 5) * R).join(',')).join(' ')}
+          fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
+      ))}
+      {axes.map((_, i) => { const [x, y] = pt(i, R); return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="rgba(255,255,255,0.07)" /> })}
+      <polygon points={poly} fill="rgba(34,199,89,0.18)" stroke="#22C759" strokeWidth={2} />
+      {axes.map((ax, i) => { const [x, y] = pt(i, (ax.v / 5) * R); return <circle key={i} cx={x} cy={y} r={3} fill="#22C759" /> })}
+      {axes.map((ax, i) => {
+        const [x, y] = pt(i, R + 16)
+        return <text key={i} x={x} y={y} fill="var(--tm-text-muted)" fontSize={8.5} textAnchor="middle" dominantBaseline="middle" fontFamily="JetBrains Mono, monospace">{ax.label}</text>
+      })}
+    </svg>
+  )
+}
 
 const fmt = (v: number, suffix = '', dec = 1): string => {
   if (v == null || !isFinite(v) || v === 0) return '—'
@@ -37,11 +70,19 @@ export default function StockDetailSheet({ symbol, onClose }: { symbol: string; 
   const [data, setData] = useState<StockDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [bizModel, setBizModel] = useState<string | null>(null)
+  const [bizLoading, setBizLoading] = useState(false)
 
   useEffect(() => {
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setBizModel(null)
     getStockDetail(symbol)
-      .then(setData)
+      .then(d => {
+        setData(d)
+        // Lazy-load business model
+        setBizLoading(true)
+        getBusinessModel(symbol, d.profile.companyName, d.profile.sector)
+          .then(setBizModel).catch(() => {}).finally(() => setBizLoading(false))
+      })
       .catch(() => setError('Action introuvable ou données indisponibles.'))
       .finally(() => setLoading(false))
   }, [symbol])
@@ -122,16 +163,44 @@ export default function StockDetailSheet({ symbol, onClose }: { symbol: string; 
               </Section>
 
               <Section title="Croissance">
-                <Row label="Croissance CA" value={fmt(data.growth.revenue, '%')} color={col(data.growth.revenue, 'high', 10, 0)} />
-                <Row label="Croissance EPS" value={fmt(data.growth.eps, '%')} color={col(data.growth.eps, 'high', 10, 0)} />
-                <Row label="Croissance RN" value={fmt(data.growth.netIncome, '%')} />
-                <Row label="Croissance FCF" value={fmt(data.growth.fcf, '%')} />
+                <Row label="Croissance CA (1A)" value={fmt(data.growth.revenue, '%')} color={col(data.growth.revenue, 'high', 10, 0)} />
+                <Row label="Croissance EPS (1A)" value={fmt(data.growth.eps, '%')} color={col(data.growth.eps, 'high', 10, 0)} />
+                {data.extended && <Row label="Croissance CA (5A)" value={fmt(data.extended.revenue5Y, '%')} color={col(data.extended.revenue5Y, 'high', 10, 0)} />}
+                {data.extended && <Row label="Croissance EPS (5A)" value={fmt(data.extended.eps5Y, '%')} color={col(data.extended.eps5Y, 'high', 10, 0)} />}
               </Section>
 
               <Section title="Dividende">
                 <Row label="Rendement" value={fmt(data.dividend.yield, '%', 2)} />
                 <Row label="Payout" value={fmt(data.dividend.payout, '%')} color={col(data.dividend.payout, 'low', 60, 90)} />
                 <Row label="Div/action" value={fmt(data.dividend.perShare, '', 2)} />
+              </Section>
+
+              {data.extended && (
+                <Section title="Informations">
+                  <Row label="Range 52s" value={data.extended.yearHigh ? `${data.extended.yearLow.toFixed(0)}–${data.extended.yearHigh.toFixed(0)}` : '—'} />
+                  <Row label="Bêta" value={fmt(data.extended.beta, '', 2)} />
+                  <Row label="EPS (TTM)" value={fmt(data.extended.eps, '', 2)} />
+                  <Row label="Actions (M)" value={data.extended.sharesOut ? data.extended.sharesOut.toFixed(0) : '—'} />
+                  {data.extended.employees > 0 && <Row label="Employés" value={data.extended.employees.toLocaleString('fr-FR')} />}
+                </Section>
+              )}
+            </div>
+
+            {/* Quantitative radar */}
+            {data.quant && (
+              <div style={{ marginTop: 14 }}>
+                <Section title="Profil quantitatif">
+                  <QuantRadar q={data.quant} />
+                </Section>
+              </div>
+            )}
+
+            {/* Business model (AI) */}
+            <div style={{ marginTop: 14 }}>
+              <Section title="Business Model · ✨ IA">
+                {bizLoading && <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Génération…</div>}
+                {bizModel && <div style={{ fontSize: 11.5, lineHeight: 1.7, color: 'var(--tm-text-secondary)', whiteSpace: 'pre-wrap' }}>{bizModel}</div>}
+                {!bizLoading && !bizModel && <div style={{ fontSize: 11, color: 'var(--tm-text-muted)' }}>Indisponible</div>}
               </Section>
             </div>
 

@@ -105,6 +105,14 @@ export interface StockDetail {
   growth: { revenue: number; eps: number; netIncome: number; fcf: number }
   noteQ: number
   incomeStatement: { year: string | number; revenue: number; grossProfit: number; operatingIncome: number; netIncome: number; eps: number }[]
+  extended?: { revenue5Y: number; eps5Y: number; revenue3Y: number; eps3Y: number; roe5Y: number; roic5Y: number; eps: number; yearHigh: number; yearLow: number; beta: number; sharesOut: number; currentRatio: number; ipo: string; employees: number }
+  quant?: { rentabilite: number; marges: number; croissance: number; sante: number; dividende: number; valorisation: number }
+}
+
+export async function getBusinessModel(symbol: string, name?: string, sector?: string): Promise<string> {
+  const fn = httpsCallable<{ symbol: string; name?: string; sector?: string }, { text: string }>(functions, 'generateBusinessModel')
+  const res = await fn({ symbol, name, sector })
+  return res.data.text
 }
 
 export async function getStockDetail(symbol: string): Promise<StockDetail> {
