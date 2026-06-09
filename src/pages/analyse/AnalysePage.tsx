@@ -2111,7 +2111,7 @@ export default function AnalysePage() {
         </div>
 
         {/* Row 2 — Mode tabs (crypto + symbol only) */}
-        {symbol && isCrypto && (
+        {symbol && (
           <div style={{
             display:'flex',gap:4,flexWrap:'wrap',
             padding:'8px 12px',
